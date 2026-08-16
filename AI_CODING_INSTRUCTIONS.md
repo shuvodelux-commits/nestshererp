@@ -61,7 +61,8 @@ Every slice is implemented in this order, in one change:
  9  Integration/DB tests
 10  Permission + tenant-isolation tests
 11  Full verification       lint · typecheck · test:boundaries · test
-12  Report for manual acceptance
+12  Update the slice status ledger   SRS_AND_BUILD_GUIDE.md 6.1.1, same commit
+13  Report for manual acceptance
 ```
 
 | # | Rule |
@@ -70,6 +71,7 @@ Every slice is implemented in this order, in one change:
 | S2 | A slice is not complete because the backend compiles, tests pass, or the endpoint returns 200. It is complete when the feature works **in the UI** and the owner has confirmed the numbers. |
 | S3 | If a slice has no user-visible outcome, say so before starting — it is either foundation work (see S5) or it is mis-scoped. |
 | S4 | Do not start the next slice. One slice per change, one slice per conversation. |
+| S4b | The last step of a slice is updating its row in the **slice status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1), in the same commit as the code. Set `CODE COMPLETE` — **only the owner sets `DONE`**. Do not create a separate status file, task log or progress README. |
 | S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific slice in the current phase that is blocked without it. "We will need it later" is not that. |
 | S6 | Write the migration for **this slice only**. Do not create tables a later slice will need. |
 | S7 | The UI in a slice may be minimal, but it must be real and reachable — a route, a form or table, wired to the real API, with loading and error states. A stub or a TODO is not a slice. |

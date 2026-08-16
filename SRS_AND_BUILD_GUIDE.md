@@ -1200,6 +1200,33 @@ Each phase is a list of slices. Every slice ends in a working screen and an owne
 | **14** | AI/MCP + on-prem packaging | Sliced at the start of the phase; read tools before any write tool | AI actions audited, permission-bound, explainable; on-prem install and upgrade verified on a clean VM |
 | **15** | Reusable core extraction | Package hardening | Core packages published internally, one sample reuse |
 
+## 6.1.1 Slice status ledger
+
+**The only record of what is built.** The agent appends or updates its own row as the final step of a slice, in the same commit as the code. Nothing else tracks progress — do not create a status file, a task log, or a README for this.
+
+Rules:
+
+- A row is added when a slice **starts** (status `IN PROGRESS`), and completed when it ends.
+- `DONE` requires all four gates green **and** owner acceptance. An agent may set `CODE COMPLETE`; **only the owner sets `DONE`.**
+- Commit hash is the merge commit of the slice.
+- Never delete or rewrite a row. A slice reopened later gets a new row with the same number and a note.
+- Each phase exit is tagged in git: `git tag phase-3-complete`.
+
+| Slice | Name | Status | Commit | Owner accepted | Note |
+|---|---|---|---|---|---|
+| 0.1 | Monorepo skeleton + CI boundary checks | TODO | — | — | |
+| 0.2 | Money / Qty / UnitCost / Ulid / Clock | TODO | — | — | |
+| 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | TODO | — | — | |
+| 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | TODO | — | — | |
+| 1.2 | Login / logout + forgot password + change password/PIN | TODO | — | — | |
+| 1.3 | Create and edit users | TODO | — | — | |
+| 1.4 | Create roles and assign permissions | TODO | — | — | |
+| 1.5 | Change a setting and see it take effect | TODO | — | — | |
+| 1.6 | Audit trail of everything above | TODO | — | — | |
+| 1.7 | Deployment-mode providers (D-33…D-36) + boot validation + license states | TODO | — | — | |
+
+Rows for Phase 2 onward are added as each phase begins, from the slice lists in §6.1.
+
 **Critical path:** `0 → 1 → 2 → 3 → 5 → 6 → 7 → 9 → 12`. Phases 4, 8, 10, 11 can absorb slippage. 13/14 come strictly after 12.
 
 **Slice lists for phases 0–11 are fixed above.** Phases 12–15 are sliced at the start of the phase, because slicing them now would encode decisions that have not been made. Adding, splitting or reordering a slice within a phase is fine and expected; skipping the manual acceptance at the end of one is not.

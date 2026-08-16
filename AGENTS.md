@@ -83,3 +83,9 @@ Priority when rules conflict: SRS → security/tenant isolation → accounting/i
 Implement only the slice in the task block. Do not touch files outside its ALLOWED FILES list, add dependencies, reorganise folders, refactor adjacent code, or build the next slice's schema. If you think you must, stop and report.
 
 Report as: Slice · Acceptance criteria and numbers verified · Assumptions · Files changed · Files intentionally NOT touched · Database · UI (what to click) · Tests (real output) · Not implemented · Risks noticed.
+
+## Recording a finished slice
+
+The last step of every slice is updating its row in the **slice status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1), in the same commit as the code. This is the only permanent record of what is built — do not create a status file, task log, or progress README instead.
+
+Set status to `CODE COMPLETE` and fill in the commit. **Only the owner sets `DONE`**, after running the feature in the UI and confirming the numbers. Never delete or edit an existing row's history.
