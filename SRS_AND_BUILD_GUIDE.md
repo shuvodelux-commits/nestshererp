@@ -154,6 +154,98 @@ Business Document (Sale / Purchase / Payment / Expense / Return / Adjustment)
 | Separate offline codebase | Two implementations of every rule |
 | Separate on-premise fork | 31 modules maintained twice — project-ending |
 
+## 2.7 Frontend conventions (UI/UX)
+
+**Design goal:** a shopkeeper who uses Facebook and YouTube daily should recognise how to move around SherERP without training, while an experienced operator can run a counter on the keyboard alone. Where the two conflict, **the counter wins** — speed of data entry is a business requirement; familiarity is a means to adoption.
+
+Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI-21 implement D-12; they do not change it.
+
+### A. Familiarity — patterns, not appearance
+
+| # | Rule |
+|---|---|
+| UI-01 | Borrow **interaction and navigation patterns** from the consumer apps users already know: persistent left sidebar, top bar with one global search, a bell for notifications, an avatar menu top-right, cards for summaries, paged lists, and a bottom bar or hamburger on small screens. |
+| UI-02 | **Never copy their visual identity** — no imitation of the colours, logo, typeface or brand styling of Facebook, YouTube or any other product. SherERP has its own plain, professional look. This is a legal line as much as a design one. |
+| UI-03 | **Component library: PrimeVue 4** (styled mode), self-hosted (D-37). No second UI library. |
+| UI-04 | Icons come from one self-hosted set, and only for meanings a user already knows (search, bell, cart, print, filter, back, menu, user). An icon needing a legend gets a text label instead. |
+| UI-05 | Every screen is understandable without a manual: visible labels, no icon-only primary actions, no hidden gestures, no hover-only affordances. |
+| UI-06 | **All assets are self-hosted** — fonts, icons, images. §6.5 requires COOP/COEP for SQLite WASM in Phase 12; a CDN font breaks it. |
+| UI-07 | The API base URL is read at runtime from `/config.json` (§6.5). `import.meta.env.VITE_API_URL` is banned — it forces a per-customer frontend build. |
+
+### B. Shell and navigation
+
+| # | Rule |
+|---|---|
+| UI-08 | One shell: left sidebar (modules) · top bar (global search, notifications, business date, cash-session state, avatar menu) · content area. POS runs full-screen without the sidebar. |
+| UI-09 | Navigation is generated from the permission-filtered feature list, ordered entitlement → feature setting → permission (§5.21). **Never render a control that will 403.** |
+| UI-10 | The sidebar is one level deep wherever possible; a second level only where a module genuinely has sub-areas. No third level. |
+| UI-11 | Responsive navigation: sidebar on desktop, collapsible drawer on tablet, bottom bar with the 4–5 most-used destinations on phone. The same destinations, the same names, in the same order, on all three. |
+| UI-12 | Global search in the top bar covers products, parties and documents, and is reachable by keyboard from anywhere. |
+| UI-13 | Every screen has a route with a stable path and is reachable from navigation or from a parent record (R-S7). |
+
+### C. Language — English UI, Bangla helper text (D-12)
+
+| # | Rule |
+|---|---|
+| UI-14 | **The primary UI language is English.** Labels, buttons, menus, table headers and messages are English. The UI is not bilingual. |
+| UI-15 | **Bangla helper text** sits beside or below an English label and explains the *business meaning* — a short natural sentence a shopkeeper would say, never a word-for-word translation. Example: `Due` → `যে টাকা কাস্টমারের কাছে এখনও পাওনা আছে`, not `বকেয়া`. |
+| UI-16 | Bangla helper text is used **only where it removes real confusion**: accounting and inventory concepts (due, payable, COGS, valuation, lot, adjustment, void/reverse, period lock), consequential actions, and the first field of an unfamiliar flow. **Not** on obvious fields (Name, Phone, Address), not on every field, not on every screen. |
+| UI-17 | Helper text is secondary in the visual hierarchy — smaller, muted — and never replaces the English label. |
+| UI-18 | Every string, English and Bangla, is an i18n key from Phase 1 — `sales.invoice.due.label` and `sales.invoice.due.help_bn`. A helper key may be absent; that is the normal case. No hardcoded strings. |
+| UI-19 | One helper string per business concept, reused everywhere. Two different Bangla explanations of "due" is a defect. |
+| UI-20 | The same language approach applies identically to Web, POS and mobile layouts. **Printed documents follow D-12 and §5.24 instead** — invoices support full Bangla and English, which is a separate concern from UI helper text. |
+| UI-21 | Terminology settings (§5.21) are display mappings — changing a label never changes accounting semantics, and no component branches on a label (§2.4). |
+
+### D. The four screen patterns
+
+| # | Rule |
+|---|---|
+| UI-22 | Every screen is one of: **List** (filter bar → table → paging), **Detail** (header facts → tabbed sections → actions), **Form** (single column, grouped fields, sticky save bar), **Dialog** (short confirmations, single-purpose input). A screen fitting none of the four is a design question — stop and ask. |
+| UI-23 | Dashboard and summary figures use **cards**; transactional data uses **tables**. A card always carries the `Why?` drill-down where §5.20 requires one. |
+| UI-24 | Lists use keyset pagination (§3.9), never offset. Lists that can exceed ~500 rows use virtual scroll. |
+| UI-25 | Filters are visible on the screen, not hidden behind a menu, and the active filter set is readable at a glance. |
+| UI-26 | Destructive or financial actions (void, reverse, unlock period) are explicit buttons opening a confirmation that names the document and the consequence, with Bangla helper text per UI-16. Never an inline toggle, never a swipe. |
+
+### E. Four states, every screen
+
+| # | Rule |
+|---|---|
+| UI-27 | Every screen implements **loading**, **empty**, **error** and **permission-denied** states. Tables use skeleton rows, not a bare spinner. |
+| UI-28 | Errors show the server's error code and message plus a retry affordance. Never "Something went wrong", never a silent catch-and-log. |
+| UI-29 | Empty states say what the screen would contain and link to the action that creates the first record. |
+| UI-30 | Notifications are a bell with a list, not stacked toasts. A toast may confirm an action but is never the only record of it (UI-36). |
+
+### F. Money, quantity, dates
+
+| # | Rule |
+|---|---|
+| UI-31 | Money and quantity are **formatted by `shared-utils`**, never in a component. A component may not add, multiply, round or parse a monetary value (B8, R-C3). |
+| UI-32 | Money is right-aligned, fixed 2 decimals, thousands-separated, `৳` where a currency mark is shown; negatives in parentheses **and** the negative colour — never colour alone. |
+| UI-33 | Dates display the tenant-timezone business date (D-29). No screen renders a raw UTC instant. |
+
+### G. Mutations and POS
+
+| # | Rule |
+|---|---|
+| UI-34 | The client generates the `operation_id` (ULID) **once per user intent** and reuses it on retry — this is what makes R-D3 idempotency reachable from the UI. |
+| UI-35 | Submit buttons disable while in flight; double-submit is impossible by construction, not by user discipline. |
+| UI-36 | **No optimistic UI for anything touching money or stock.** The screen shows the server's result, and a successful mutation lands on the resulting document or a confirmation carrying its number. |
+| UI-37 | POS is keyboard-first: the scan/search field holds focus by default and returns to it after every line. Every POS action has a keyboard shortcut; nothing requires a mouse. |
+| UI-38 | Barcode input is treated as keyboard input terminated by Enter — no driver, no pairing. |
+| UI-39 | Nothing blocks completing a sale — not a print failure (D-22), not a customer lookup, not an undismissable warning. Credit-limit excess warns only (D-11). |
+| UI-40 | Cost is never rendered without `inventory.cost.view`, and the field must be **absent from the API response**, not hidden in CSS (§5.7, R-E8). |
+
+### H. Devices and quality
+
+| # | Rule |
+|---|---|
+| UI-41 | Back office targets desktop ≥1280px, usable at 1024px. POS and Daybook target tablet landscape. Phone is best-effort until Phase 13, but the navigation in UI-11 works from Phase 1. |
+| UI-42 | Minimum accessibility: every input labelled, focus always visible, POS tap targets ≥40px, contrast ≥4.5:1. Full WCAG conformance is not claimed. |
+| UI-43 | Zero console errors or warnings on an accepted screen (Gate 3). |
+| UI-44 | Every slice's screen ships one component test: renders, shows loading, shows error. Business assertions stay in domain and integration tests, never in a component test. |
+
+**Deliberately not decided here:** colour palette and logo · POS p95 performance numbers (open item O-5, Phase 6) · full Bangla UI (D-12, V1.1) · PWA install prompt and persistent-storage gate (D-24, Phase 12) · print stylesheets beyond D-22 and §5.27.
+
 ---
 
 # PART 3 — DATA RULES
@@ -408,7 +500,7 @@ All final. Not discussion points.
 
 **Why D-24 is a hard gate.** Every other risk in the offline design is recoverable through quarantine and replay. Evicted OPFS data that never reached the server is unrecoverable — the transactions simply cease to exist, and the shopkeeper's day is gone. Nothing in the offline path may be built before this gate works.
 
-## 4.3 Implementation mechanics (D-25 … D-32)
+## 4.3 Implementation mechanics (D-25 … D-32, D-37 … D-38)
 
 | ID | Decision |
 |---|---|
@@ -420,6 +512,8 @@ All final. Not discussion points.
 | **D-30** | **Document numbering** — see §3.7. |
 | **D-31** | **Rounding and allocation** — see §3.3. |
 | **D-32** | **Concurrency** — see §3.8. |
+| **D-37** | **UI component library — PrimeVue 4, styled mode, self-hosted.** No CDN (COOP/COEP, §6.5), no second UI library. Chosen because an ERP is dense tables, forms and dialogs, and its DataTable ships lazy loading, virtual scroll, frozen columns and filters that Phases 3, 5, 6 and 9 would otherwise hand-write per screen. Rejected: **Vuetify** (Material look wrong for a shop counter, weaker data table) · **Tailwind + headless components** (every table and form becomes bespoke agent-written code, which is the code this project can least afford to review). |
+| **D-38** | **UI/UX direction — familiar patterns, professional density.** Borrow navigation and interaction patterns from the consumer apps Bangladeshi users already know (sidebar, global search, notification bell, cards, lists, responsive bottom nav); **never** imitate their visual identity. Combine with ERP/POS needs: fast entry, tables, filters, keyboard operation, high information clarity. **English UI with selective Bangla helper text explaining business meaning, not literal translation** — implements D-12 and applies identically across Web, POS and mobile. Full rules in §2.7 (UI-01…UI-44). |
 
 ## 4.4 Deployment mode (D-33 … D-36) — Phase 1
 
@@ -1214,7 +1308,7 @@ Rules:
 
 | Slice | Name | Status | Commit | Owner accepted | Note |
 |---|---|---|---|---|---|
-| 0.1 | Monorepo skeleton + CI boundary checks | DONE | — | 2026-08-16 | No UI (Phase 0 foundation exception, §6.0). Owner accepted on the four green commands; no UI check applicable. |
+| 0.1 | Monorepo skeleton + CI boundary checks | DONE | ef3482f | 2026-08-16 | No UI (Phase 0 foundation exception, §6.0). Owner accepted on the four green commands; no UI check applicable. |
 | 0.2 | Money / Qty / UnitCost / Ulid / Clock | TODO | — | — | |
 | 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | TODO | — | — | |
 | 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | TODO | — | — | |
@@ -1417,4 +1511,5 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 | 2026-08-16 | **D-24 (new) — eviction policy:** PWA install + granted `navigator.storage.persist()` before any offline write. R-17 repurposed from Tauri packaging to OPFS eviction and raised to score 20 — it is the only unrecoverable failure mode in the offline design |
 | 2026-08-16 | **D-20 revised — Tauri REJECTED.** No desktop shell, no local Node/NestJS sidecar, no Rust. Offline lives inside the PWA. §1.2 delivery sequence, §1.3 stack table, §2.1 layout (`apps/desktop` removed, `adapter-sqlite` → `adapter-sqlite-wasm`), §2.3 write path, §5.23, Phase 12 slices and §6.5 updated. Consequence accepted: no OS-level integration, offline capacity bounded by browser quota |
 | 2026-08-16 | **D-07 revised.** OTP is for signup verification and password recovery only — **never daily login**. Signup takes one field (mobile or email), sends a 6-digit OTP to that channel, then sets username + password + PIN. Daily login is email/phone + password, PIN, or Google. Forgot password sends OTP to the registered email or phone. Full flows, OTP rules and identifier rules added to §5.3 M02; Phase 1 slices 1.1/1.2 updated. Reason: OTP-per-login makes SMS cost scale with daily usage |
+| 2026-08-16 | **§2.7 added — frontend conventions UI-01…UI-44; D-37 and D-38 added.** Familiar consumer-app navigation patterns without visual imitation, English UI with selective Bangla helper text explaining business meaning (implements D-12, unchanged), four screen patterns, four required states, mutation and POS rules, PrimeVue 4 as the component library. No business rule changed. Reason: the spec required every slice to ship a real UI and be accepted in the UI, but specified nothing about what a screen should look like or how it should behave — leaving each slice to invent its own, which is expensive to unwind at thirty screens |
 | 2026-08-16 | **D-01 revised.** Single writer per tenant now bound to a **registered browser profile**, not a device — a different browser or cleared profile on the same PC is a different writer. Authority bound to a profile keypair, so copying OPFS files does not carry write authority. Sync matrix extended with SY-13…SY-16 |
