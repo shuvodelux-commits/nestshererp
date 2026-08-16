@@ -5,7 +5,7 @@ import {
   normalizeIdentifier,
   rejectionFor,
 } from '@sher/core-domain';
-import type { IdentifierChannel, OtpRejection } from '@sher/core-domain';
+import type { IdentifierChannel, OtpPurpose, OtpRejection } from '@sher/core-domain';
 import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { RegistrationResponse } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
@@ -56,6 +56,7 @@ const DEFAULT_TIMEZONE = 'Asia/Dhaka';
 const OWNER_ROLE_CODE = 'OWNER';
 /** 30 days (§5.3), matching the sessions a login mints. */
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
+const SIGNUP: OtpPurpose = 'SIGNUP';
 
 const REJECTION_ERRORS: Record<OtpRejection, ErrorCode> = {
   // A consumed code is reported as expired: saying "already used" tells an
@@ -214,7 +215,7 @@ export class CompleteRegistrationService {
       message: 'Request a new verification code',
     } as const;
 
-    const otp = await this.otps.findLatest(tx, identifier);
+    const otp = await this.otps.findLatest(tx, identifier, SIGNUP);
     if (otp === null) return expired;
 
     const rejection = rejectionFor(otp, this.clock.now());

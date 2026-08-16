@@ -113,6 +113,64 @@ export const loginResponseSchema = z
 
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 
+/* --- forgot password (D-07) ---------------------------------------------- */
+
+export const requestPasswordResetRequestSchema = z
+  .object({
+    identifier: z.string().min(1).max(120),
+  })
+  .strict();
+
+export type RequestPasswordResetRequest = z.infer<typeof requestPasswordResetRequestSchema>;
+
+/**
+ * Identical in shape to the signup response and deliberately kept separate: the
+ * two endpoints answer different questions, and collapsing them into one schema
+ * would tie a future change in one flow to the other.
+ */
+export const requestPasswordResetResponseSchema = z
+  .object({
+    /** Derived from the *format* of what was typed, so it reveals no account. */
+    channel: z.enum(['EMAIL', 'PHONE']),
+    /** Development transport only; never populated in production (slice 1.7). */
+    devCode: z.string().optional(),
+  })
+  .strict();
+
+export type RequestPasswordResetResponse = z.infer<typeof requestPasswordResetResponseSchema>;
+
+export const resetPasswordRequestSchema = z
+  .object({
+    identifier: z.string().min(1).max(120),
+    otpCode: z.string().length(6),
+    password: z.string().min(1).max(200),
+  })
+  .strict();
+
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
+
+/* --- change password / PIN in Settings (§5.3) ---------------------------- */
+
+export const changePasswordRequestSchema = z
+  .object({
+    /** This device's session, so it survives while every other one is revoked. */
+    refreshToken: z.string().min(1).max(200),
+    currentPassword: z.string().min(1).max(200),
+    newPassword: z.string().min(1).max(200),
+  })
+  .strict();
+
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
+export const changePinRequestSchema = z
+  .object({
+    currentPin: z.string().min(1).max(20),
+    newPin: z.string().min(1).max(20),
+  })
+  .strict();
+
+export type ChangePinRequest = z.infer<typeof changePinRequestSchema>;
+
 export const dashboardSummaryResponseSchema = z
   .object({
     businessName: z.string(),

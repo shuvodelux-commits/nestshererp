@@ -3,3 +3,6 @@ export const VERIFY_SIGNUP_OTP_SERVICE = Symbol('VerifySignupOtpService');
 export const COMPLETE_REGISTRATION_SERVICE = Symbol('CompleteRegistrationService');
 export const GET_DASHBOARD_SUMMARY_SERVICE = Symbol('GetDashboardSummaryService');
 export const LOGIN_SERVICE = Symbol('LoginService');
+export const REQUEST_PASSWORD_RESET_SERVICE = Symbol('RequestPasswordResetService');
+export const RESET_PASSWORD_SERVICE = Symbol('ResetPasswordService');
+export const CHANGE_CREDENTIALS_SERVICE = Symbol('ChangeCredentialsService');

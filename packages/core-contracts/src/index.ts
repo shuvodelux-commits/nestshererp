@@ -5,8 +5,13 @@ export { Permission } from './permissions';
 export { createNoteRequestSchema, noteResponseSchema } from './notes';
 export type { CreateNoteRequest, NoteResponse } from './notes';
 export {
+  changePasswordRequestSchema,
+  changePinRequestSchema,
   completeRegistrationRequestSchema,
   dashboardSummaryResponseSchema,
+  requestPasswordResetRequestSchema,
+  requestPasswordResetResponseSchema,
+  resetPasswordRequestSchema,
   registrationResponseSchema,
   requestSignupOtpRequestSchema,
   loginResponseSchema,
@@ -18,8 +23,13 @@ export {
   verifySignupOtpRequestSchema,
 } from './auth';
 export type {
+  ChangePasswordRequest,
+  ChangePinRequest,
   CompleteRegistrationRequest,
   DashboardSummaryResponse,
+  RequestPasswordResetRequest,
+  RequestPasswordResetResponse,
+  ResetPasswordRequest,
   RegistrationResponse,
   RequestSignupOtpRequest,
   LoginResponse,

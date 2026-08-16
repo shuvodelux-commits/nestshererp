@@ -3,7 +3,7 @@
 // Re-exported so apps/api reaches the domain through this layer rather than
 // importing core-domain directly (§2.1: api → application → domain).
 export { OTP_LENGTH } from '@sher/core-domain';
-export type { IdentifierChannel } from '@sher/core-domain';
+export type { IdentifierChannel, OtpPurpose } from '@sher/core-domain';
 
 export type { TenantContext } from './ports/tenant-context';
 export type { Tx, UnitOfWork } from './ports/unit-of-work';
@@ -53,3 +53,12 @@ export type { VerifySignupOtpCommand } from './auth/verify-signup-otp-service';
 export { CompleteRegistrationService } from './auth/complete-registration-service';
 export type { CompleteRegistrationCommand } from './auth/complete-registration-service';
 export { GetDashboardSummaryService } from './auth/get-dashboard-summary-service';
+export { RequestPasswordResetService } from './auth/request-password-reset-service';
+export type { RequestPasswordResetCommand } from './auth/request-password-reset-service';
+export { ResetPasswordService } from './auth/reset-password-service';
+export type { ResetPasswordCommand } from './auth/reset-password-service';
+export { ChangeCredentialsService } from './auth/change-credentials-service';
+export type {
+  ChangePasswordCommand,
+  ChangePinCommand,
+} from './auth/change-credentials-service';

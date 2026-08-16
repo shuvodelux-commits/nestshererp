@@ -137,6 +137,7 @@ function useAnotherAccount(): void {
           <button type="button" class="linkish" @click="useAnotherAccount">
             Sign in to a different account
           </button>
+          · <RouterLink to="/forgot-password">Forgot your password?</RouterLink>
         </p>
       </template>
 
@@ -193,6 +194,10 @@ function useAnotherAccount(): void {
           >
             Use PIN instead
           </button>
+
+          <p class="help">
+            <RouterLink to="/forgot-password">Forgot your password?</RouterLink>
+          </p>
         </form>
 
         <div class="divider"><span>or</span></div>

@@ -18,7 +18,13 @@ import { useSession } from '../../auth/session';
 const route = useRoute();
 const { businessName } = useSession();
 
-const items = [{ label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1' }] as const;
+const items = [
+  { label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1' },
+  // Security is the whole of Settings today. The rest of §5.21 — costing method,
+  // negative stock policy, terminology, numbering — arrives in slice 1.5, and
+  // listing those names now would render controls that 403 (UI-09).
+  { label: 'Security', icon: '⚿', to: '/settings/security', slice: '1.2b' },
+] as const;
 </script>
 
 <template>
@@ -48,7 +54,7 @@ const items = [{ label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1'
 
     <div class="sidebar-foot">
       <p class="absent-note">
-        Users, roles, settings and the audit trail appear here as each is built.
+        Users, roles, the rest of settings and the audit trail appear here as each is built.
         Products, sales, POS and inventory follow in later phases.
       </p>
     </div>

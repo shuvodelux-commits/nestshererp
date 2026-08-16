@@ -3,6 +3,7 @@ import type {
   DashboardSummaryResponse,
   LoginResponse,
   RegistrationResponse,
+  RequestPasswordResetResponse,
   RequestSignupOtpResponse,
 } from '@sher/core-contracts';
 
@@ -64,4 +65,53 @@ export function refreshSession(refreshToken: string): Promise<LoginResponse> {
 
 export function logout(refreshToken: string): Promise<void> {
   return request('/api/v1/auth/logout', { method: 'POST', body: { refreshToken } });
+}
+
+/* --- forgot password (D-07) ---------------------------------------------- */
+
+/**
+ * The server answers the same whether or not the identifier has an account, so
+ * this screen can never be used to discover which shops are registered.
+ */
+export function requestPasswordResetOtp(identifier: string): Promise<RequestPasswordResetResponse> {
+  return request('/api/v1/auth/password/otp', { method: 'POST', body: { identifier } });
+}
+
+/** Returns nothing: a reset does not sign you in — you log in with the new password. */
+export function resetPassword(
+  identifier: string,
+  otpCode: string,
+  password: string,
+): Promise<void> {
+  return request('/api/v1/auth/password/reset', {
+    method: 'POST',
+    body: { identifier, otpCode, password },
+  });
+}
+
+/* --- Settings → Security (§5.3) ------------------------------------------ */
+
+/**
+ * The refresh token travels with the request so the server knows which session
+ * to spare: changing a password invalidates all **other** sessions, not this one.
+ */
+export function changePassword(
+  token: string,
+  refreshToken: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return request('/api/v1/settings/security/password', {
+    method: 'POST',
+    token,
+    body: { refreshToken, currentPassword, newPassword },
+  });
+}
+
+export function changePin(token: string, currentPin: string, newPin: string): Promise<void> {
+  return request('/api/v1/settings/security/pin', {
+    method: 'POST',
+    token,
+    body: { currentPin, newPin },
+  });
 }

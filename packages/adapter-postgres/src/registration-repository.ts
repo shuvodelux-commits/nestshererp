@@ -13,7 +13,7 @@ import type {
 } from '@sher/core-application';
 import type { IdentifierChannel } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { roles, tenants, userIdentifiers, users } from './schema';
 import { txOf } from './unit-of-work';
@@ -94,6 +94,42 @@ export class PostgresUserRepository implements UserRepository {
     const row = rows[0];
     if (row === undefined) return null;
     return { ...row, userId: row.userId.trim(), username: row.username ?? '' };
+  }
+
+  /**
+   * `users` is Class A (mutable): the row is updated in place and the change is
+   * evidenced by the audit event the use case writes, not by a second row. The
+   * WHERE clause is tenant-scoped as well as id-scoped — RLS is the backstop,
+   * never the only guard (R-C4).
+   */
+  async updatePasswordHash(
+    tx: Tx,
+    ctx: TenantContext,
+    userId: string,
+    hash: string,
+  ): Promise<void> {
+    await this.updateCredential(tx, ctx, userId, { passwordHash: hash });
+  }
+
+  async updatePinHash(tx: Tx, ctx: TenantContext, userId: string, hash: string): Promise<void> {
+    await this.updateCredential(tx, ctx, userId, { pinHash: hash });
+  }
+
+  private async updateCredential(
+    tx: Tx,
+    ctx: TenantContext,
+    userId: string,
+    credential: { passwordHash: string } | { pinHash: string },
+  ): Promise<void> {
+    await txOf(tx)
+      .update(users)
+      .set({
+        ...credential,
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+        version: sql`${users.version} + 1`,
+      })
+      .where(and(eq(users.tenantId, ctx.tenantId), eq(users.id, userId), isNull(users.deletedAt)));
   }
 
   async insert(tx: Tx, ctx: TenantContext, user: NewUser): Promise<void> {

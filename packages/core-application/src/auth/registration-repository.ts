@@ -62,6 +62,13 @@ export interface UserRepository {
    * deleted — a disabled account must not be able to sign in.
    */
   findCredentials(tx: Tx, ctx: TenantContext, userId: string): Promise<UserCredentials | null>;
+  /**
+   * Replaces the stored password hash (§5.3). Separate from the PIN so a
+   * recovery flow can never touch the PIN by accident, and so an audit event
+   * describes exactly one credential.
+   */
+  updatePasswordHash(tx: Tx, ctx: TenantContext, userId: string, hash: string): Promise<void>;
+  updatePinHash(tx: Tx, ctx: TenantContext, userId: string, hash: string): Promise<void>;
 }
 
 /**

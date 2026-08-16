@@ -5,4 +5,4 @@ export { isValidPassword, isValidPin, PASSWORD_MIN_LENGTH, PIN_LENGTH } from './
 export { classifyIdentifier, normalizeIdentifier } from './auth/identifier';
 export type { IdentifierChannel } from './auth/identifier';
 export { isExpired, OTP_LENGTH, OTP_MAX_ATTEMPTS, OTP_TTL_SECONDS, rejectionFor } from './auth/otp';
-export type { OtpRejection, OtpState } from './auth/otp';
+export type { OtpPurpose, OtpRejection, OtpState } from './auth/otp';

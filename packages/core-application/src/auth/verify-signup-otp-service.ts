@@ -1,5 +1,5 @@
 import { classifyIdentifier, normalizeIdentifier, rejectionFor } from '@sher/core-domain';
-import type { OtpRejection } from '@sher/core-domain';
+import type { OtpPurpose, OtpRejection } from '@sher/core-domain';
 import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 
@@ -20,6 +20,8 @@ export interface VerifySignupOtpCommand {
   readonly identifier: string;
   readonly otpCode: string;
 }
+
+const SIGNUP: OtpPurpose = 'SIGNUP';
 
 const REJECTION_ERRORS: Record<OtpRejection, ErrorCode> = {
   CONSUMED: ErrorCode.OTP_EXPIRED,
@@ -68,7 +70,7 @@ export class VerifySignupOtpService {
   }
 
   private async check(tx: Tx, identifier: string, submitted: string): Promise<Outcome> {
-    const otp = await this.otps.findLatest(tx, identifier);
+    const otp = await this.otps.findLatest(tx, identifier, SIGNUP);
     if (otp === null) return { ok: false, code: ErrorCode.OTP_EXPIRED };
 
     const rejection = rejectionFor(otp, this.clock.now());

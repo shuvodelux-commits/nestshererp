@@ -1,4 +1,5 @@
 import { classifyIdentifier, normalizeIdentifier } from '@sher/core-domain';
+import type { OtpPurpose } from '@sher/core-domain';
 import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { RequestSignupOtpResponse } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
@@ -29,6 +30,9 @@ import type { UserIdentifierRepository } from './registration-repository';
 export interface RequestSignupOtpCommand {
   readonly identifier: string;
 }
+
+/** Signup codes are scoped to this purpose; recovery codes cannot be spent here. */
+const SIGNUP: OtpPurpose = 'SIGNUP';
 
 export class RequestSignupOtpService {
   constructor(
@@ -70,7 +74,7 @@ export class RequestSignupOtpService {
       }
 
       // A new request kills the previous code, even inside its 5-minute window.
-      await this.otps.invalidateAll(tx, identifier);
+      await this.otps.invalidateAll(tx, identifier, SIGNUP);
 
       const code = this.codes.generate();
       const otpId = Ulid.generate(this.clock);
@@ -78,6 +82,7 @@ export class RequestSignupOtpService {
         id: otpId,
         identifier,
         channel,
+        purpose: SIGNUP,
         codeHash: await this.hasher.hash(code),
       });
 

@@ -15,10 +15,13 @@ import type {
   UserRepository,
 } from '@sher/core-application';
 import {
+  ChangeCredentialsService,
   CompleteRegistrationService,
   GetDashboardSummaryService,
   LoginService,
+  RequestPasswordResetService,
   RequestSignupOtpService,
+  ResetPasswordService,
   VerifySignupOtpService,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
@@ -41,17 +44,28 @@ import {
 } from '../infrastructure/tokens';
 import { DashboardController } from './dashboard.controller';
 import { LoginController } from './login.controller';
+import { PasswordRecoveryController } from './password-recovery.controller';
 import { RegistrationController } from './registration.controller';
+import { SecurityController } from './security.controller';
 import {
+  CHANGE_CREDENTIALS_SERVICE,
   COMPLETE_REGISTRATION_SERVICE,
   GET_DASHBOARD_SUMMARY_SERVICE,
   LOGIN_SERVICE,
+  REQUEST_PASSWORD_RESET_SERVICE,
   REQUEST_SIGNUP_OTP_SERVICE,
+  RESET_PASSWORD_SERVICE,
   VERIFY_SIGNUP_OTP_SERVICE,
 } from './tokens';
 
 @Module({
-  controllers: [RegistrationController, DashboardController, LoginController],
+  controllers: [
+    RegistrationController,
+    DashboardController,
+    LoginController,
+    PasswordRecoveryController,
+    SecurityController,
+  ],
   providers: [
     {
       provide: REQUEST_SIGNUP_OTP_SERVICE,
@@ -163,6 +177,83 @@ import {
         GOOGLE_VERIFIER,
         AUDIT_WRITER,
         CLOCK,
+      ],
+    },
+    {
+      provide: REQUEST_PASSWORD_RESET_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        otps: OtpRepository,
+        identifiers: UserIdentifierRepository,
+        codes: OtpCodeGenerator,
+        hasher: PasswordHasher,
+        verifier: IdentityVerifier,
+        audit: AuditWriter,
+        clock: Clock,
+      ): RequestPasswordResetService =>
+        new RequestPasswordResetService(
+          uow,
+          otps,
+          identifiers,
+          codes,
+          hasher,
+          verifier,
+          audit,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        OTP_REPOSITORY,
+        USER_IDENTIFIER_REPOSITORY,
+        OTP_CODE_GENERATOR,
+        PASSWORD_HASHER,
+        IDENTITY_VERIFIER,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
+    {
+      provide: RESET_PASSWORD_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        otps: OtpRepository,
+        identifiers: UserIdentifierRepository,
+        users: UserRepository,
+        sessions: SessionRepository,
+        hasher: PasswordHasher,
+        audit: AuditWriter,
+        clock: Clock,
+      ): ResetPasswordService =>
+        new ResetPasswordService(uow, otps, identifiers, users, sessions, hasher, audit, clock),
+      inject: [
+        UNIT_OF_WORK,
+        OTP_REPOSITORY,
+        USER_IDENTIFIER_REPOSITORY,
+        USER_REPOSITORY,
+        SESSION_REPOSITORY,
+        PASSWORD_HASHER,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
+    {
+      provide: CHANGE_CREDENTIALS_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        users: UserRepository,
+        sessions: SessionRepository,
+        hasher: PasswordHasher,
+        tokens: TokenIssuer,
+        audit: AuditWriter,
+      ): ChangeCredentialsService =>
+        new ChangeCredentialsService(uow, users, sessions, hasher, tokens, audit),
+      inject: [
+        UNIT_OF_WORK,
+        USER_REPOSITORY,
+        SESSION_REPOSITORY,
+        PASSWORD_HASHER,
+        TOKEN_ISSUER,
+        AUDIT_WRITER,
       ],
     },
     {

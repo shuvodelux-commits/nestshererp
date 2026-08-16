@@ -1,6 +1,6 @@
 import type { NewSession, SessionRepository, StoredSession, Tx } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 
 import { refreshTokens } from './schema';
 import { txOf } from './unit-of-work';
@@ -56,7 +56,12 @@ export class PostgresSessionRepository implements SessionRepository {
       .where(eq(refreshTokens.id, id));
   }
 
-  async revokeAllForUser(tx: Tx, tenantId: string, userId: string): Promise<void> {
+  async revokeAllForUser(
+    tx: Tx,
+    tenantId: string,
+    userId: string,
+    exceptSessionId: string | null,
+  ): Promise<void> {
     await txOf(tx)
       .update(refreshTokens)
       .set({ revokedAt: this.clock.now() })
@@ -65,6 +70,9 @@ export class PostgresSessionRepository implements SessionRepository {
           eq(refreshTokens.tenantId, tenantId),
           eq(refreshTokens.userId, userId),
           isNull(refreshTokens.revokedAt),
+          // The device doing the changing keeps its session (§5.3: "all *other*
+          // sessions"). A recovery reset passes null and spares nothing.
+          ...(exceptSessionId === null ? [] : [ne(refreshTokens.id, exceptSessionId)]),
         ),
       );
   }

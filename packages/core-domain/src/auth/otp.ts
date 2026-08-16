@@ -14,6 +14,17 @@ export const OTP_LENGTH = 6;
 export const OTP_TTL_SECONDS = 300;
 export const OTP_MAX_ATTEMPTS = 5;
 
+/**
+ * What a code was issued for (D-07): identity is verified once at signup and
+ * again at password recovery, and those are the only two.
+ *
+ * The purpose is part of a code's identity, not a label on it. A code sent to
+ * prove "this phone is mine" must not be spendable to set a new password on an
+ * account that already exists — so every lookup is scoped by purpose, and the
+ * two flows can never see each other's codes.
+ */
+export type OtpPurpose = 'SIGNUP' | 'PASSWORD_RESET';
+
 export interface OtpState {
   readonly attemptCount: number;
   readonly createdAt: Date;
