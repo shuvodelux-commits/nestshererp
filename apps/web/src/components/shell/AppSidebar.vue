@@ -1,49 +1,57 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router';
 
+import { useSession } from '../../auth/session';
+
 /**
  * UI-08: left sidebar of modules. UI-10: one level deep.
  *
- * It holds exactly one destination, because exactly one module exists. The
- * permission-filtered generation UI-09 requires becomes meaningful once roles
- * exist (slice 1.4) and there is more than one thing to hide — adding the
- * machinery now would mean writing it against a list of one.
+ * A **light** sidebar, following the desktop convention — the accent colour is
+ * spent on the selected row and nothing else. Not a dark rail.
  *
- * The sidebar is a translucent layer over the same background as the content,
- * not a dark block bolted to the side.
+ * UI-09: navigation is generated from the permission-filtered feature list —
+ * never render a control that will 403. Modules that do not exist yet are
+ * therefore **absent**, not greyed out: a disabled item is still a rendered
+ * control. The list grows as each slice ships it; the permission filtering
+ * becomes real machinery once roles exist (slice 1.4).
  */
 const route = useRoute();
+const { businessName } = useSession();
 
-const items = [{ label: 'Dashboard', icon: 'pi-home', to: '/dashboard' }] as const;
+const items = [{ label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1' }] as const;
 </script>
 
 <template>
   <aside class="sidebar">
     <div class="brand">
-      <span class="mark">S</span>
-      <span class="name">SherERP</span>
+      <span class="brand-mark">S</span>
+      <span class="brand-text">
+        <strong>SherERP</strong>
+        <span>{{ businessName ?? '—' }}</span>
+      </span>
     </div>
 
-    <nav aria-label="Modules">
-      <ul>
-        <li v-for="item in items" :key="item.to">
-          <RouterLink
-            :to="item.to"
-            class="link"
-            :class="{ active: route.path === item.to }"
-            :aria-current="route.path === item.to ? 'page' : undefined"
-          >
-            <i :class="['pi', item.icon]" aria-hidden="true" />
-            <span>{{ item.label }}</span>
-          </RouterLink>
-        </li>
-      </ul>
+    <nav class="nav" aria-label="Modules">
+      <RouterLink
+        v-for="item in items"
+        :key="item.to"
+        :to="item.to"
+        class="nav-item"
+        :class="{ 'is-current': route.path === item.to }"
+        :aria-current="route.path === item.to ? 'page' : undefined"
+      >
+        <span class="ico" aria-hidden="true">{{ item.icon }}</span>
+        {{ item.label }}
+        <span class="slice">{{ item.slice }}</span>
+      </RouterLink>
     </nav>
 
-    <p class="footnote">
-      More modules appear here as they are built — products, sales, inventory and
-      accounting each arrive in their own release.
-    </p>
+    <div class="sidebar-foot">
+      <p class="absent-note">
+        Users, roles, settings and the audit trail appear here as each is built.
+        Products, sales, POS and inventory follow in later phases.
+      </p>
+    </div>
   </aside>
 </template>
 
@@ -51,98 +59,137 @@ const items = [{ label: 'Dashboard', icon: 'pi-home', to: '/dashboard' }] as con
 .sidebar {
   width: var(--sher-sidebar-width);
   flex-shrink: 0;
+  background: var(--sher-sidebar);
+  border-right: var(--sher-border-w) solid var(--sher-line);
   display: flex;
   flex-direction: column;
-  gap: var(--sher-space-5);
-  padding: var(--sher-space-5) var(--sher-space-4);
-  background: var(--sher-glass-bg);
-  backdrop-filter: blur(var(--sher-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sher-glass-blur));
-  border-right: 1px solid var(--sher-border-glass);
+  padding: 0 0 14px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: var(--sher-space-3);
-  padding: 0 var(--sher-space-2);
+  gap: 10px;
+  padding: 14px 14px 16px;
 }
 
-.mark {
+.brand-mark {
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--sher-radius-sm);
-  background: linear-gradient(135deg, var(--sher-primary), var(--sher-primary-dark));
-  color: var(--sher-text-inverse);
+  border-radius: var(--sher-radius);
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
   font-weight: 700;
+  font-size: 14px;
 }
 
-.name {
-  font-size: var(--sher-text-lg);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.brand-text {
   display: flex;
   flex-direction: column;
-  gap: var(--sher-space-1);
+  line-height: 1.25;
+  min-width: 0;
 }
 
-.link {
+.brand-text strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.brand-text span {
+  font-size: var(--sher-text-xs);
+  color: var(--sher-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+}
+
+.nav-item {
   display: flex;
   align-items: center;
-  gap: var(--sher-space-3);
-  padding: 10px var(--sher-space-3);
-  border-radius: var(--sher-radius-sm);
+  gap: 10px;
+  padding: var(--sher-nav-pad);
+  border-radius: var(--sher-radius);
   color: var(--sher-text);
   text-decoration: none;
-  font-weight: 500;
-  transition: background var(--sher-transition), color var(--sher-transition);
+  font-size: var(--sher-text-base);
+  transition: background var(--sher-transition);
 }
 
-.link:hover {
-  background: rgba(255, 255, 255, 0.6);
+.nav-item:hover {
+  background: rgba(31, 36, 41, 0.08);
 }
 
-/* A subtle active state, not a heavy coloured block. */
-.link.active {
-  background: var(--sher-primary-soft);
-  color: var(--sher-primary-dark);
+.nav-item.is-current {
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
   font-weight: 600;
 }
 
-.footnote {
-  margin: auto 0 0;
-  padding: 0 var(--sher-space-2);
-  font-size: var(--sher-text-xs);
-  line-height: 1.6;
+.ico {
+  width: 16px;
+  text-align: center;
+  opacity: 0.75;
+  font-size: 12px;
+}
+
+.slice {
+  margin-left: auto;
+  font-family: var(--sher-font-mono);
+  font-size: 10px;
+  color: var(--sher-text-muted);
+  border: 1px solid var(--sher-line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.nav-item.is-current .slice {
+  color: var(--sher-on-primary);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 14px 14px 0;
+}
+
+.absent-note {
+  margin: 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--sher-line);
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--sher-text-muted);
 }
 
-/* UI-11: the sidebar collapses on tablet; the same destinations, same order. */
+/* UI-11: the same destinations, the same order, collapsed to icons on tablet. */
 @media (max-width: 1023px) {
   .sidebar {
-    width: 68px;
-    padding: var(--sher-space-5) var(--sher-space-2);
+    width: 56px;
   }
 
-  .name,
-  .footnote {
+  .brand-text,
+  .sidebar-foot,
+  .slice {
     display: none;
   }
 
-  .link {
+  .nav-item {
     justify-content: center;
+    font-size: 0;
+    gap: 0;
   }
 
-  .link span {
-    display: none;
+  .ico {
+    font-size: 14px;
   }
 }
 </style>

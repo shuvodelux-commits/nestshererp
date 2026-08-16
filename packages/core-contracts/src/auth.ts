@@ -29,6 +29,16 @@ export const requestSignupOtpResponseSchema = z
 
 export type RequestSignupOtpResponse = z.infer<typeof requestSignupOtpResponseSchema>;
 
+/** Checks a code without spending it, so the UI can react as it is typed. */
+export const verifySignupOtpRequestSchema = z
+  .object({
+    identifier: z.string().min(1).max(120),
+    otpCode: z.string().length(6),
+  })
+  .strict();
+
+export type VerifySignupOtpRequest = z.infer<typeof verifySignupOtpRequestSchema>;
+
 export const completeRegistrationRequestSchema = z
   .object({
     identifier: z.string().min(1).max(120),

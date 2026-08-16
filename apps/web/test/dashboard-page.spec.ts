@@ -56,6 +56,6 @@ describe('DashboardPage', () => {
     expect(wrapper.text()).toContain('NOT_FOUND');
     expect(wrapper.text()).toContain('Business not found');
     expect(wrapper.text()).not.toContain('Something went wrong');
-    expect(wrapper.find('.retry').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Try again');
   });
 });

@@ -3,21 +3,27 @@ import AppSidebar from './AppSidebar.vue';
 import AppTopBar from './AppTopBar.vue';
 
 /**
- * UI-08: one shell — left sidebar (modules) · top bar (search, notifications,
- * business context) · content area. POS will run full-screen without the
- * sidebar when it arrives in Phase 6; that is a separate layout, not a variant
- * of this one.
+ * UI-08: one shell — left sidebar (modules) · top bar · content area, targeting
+ * desktop ≥1280px and usable at 1024px (UI-41).
+ *
+ * POS runs full-screen without the sidebar when it arrives in Phase 6. That is
+ * a separate layout, not a variant of this one.
  */
+defineProps<{ title: string; helpBn?: string }>();
 </script>
 
 <template>
   <div class="shell">
     <AppSidebar />
-    <div class="column">
+    <div class="main">
       <AppTopBar />
-      <main class="content">
+      <div class="content">
+        <div class="page-title">
+          <h1>{{ title }}</h1>
+          <p v-if="helpBn !== undefined" class="sher-bn">{{ helpBn }}</p>
+        </div>
         <slot />
-      </main>
+      </div>
     </div>
   </div>
 </template>
@@ -28,22 +34,31 @@ import AppTopBar from './AppTopBar.vue';
   height: 100%;
 }
 
-.column {
+.main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  background: var(--sher-surface);
 }
 
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--sher-space-6);
+  padding: 20px 24px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-5);
 }
 
-@media (max-width: 767px) {
-  .content {
-    padding: var(--sher-space-4);
-  }
+.page-title h1 {
+  margin: 0;
+  font-size: var(--sher-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page-title p {
+  margin: 3px 0 0;
 }
 </style>

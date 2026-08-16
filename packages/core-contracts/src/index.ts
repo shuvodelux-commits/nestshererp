@@ -10,6 +10,7 @@ export {
   registrationResponseSchema,
   requestSignupOtpRequestSchema,
   requestSignupOtpResponseSchema,
+  verifySignupOtpRequestSchema,
 } from './auth';
 export type {
   CompleteRegistrationRequest,
@@ -17,4 +18,5 @@ export type {
   RegistrationResponse,
   RequestSignupOtpRequest,
   RequestSignupOtpResponse,
+  VerifySignupOtpRequest,
 } from './auth';

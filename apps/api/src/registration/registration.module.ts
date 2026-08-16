@@ -16,6 +16,7 @@ import {
   CompleteRegistrationService,
   GetDashboardSummaryService,
   RequestSignupOtpService,
+  VerifySignupOtpService,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
@@ -39,6 +40,7 @@ import {
   COMPLETE_REGISTRATION_SERVICE,
   GET_DASHBOARD_SUMMARY_SERVICE,
   REQUEST_SIGNUP_OTP_SERVICE,
+  VERIFY_SIGNUP_OTP_SERVICE,
 } from './tokens';
 
 @Module({
@@ -67,6 +69,16 @@ import {
         AUDIT_WRITER,
         CLOCK,
       ],
+    },
+    {
+      provide: VERIFY_SIGNUP_OTP_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        otps: OtpRepository,
+        hasher: PasswordHasher,
+        clock: Clock,
+      ): VerifySignupOtpService => new VerifySignupOtpService(uow, otps, hasher, clock),
+      inject: [UNIT_OF_WORK, OTP_REPOSITORY, PASSWORD_HASHER, CLOCK],
     },
     {
       provide: COMPLETE_REGISTRATION_SERVICE,

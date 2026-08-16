@@ -16,6 +16,14 @@ export function requestSignupOtp(identifier: string): Promise<RequestSignupOtpRe
   return request('/api/v1/auth/registration/otp', { method: 'POST', body: { identifier } });
 }
 
+/** Checks the code without spending it, so step 2 can answer immediately. */
+export function verifySignupOtp(identifier: string, otpCode: string): Promise<{ verified: true }> {
+  return request('/api/v1/auth/registration/otp/verify', {
+    method: 'POST',
+    body: { identifier, otpCode },
+  });
+}
+
 /**
  * No `Idempotency-Key` (UI-34) on this one call: the idempotency store is
  * tenant-scoped and there is no tenant yet, so the server does not implement it

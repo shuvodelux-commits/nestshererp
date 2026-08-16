@@ -167,6 +167,57 @@ describe('requesting a signup code (D-07)', () => {
   });
 });
 
+describe('verifying a code without spending it', () => {
+  function verify(identifier: string, otpCode: string): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/v1/auth/registration/otp/verify')
+      .send({ identifier, otpCode });
+  }
+
+  it('accepts the right code and leaves it usable for registration', async () => {
+    const otpCode = await codeFor(PHONE);
+
+    const checked = await verify(PHONE, otpCode);
+    expect(checked.status).toBe(200);
+    expect(checked.body.data).toEqual({ verified: true });
+
+    // Not consumed — the same code still creates the account.
+    const otps = await pool.query('SELECT consumed_at FROM otp_codes');
+    expect(otps.rows).toEqual([{ consumed_at: null }]);
+
+    const registered = await register({ otpCode });
+    expect(registered.status).toBe(201);
+  });
+
+  it('rejects a wrong code and counts the attempt', async () => {
+    const otpCode = await codeFor(PHONE);
+    const wrong = otpCode === '000000' ? '111111' : '000000';
+
+    const response = await verify(PHONE, wrong);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('OTP_INCORRECT');
+    expect((await pool.query('SELECT attempt_count FROM otp_codes')).rows).toEqual([
+      { attempt_count: 1 },
+    ]);
+  });
+
+  it('is not a free brute-force oracle — it honours the 5-attempt cap', async () => {
+    const otpCode = await codeFor(PHONE);
+    const wrong = otpCode === '000000' ? '111111' : '000000';
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      expect((await verify(PHONE, wrong)).body.error.code).toBe('OTP_INCORRECT');
+    }
+
+    expect((await verify(PHONE, wrong)).body.error.code).toBe('OTP_MAX_ATTEMPTS_EXCEEDED');
+    // Even the correct code is dead now, here and at registration.
+    expect((await verify(PHONE, otpCode)).body.error.code).toBe('OTP_MAX_ATTEMPTS_EXCEEDED');
+    expect((await register({ otpCode })).body.error.code).toBe('OTP_MAX_ATTEMPTS_EXCEEDED');
+    expect(await accountCount()).toBe(0);
+  });
+});
+
 describe('completing registration', () => {
   it('creates exactly one tenant, Owner role and user, and returns a usable token', async () => {
     const response = await registerFully();

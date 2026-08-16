@@ -5,13 +5,18 @@
  * `import.meta.env.VITE_API_URL` is banned — baking it in forces a per-customer
  * frontend build and collapses the one-artifact rule.
  */
-interface RuntimeConfig {
+export interface RuntimeConfig {
   readonly apiBaseUrl: string;
+  /**
+   * Google OAuth client id (D-07). Absent until the deployment supplies one —
+   * the sign-in button says so rather than failing silently when it is missing.
+   */
+  readonly googleClientId?: string;
 }
 
 let configPromise: Promise<RuntimeConfig> | null = null;
 
-function loadConfig(): Promise<RuntimeConfig> {
+export function loadConfig(): Promise<RuntimeConfig> {
   configPromise ??= fetch('/config.json').then(async (response) => {
     if (!response.ok) throw new Error(`Cannot read /config.json (${String(response.status)})`);
     return (await response.json()) as RuntimeConfig;

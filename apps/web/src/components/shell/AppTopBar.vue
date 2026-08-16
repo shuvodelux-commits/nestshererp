@@ -4,44 +4,62 @@ import { computed } from 'vue';
 import { useSession } from '../../auth/session';
 
 /**
- * UI-08: global search, notifications, business context, avatar menu.
+ * UI-08: global search, business date, avatar menu.
  *
- * Search and notifications are rendered but explicitly disabled, with a title
- * explaining why — there is nothing to search and nothing to notify about until
- * products, parties and documents exist. UI-05 forbids hidden affordances, and a
- * control that silently does nothing is worse than one that says it is not ready.
+ * Two items §2.7 calls for are deliberately **not** here yet: the notification
+ * bell (nothing emits a notification until later phases) and the cash-session
+ * indicator (M19, Phase 6). Rendering either as a dead control would violate
+ * UI-05; their space in the bar is what stays reserved, not a greyed icon.
+ *
+ * Search is rendered but disabled, with a title saying why — there is nothing
+ * to search until products, parties and documents exist (slice 2.3 onward).
  */
 const { businessName, signOut } = useSession();
 
-const initial = computed(() => (businessName.value ?? '?').trim().charAt(0).toUpperCase());
+const initials = computed(() => {
+  const words = (businessName.value ?? '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '—';
+  const first = words[0]?.charAt(0) ?? '';
+  const second = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
+  return (first + second).toUpperCase();
+});
+
+/**
+ * UI-33: the tenant-timezone business date, never a raw UTC instant. The tenant
+ * timezone is fixed at Asia/Dhaka until Settings can change it (slice 1.5).
+ */
+const businessDate = computed(() =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date()),
+);
 </script>
 
 <template>
   <header class="topbar">
-    <label class="search" :title="'Search arrives with products and parties'">
-      <i class="pi pi-search" aria-hidden="true" />
+    <label class="search" title="Search arrives with products and parties">
+      <span class="ico" aria-hidden="true">⌕</span>
       <input
         type="search"
-        placeholder="Search products, customers, invoices"
+        placeholder="Search products, parties, documents"
         disabled
         aria-label="Global search"
       />
+      <kbd>/</kbd>
     </label>
 
-    <div class="actions">
-      <button
-        type="button"
-        class="icon-button"
-        disabled
-        title="Notifications arrive with the modules that raise them"
-        aria-label="Notifications"
-      >
-        <i class="pi pi-bell" aria-hidden="true" />
-      </button>
+    <div class="topbar-right">
+      <div class="bizdate">
+        <span class="bizdate-label">Business date</span>
+        <span class="bizdate-value">{{ businessDate }}</span>
+      </div>
 
-      <div class="business">
-        <span class="avatar" aria-hidden="true">{{ initial }}</span>
-        <span class="label">{{ businessName ?? 'SherERP' }}</span>
+      <div class="avatar-group">
+        <span class="avatar" aria-hidden="true">{{ initials }}</span>
+        <span class="avatar-name">{{ businessName ?? 'SherERP' }}</span>
       </div>
 
       <button type="button" class="sign-out" @click="signOut()">Sign out</button>
@@ -51,112 +69,138 @@ const initial = computed(() => (businessName.value ?? '?').trim().charAt(0).toUp
 
 <style scoped>
 .topbar {
-  height: var(--sher-topbar-height);
-  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sher-space-4);
-  padding: 0 var(--sher-space-5);
-  background: var(--sher-glass-bg);
-  backdrop-filter: blur(var(--sher-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sher-glass-blur));
-  border-bottom: 1px solid var(--sher-border-glass);
+  gap: 20px;
+  padding: 9px 18px;
+  background: var(--sher-headerbar);
+  border-bottom: var(--sher-border-w) solid var(--sher-line);
 }
 
 .search {
   display: flex;
   align-items: center;
-  gap: var(--sher-space-2);
+  gap: 8px;
   flex: 1;
   max-width: 460px;
-  padding: 8px var(--sher-space-3);
-  border-radius: var(--sher-radius-sm);
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--sher-border);
+  height: var(--sher-control-h);
+  padding: 0 10px;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-surface-3);
+}
+
+.search .ico {
   color: var(--sher-text-muted);
+  font-size: 14px;
 }
 
 .search input {
   flex: 1;
-  border: none;
+  min-width: 0;
+  border: 0;
   outline: none;
   background: transparent;
   font: inherit;
+  font-size: var(--sher-text-base);
   color: var(--sher-text);
+}
+
+.search input::placeholder {
+  color: var(--sher-text-muted);
 }
 
 .search input:disabled {
   cursor: not-allowed;
 }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sher-space-4);
-}
-
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
+.search kbd {
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-2xs);
+  border: 1px solid var(--sher-line);
+  border-radius: 3px;
+  padding: 1px 5px;
   color: var(--sher-text-muted);
-  cursor: not-allowed;
+  background: var(--sher-surface-2);
 }
 
-.business {
+.topbar-right {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--sher-space-2);
+  gap: 18px;
+}
+
+.bizdate {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.bizdate-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sher-text-muted);
+}
+
+.bizdate-value {
+  font-size: var(--sher-text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.avatar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .avatar {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--sher-primary), var(--sher-primary-dark));
-  color: var(--sher-text-inverse);
-  font-size: var(--sher-text-sm);
-  font-weight: 650;
+  font-size: var(--sher-text-2xs);
+  font-weight: 700;
 }
 
-.label {
-  font-weight: 550;
-  max-width: 200px;
+.avatar-name {
+  font-size: var(--sher-text-base);
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sign-out {
-  padding: 7px var(--sher-space-3);
-  border: 1px solid var(--sher-border);
-  border-radius: var(--sher-radius-sm);
-  background: rgba(255, 255, 255, 0.6);
-  color: var(--sher-text);
+  height: var(--sher-control-h);
+  padding: 0 12px;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-surface-3);
   font: inherit;
-  font-weight: 500;
+  font-size: var(--sher-text-base);
+  font-weight: 600;
+  color: var(--sher-text);
   cursor: pointer;
   transition: background var(--sher-transition);
 }
 
-.sher-sign-out:hover,
 .sign-out:hover {
-  background: #ffffff;
+  background: var(--sher-surface-2);
 }
 
 @media (max-width: 767px) {
-  .search {
-    max-width: none;
-  }
-
-  .label {
+  .bizdate,
+  .avatar-name,
+  .search kbd {
     display: none;
   }
 }

@@ -4,22 +4,21 @@ import { onMounted, ref } from 'vue';
 import { fetchDashboardSummary } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
+import AppCard from '../components/AppCard.vue';
 import AppShell from '../components/shell/AppShell.vue';
-import GlassCard from '../components/GlassCard.vue';
 
 /**
  * The dashboard after slice 1.1 — deliberately empty.
  *
- * UI-29: an empty state says what the screen will contain and links to the
- * action that creates the first record. There is no such action yet, so it says
- * so plainly. Inventing Today's Sales, Due Collection and Low Stock cards with
- * placeholder figures would be worse than showing nothing: those numbers arrive
- * in Phase 9 (slice 9.6) derived from journal lines and stock movements
- * (INV-10), and a dashboard that ever disagreed with the ledger is the exact
- * failure the invariant exists to prevent.
+ * UI-29: an empty state says what the screen would contain and links to the
+ * action that creates the first record. Inventing Today's Sales, Due Collection
+ * and Low Stock cards with placeholder figures would be worse than showing
+ * nothing: those numbers arrive in Phase 9 (slice 9.6) derived from journal
+ * lines and stock movements (INV-10), and a dashboard that ever disagreed with
+ * the ledger is the exact failure that invariant exists to prevent.
  *
- * UI-27: all four states are implemented — loading, empty, error and the
- * permission-denied/unauthenticated case the router guard handles.
+ * UI-27: loading, empty and error states are all implemented; the router guard
+ * covers the unauthenticated case.
  */
 const { accessToken, businessName } = useSession();
 
@@ -45,74 +44,83 @@ async function load(): Promise<void> {
 onMounted(load);
 
 const planned = [
-  { icon: 'pi-shopping-cart', label: "Today's sales", when: 'Sales & POS' },
-  { icon: 'pi-wallet', label: 'Due collection', when: 'Sales & payments' },
-  { icon: 'pi-credit-card', label: 'Payables', when: 'Purchase' },
-  { icon: 'pi-box', label: 'Low stock', when: 'Inventory' },
+  { label: "Today's sales", when: 'Sales & POS', phase: '6' },
+  { label: 'Due collection', when: 'Customer payments', phase: '6' },
+  { label: 'Payables', when: 'Purchases', phase: '5' },
+  { label: 'Cash in drawer', when: 'Cash & day session', phase: '4' },
+  { label: 'Low stock', when: 'Inventory', phase: '3' },
 ] as const;
 </script>
 
 <template>
-  <AppShell>
-    <!-- Loading: a skeleton, not a bare spinner (UI-27). -->
-    <div v-if="loading" class="grid" aria-busy="true" aria-label="Loading dashboard">
-      <div v-for="n in 2" :key="n" class="skeleton" />
+  <AppShell title="Dashboard" help-bn="আজকের বিক্রি, হাতে থাকা নগদ আর স্টকের অবস্থা এক জায়গায়">
+    <!-- Loading: skeleton rows, not a bare spinner (UI-27). -->
+    <div v-if="loading" class="skeleton-wrap" aria-busy="true" aria-label="Loading dashboard">
+      <div class="skeleton skeleton-lg" />
+      <div class="skeleton" />
     </div>
 
     <!-- Error: the server's own code and message, plus a retry (UI-28). -->
-    <GlassCard v-else-if="error !== null" title="Could not load your dashboard">
+    <AppCard v-else-if="error !== null" title="Could not load your dashboard">
       <p class="error-code">{{ error.code }}</p>
       <p class="error-message">{{ error.message }}</p>
-      <button type="button" class="retry" @click="load">Try again</button>
-    </GlassCard>
+      <button type="button" class="btn btn-ghost" @click="load">Try again</button>
+    </AppCard>
 
-    <div v-else class="grid">
-      <GlassCard>
-        <p class="eyebrow">Signed in to</p>
-        <h1 class="business">{{ businessName }}</h1>
-        <p class="welcome">
-          Your business is set up. There is nothing to report yet because no
-          products, sales or purchases have been recorded.
+    <template v-else>
+      <div class="empty">
+        <div class="empty-mark" aria-hidden="true">▤</div>
+        <h2>Nothing recorded yet</h2>
+        <p>
+          <strong>{{ businessName }}</strong> is set up and ready. This is where
+          today's sales, cash position and low-stock alerts will appear once you
+          start trading.
         </p>
-      </GlassCard>
+        <p class="empty-foot">
+          There is nothing to add yet — products, customers and sales each arrive
+          with the module that records them.
+        </p>
+      </div>
 
-      <GlassCard
+      <AppCard
         title="What will appear here"
         subtitle="Each figure arrives with the module that produces it, calculated from your ledger — never estimated."
       >
         <ul class="planned">
           <li v-for="item in planned" :key="item.label">
-            <i :class="['pi', item.icon]" aria-hidden="true" />
             <span class="planned-label">{{ item.label }}</span>
             <span class="planned-when">{{ item.when }}</span>
+            <span class="phase">Phase {{ item.phase }}</span>
           </li>
         </ul>
-      </GlassCard>
-    </div>
+      </AppCard>
+    </template>
   </AppShell>
 </template>
 
 <style scoped>
-.grid {
-  display: grid;
+.skeleton-wrap {
+  display: flex;
+  flex-direction: column;
   gap: var(--sher-space-5);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: start;
-  max-width: 1100px;
 }
 
 .skeleton {
-  height: 190px;
-  border-radius: var(--sher-radius);
+  height: 120px;
+  border-radius: var(--sher-radius-lg);
+  border: 1px solid var(--sher-line);
   background: linear-gradient(
     100deg,
-    rgba(255, 255, 255, 0.4) 30%,
-    rgba(255, 255, 255, 0.75) 50%,
-    rgba(255, 255, 255, 0.4) 70%
+    var(--sher-surface-3) 30%,
+    var(--sher-surface-2) 50%,
+    var(--sher-surface-3) 70%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
-  border: 1px solid var(--sher-border-glass);
+}
+
+.skeleton-lg {
+  height: 190px;
 }
 
 @keyframes shimmer {
@@ -124,66 +132,100 @@ const planned = [
   }
 }
 
-.eyebrow {
+.empty {
+  border: 1px dashed var(--sher-line);
+  border-radius: var(--sher-radius-lg);
+  background: var(--sher-surface-3);
+  padding: 36px 30px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+}
+
+.empty-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--sher-radius);
+  background: var(--sher-primary-soft);
+  color: var(--sher-primary-strong);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  margin-bottom: 2px;
+}
+
+.empty h2 {
   margin: 0;
-  font-size: var(--sher-text-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--sher-text-lg);
+  font-weight: 600;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 52ch;
   color: var(--sher-text-muted);
 }
 
-.business {
-  margin: var(--sher-space-2) 0 var(--sher-space-3);
-  font-size: var(--sher-text-2xl);
-  font-weight: 680;
-  letter-spacing: -0.02em;
+.empty p strong {
+  color: var(--sher-text);
+  font-weight: 600;
 }
 
-.welcome {
-  margin: 0;
-  color: var(--sher-text-muted);
-  line-height: 1.6;
+.empty-foot {
+  margin-top: 6px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--sher-line-soft);
+  font-size: 11px;
 }
 
 .planned {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .planned li {
   display: flex;
   align-items: center;
   gap: var(--sher-space-3);
-  padding: var(--sher-space-3) 0;
-  border-bottom: 1px solid var(--sher-border);
+  padding: var(--sher-row-pad);
+  padding-left: 0;
+  padding-right: 0;
+  border-bottom: 1px solid var(--sher-line-soft);
 }
 
 .planned li:last-child {
-  border-bottom: none;
-}
-
-.planned i {
-  color: var(--sher-primary);
+  border-bottom: 0;
 }
 
 .planned-label {
-  flex: 1;
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .planned-when {
-  font-size: var(--sher-text-xs);
   color: var(--sher-text-muted);
+  font-size: var(--sher-text-sm);
+}
+
+.phase {
+  margin-left: auto;
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-2xs);
+  color: var(--sher-text-muted);
+  border: 1px solid var(--sher-line);
+  border-radius: 3px;
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .error-code {
   margin: 0;
-  font-size: var(--sher-text-xs);
-  letter-spacing: 0.05em;
-  color: var(--sher-danger);
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--sher-bad);
 }
 
 .error-message {
@@ -191,13 +233,23 @@ const planned = [
   color: var(--sher-text-muted);
 }
 
-.retry {
-  padding: 9px var(--sher-space-4);
-  border: 1px solid var(--sher-border);
-  border-radius: var(--sher-radius-sm);
-  background: #ffffff;
+.btn {
+  height: var(--sher-control-h);
+  padding: 0 16px;
+  border-radius: var(--sher-radius);
   font: inherit;
-  font-weight: 550;
+  font-size: var(--sher-text-base);
+  font-weight: 600;
   cursor: pointer;
+}
+
+.btn-ghost {
+  background: var(--sher-surface-3);
+  color: var(--sher-text);
+  border: 1px solid var(--sher-line);
+}
+
+.btn-ghost:hover {
+  background: var(--sher-surface-2);
 }
 </style>

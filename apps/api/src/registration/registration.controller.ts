@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Inject, Post } from '@nestjs/common';
 import type {
   CompleteRegistrationService,
   RequestSignupOtpService,
+  VerifySignupOtpService,
 } from '@sher/core-application';
 import type { RegistrationResponse, RequestSignupOtpResponse } from '@sher/core-contracts';
 import {
@@ -9,9 +10,14 @@ import {
   completeRegistrationRequestSchema,
   ErrorCode,
   requestSignupOtpRequestSchema,
+  verifySignupOtpRequestSchema,
 } from '@sher/core-contracts';
 
-import { COMPLETE_REGISTRATION_SERVICE, REQUEST_SIGNUP_OTP_SERVICE } from './tokens';
+import {
+  COMPLETE_REGISTRATION_SERVICE,
+  REQUEST_SIGNUP_OTP_SERVICE,
+  VERIFY_SIGNUP_OTP_SERVICE,
+} from './tokens';
 
 /**
  * The only unauthenticated routes in SherERP, which is inherent to signup — the
@@ -26,6 +32,7 @@ import { COMPLETE_REGISTRATION_SERVICE, REQUEST_SIGNUP_OTP_SERVICE } from './tok
 export class RegistrationController {
   constructor(
     @Inject(REQUEST_SIGNUP_OTP_SERVICE) private readonly requestOtp: RequestSignupOtpService,
+    @Inject(VERIFY_SIGNUP_OTP_SERVICE) private readonly verifyOtp: VerifySignupOtpService,
     @Inject(COMPLETE_REGISTRATION_SERVICE) private readonly complete: CompleteRegistrationService,
   ) {}
 
@@ -35,6 +42,16 @@ export class RegistrationController {
     const parsed = requestSignupOtpRequestSchema.safeParse(body);
     if (!parsed.success) throw invalidBody(parsed.error.issues);
     return { data: await this.requestOtp.execute(parsed.data) };
+  }
+
+  /** Checks a code without spending it, so step 2 can answer immediately. */
+  @Post('otp/verify')
+  @HttpCode(200)
+  async verify(@Body() body: unknown): Promise<{ data: { verified: true } }> {
+    const parsed = verifySignupOtpRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    await this.verifyOtp.execute(parsed.data);
+    return { data: { verified: true } };
   }
 
   @Post()

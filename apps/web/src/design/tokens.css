@@ -1,71 +1,87 @@
 /*
- * SherERP design tokens.
+ * SherERP design tokens — direction "Counter" from the shell study.
  *
  * The SRS deliberately leaves the colour palette undecided (§2.7, "Deliberately
- * not decided here"). This file is where that decision now lives, so every later
- * module inherits one visual system instead of inventing its own — a component
+ * not decided here"). This file is where that decision lives, so every later
+ * module inherits one visual system instead of inventing its own. A component
  * hardcoding a hex value is a review failure.
  *
- * The look is a light blue glass surface over a calm ambient background. Glass
- * is used for *chrome* — the shell, cards, panels — and never behind dense data.
- * §2.7-D is explicit that tables stay clean and readable, and UI-42 requires
- * contrast ≥ 4.5:1, which a blurred translucent row background cannot hold.
+ * The look is a flat, crisp desktop application: KDE Breeze's density and
+ * hairline borders, one notch softer, with a deeper blue that stays legible as
+ * a button fill and as link text. A **light** sidebar, with the accent spent
+ * only on the selected row and the primary button — not a dark rail.
+ *
+ * Geometry is part of the decision, not decoration. §2.7's design goal says
+ * that where familiarity and counter speed conflict, the counter wins: 32px
+ * controls and 13px base type put roughly a third more rows on a 1280px screen
+ * than a roomier desktop theme would.
  */
 
 :root {
   /* --- colour ---------------------------------------------------------- */
-  --sher-bg: #eaf2ff;
-  --sher-primary: #2563eb;
-  --sher-primary-dark: #1d4ed8;
-  --sher-primary-soft: rgba(37, 99, 235, 0.08);
-  --sher-accent: #e11d48;
-  --sher-success: #16a34a;
-  --sher-warning: #d97706;
-  --sher-danger: #dc2626;
+  --sher-primary: #1b5e9e;
+  --sher-primary-strong: #144a7d;
+  --sher-primary-soft: #deeaf5;
+  --sher-on-primary: #ffffff;
 
-  --sher-text: #172554;
-  --sher-text-muted: #64748b;
-  --sher-text-inverse: #ffffff;
+  --sher-surface: #f1f3f5;
+  --sher-surface-2: #e7eaee;
+  --sher-surface-3: #ffffff;
+  --sher-sidebar: #e9ecf0;
+  --sher-headerbar: #ffffff;
 
-  --sher-border: rgba(148, 163, 184, 0.35);
-  --sher-border-glass: rgba(255, 255, 255, 0.55);
+  --sher-line: #cfd4da;
+  --sher-line-soft: #e1e5e9;
 
-  /* --- glass ----------------------------------------------------------- */
-  --sher-glass-bg: rgba(255, 255, 255, 0.55);
-  --sher-glass-bg-strong: rgba(255, 255, 255, 0.78);
-  --sher-glass-blur: 20px;
-  --sher-shadow: 0 8px 30px rgba(30, 64, 175, 0.08);
-  --sher-shadow-raised: 0 12px 36px rgba(30, 64, 175, 0.14);
+  --sher-text: #1f2429;
+  --sher-text-muted: #616b75;
+
+  /* Semantic colours. Held constant — meaning is never part of a theme choice. */
+  --sher-ok: #1f7a4d;
+  --sher-ok-bg: #e7f3ec;
+  --sher-warn: #8a5d00;
+  --sher-warn-bg: #fbf1dc;
+  --sher-bad: #a82018;
+  --sher-bad-bg: #fae9e7;
 
   /* --- geometry -------------------------------------------------------- */
-  --sher-radius-sm: 8px;
-  --sher-radius: 14px;
-  --sher-radius-lg: 20px;
+  --sher-radius: 4px;
+  --sher-radius-lg: 5px;
+  --sher-radius-pill: 999px;
+  --sher-control-h: 32px;
+  --sher-row-pad: 8px 13px;
+  --sher-nav-pad: 7px 10px;
+  --sher-border-w: 1px;
 
   --sher-space-1: 4px;
   --sher-space-2: 8px;
   --sher-space-3: 12px;
   --sher-space-4: 16px;
-  --sher-space-5: 24px;
-  --sher-space-6: 32px;
-  --sher-space-7: 48px;
+  --sher-space-5: 20px;
+  --sher-space-6: 30px;
 
   /* --- type ------------------------------------------------------------ */
-  /* System stack until a self-hosted face is chosen — UI-06 bans a CDN font,
-     because §6.5 requires COOP/COEP for SQLite WASM in Phase 12. */
-  --sher-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans Bengali', sans-serif;
-  --sher-text-xs: 12px;
-  --sher-text-sm: 13px;
-  --sher-text-base: 14px;
-  --sher-text-lg: 16px;
-  --sher-text-xl: 20px;
-  --sher-text-2xl: 28px;
+  /* System stack — UI-06 bans a CDN font, because §6.5 requires COOP/COEP on
+     the app origin for SQLite WASM in Phase 12 and a cross-origin font breaks
+     it. System faces are never fetched, so they satisfy that rule. */
+  --sher-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans', Roboto,
+    Helvetica, Arial, sans-serif;
+  --sher-font-bn: 'Noto Sans Bengali', 'Nirmala UI', Kalpurush, SolaimanLipi, 'Shonar Bangla',
+    sans-serif;
+  --sher-font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
 
-  --sher-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  --sher-text-2xs: 10.5px;
+  --sher-text-xs: 11.5px;
+  --sher-text-sm: 12.5px;
+  --sher-text-base: 13px;
+  --sher-text-lg: 15.5px;
+  --sher-text-xl: 19px;
 
-  --sher-sidebar-width: 244px;
-  --sher-topbar-height: 60px;
+  --sher-shadow: 0 1px 2px rgba(31, 36, 41, 0.06);
+  --sher-shadow-raised: 0 6px 22px rgba(31, 36, 41, 0.1);
+  --sher-transition: 150ms ease;
+
+  --sher-sidebar-width: 232px;
 }
 
 * {
@@ -82,59 +98,34 @@ body {
   margin: 0;
   font-family: var(--sher-font);
   font-size: var(--sher-text-base);
+  line-height: 1.55;
   color: var(--sher-text);
-  background: var(--sher-bg);
+  background: var(--sher-surface);
   -webkit-font-smoothing: antialiased;
 }
 
 /*
- * Ambient background. Two very soft radial glows, fixed behind everything, so
- * the glass surfaces have something to refract. Calm, not a marketing gradient
- * — this is a screen someone stares at for ten hours.
+ * Bangla helper text (UI-15…UI-17): explains the *business meaning* under the
+ * English label — a sentence a shopkeeper would say, not a literal translation.
+ * Always secondary in the hierarchy, never a replacement for the label.
  */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(60rem 40rem at 12% -10%, rgba(37, 99, 235, 0.16), transparent 60%),
-    radial-gradient(45rem 35rem at 100% 8%, rgba(225, 29, 72, 0.07), transparent 60%),
-    radial-gradient(50rem 40rem at 50% 110%, rgba(37, 99, 235, 0.1), transparent 60%);
-  pointer-events: none;
-}
-
-/* --- shared surfaces --------------------------------------------------- */
-
-.sher-glass {
-  background: var(--sher-glass-bg);
-  backdrop-filter: blur(var(--sher-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sher-glass-blur));
-  border: 1px solid var(--sher-border-glass);
-  box-shadow: var(--sher-shadow);
-  border-radius: var(--sher-radius);
-}
-
-/*
- * Bangla helper text (UI-15…UI-17): explains the *business meaning* beneath the
- * English label, always secondary in the hierarchy, never a replacement for it.
- */
-.sher-help-bn {
-  display: block;
-  margin-top: var(--sher-space-1);
+.sher-bn {
+  font-family: var(--sher-font-bn);
   font-size: var(--sher-text-xs);
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--sher-text-muted);
 }
 
 /* Focus is always visible (UI-42). */
 :focus-visible {
   outline: 2px solid var(--sher-primary);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }

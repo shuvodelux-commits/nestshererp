@@ -34,6 +34,8 @@ export type {
 } from './auth/registration-repository';
 export { RequestSignupOtpService } from './auth/request-signup-otp-service';
 export type { RequestSignupOtpCommand } from './auth/request-signup-otp-service';
+export { VerifySignupOtpService } from './auth/verify-signup-otp-service';
+export type { VerifySignupOtpCommand } from './auth/verify-signup-otp-service';
 export { CompleteRegistrationService } from './auth/complete-registration-service';
 export type { CompleteRegistrationCommand } from './auth/complete-registration-service';
 export { GetDashboardSummaryService } from './auth/get-dashboard-summary-service';
