@@ -8,6 +8,11 @@ const clock = new SystemClock();
 
 const TENANT_SCOPED_TABLES = [
   'notes',
+  // Signup tables. Neither is RLS-scoped — an OTP is verified and an identifier
+  // is resolved before a tenant exists — but both must still be truncated
+  // between tests, and user_identifiers references users.
+  'user_identifiers',
+  'otp_codes',
   'idempotency_keys',
   'outbox',
   'audit_events',
@@ -56,6 +61,26 @@ export async function prepareTestDatabase(): Promise<void> {
     await admin.query(
       'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO sher_app',
     );
+  } finally {
+    await admin.end();
+  }
+}
+
+/**
+ * Reads as the database owner, bypassing RLS.
+ *
+ * Needed only for **platform** rows — an audit event with a null tenant belongs
+ * to no tenant, so no tenant's policy can see it, which is the intended design
+ * (§5.3 signup auditing). Never use this to assert tenant-scoped data: doing so
+ * would prove the row exists while hiding whether RLS lets the right tenant
+ * reach it, which is the thing worth testing.
+ */
+export async function asPlatform<T>(work: (pool: pg.Pool) => Promise<T>): Promise<T> {
+  const adminUrl =
+    process.env['ADMIN_DATABASE_URL'] ?? 'postgres://postgres:dev@localhost:5432/sher_test';
+  const admin = createPool(adminUrl);
+  try {
+    return await work(admin);
   } finally {
     await admin.end();
   }

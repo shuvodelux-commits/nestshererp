@@ -65,8 +65,12 @@ export const users = pgTable('users', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   roleId: char('role_id', { length: 26 }).notNull(),
-  email: text('email').notNull(),
+  email: text('email'),
   displayName: text('display_name').notNull(),
+  username: text('username'),
+  phone: text('phone'),
+  passwordHash: text('password_hash'),
+  pinHash: text('pin_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -111,10 +115,10 @@ export const numberingCounters = pgTable(
   }),
 );
 
-/** Class C — append-only. */
+/** Class C — append-only. `tenant_id` is null on a platform event (§5.3 OTP sends). */
 export const auditEvents = pgTable('audit_events', {
   id: char('id', { length: 26 }).primaryKey(),
-  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  tenantId: char('tenant_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
   entityType: text('entity_type').notNull(),
@@ -152,6 +156,44 @@ export const idempotencyKeys = pgTable(
   },
   (table) => ({
     unique: unique('idempotency_keys_unique').on(table.tenantId, table.operationId),
+  }),
+);
+
+/**
+ * Signup verification. No tenant_id and no RLS — an OTP is verified before a
+ * tenant exists. Codes are stored hashed; expiry is derived from created_at by
+ * the domain, never stored (§5.3).
+ */
+export const otpCodes = pgTable('otp_codes', {
+  id: char('id', { length: 26 }).primaryKey(),
+  identifier: text('identifier').notNull(),
+  channel: text('channel').notNull(),
+  purpose: text('purpose').notNull(),
+  codeHash: text('code_hash').notNull(),
+  attemptCount: integer('attempt_count').notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+/**
+ * The pre-authentication index from an identifier to the account that owns it.
+ * Not RLS-scoped: it must be readable before authentication. Never exposed
+ * through an API — confirming an identifier is taken is an enumeration oracle.
+ */
+export const userIdentifiers = pgTable(
+  'user_identifiers',
+  {
+    id: char('id', { length: 26 }).primaryKey(),
+    identifier: text('identifier').notNull(),
+    channel: text('channel').notNull(),
+    tenantId: char('tenant_id', { length: 26 }).notNull(),
+    userId: char('user_id', { length: 26 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    createdBy: char('created_by', { length: 26 }).notNull(),
+  },
+  (table) => ({
+    unique: unique('user_identifiers_unique').on(table.identifier),
   }),
 );
 

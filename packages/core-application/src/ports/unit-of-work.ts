@@ -18,4 +18,15 @@ export interface Tx {
  */
 export interface UnitOfWork {
   run<T>(ctx: TenantContext, work: (tx: Tx) => Promise<T>): Promise<T>;
+  /**
+   * A transaction with no `app.tenant_id` set, for the signup steps that happen
+   * before a tenant exists (§5.3 D-07: send an OTP to an identifier that has no
+   * account yet). Only tables without a tenant — `otp_codes`, `user_identifiers`
+   * — and platform audit rows are reachable inside it; RLS hides everything else,
+   * which is the intended protection, not an obstacle to work around.
+   *
+   * **Do not use this to escape RLS.** Completing a registration uses `run` with
+   * the newly generated tenant id, because by then the tenant is being created.
+   */
+  runWithoutTenant<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
 }

@@ -22,6 +22,34 @@ function base64UrlDecode(segment: string): string {
   return Buffer.from(segment, 'base64url').toString('utf8');
 }
 
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+/** Access tokens live 15 minutes (§5.3). Refresh tokens arrive with login, slice 1.2. */
+const ACCESS_TOKEN_SECONDS = 15 * 60;
+
+/**
+ * Issues what `verifyToken` below expects — the two halves are kept in one file
+ * so a claim can never be added to one and forgotten in the other.
+ *
+ * Permissions are deliberately absent from the token: they are resolved
+ * server-side per request so a role change takes effect immediately (§5.3).
+ */
+export function signToken(ctx: TenantContext, secret: string, clock: Clock): string {
+  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      sub: ctx.userId,
+      tid: ctx.tenantId,
+      tz: ctx.timezone,
+      exp: Math.floor(clock.now().getTime() / 1000) + ACCESS_TOKEN_SECONDS,
+    }),
+  );
+
+  return `${header}.${payload}.${sign(secret, `${header}.${payload}`).toString('base64url')}`;
+}
+
 function sign(secret: string, signingInput: string): Buffer {
   return createHmac('sha256', secret).update(signingInput).digest();
 }

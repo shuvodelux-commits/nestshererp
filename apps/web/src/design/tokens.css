@@ -1,0 +1,141 @@
+/*
+ * SherERP design tokens.
+ *
+ * The SRS deliberately leaves the colour palette undecided (§2.7, "Deliberately
+ * not decided here"). This file is where that decision now lives, so every later
+ * module inherits one visual system instead of inventing its own — a component
+ * hardcoding a hex value is a review failure.
+ *
+ * The look is a light blue glass surface over a calm ambient background. Glass
+ * is used for *chrome* — the shell, cards, panels — and never behind dense data.
+ * §2.7-D is explicit that tables stay clean and readable, and UI-42 requires
+ * contrast ≥ 4.5:1, which a blurred translucent row background cannot hold.
+ */
+
+:root {
+  /* --- colour ---------------------------------------------------------- */
+  --sher-bg: #eaf2ff;
+  --sher-primary: #2563eb;
+  --sher-primary-dark: #1d4ed8;
+  --sher-primary-soft: rgba(37, 99, 235, 0.08);
+  --sher-accent: #e11d48;
+  --sher-success: #16a34a;
+  --sher-warning: #d97706;
+  --sher-danger: #dc2626;
+
+  --sher-text: #172554;
+  --sher-text-muted: #64748b;
+  --sher-text-inverse: #ffffff;
+
+  --sher-border: rgba(148, 163, 184, 0.35);
+  --sher-border-glass: rgba(255, 255, 255, 0.55);
+
+  /* --- glass ----------------------------------------------------------- */
+  --sher-glass-bg: rgba(255, 255, 255, 0.55);
+  --sher-glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --sher-glass-blur: 20px;
+  --sher-shadow: 0 8px 30px rgba(30, 64, 175, 0.08);
+  --sher-shadow-raised: 0 12px 36px rgba(30, 64, 175, 0.14);
+
+  /* --- geometry -------------------------------------------------------- */
+  --sher-radius-sm: 8px;
+  --sher-radius: 14px;
+  --sher-radius-lg: 20px;
+
+  --sher-space-1: 4px;
+  --sher-space-2: 8px;
+  --sher-space-3: 12px;
+  --sher-space-4: 16px;
+  --sher-space-5: 24px;
+  --sher-space-6: 32px;
+  --sher-space-7: 48px;
+
+  /* --- type ------------------------------------------------------------ */
+  /* System stack until a self-hosted face is chosen — UI-06 bans a CDN font,
+     because §6.5 requires COOP/COEP for SQLite WASM in Phase 12. */
+  --sher-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans Bengali', sans-serif;
+  --sher-text-xs: 12px;
+  --sher-text-sm: 13px;
+  --sher-text-base: 14px;
+  --sher-text-lg: 16px;
+  --sher-text-xl: 20px;
+  --sher-text-2xl: 28px;
+
+  --sher-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --sher-sidebar-width: 244px;
+  --sher-topbar-height: 60px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sher-font);
+  font-size: var(--sher-text-base);
+  color: var(--sher-text);
+  background: var(--sher-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Ambient background. Two very soft radial glows, fixed behind everything, so
+ * the glass surfaces have something to refract. Calm, not a marketing gradient
+ * — this is a screen someone stares at for ten hours.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, rgba(37, 99, 235, 0.16), transparent 60%),
+    radial-gradient(45rem 35rem at 100% 8%, rgba(225, 29, 72, 0.07), transparent 60%),
+    radial-gradient(50rem 40rem at 50% 110%, rgba(37, 99, 235, 0.1), transparent 60%);
+  pointer-events: none;
+}
+
+/* --- shared surfaces --------------------------------------------------- */
+
+.sher-glass {
+  background: var(--sher-glass-bg);
+  backdrop-filter: blur(var(--sher-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sher-glass-blur));
+  border: 1px solid var(--sher-border-glass);
+  box-shadow: var(--sher-shadow);
+  border-radius: var(--sher-radius);
+}
+
+/*
+ * Bangla helper text (UI-15…UI-17): explains the *business meaning* beneath the
+ * English label, always secondary in the hierarchy, never a replacement for it.
+ */
+.sher-help-bn {
+  display: block;
+  margin-top: var(--sher-space-1);
+  font-size: var(--sher-text-xs);
+  line-height: 1.5;
+  color: var(--sher-text-muted);
+}
+
+/* Focus is always visible (UI-42). */
+:focus-visible {
+  outline: 2px solid var(--sher-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -30,4 +30,13 @@ export class PostgresUnitOfWork implements UnitOfWork {
       return work(transaction as unknown as Tx);
     });
   }
+
+  /**
+   * No `app.tenant_id`, so every RLS policy evaluates against NULL and hides
+   * every tenant-scoped row. That is the protection, not a gap: the only tables
+   * reachable here are the ones a signup touches before a tenant exists.
+   */
+  async runWithoutTenant<T>(work: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.db.transaction(async (transaction) => work(transaction as unknown as Tx));
+  }
 }

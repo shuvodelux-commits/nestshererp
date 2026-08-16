@@ -7,6 +7,13 @@ import type { Tx } from './unit-of-work';
  */
 export type AuditValues = Readonly<Record<string, string | number | null>>;
 
+/**
+ * The actor on a platform event that no user performed — an OTP sent to an
+ * identifier that has no account yet. A reserved, ULID-shaped constant, so
+ * `created_by` stays NOT NULL and a real user id can never collide with it.
+ */
+export const SYSTEM_ACTOR_ID = '00000000000000000000000000';
+
 export interface AuditEvent {
   readonly entityType: string;
   readonly entityId: string;
@@ -27,4 +34,11 @@ export interface AuditEvent {
  */
 export interface AuditWriter {
   append(tx: Tx, ctx: TenantContext, event: AuditEvent): Promise<void>;
+  /**
+   * A platform event that happened before any tenant existed: an OTP send, a
+   * failed verification, a signup lockout (§5.3 requires all three to be
+   * audited — R-13, SIM swap). Written with a null tenant and the reserved
+   * system actor, and readable by no tenant, because it belongs to none.
+   */
+  appendPlatform(tx: Tx, event: AuditEvent): Promise<void>;
 }

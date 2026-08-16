@@ -11,4 +11,11 @@ export { PostgresIdempotencyStore } from './idempotency-store';
 export { PostgresOutbox } from './outbox';
 export { PostgresNumberingService } from './numbering-service';
 export { PostgresNoteRepository } from './note-repository';
+export { PostgresOtpRepository } from './otp-repository';
+export {
+  PostgresRoleRepository,
+  PostgresTenantRepository,
+  PostgresUserIdentifierRepository,
+  PostgresUserRepository,
+} from './registration-repository';
 export * as schema from './schema';

@@ -14,6 +14,16 @@ export const ErrorCode = {
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
   PERIOD_LOCKED: 'PERIOD_LOCKED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /**
+   * Signup (D-07). The three OTP codes are deliberately distinguishable to the
+   * person typing the code — "wrong code", "it expired", "too many tries" are
+   * different problems with different fixes — but none of them reveals whether
+   * the identifier has an account.
+   */
+  OTP_INCORRECT: 'OTP_INCORRECT',
+  OTP_EXPIRED: 'OTP_EXPIRED',
+  OTP_MAX_ATTEMPTS_EXCEEDED: 'OTP_MAX_ATTEMPTS_EXCEEDED',
+  IDENTIFIER_ALREADY_REGISTERED: 'IDENTIFIER_ALREADY_REGISTERED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -27,6 +37,10 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   IDEMPOTENCY_KEY_REUSED: 409,
   PERIOD_LOCKED: 409,
   INTERNAL_ERROR: 500,
+  OTP_INCORRECT: 400,
+  OTP_EXPIRED: 400,
+  OTP_MAX_ATTEMPTS_EXCEEDED: 400,
+  IDENTIFIER_ALREADY_REGISTERED: 409,
 };
 
 export function httpStatusFor(code: ErrorCode): number {
