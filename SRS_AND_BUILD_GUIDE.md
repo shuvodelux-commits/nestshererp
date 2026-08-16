@@ -1214,7 +1214,7 @@ Rules:
 
 | Slice | Name | Status | Commit | Owner accepted | Note |
 |---|---|---|---|---|---|
-| 0.1 | Monorepo skeleton + CI boundary checks | TODO | — | — | |
+| 0.1 | Monorepo skeleton + CI boundary checks | DONE | — | 2026-08-16 | No UI (Phase 0 foundation exception, §6.0). Owner accepted on the four green commands; no UI check applicable. |
 | 0.2 | Money / Qty / UnitCost / Ulid / Clock | TODO | — | — | |
 | 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | TODO | — | — | |
 | 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | TODO | — | — | |

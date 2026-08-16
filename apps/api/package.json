@@ -1,0 +1,26 @@
+{
+  "name": "@sher/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "pnpm run build && node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "10.4.15",
+    "@nestjs/core": "10.4.15",
+    "@nestjs/platform-express": "10.4.15",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "10.4.15",
+    "@types/node": "20.19.9",
+    "@types/supertest": "6.0.2",
+    "supertest": "7.0.0",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}
