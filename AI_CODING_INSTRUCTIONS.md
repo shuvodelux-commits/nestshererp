@@ -560,11 +560,14 @@ packages/shared-utils       Money, Qty, UnitCost, Ulid, Clock
 packages/adapter-postgres   Drizzle implementations (empty for now)
 apps/api                    NestJS, /health only
 
-Do NOT create adapter-sqlite, apps/desktop, apps/mcp or apps/web in this slice.
+Do NOT create adapter-sqlite-wasm, apps/mcp or apps/web in this slice. There is no apps/desktop -
+Tauri is rejected (D-20); offline runs inside the PWA on SQLite WASM + OPFS (D-23).
 
 BOUNDARY CHECK (tools/boundaries)
 Write `pnpm test:boundaries` that FAILS the build if:
 - core-domain imports @nestjs/*, drizzle-orm, pg, better-sqlite3, express, or DOM libs
+- core-domain or core-application imports a Node built-in (fs, path, crypto, os, child_process)
+  - these packages are bundled for the browser in Phase 12 (D-20/D-23), so Node APIs are banned now
 - core-application imports drizzle-orm, pg, or @nestjs/*
 - adapter-postgres is imported by core-domain or core-application
 - any file outside shared-utils/clock uses Date.now() or new Date()

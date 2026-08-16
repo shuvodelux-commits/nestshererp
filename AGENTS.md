@@ -44,7 +44,7 @@ apps/api/                     NestJS — controllers ≤20 lines
 apps/web/                     Vue 3 + Vite (PWA)
 ```
 
-Dependencies flow one way: `api → application → domain → shared-utils`. CI enforces it. `adapter-sqlite`, `apps/desktop` and `apps/mcp` are created in their own later phases, not now.
+Dependencies flow one way: `api → application → domain → shared-utils`. CI enforces it. `adapter-sqlite-wasm` (Phase 12, browser SQLite WASM + OPFS) and `apps/mcp` (Phase 14) are created in their own later phases, not now. **There is no `apps/desktop` — Tauri is rejected (D-20)**; offline runs inside the PWA, so `core-domain` and `core-application` must also stay free of Node built-ins (`fs`, `path`, `crypto`) because they will be bundled for the browser.
 
 ## Commands
 

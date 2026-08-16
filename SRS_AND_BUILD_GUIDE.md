@@ -20,22 +20,27 @@ Multi-tenant SaaS ERP for Bangladeshi SME retail/wholesale: POS, inventory with 
 ## 1.2 Delivery sequence
 
 ```
-Online (PostgreSQL)  →  temporary browser offline (IndexedDB)  →  full SQLite/Tauri offline  →  MCP
+Online (PostgreSQL)  →  full browser offline (SQLite WASM + OPFS, single writer)  →  MCP
 ```
 
 V1 is **online-first**. Full offline is a later phase, but every V1 schema and layering decision is made so it stays possible.
+
+**Tauri is rejected (D-20).** Offline is delivered inside the PWA itself — SQLite WASM over OPFS, running the same domain and application code compiled to run in the browser. There is no desktop shell, no local Node/NestJS sidecar, and no second runtime to package or update.
 
 ## 1.3 Stack (final)
 
 | Layer | V1 |
 |---|---|
-| Frontend | Vue 3 + Vite + TypeScript (installable PWA — D-28) |
+| Frontend | Vue 3 + Vite + TypeScript, installable PWA (D-21, D-28) |
 | Backend | NestJS + TypeScript, modular monolith |
-| ORM | Drizzle |
+| ORM | Drizzle (D-14) |
 | Database | PostgreSQL 16 |
 | API | REST + OpenAPI 3.1, zod-generated |
-| Future offline | SQLite via the same repository interfaces; Tauri hosting a local Node/NestJS process (D-20) |
+| Offline storage | **SQLite WASM + OPFS** in the browser, via the same repository interfaces (D-23). Requires PWA install + `navigator.storage.persist()` before any local write (D-24) |
+| Offline write authority | Single writer per tenant, bound to a registered browser profile (D-01) |
+| Receipt printing | WebUSB ESC-POS primary, browser print dialog fallback (D-22) |
 | Mobile | PWA. React Native deferred and likely dropped (D-28) |
+| Rejected | Tauri desktop shell and local Node/NestJS sidecar (D-20) · T3 stack (D-21) |
 | AI | MCP over the same application services (later phase) |
 
 Do not substitute any of these.
@@ -60,7 +65,9 @@ shererp/
 └── docs/archive/            Historical planning docs. DO NOT READ.
 ```
 
-**Created later, in their own phase, not now:** `packages/adapter-sqlite` (Phase 12), `apps/desktop` (Phase 12), `apps/mcp` (Phase 14). Creating empty packages ahead of time is speculative scaffolding — the layering that makes them possible is what matters, not the folders.
+**Created later, in their own phase, not now:** `packages/adapter-sqlite-wasm` (Phase 12 — SQLite WASM over OPFS, loaded inside `apps/web`) and `apps/mcp` (Phase 14). Creating empty packages ahead of time is speculative scaffolding — the layering that makes them possible is what matters, not the folders.
+
+**There is no `apps/desktop`.** Tauri is rejected (D-20); the offline adapter is a browser-side package consumed by `apps/web`, which means `core-domain` and `core-application` must stay free of Node built-ins (`fs`, `path`, `crypto`) as well as of NestJS and Drizzle — they will be bundled for the browser. The boundary checker enforces this from Phase 0.
 
 **Dependency rule, one direction only, CI-enforced:**
 
@@ -89,7 +96,7 @@ Repository interfaces are **business-specific** (`SaleRepository`, `InventoryRep
 Identical online, offline, and via MCP:
 
 ```
-Client (Web / Tauri / Mobile / MCP)
+Client (Web online / Web offline (SQLite WASM) / MCP)
   → command + operation_id + tenant/user context
   → Application Service
        1  resolve TenantContext
@@ -359,7 +366,7 @@ INV-10 prevents the classic ERP failure where the dashboard and the ledger disag
 
 ---
 
-# PART 4 — FINAL DECISIONS (D-01 … D-32)
+# PART 4 — FINAL DECISIONS (D-01 … D-36)
 
 All final. Not discussion points.
 
@@ -367,13 +374,13 @@ All final. Not discussion points.
 
 | ID | Decision |
 |---|---|
-| **D-01** | **Offline write authority.** V1 uses temporary browser IndexedDB offline support. Full SQLite offline is deferred. When implemented: exactly **one** tenant-designated device holds offline read/write; all others are read-only. |
+| **D-01** | **Offline write authority — REVISED 2026-08-16.** **Single writer per tenant, bound to a registered browser profile.** Exactly one browser profile holds `OFFLINE_RW`; every other profile and device is read-only offline. Authority is bound to the profile, not the machine — a different browser, a different OS user, or a cleared profile on the same PC is a **different** writer and must be re-registered. Transfer follows the device-authority state machine in §5.23 (drain → revoke → authorize → snapshot), always audited. IndexedDB is **not** the storage engine — see D-23. |
 | **D-02** | **Customer phone.** Unique per `(tenant_id, phone)` **within the CUSTOMER role only** — POS searches invoices by phone. Other roles may share a number. Walk-in customer is a real, `system_reserved` record exempt from the constraint. |
 | **D-03** | **Invoice deletion.** Posted invoices are reversed/voided with history retained; all related effects (stock, due, cash, expense) reverse. Draft invoices may be hard-deleted. |
 | **D-04** | **Party system.** One internal `parties` table with role flags (CUSTOMER, SUPPLIER, VENDOR, EXPENSE, EMPLOYEE). UI shows separate Customer / Supplier / Vendor / Expense ledgers as **views over the same journal**. Selling to a supplier requires explicitly choosing the transaction type; the party then appears in both histories with full purchase and sale history. |
 | **D-05** | **Costing method — REVISED 2026-08-16.** **One costing method per tenant: `FIFO` or `AVERAGE`.** It drives **both** the COGS posted to the journal **and** the valuation report, so the two can never disagree. **LIFO is removed from V1.** Physical issue order is always FIFO/FEFO (DR13.2) and is **not** configurable — the earlier "two independent settings" wording described a setting that had only one legal value and produced a valuation that drifted permanently from the INVENTORY account. See §3.11 INV-05 for the method-aware invariant. |
 | **D-06** | **Profit reliability.** Profit is provisional while any unresolved provisional cost or open negative-stock lot exists in the range. Profit display is blocked/marked until costing is finalized. |
-| **D-07** | **Authentication.** First account verification = phone OTP. Daily login = PIN, email/password, or Google OAuth. Sensitive actions require step-up authentication. |
+| **D-07** | **Authentication — REVISED 2026-08-16.** **OTP is for first-time verification and password recovery only, never for daily login.** Signup: one field accepting **mobile or email** → 6-digit OTP → verify → set username, password and PIN in the same flow. Daily login: **email + password**, **phone + password**, **PIN**, or **Google OAuth**. Forgot password: OTP to the registered email or phone → set a new password. OTP channel follows the identifier — email identifier sends email OTP, phone identifier sends SMS. Sensitive actions require step-up authentication. |
 | **D-08** | **Backup restore.** Restore all compatible business data. Subscription and permissions always follow the current tenant/account. Data belonging to unavailable features is preserved but read-only until the required plan is activated. |
 | **D-09** | **VAT/tax — REVISED 2026-08-16, owner override.** **VAT/tax is removed from V1.** The reserved columns (`tax_rate_id`, `tax_amount`, `is_tax_inclusive`) are still created on transaction lines and remain `NULL`; no tax is calculated, posted, or printed. Tax becomes a V2 feature. **Consequence to accept knowingly:** SherERP cannot issue a VAT-compliant invoice in V1, so a customer who requires one cannot be sold to until V2. This was chosen over implementing tax in Phase 6, which would have forced re-costing every lot created in Phase 5. |
 | **D-10** | **Units.** V1 supports manual UOM conversion. Products may be purchased, stocked and sold in different units (Carton, Box, Piece, Pipe, Feet, Kg, Litre) with per-product conversion rules defined by the user, e.g. `1 Carton = 24 Pieces`, `1 Pipe = 20 Feet`. |
@@ -386,18 +393,46 @@ All final. Not discussion points.
 | **D-17** | **Inventory by location.** Quantity, lots, cost and valuation tracked by **Product + Location** from day one. V1 may expose a single auto-created default location; a single-warehouse business never creates one manually. Multiple warehouses each maintain their own stock. Inter-warehouse stock transfer is supported once multiple locations exist. |
 | **D-18** | **Serial uniqueness.** The same **active** serial cannot be used for the same product within a tenant. After retirement it may be reused with a warning. |
 | **D-19** | **Negative stock costing.** Negative-stock sales are allowed. Cost uses the product's last known cost as **provisional**; when actual cost arrives, affected COGS and profit are recalculated per the configured method. |
-| **D-20** | **Future Tauri.** Local NestJS/Node process reusing the existing application logic. **No Rust rewrite of business logic.** Not required for V1. |
+| **D-20** | **Tauri — REJECTED 2026-08-16.** No desktop shell, no local NestJS/Node sidecar, no Rust. Offline runs inside the PWA on SQLite WASM + OPFS (D-23). Reasons: a sidecar means packaging, signing, auto-update and a second runtime to support on shop PCs; the browser path reuses the same domain/application code with one deployment artefact. **Consequence to accept knowingly:** no OS-level integration (native printer drivers, filesystem paths, background service), and offline capacity is bounded by the browser storage quota — hence D-22 for printing and D-24 for eviction. |
 
-## 4.2 Deployment mode (D-21 … D-24) — Phase 1
+## 4.2 Client platform, printing and offline storage (D-21 … D-24) — confirmed 2026-08-16
 
-**Governing rule: SaaS and on-premise are the same build.** Signup, OTP and subscription are disabled by configuration, never deleted. A separate on-premise fork is forbidden.
+**These four IDs previously held the deployment-mode provider decisions.** Those are unchanged in substance and now live in §4.4 as **D-33 … D-36**. Any older document, prompt or agent transcript citing "D-21…D-24 providers" means D-33…D-36.
 
 | ID | Decision |
 |---|---|
-| **D-21** | **Identity verification** is pluggable behind `IdentityVerifier`. `OtpIdentityVerifier` (SaaS, phone OTP) · `NoOpIdentityVerifier` (on-prem; installer seeds admin with forced password change). `sendOtp()` is called from exactly one place. No module outside M02 imports an SMS provider type. `NoOpIdentityVerifier` is **rejected at boot** if `SINGLE_TENANT_MODE=false`. |
-| **D-22** | **Tenant provisioning** is pluggable behind `TenantProvisioner`. `SignupTenantProvisioner` (SaaS) · `SeedTenantProvisioner` (on-prem, idempotent, refuses if a tenant exists, name/ID from the license key). When `SINGLE_TENANT_MODE=true`, registration routes return **404**, not 403. `tenant_id` remains on every table and in every query in both modes. |
-| **D-23** | **Entitlement source** is pluggable behind `EntitlementProvider`. `SubscriptionEntitlementProvider` (SaaS) · `LicenseKeyEntitlementProvider` (on-prem, signed key validated **offline** against an embedded public key, no phone-home). On-prem does **not** skip entitlement checks — it answers them from the license. `modules[]` in the license feeds the existing Settings module; no second feature-flag system. Missing/invalid license → `READ_ONLY`, never a crash, never data loss. |
-| **D-24** | **License term and expiry.** Contract-term based. States: `ACTIVE` → `EXPIRING` (30d before) → `GRACE` (30d after) → `READ_ONLY`; `RESTORED` on renewal with no data loss. **There is no state in which customer data is destroyed, hidden, or made un-exportable** — backup export works in every state including `READ_ONLY`. Sell license term separately from annual maintenance. |
+| **D-21** | **Stack — Vue 3 + Vite PWA + NestJS.** One frontend artefact serves online and offline, SaaS and on-premise. **T3 (Next.js/tRPC/Prisma) is rejected:** it couples the client to a Node-rendered server and to a TypeScript-only RPC contract, which breaks the REST + OpenAPI contract (§2) the mobile PWA, on-prem installs and MCP all consume, and it has no path to running the domain layer inside the browser for offline. No SSR framework is introduced later without reopening this decision. |
+| **D-22** | **Receipt printing — WebUSB ESC-POS primary, browser print dialog fallback.** Thermal receipts are driven directly over WebUSB with generated ESC-POS byte sequences, so a POS sale prints without an OS driver or a print dialog. **Fallback is mandatory, not optional:** any browser or device where WebUSB is unavailable, permission is refused, or the printer is not claimed must fall back to a styled HTML print dialog (80mm and A4 layouts) — printing must never be the reason a sale cannot be completed. Printer selection, vendor/product ID and the chosen path are stored per browser profile. A4 and business-pad documents always use the print dialog. Consequence of D-20: WebUSB works in Chromium browsers only; Firefox and iOS Safari get the fallback path. |
+| **D-23** | **Offline storage engine — SQLite WASM + OPFS.** The offline database is SQLite compiled to WASM, persisted in the Origin Private File System, reached through the same business-specific repository interfaces as PostgreSQL (D-14). **IndexedDB is rejected as the engine** — it cannot express the relational integrity, transactional multi-table writes or the ten-step write path (§2.3) that stock and journal correctness depend on; it may be used only for small key/value client state. The OPFS handle must be opened in a worker with `SharedArrayBuffer`-capable COOP/COEP headers; the same no-`FLOAT`/no-`NUMERIC` integer rules (§3.3) apply to both dialects so online and offline can never diverge numerically. |
+| **D-24** | **Eviction policy — PWA install + `navigator.storage.persist()` required before any offline write.** A browser may evict OPFS data under storage pressure without warning. Therefore the app **must not accept a single offline write** until the tenant's designated writer profile has (a) installed the PWA and (b) been granted persistent storage by `navigator.storage.persist()`. If persistence is refused or later revoked, the profile drops to read-only offline and the UI states plainly that offline writing is disabled — it never silently accepts writes into evictable storage. Before enabling offline the app checks `navigator.storage.estimate()` against the snapshot size and refuses if the quota is insufficient. Pending outbox depth and remaining quota are shown continuously, with a blocking warning once either crosses its threshold. |
+
+**Why D-24 is a hard gate.** Every other risk in the offline design is recoverable through quarantine and replay. Evicted OPFS data that never reached the server is unrecoverable — the transactions simply cease to exist, and the shopkeeper's day is gone. Nothing in the offline path may be built before this gate works.
+
+## 4.3 Implementation mechanics (D-25 … D-32)
+
+| ID | Decision |
+|---|---|
+| **D-25** | **Period lock is not a module.** It is a `PeriodGuard` service in `core-application`, configured through Settings, enforced inside every use case writing a `business_date`. Granularity: **calendar month per tenant**. States `OPEN` → `CLOSED`; a closed month rejects create/edit/void/backdate landing in it with `PERIOD_LOCKED`. Unlock requires `finance.period.unlock` **plus** step-up auth **plus** a mandatory reason, and writes an audit event. Re-costing true-ups **never** silently cross a closed period — they post in the current open month as a correction referencing the original. |
+| **D-26** | **Invoice templates** are a saved set of line items (product, qty, optional price override) with a name. Not a document, no financial effect, no journal entry. Tables: `sale_templates`, `sale_template_lines`. Loading a template creates a **draft** sale; prices re-read live from the product unless an explicit override is stored. **Excluded from V1:** recurring/scheduled invoices, auto-send, subscription billing. |
+| **D-27** | **Daybook is a real module (M32), Phase 9.** Read aggregator + action dispatcher. It owns no transactional tables and no edit logic. |
+| **D-28** | **Mobile = PWA** for V1. React Native/Expo deferred and may be dropped. Accepted limits: no native barcode hardware (browser camera is adequate), no iOS push, and browser-storage eviction — the last of which is now governed by the hard gate in **D-24**, not merely accepted. |
+| **D-29** | **Time and business date** — see §3.5. |
+| **D-30** | **Document numbering** — see §3.7. |
+| **D-31** | **Rounding and allocation** — see §3.3. |
+| **D-32** | **Concurrency** — see §3.8. |
+
+## 4.4 Deployment mode (D-33 … D-36) — Phase 1
+
+**Renumbered 2026-08-16 from D-21 … D-24. The decisions themselves are unchanged.** Phase 1 slice 1.7 and M02 (§5.2) refer to this set.
+
+**Governing rule: SaaS and on-premise are the same build.** Signup, OTP and subscription are disabled by configuration, never deleted. A separate on-premise fork is forbidden.
+
+| ID | Was | Decision |
+|---|---|---|
+| **D-33** | D-21 | **Identity verification** is pluggable behind `IdentityVerifier`. `OtpIdentityVerifier` (SaaS, phone OTP) · `NoOpIdentityVerifier` (on-prem; installer seeds admin with forced password change). `sendOtp()` is called from exactly one place. No module outside M02 imports an SMS provider type. `NoOpIdentityVerifier` is **rejected at boot** if `SINGLE_TENANT_MODE=false`. |
+| **D-34** | D-22 | **Tenant provisioning** is pluggable behind `TenantProvisioner`. `SignupTenantProvisioner` (SaaS) · `SeedTenantProvisioner` (on-prem, idempotent, refuses if a tenant exists, name/ID from the license key). When `SINGLE_TENANT_MODE=true`, registration routes return **404**, not 403. `tenant_id` remains on every table and in every query in both modes. |
+| **D-35** | D-23 | **Entitlement source** is pluggable behind `EntitlementProvider`. `SubscriptionEntitlementProvider` (SaaS) · `LicenseKeyEntitlementProvider` (on-prem, signed key validated **offline** against an embedded public key, no phone-home). On-prem does **not** skip entitlement checks — it answers them from the license. `modules[]` in the license feeds the existing Settings module; no second feature-flag system. Missing/invalid license → `READ_ONLY`, never a crash, never data loss. |
+| **D-36** | D-24 | **License term and expiry.** Contract-term based. States: `ACTIVE` → `EXPIRING` (30d before) → `GRACE` (30d after) → `READ_ONLY`; `RESTORED` on renewal with no data loss. **There is no state in which customer data is destroyed, hidden, or made un-exportable** — backup export works in every state including `READ_ONLY`. Sell license term separately from annual maintenance. |
 
 ### Configuration flags
 
@@ -411,19 +446,6 @@ All final. Not discussion points.
 | `BILLING_ENABLED` | `true` | `false` |
 
 **Boot-time validation is mandatory.** The app refuses to start on: `SINGLE_TENANT_MODE=false` + `IDENTITY_VERIFIER=none` · `ENTITLEMENT_SOURCE=license` with no readable license · `SINGLE_TENANT_MODE=true` + `BILLING_ENABLED=true`.
-
-## 4.3 Implementation mechanics (D-25 … D-32)
-
-| ID | Decision |
-|---|---|
-| **D-25** | **Period lock is not a module.** It is a `PeriodGuard` service in `core-application`, configured through Settings, enforced inside every use case writing a `business_date`. Granularity: **calendar month per tenant**. States `OPEN` → `CLOSED`; a closed month rejects create/edit/void/backdate landing in it with `PERIOD_LOCKED`. Unlock requires `finance.period.unlock` **plus** step-up auth **plus** a mandatory reason, and writes an audit event. Re-costing true-ups **never** silently cross a closed period — they post in the current open month as a correction referencing the original. |
-| **D-26** | **Invoice templates** are a saved set of line items (product, qty, optional price override) with a name. Not a document, no financial effect, no journal entry. Tables: `sale_templates`, `sale_template_lines`. Loading a template creates a **draft** sale; prices re-read live from the product unless an explicit override is stored. **Excluded from V1:** recurring/scheduled invoices, auto-send, subscription billing. |
-| **D-27** | **Daybook is a real module (M32), Phase 9.** Read aggregator + action dispatcher. It owns no transactional tables and no edit logic. |
-| **D-28** | **Mobile = PWA** for V1. React Native/Expo deferred and may be dropped. Accepted limits: no native barcode hardware (browser camera is adequate), no iOS push, browser-storage eviction risk. |
-| **D-29** | **Time and business date** — see §3.5. |
-| **D-30** | **Document numbering** — see §3.7. |
-| **D-31** | **Rounding and allocation** — see §3.3. |
-| **D-32** | **Concurrency** — see §3.8. |
 
 ---
 
@@ -482,11 +504,40 @@ Financial and inventory integrity rules override generic CRUD freedom. Not every
 Business profile: name, phone, address, currency, timezone (default `Asia/Dhaka`), status, identity, tenant configuration, business-level settings. Tenant data isolated.
 
 ## 5.3 M02 Auth, Users, Roles, Permissions
-Login, logout, OTP, user/role/permission management, session and token handling, password security, session expiry, auth failure handling. Implements D-21/D-22/D-23/D-24 providers.
+Login, logout, OTP, user/role/permission management, session and token handling, password security, session expiry, auth failure handling. Implements D-33/D-34/D-35/D-36 providers (renumbered from D-21…D-24).
 
 **Tokens:** access 15 min (`sub`, `tenant_id`, `roles[]`, `session_id`); refresh 30 days, rotating, revocable, server-stored. **Permissions are not in the token** — resolved server-side per request so changes take effect immediately.
 
 **Step-up** (fresh credential within 5 minutes, asserted in the use case, not a UI dialog): void/delete a posted document · unlock a closed period · change costing method · change financial terminology or accounting settings · export/restore a backup · create/disable/re-privilege a user · transfer offline write authority.
+
+### Signup and login flows (D-07)
+
+```
+SIGNUP / FIRST LOGIN
+  one field: mobile OR email
+    → 6-digit OTP to that channel   (email identifier ⇒ email OTP, phone ⇒ SMS)
+    → verify OTP
+    → set username + password + PIN
+    → tenant created, logged in
+
+DAILY LOGIN                          FORGOT PASSWORD
+  email + password                     enter email or phone
+  phone + password                       → 6-digit OTP to that channel
+  PIN (returning session, same device)   → verify
+  Google OAuth                           → set new password
+```
+
+**OTP is never a daily-login method.** It verifies identity once at signup and again at password recovery. This keeps SMS cost proportional to new accounts and recovery events, not to daily usage.
+
+**Identifier rules.** The single login field is classified as email or phone by format, and resolved against the user record; an unrecognised identifier returns the same generic failure as a wrong password, never "no such user". Phone uniqueness for *users* is per tenant and independent of the customer-phone rule in D-02.
+
+**Username** is set at signup, unique per tenant, and is a display/audit identity — it is not a login identifier in V1. Login always uses email, phone, PIN or Google.
+
+**Google OAuth.** A Google account is linked to an existing user by verified email. If the email is unknown, signup still requires the OTP flow — Google alone never creates a tenant.
+
+**OTP rules.** 6 digits · 5-minute expiry · single use · invalidated on a new request · maximum 5 verification attempts then the code dies · per-identifier and per-IP rate limits · code is stored hashed, never logged, never returned in a response body. Every send, failure and lockout is audited (R-13, SIM-swap).
+
+**Password and PIN.** Both are set at signup and changeable in Settings; changing either requires the current credential, and changing a password invalidates all other sessions. PIN is a convenience credential for a returning session on a known device — it never substitutes for a password on a new device and never satisfies step-up.
 
 ## 5.4 M03 Subscription & Entitlements
 Trial, monthly/yearly plans, feature entitlements, package restrictions, renewal, expiry, offline licensing period. Full implementation is Phase 10; the `EntitlementService` interface with a permissive stub exists from Phase 0.
@@ -495,7 +546,7 @@ Indicative tiers (exact matrix is open item O-1): **Basic** — core POS, produc
 
 **Vendor/consignment is Advanced-tier functionality.**
 
-**On expiry:** restricted new actions are blocked per policy, **historical data is retained**, and upgrading restores access. Entitlement is enforced server-side. Expiry never destroys or hides data (consistent with D-24).
+**On expiry:** restricted new actions are blocked per policy, **historical data is retained**, and upgrading restores access. Entitlement is enforced server-side. Expiry never destroys or hides data (consistent with D-36).
 
 ## 5.5 M04 Product & Catalog
 Product, brand, category/group, SKU/code, barcode, unit, selling price, reorder level, status, description, image, expiry config, warranty config, serial tracking.
@@ -829,7 +880,22 @@ Permission **denials** on mutating actions are audit-logged with user, code, rec
 
 ## 5.23 M28 Offline & Sync — future phase
 
-V1 scope is temporary browser IndexedDB support under the single-writer rule. Everything below governs the full SQLite/Tauri implementation and is the reason for the ULID, integer-money, outbox and idempotency decisions in V1.
+Offline runs **inside the PWA** on SQLite WASM + OPFS (D-23), under the single-writer rule bound to a registered browser profile (D-01). There is no Tauri shell and no local Node process (D-20). Everything below is the reason for the ULID, integer-money, outbox and idempotency decisions taken in V1.
+
+**Preconditions before any offline write is accepted (D-24), enforced in this order:**
+
+```
+PWA installed
+  → navigator.storage.persist() granted
+  → navigator.storage.estimate() ≥ snapshot size + headroom
+  → profile registered and holds OFFLINE_RW
+  → snapshot downloaded and verified
+  → offline writing ENABLED
+```
+
+Failure or later revocation of any step drops the profile to **read-only offline**, states so plainly in the UI, and leaves already-queued operations intact for push. The app never accepts a write into storage it has not been told is persistent.
+
+**Browser-profile binding.** `OFFLINE_RW` is held by a profile, not a machine. A different browser, a different OS user, an incognito window, or a cleared profile on the same PC is a different writer and must be re-registered through the transfer flow. The registration record stores a profile-generated keypair; the server binds authority to the public key, so copying the OPFS files to another profile does not carry write authority with them.
 
 **Device authority state machine**
 
@@ -863,15 +929,17 @@ Uniqueness enforced by `CREATE UNIQUE INDEX ON device_authorizations(tenant_id) 
 
 **Bootstrap/transfer snapshot** contains: settings, users/roles/permissions, parties, products/brands/categories/units, locations, open lots + balances **as movements**, open documents, ledger opening positions as a carry-forward journal entry, and the last N months of transactions. The device receives an opening-position entry, not necessarily full history — restore stays bounded while balances stay exact.
 
-**Backup/restore:** encrypt local SQLite → `tenant_device.sherbak` (AES-256-GCM + manifest + schema version + last cursor). Clean reinstall imports, verifies manifest and tenant ownership, restores, and **resumes sync from the stored cursor** with the pending outbox preserved.
+**Backup/restore:** export the local SQLite WASM database out of OPFS, encrypt → `tenant_device.sherbak` (AES-256-GCM + manifest + schema version + last cursor), downloaded through the browser to a location the user controls. A clean profile imports the file, verifies manifest and tenant ownership, restores into OPFS, and **resumes sync from the stored cursor** with the pending outbox preserved. Because OPFS can be evicted, an automatic export is offered whenever the pending outbox is non-empty at session end.
 
 **Observability:** `GET /sync/status` — last successful push/pull, pending ops, failed ops, quarantined count, cursor, schema versions, license status, estimated drift.
 
-**Sync test matrix (all must pass before the offline phase exits):** SY-01 500 clean ops all APPLIED · SY-02 repeat batch all DUPLICATE, no data change · SY-03 network killed at op 250 → resume, no duplicates, no gaps · SY-04 server restart mid-batch · SY-05 op references deleted product → QUARANTINED with fix action · SY-06 period closed on server → QUARANTINED, not force-posted · SY-07 permission revoked while offline → QUARANTINED · SY-08 device cost differs → applied with true-up + report row · SY-09 revoked device reconnects with 200 ops → all quarantined · SY-10 schema too old → SCHEMA_INCOMPATIBLE, no partial writes · SY-11 master data edited both sides → field-level merge + review entry, no silent loss · SY-12 **a full offline business day produces identical stock, ledger, cash and report totals to the equivalent online day**.
+**Sync test matrix (all must pass before the offline phase exits):** SY-01 500 clean ops all APPLIED · SY-02 repeat batch all DUPLICATE, no data change · SY-03 network killed at op 250 → resume, no duplicates, no gaps · SY-04 server restart mid-batch · SY-05 op references deleted product → QUARANTINED with fix action · SY-06 period closed on server → QUARANTINED, not force-posted · SY-07 permission revoked while offline → QUARANTINED · SY-08 device cost differs → applied with true-up + report row · SY-09 revoked device reconnects with 200 ops → all quarantined · SY-10 schema too old → SCHEMA_INCOMPATIBLE, no partial writes · SY-11 master data edited both sides → field-level merge + review entry, no silent loss · SY-12 **a full offline business day produces identical stock, ledger, cash and report totals to the equivalent online day** · SY-13 `persist()` refused → offline writing never enables, UI states why, no data accepted · SY-14 persistence revoked mid-day with a pending outbox → profile drops to read-only, queued ops survive and push on reconnect, user is prompted to export · SY-15 quota exhausted mid-batch → writes stop cleanly with a blocking banner, no partial or corrupt transaction · SY-16 OPFS files copied to a second browser profile → that profile has no write authority and is refused at push.
 
 ## 5.24 M29 Documents, Notifications & SMS
 
 Invoice printing (thermal, A4, business pad), PDF, image, Bangla/English invoices, multiple templates, reprint, document search.
+
+**Printing transport (D-22).** Thermal receipts go over **WebUSB with generated ESC-POS** byte sequences — no OS driver, no print dialog, no per-shop printer setup beyond a one-time device permission. The **browser print dialog fallback is mandatory** and must be reachable at all times: WebUSB unavailable (Firefox, iOS Safari), permission refused, device not claimed, or printer offline all fall through to a styled HTML layout (80mm thermal variant and A4). **A sale is never blocked by a printing failure** — the document is posted first, printing is a separate action that can be retried or reprinted. Printer choice, vendor/product ID and the last successful transport are stored per browser profile; A4 and business-pad documents always use the print dialog. ESC-POS command generation lives in `apps/web`, not in the domain — the domain produces the document, never bytes for a device.
 
 **Two distinct SMS concerns — do not merge them.**
 
@@ -880,7 +948,7 @@ Invoice printing (thermal, A4, business pad), PDF, image, Bangla/English invoice
 | Who pays | SherERP | The tenant |
 | Purpose | Account verification (D-07) | Business messages to the tenant's own customers |
 | Metering | None | Prepaid credits, balance, usage |
-| Phase | **Phase 1**, behind `IdentityVerifier` (D-21) | **Phase 10** |
+| Phase | **Phase 1**, behind `IdentityVerifier` (D-33) | **Phase 10** |
 | Scope | One send-only provider call, no wallet, no billing | Packages, top-up, verification, audit |
 
 They share a transport and nothing else. Building the wallet to unblock login would drag bKash verification and credit metering into the auth phase.
@@ -1116,7 +1184,7 @@ Each phase is a list of slices. Every slice ends in a working screen and an owne
 | Phase | Name | Slices | Phase exit criteria |
 |---|---|---|---|
 | **0** | Foundation kernel *(no UI — the only exception)* | 0.1 monorepo + CI boundary checks · 0.2 Money/Qty/UnitCost/Ulid/Clock · 0.3 TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + one reference use case | `/health` returns 200; all CI gates green; boundary checker proven to catch a violation; cross-tenant, RLS, idempotency, period-lock and concurrent-numbering tests pass |
-| **1** | Tenant, auth, settings, audit | 1.1 register tenant via OTP → land on an empty dashboard · 1.2 log in / log out (PIN, password) · 1.3 create and edit users · 1.4 create roles and assign permissions · 1.5 change a setting and see it take effect · 1.6 view the audit trail of everything above · 1.7 deployment-mode providers (D-21…D-24) + boot validation + license states | Owner registers, creates a user, assigns a role, changes a setting — all in the UI, all audited. Both `saas-smoke` and `onprem-smoke` green; registration returns 404 in single-tenant mode |
+| **1** | Tenant, auth, settings, audit | 1.1 register tenant via OTP (mobile **or** email) → set username/password/PIN → land on an empty dashboard · 1.2 log in / log out (email+password, phone+password, PIN, Google) + forgot-password via OTP + change password/PIN in Settings · 1.3 create and edit users · 1.4 create roles and assign permissions · 1.5 change a setting and see it take effect · 1.6 view the audit trail of everything above · 1.7 deployment-mode providers (D-33…D-36) + boot validation + license states | Owner registers, creates a user, assigns a role, changes a setting — all in the UI, all audited. Both `saas-smoke` and `onprem-smoke` green; registration returns 404 in single-tenant mode |
 | **2** | Master data | 2.1 create a product, see it listed · 2.2 brands and categories · 2.3 product search + brand/category filter · 2.4 barcode search and scan · 2.5 units and conversion (D-10) · 2.6 create a party and assign roles · 2.7 party search + role-filtered lists · 2.8 customer phone uniqueness + walk-in customer | Products and parties fully usable in the UI with permissions enforced |
 | **3** | Inventory core *(Gate G2)* | 3.1 opening stock entry → movement + journal + lot · 3.2 stock list with on-hand quantities · 3.3 lot list and lot detail per product · 3.4 costing method setting (FIFO/AVERAGE) · 3.5 stock valuation report · 3.6 negative-stock policy · 3.7 stock movement history with drill-down | Opening stock posts movements and journal; **INV-01…INV-05 green under both costing methods**; valuation equals the `INVENTORY` account exactly |
 | **4** | Money accounts | 4.1 create cash accounts (`CASH:{id}` — drawer, safe) with opening balances · 4.2 **Start Day** with counted opening cash + declared source/destination for any difference · 4.3 **End Day** with expected vs counted and short/over posting · 4.4 create a bank account with opening balance · 4.5 cash and bank statements · 4.6 owner injection / withdrawal | Cash and bank balances provable from journal; **the §5.16.6 worked example reproduces exactly**, including the Day-1 shortage surviving all three Day-2 outcomes; INV-07 a/b/c green |
@@ -1127,7 +1195,7 @@ Each phase is a list of slices. Every slice ends in a working screen and an owne
 | **9** | Reporting *(Gate G4)* | 9.1 sales reports · 9.2 purchase reports · 9.3 inventory reports · 9.4 finance reports · 9.5 "Why?" drill-down on every total · 9.6 dashboard cards · 9.7 Daybook view · 9.8 Daybook day-end print | Report figures reconcile to journal and movements (INV-10); **Daybook totals equal Reports totals**; day-end print verified on A4 and 80mm |
 | **10** | SaaS layer | 10.1 subscription plans and entitlement gating · 10.2 tenant lifecycle · 10.3 `.sherdb` export · 10.4 `.sherdb` import/restore · 10.5 SMS wallet + bKash top-up | Entitlement gating verified per feature; backup → wipe → restore matches exactly |
 | **11** | Bank reconciliation | 11.1 import a statement · 11.2 match transactions · 11.3 create missing transactions · 11.4 mark reconciled · 11.5 review flag on later edits | Reconciliation scenarios pass |
-| **12** | Offline *(Gate G5)* | Sliced at the start of the phase: device authority · outbox push · pull · conflict quarantine · Tauri shell · local backup | SY-01…SY-12 pass; an offline day equals the online result exactly |
+| **12** | Offline *(Gate G5)* | Sliced at the start of the phase: **persistence gate (D-24) first** · profile registration + device authority · SQLite WASM/OPFS adapter · outbox push · pull · conflict quarantine · local backup export/import | SY-01…SY-16 pass; an offline day equals the online result exactly; no write is ever accepted without granted persistent storage |
 | **13** | PWA polish | Sliced at the start of the phase | Core POS and reports usable on a tablet |
 | **14** | AI/MCP + on-prem packaging | Sliced at the start of the phase; read tools before any write tool | AI actions audited, permission-bound, explainable; on-prem install and upgrade verified on a clean VM |
 | **15** | Reusable core extraction | Package hardening | Core packages published internally, one sample reuse |
@@ -1200,7 +1268,9 @@ Four containers via Docker Compose: `nginx`, `api`, `db`, `backup`. PostgreSQL b
 
 **Sales constraint: cap on-premise customers at 2–3 until V1 is stable.** Each install multiplies support surface with no remote visibility. Take the first customers close to home.
 
-**Standalone single-PC desktop is not available until the SQLite phase completes.** Do not sell it. On-premise LAN solves the connectivity problem today — the server sits inside the shop and internet outage is irrelevant.
+**Standalone single-PC offline is not available until Phase 12 completes.** Do not sell it. When it arrives it is the installed PWA on SQLite WASM + OPFS — **not** a desktop application (D-20), so do not describe it to a customer as one. On-premise LAN solves the connectivity problem today: the server sits inside the shop and an internet outage is irrelevant.
+
+**COOP/COEP headers are required** on the app origin for `SharedArrayBuffer`, which SQLite WASM needs for OPFS synchronous access. nginx must set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` on the frontend, in both SaaS and on-premise. Any third-party asset that cannot be served with `Cross-Origin-Resource-Policy` must be self-hosted — verify this before Phase 12, not during it.
 
 ## 6.6 Working rhythm
 
@@ -1267,7 +1337,9 @@ Priority = Likelihood × Impact (1–5 each).
 | R-28 | Frontend API URL baked in at build time | 12 | Runtime `/config.json`; CI asserts no `VITE_API_URL` in bundle | Any customer-specific frontend build |
 | R-29 | SaaS deployed with `IDENTITY_VERIFIER=none` | 10 | Boot-time config validation; CI `invalid-config` gate | Any environment starting without verification |
 | R-11 | Restore used to bypass plan limits | 9 | Entitlement re-evaluation on restore (D-08) | — |
-| R-17 | Tauri sidecar packaging/lifecycle problems | 9 | Spike before Phase 12 | Spike failure |
+| R-17 | **Browser evicts OPFS data holding un-pushed transactions** | 20 | D-24 hard gate: no write without PWA install + granted `persist()`; continuous quota + outbox-depth display; export prompt whenever the outbox is non-empty at session end | Any eviction observed, or any write path reachable without the gate |
+| R-30 | WebUSB printing unavailable or refused mid-sale | 9 | Mandatory print-dialog fallback (D-22); posting is never coupled to printing | Any sale blocked by a printer |
+| R-31 | COOP/COEP headers missing ⇒ SQLite WASM cannot use OPFS | 9 | Headers set in nginx for both modes; CI asserts them; assets self-hosted | Offline fails to initialise on a customer origin |
 | R-22 | Bank reconciliation invalidated by later edits | 9 | Reconciled rows flagged; edits raise review, never silent | — |
 
 ---
@@ -1282,7 +1354,8 @@ Everything the owner needed to decide is decided. These remain to be resolved **
 | O-2 | Data retention window and purge job SLA for "delete server data" | Phase 10 |
 | O-4 | Stock transfer document design between locations (D-17 confirms the requirement) | After multi-location UI |
 | O-5 | POS performance budget numbers (p95 targets) to encode in CI | Phase 6 |
-| O-6 | Tauri sidecar packaging spike result (R-17) | Before Phase 12 |
+| O-6 | SQLite WASM + OPFS spike result — bundle size, cold-start time, snapshot import time, realistic quota on a low-end shop PC, and behaviour when `persist()` is refused (R-17) | Before Phase 12 |
+| O-9 | WebUSB ESC-POS spike on the actual thermal printer models sold in Bangladesh — which respond to generic ESC-POS, which need a vendor quirk (D-22) | Before Phase 6 |
 | O-7 | Who closes a period and when — manual close only, or auto-close after N days? Nobody closing anything is risk R-21 | Phase 7 |
 | O-8 | Whether a *future* calendar month counts as OPEN (can a user post a forward-dated document?). Current rule rejects future `business_date`; confirm that is right for post-dated cheques | Phase 7 |
 
@@ -1310,3 +1383,11 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 | 2026-08-16 | **`OWNER_CURRENT_ACCOUNT` added**, signed both ways, `party_id` on the journal lines. Counterpart for owner cash injections and withdrawals |
 | 2026-08-16 | **One drawer session per business day per tenant.** The former per-cashier session scope is removed; `cash.day.start` and `cash.day.end` become their own permissions and are not held by the Cashier role |
 | 2026-08-16 | **INV-07 restated** in three parts: expected formula, closed-session ledger equals counted cash, and no unexplained opening-balance delta |
+| 2026-08-16 | **D-21…D-24 renumbered to D-33…D-36.** The deployment-mode provider decisions (`IdentityVerifier`, `TenantProvisioner`, `EntitlementProvider`, license term) are unchanged in substance and moved to §4.4. References updated in §5.2 M02, §5.24 SMS table and Phase 1 slice 1.7. **Any prompt or transcript citing "D-21…D-24 providers" means D-33…D-36** |
+| 2026-08-16 | **D-21 (new) — stack confirmed:** Vue 3 + Vite PWA + NestJS. T3 rejected: it breaks the REST/OpenAPI contract shared by mobile, on-prem and MCP, and has no path to running the domain in the browser |
+| 2026-08-16 | **D-22 (new) — receipt printing:** WebUSB ESC-POS primary with a **mandatory** browser print-dialog fallback. Posting a sale is never coupled to printing. New risk R-30, new open item O-9 |
+| 2026-08-16 | **D-23 (new) — offline storage engine: SQLite WASM + OPFS.** Replaces the IndexedDB wording in D-01 and §5.23. IndexedDB cannot express transactional multi-table writes or the ten-step write path, so it is rejected as the engine. Requires COOP/COEP headers — new risk R-31 |
+| 2026-08-16 | **D-24 (new) — eviction policy:** PWA install + granted `navigator.storage.persist()` before any offline write. R-17 repurposed from Tauri packaging to OPFS eviction and raised to score 20 — it is the only unrecoverable failure mode in the offline design |
+| 2026-08-16 | **D-20 revised — Tauri REJECTED.** No desktop shell, no local Node/NestJS sidecar, no Rust. Offline lives inside the PWA. §1.2 delivery sequence, §1.3 stack table, §2.1 layout (`apps/desktop` removed, `adapter-sqlite` → `adapter-sqlite-wasm`), §2.3 write path, §5.23, Phase 12 slices and §6.5 updated. Consequence accepted: no OS-level integration, offline capacity bounded by browser quota |
+| 2026-08-16 | **D-07 revised.** OTP is for signup verification and password recovery only — **never daily login**. Signup takes one field (mobile or email), sends a 6-digit OTP to that channel, then sets username + password + PIN. Daily login is email/phone + password, PIN, or Google. Forgot password sends OTP to the registered email or phone. Full flows, OTP rules and identifier rules added to §5.3 M02; Phase 1 slices 1.1/1.2 updated. Reason: OTP-per-login makes SMS cost scale with daily usage |
+| 2026-08-16 | **D-01 revised.** Single writer per tenant now bound to a **registered browser profile**, not a device — a different browser or cleared profile on the same PC is a different writer. Authority bound to a profile keypair, so copying OPFS files does not carry write authority. Sync matrix extended with SY-13…SY-16 |

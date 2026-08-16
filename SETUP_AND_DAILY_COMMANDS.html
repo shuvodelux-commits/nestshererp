@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SherERP — Setup &amp; Daily Commands (WSL2 · Debian · zsh)</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --panel2:#1b2029; --border:#272d38;
+    --text:#e6e9ef; --muted:#98a2b3; --accent:#7aa2f7; --green:#7ddc9a;
+    --amber:#f0c674; --red:#f28b82; --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .wrap{display:flex;max-width:1400px;margin:0 auto;gap:32px;padding:0 24px}
+  nav{position:sticky;top:0;height:100vh;overflow-y:auto;width:250px;flex:none;padding:28px 0;
+    border-right:1px solid var(--border)}
+  nav h4{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+  nav a{display:block;color:var(--muted);text-decoration:none;padding:4px 10px 4px 0;font-size:13.5px;border-radius:5px}
+  nav a:hover{color:var(--accent)}
+  main{flex:1;min-width:0;padding:36px 0 120px}
+  header.top{border-bottom:1px solid var(--border);padding-bottom:22px;margin-bottom:34px}
+  h1{font-size:29px;margin:0 0 8px;letter-spacing:-.4px}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:21px;margin:52px 0 14px;padding-top:10px;border-top:1px solid var(--border);letter-spacing:-.2px}
+  h2 .n{color:var(--accent);font-family:var(--mono);font-size:16px;margin-right:10px}
+  h3{font-size:16px;margin:28px 0 10px;color:#cfd6e4}
+  p{margin:10px 0}
+  code{font-family:var(--mono);font-size:13px;background:var(--panel2);padding:1.5px 6px;border-radius:4px;color:#c3d0e8}
+  pre{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:9px;
+    padding:16px 46px 16px 16px;overflow-x:auto;margin:12px 0}
+  pre code{background:none;padding:0;font-size:13px;line-height:1.7;color:#d7dee9}
+  .cmt{color:#6b7688}
+  .cp{position:absolute;top:8px;right:8px;background:var(--panel2);border:1px solid var(--border);
+    color:var(--muted);border-radius:6px;font-size:11px;padding:3px 8px;cursor:pointer}
+  .cp:hover{color:var(--text);border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:#cfd6e4}
+  td code{font-size:12.5px}
+  .box{border-left:3px solid var(--accent);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0}
+  .box.warn{border-left-color:var(--amber)}
+  .box.danger{border-left-color:var(--red)}
+  .box.ok{border-left-color:var(--green)}
+  .box b{display:block;margin-bottom:4px;font-size:13px;letter-spacing:.02em}
+  ol,ul{padding-left:22px}
+  li{margin:6px 0}
+  .flow{font-family:var(--mono);font-size:12.5px;background:var(--panel);border:1px solid var(--border);
+    border-radius:9px;padding:16px;white-space:pre;overflow-x:auto;color:#a9b6cc;line-height:1.75}
+  .pill{display:inline-block;font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:20px;
+    border:1px solid var(--border);background:var(--panel2);color:var(--muted);margin-left:8px}
+  footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+  @media(max-width:900px){nav{display:none}.wrap{padding:0 16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <h4>Environment</h4>
+  <a href="#s1">1 · WSL2 daily commands</a>
+  <a href="#s2">2 · zsh setup &amp; aliases</a>
+  <a href="#s3">3 · Docker + PostgreSQL</a>
+  <a href="#s4">4 · Node 20 + pnpm 9</a>
+  <h4>Project</h4>
+  <a href="#s5">5 · Monorepo skeleton</a>
+  <a href="#s6">6 · NestJS API app</a>
+  <a href="#s7">7 · Vue 3 + Vite app</a>
+  <a href="#s8">8 · Drizzle + database</a>
+  <a href="#s9">9 · Root scripts</a>
+  <h4>Running</h4>
+  <a href="#s10">10 · First code &amp; dev server</a>
+  <a href="#s11">11 · Verify it works</a>
+  <h4>Workflow</h4>
+  <a href="#s12">12 · Vertical slice loop</a>
+  <a href="#s13">13 · Slice checklist</a>
+  <a href="#s14">14 · Git daily commands</a>
+  <a href="#s15">15 · Troubleshooting</a>
+  <a href="#s16">16 · Cheat sheet</a>
+</nav>
+
+<main>
+<header class="top">
+  <h1>SherERP — Setup &amp; Daily Commands</h1>
+  <div class="sub">WSL2 · Debian · zsh · Docker · PostgreSQL 16 · Node 20 · pnpm 9 · NestJS · Vue 3 + Vite · Drizzle</div>
+  <p class="sub" style="margin-top:12px">Assumes Docker and PostgreSQL are already installed inside WSL2 Debian, and <code>git init</code> is already done in <code>~/projects/shererp</code>. Stack is final — see <code>SRS_AND_BUILD_GUIDE.md</code> §1.3. Do not substitute anything.</p>
+</header>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1"><span class="n">01</span>WSL2 daily commands</h2>
+
+<h3>From Windows (PowerShell / Terminal)</h3>
+<pre><code>wsl -l -v                      <span class="cmt"># list distros + state + WSL version</span>
+wsl -d Debian                  <span class="cmt"># open Debian shell</span>
+wsl --shutdown                 <span class="cmt"># hard restart ALL distros (fixes most weirdness)</span>
+wsl -t Debian                  <span class="cmt"># terminate just Debian</span>
+wsl --set-default Debian       <span class="cmt"># make Debian the default distro</span>
+wsl --status                   <span class="cmt"># WSL version + kernel</span>
+wsl --update                   <span class="cmt"># update the WSL kernel</span></code></pre>
+
+<div class="box danger">
+  <b>Rule: code never lives under /mnt/c/</b>
+  Keep the repo at <code>~/projects/shererp</code> (the Linux filesystem). <code>/mnt/c/</code> is roughly 10× slower for <code>node_modules</code> and file watching breaks. Edit from Windows via VS Code Remote — WSL, not by opening the <code>\\wsl.localhost</code> path in a Windows editor.
+</div>
+
+<h3>Inside Debian</h3>
+<pre><code>pwd                            <span class="cmt"># where am I</span>
+cd ~/projects/shererp          <span class="cmt"># go to the project</span>
+ls -la                         <span class="cmt"># list including dotfiles</span>
+df -h .                        <span class="cmt"># disk space left</span>
+free -h                        <span class="cmt"># RAM in use (WSL VM)</span>
+htop                           <span class="cmt"># process viewer (sudo apt install htop)</span>
+explorer.exe .                 <span class="cmt"># open current folder in Windows Explorer</span>
+code .                         <span class="cmt"># open current folder in VS Code (WSL Remote)</span>
+hostname -I                    <span class="cmt"># WSL IP (for LAN access to the dev server)</span>
+sudo apt update &amp;&amp; sudo apt upgrade -y</code></pre>
+
+<h3>Ports and processes</h3>
+<pre><code>ss -tulpn | grep LISTEN        <span class="cmt"># what is listening</span>
+ss -tulpn | grep 3000          <span class="cmt"># is the API port taken</span>
+lsof -i :3000                  <span class="cmt"># which process owns port 3000</span>
+kill -9 &lt;PID&gt;                  <span class="cmt"># kill it</span>
+pkill -f "nest start"          <span class="cmt"># kill a stuck Nest dev server</span></code></pre>
+
+<div class="box">
+  <b>Memory limit (optional but recommended)</b>
+  On Windows create <code>C:\Users\Shoaib\.wslconfig</code>, then run <code>wsl --shutdown</code>:
+<pre style="margin-top:10px"><code>[wsl2]
+memory=8GB
+processors=4
+swap=2GB</code></pre>
+</div>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2"><span class="n">02</span>zsh setup &amp; project aliases</h2>
+
+<p>Everything below assumes zsh. Your config file is <code>~/.zshrc</code> — not <code>~/.bashrc</code>. This matters most for nvm, which will silently not exist in new shells if it is added to the wrong file.</p>
+
+<pre><code>echo $SHELL                    <span class="cmt"># should print /usr/bin/zsh or /bin/zsh</span>
+chsh -s $(which zsh)           <span class="cmt"># make zsh the login shell if it is not</span>
+nano ~/.zshrc                  <span class="cmt"># edit config</span>
+source ~/.zshrc                <span class="cmt"># reload config in the current shell</span>
+exec zsh                       <span class="cmt"># or replace the shell entirely</span></code></pre>
+
+<h3>Add to the end of ~/.zshrc</h3>
+<pre><code><span class="cmt"># ---------- nvm (MUST be in .zshrc, not .bashrc) ----------</span>
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] &amp;&amp; \. "$NVM_DIR/bash_completion"
+
+<span class="cmt"># ---------- pnpm ----------</span>
+export PNPM_HOME="$HOME/.local/share/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+
+<span class="cmt"># ---------- SherERP shortcuts ----------</span>
+export SHER=~/projects/shererp
+alias sher='cd $SHER'
+alias pg-up='docker start sher-pg'
+alias pg-down='docker stop sher-pg'
+alias pg-log='docker logs -f --tail 50 sher-pg'
+alias psql-dev='docker exec -it sher-pg psql -U postgres -d sher_dev'
+alias psql-test='docker exec -it sher-pg psql -U postgres -d sher_test'
+alias dev='cd $SHER &amp;&amp; pnpm dev'
+alias check='cd $SHER &amp;&amp; pnpm lint &amp;&amp; pnpm typecheck &amp;&amp; pnpm test:boundaries &amp;&amp; pnpm test'
+alias gs='git status -sb'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -15'</code></pre>
+
+<p><code>check</code> is the single command that runs all four required gates. Get used to typing it before every commit.</p>
+
+<h3>zsh niceties (optional)</h3>
+<pre><code>sudo apt install -y zsh-autosuggestions zsh-syntax-highlighting
+
+<span class="cmt"># then append to ~/.zshrc — syntax-highlighting must be LAST</span>
+source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh</code></pre>
+
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><code>Ctrl + R</code></td><td>Search command history</td></tr>
+  <tr><td><code>Ctrl + A</code> / <code>Ctrl + E</code></td><td>Jump to start / end of line</td></tr>
+  <tr><td><code>Ctrl + C</code></td><td>Stop the running dev server</td></tr>
+  <tr><td><code>Ctrl + L</code></td><td>Clear screen</td></tr>
+  <tr><td><code>→</code> (right arrow)</td><td>Accept the greyed autosuggestion</td></tr>
+</table>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3"><span class="n">03</span>Docker + PostgreSQL — daily use</h2>
+
+<p>Docker and Postgres are already installed. This section is what you actually type each day.</p>
+
+<h3>Every morning</h3>
+<pre><code>sudo service docker start      <span class="cmt"># Docker Engine does not autostart in WSL2</span>
+docker start sher-pg           <span class="cmt"># start the database container</span>
+docker ps                      <span class="cmt"># confirm it is Up</span></code></pre>
+
+<div class="box">
+  <b>Make Docker start itself</b>
+  Add to <code>~/.zshrc</code> so you never hit "Cannot connect to the Docker daemon":
+<pre style="margin-top:10px"><code>if ! service docker status &gt; /dev/null 2&gt;&amp;1; then
+  sudo service docker start &gt; /dev/null 2&gt;&amp;1
+fi</code></pre>
+  For passwordless start: <code>sudo visudo</code> → add <code>shoaib ALL=(ALL) NOPASSWD: /usr/sbin/service docker *</code>
+</div>
+
+<h3>Container commands</h3>
+<pre><code>docker ps                      <span class="cmt"># running containers</span>
+docker ps -a                   <span class="cmt"># all containers, including stopped</span>
+docker start sher-pg
+docker stop sher-pg
+docker restart sher-pg
+docker logs -f --tail 50 sher-pg
+docker stats sher-pg           <span class="cmt"># live CPU/RAM</span>
+docker exec -it sher-pg bash   <span class="cmt"># shell inside the container</span></code></pre>
+
+<h3>Two databases — this is deliberate</h3>
+<table>
+  <tr><th>Database</th><th>Used by</th><th>Why separate</th></tr>
+  <tr><td><code>sher_dev</code></td><td>Manual testing in the UI</td><td>Holds your hand-entered acceptance data</td></tr>
+  <tr><td><code>sher_test</code></td><td><code>pnpm test</code></td><td>Test runs truncate tables — sharing one wipes your data mid-acceptance</td></tr>
+</table>
+
+<pre><code><span class="cmt"># confirm both exist</span>
+docker exec -it sher-pg psql -U postgres -c "\l"
+
+<span class="cmt"># create sher_test if it is missing</span>
+docker exec -it sher-pg psql -U postgres -c "CREATE DATABASE sher_test;"</code></pre>
+
+<h3>psql — the queries you will actually run</h3>
+<pre><code>psql-dev                       <span class="cmt"># your alias</span>
+
+\l                             <span class="cmt"># list databases</span>
+\dt                            <span class="cmt"># list tables</span>
+\d products                    <span class="cmt"># describe a table</span>
+\x                             <span class="cmt"># toggle expanded row output — use for wide rows</span>
+\q                             <span class="cmt"># quit</span>
+
+SELECT count(*) FROM products;
+SELECT * FROM stock_movement ORDER BY created_at DESC LIMIT 20;
+SELECT account, SUM(debit_minor) - SUM(credit_minor) AS balance
+  FROM journal_line GROUP BY account ORDER BY account;</code></pre>
+
+<div class="box warn">
+  <b>The journal query above is your correctness check</b>
+  Every posted document must leave <code>Σ debit = Σ credit</code>. If that query's total across all accounts is not zero, something in the write path is wrong — stop and report before building the next slice.
+</div>
+
+<h3>Backup and reset while developing</h3>
+<pre><code><span class="cmt"># dump sher_dev before a risky migration</span>
+docker exec sher-pg pg_dump -U postgres sher_dev &gt; ~/backups/sher_dev_$(date +%F_%H%M).sql
+
+<span class="cmt"># restore</span>
+cat ~/backups/sher_dev_2026-08-16_0930.sql | docker exec -i sher-pg psql -U postgres -d sher_dev
+
+<span class="cmt"># nuke and recreate dev data (early phases only)</span>
+docker exec -it sher-pg psql -U postgres -c "DROP DATABASE sher_dev;"
+docker exec -it sher-pg psql -U postgres -c "CREATE DATABASE sher_dev;"
+pnpm db:migrate</code></pre>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4"><span class="n">04</span>Node 20 LTS + pnpm 9</h2>
+
+<h3>Install nvm, then Node 20</h3>
+<pre><code>sudo apt install -y curl git build-essential
+
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+<span class="cmt"># the installer may append to ~/.bashrc — verify the nvm block is in ~/.zshrc (section 02)</span>
+
+source ~/.zshrc
+nvm install 20
+nvm alias default 20
+node -v                        <span class="cmt"># v20.x.x</span></code></pre>
+
+<h3>pnpm 9 via corepack</h3>
+<pre><code>corepack enable
+corepack prepare pnpm@9 --activate
+pnpm -v                        <span class="cmt"># 9.x.x</span></code></pre>
+
+<div class="box ok">
+  <b>Pin the toolchain in the repo</b>
+  Create <code>~/projects/shererp/.nvmrc</code> containing <code>20</code>, and add <code>"packageManager": "pnpm@9.x.x"</code> to the root <code>package.json</code>. Then <code>nvm use</code> in the project folder always picks the right Node, and corepack refuses the wrong pnpm.
+</div>
+
+<pre><code>cd ~/projects/shererp
+echo "20" &gt; .nvmrc
+nvm use                        <span class="cmt"># reads .nvmrc</span></code></pre>
+
+<h3>Auto-switch Node per folder (zsh)</h3>
+<pre><code><span class="cmt"># append to ~/.zshrc</span>
+autoload -U add-zsh-hook
+load-nvmrc() {
+  if [[ -f .nvmrc ]]; then nvm use --silent; fi
+}
+add-zsh-hook chpwd load-nvmrc
+load-nvmrc</code></pre>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5"><span class="n">05</span>Monorepo skeleton <span class="pill">Phase 0.1</span></h2>
+
+<p>This is slice 0.1 in <code>AI_CODING_INSTRUCTIONS.md</code>. In practice you paste that task block to the coding agent — but you need to be able to recognise and verify what it produces. Target layout:</p>
+
+<div class="flow">shererp/
+├── package.json               root scripts + devDependencies
+├── pnpm-workspace.yaml        workspace globs
+├── tsconfig.base.json         shared TS config
+├── eslint.config.js
+├── .nvmrc                     20
+├── .gitignore
+├── .github/workflows/ci.yml   lint → typecheck → boundaries → test
+├── tools/boundaries/          layering checker + __fixtures__
+├── packages/
+│   ├── core-domain/           PURE TS — entities, invariants, costing, posting
+│   ├── core-application/      use cases, repository interfaces, permissions, audit
+│   ├── core-contracts/        zod schemas, DTOs, error codes
+│   ├── adapter-postgres/      Drizzle implementations
+│   └── shared-utils/          Money, Qty, UnitCost, Ulid, Clock
+└── apps/
+    ├── api/                   NestJS — /health only at first
+    └── web/                   Vue 3 + Vite (added when phase 1 needs a screen)</div>
+
+<div class="box danger">
+  <b>Do NOT create these yet</b>
+  <code>packages/adapter-sqlite-wasm</code> (phase 12 — browser SQLite WASM + OPFS) and <code>apps/mcp</code> (phase 14). Empty folders are speculative scaffolding. The layering that makes them possible is what matters.
+  <br><br>There is no <code>apps/desktop</code> — Tauri is rejected (D-20). Offline runs inside the PWA, so <code>core-domain</code> and <code>core-application</code> must also avoid Node built-ins (<code>fs</code>, <code>path</code>, <code>crypto</code>): they get bundled for the browser.
+</div>
+
+<h3>Manual bootstrap (if you set it up yourself)</h3>
+<pre><code>cd ~/projects/shererp
+
+pnpm init
+mkdir -p packages/{core-domain,core-application,core-contracts,adapter-postgres,shared-utils}/src
+mkdir -p apps tools/boundaries/__fixtures__ .github/workflows
+
+cat &gt; pnpm-workspace.yaml &lt;&lt;'EOF'
+packages:
+  - "packages/*"
+  - "apps/*"
+EOF</code></pre>
+
+<p>Each package gets a minimal <code>package.json</code>. Example for <code>shared-utils</code>:</p>
+
+<pre><code>cat &gt; packages/shared-utils/package.json &lt;&lt;'EOF'
+{
+  "name": "@shererp/shared-utils",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
+EOF</code></pre>
+
+<p>Repeat for <code>@shererp/core-domain</code>, <code>@shererp/core-application</code>, <code>@shererp/core-contracts</code>, <code>@shererp/adapter-postgres</code>. Then wire the one-way dependencies:</p>
+
+<pre><code><span class="cmt"># domain may depend ONLY on shared-utils + zod</span>
+pnpm --filter @shererp/core-domain add @shererp/shared-utils@workspace:* zod
+
+<span class="cmt"># application depends on domain</span>
+pnpm --filter @shererp/core-application add @shererp/core-domain@workspace:*
+
+<span class="cmt"># adapter depends on application</span>
+pnpm --filter @shererp/adapter-postgres add @shererp/core-application@workspace:* drizzle-orm pg
+
+<span class="cmt"># root dev tooling</span>
+pnpm add -Dw typescript vitest eslint dependency-cruiser tsx @types/node</code></pre>
+
+<div class="box warn">
+  <b>Dependency direction is one-way and CI-enforced</b>
+  <code>api → application → domain → shared-utils</code>. <code>core-domain</code> imports only <code>shared-utils</code> and <code>zod</code> — never NestJS, Drizzle, pg, express or DOM types. <code>pnpm test:boundaries</code> must fail the build if this is violated, and there must be a deliberate bad fixture proving the checker actually catches it.
+</div>
+
+<!-- ============ 6 ============ -->
+<h2 id="s6"><span class="n">06</span>NestJS API app</h2>
+
+<pre><code>cd ~/projects/shererp/apps
+pnpm dlx @nestjs/cli new api --package-manager pnpm --skip-git --strict
+<span class="cmt"># choose pnpm if prompted; --skip-git because the repo is already a git repo</span>
+
+cd api
+pnpm add @nestjs/config zod
+pnpm add @shererp/core-application@workspace:* @shererp/core-contracts@workspace:*</code></pre>
+
+<p>Rename the package so it matches the workspace convention — edit <code>apps/api/package.json</code>:</p>
+
+<pre><code>{
+  "name": "@shererp/api",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}</code></pre>
+
+<h3>Set the port and env</h3>
+<pre><code>cat &gt; apps/api/.env &lt;&lt;'EOF'
+PORT=3000
+DATABASE_URL=postgresql://postgres:dev@localhost:5432/sher_dev
+TEST_DATABASE_URL=postgresql://postgres:dev@localhost:5432/sher_test
+NODE_ENV=development
+EOF</code></pre>
+
+<div class="box danger">
+  <b>.env must be gitignored</b>
+  Confirm <code>.env</code> is in <code>.gitignore</code> before your first commit. Commit a <code>.env.example</code> with the same keys and dummy values instead.
+</div>
+
+<h3>apps/api/src/main.ts</h3>
+<pre><code>import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('api');
+  app.enableCors({ origin: 'http://localhost:5173', credentials: true });
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();</code></pre>
+
+<h3>A health controller — the whole of Phase 0.1's API surface</h3>
+<pre><code><span class="cmt">// apps/api/src/health/health.controller.ts</span>
+import { Controller, Get } from '@nestjs/common';
+
+@Controller('health')
+export class HealthController {
+  @Get()
+  check() {
+    return { status: 'ok' };
+  }
+}</code></pre>
+
+<div class="box">
+  <b>Controllers stay ≤ 20 lines</b>
+  A controller maps a DTO to a command, calls one use case, and maps the result back. No business rules, no SQL, no calculations. If a controller is growing, the logic belongs in <code>core-application</code>.
+</div>
+
+<!-- ============ 7 ============ -->
+<h2 id="s7"><span class="n">07</span>Vue 3 + Vite app</h2>
+
+<p>Create this when Phase 1 needs its first real screen — not during Phase 0.</p>
+
+<pre><code>cd ~/projects/shererp/apps
+pnpm create vite@latest web -- --template vue-ts
+
+cd web
+pnpm add vue-router@4 pinia
+pnpm add @shererp/core-contracts@workspace:*
+pnpm add -D vite-plugin-pwa</code></pre>
+
+<p>Set the name in <code>apps/web/package.json</code> to <code>@shererp/web</code> and keep the scripts:</p>
+
+<pre><code>{
+  "name": "@shererp/web",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b &amp;&amp; vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
+  }
+}</code></pre>
+
+<h3>apps/web/vite.config.ts — proxy the API</h3>
+<pre><code>import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    host: true,          <span class="cmt">// needed so Windows can reach the WSL2 dev server</span>
+    port: 5173,
+    proxy: {
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+    },
+  },
+});</code></pre>
+
+<div class="box warn">
+  <b>Runtime API URL, not build-time</b>
+  The Vue app must read its API base URL at runtime from <code>/config.json</code>, not from <code>import.meta.env.VITE_API_URL</code>. A baked-in URL forces a separate frontend build per on-premise customer and breaks the one-artifact rule (§6.5).
+</div>
+
+<!-- ============ 8 ============ -->
+<h2 id="s8"><span class="n">08</span>Drizzle + database wiring</h2>
+
+<p>Drizzle lives only in <code>packages/adapter-postgres</code>. It must never be imported by <code>core-domain</code> or <code>core-application</code>.</p>
+
+<pre><code>cd ~/projects/shererp
+pnpm --filter @shererp/adapter-postgres add drizzle-orm pg
+pnpm --filter @shererp/adapter-postgres add -D drizzle-kit @types/pg</code></pre>
+
+<h3>packages/adapter-postgres/drizzle.config.ts</h3>
+<pre><code>import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './src/schema/*.ts',
+  out: './migrations',
+  dialect: 'postgresql',
+  dbCredentials: { url: process.env.DATABASE_URL! },
+} satisfies Config;</code></pre>
+
+<h3>Migration commands</h3>
+<pre><code>pnpm db:generate               <span class="cmt"># drizzle-kit generate — SQL from schema changes</span>
+pnpm db:migrate                <span class="cmt"># apply migrations to sher_dev</span>
+pnpm db:studio                 <span class="cmt"># drizzle-kit studio — browse data in a UI</span>
+
+<span class="cmt"># apply to the test database too</span>
+DATABASE_URL=$TEST_DATABASE_URL pnpm db:migrate</code></pre>
+
+<div class="box danger">
+  <b>Every table carries these, from migration one</b>
+  <code>tenant_id</code> (ULID, from <code>TenantContext</code> — never from a request body or URL), ULID primary key generated in application code (no autoincrement), soft-delete columns, a version column, and <code>created_at</code>/<code>updated_at</code>. Money is an integer in minor units (scale 2), quantity scale 3, unit cost scale 4. Retrofitting any of these later is enormously expensive.
+</div>
+
+<!-- ============ 9 ============ -->
+<h2 id="s9"><span class="n">09</span>Root package.json scripts</h2>
+
+<pre><code>{
+  "name": "shererp",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev":             "pnpm -r --parallel dev",
+    "dev:api":         "pnpm --filter @shererp/api dev",
+    "dev:web":         "pnpm --filter @shererp/web dev",
+    "build":           "pnpm -r build",
+    "lint":            "eslint .",
+    "typecheck":       "pnpm -r typecheck",
+    "test":            "vitest run",
+    "test:watch":      "vitest",
+    "test:boundaries": "tsx tools/boundaries/check.ts",
+    "db:generate":     "pnpm --filter @shererp/adapter-postgres exec drizzle-kit generate",
+    "db:migrate":      "pnpm --filter @shererp/adapter-postgres exec drizzle-kit migrate",
+    "db:studio":       "pnpm --filter @shererp/adapter-postgres exec drizzle-kit studio"
+  }
+}</code></pre>
+
+<h3>Useful pnpm workspace flags</h3>
+<table>
+  <tr><th>Command</th><th>Does</th></tr>
+  <tr><td><code>pnpm install</code></td><td>Install everything, all packages</td></tr>
+  <tr><td><code>pnpm -r &lt;script&gt;</code></td><td>Run a script in every package that has it</td></tr>
+  <tr><td><code>pnpm --filter @shererp/api &lt;cmd&gt;</code></td><td>Run in one package only</td></tr>
+  <tr><td><code>pnpm add -Dw &lt;pkg&gt;</code></td><td>Add a dev dependency at the workspace root</td></tr>
+  <tr><td><code>pnpm --filter X add Y@workspace:*</code></td><td>Link one internal package to another</td></tr>
+  <tr><td><code>pnpm why &lt;pkg&gt;</code></td><td>Why is this dependency here</td></tr>
+  <tr><td><code>pnpm store prune</code></td><td>Reclaim disk space</td></tr>
+</table>
+
+<!-- ============ 10 ============ -->
+<h2 id="s10"><span class="n">10</span>First code &amp; running the dev server</h2>
+
+<h3>The morning sequence — four commands</h3>
+<pre><code>sudo service docker start
+docker start sher-pg
+sher                           <span class="cmt"># cd ~/projects/shererp (your alias)</span>
+pnpm dev                       <span class="cmt"># api on :3000, web on :5173</span></code></pre>
+
+<h3>Or run them in separate terminals while debugging</h3>
+<pre><code><span class="cmt"># terminal 1</span>
+pnpm dev:api
+
+<span class="cmt"># terminal 2</span>
+pnpm dev:web</code></pre>
+
+<table>
+  <tr><th>URL</th><th>What</th></tr>
+  <tr><td><code>http://localhost:3000/api/health</code></td><td>API health — must return <code>{"status":"ok"}</code></td></tr>
+  <tr><td><code>http://localhost:5173</code></td><td>Vue dev server with HMR</td></tr>
+  <tr><td><code>http://localhost:3000/api/docs</code></td><td>OpenAPI/Swagger, once wired</td></tr>
+  <tr><td><code>http://localhost:4983</code></td><td>Drizzle Studio (<code>pnpm db:studio</code>)</td></tr>
+</table>
+
+<h3>Prove the API is alive</h3>
+<pre><code>curl -i http://localhost:3000/api/health
+<span class="cmt"># HTTP/1.1 200 OK</span>
+<span class="cmt"># {"status":"ok"}</span></code></pre>
+
+<div class="box ok">
+  <b>Phase 0.1 is done when</b>
+  <code>pnpm install &amp;&amp; pnpm lint &amp;&amp; pnpm typecheck &amp;&amp; pnpm test:boundaries &amp;&amp; pnpm test</code> all pass, <code>GET /api/health</code> returns 200, and the boundary checker has been <em>proven</em> to catch a deliberate violation. Not before.
+</div>
+
+<!-- ============ 11 ============ -->
+<h2 id="s11"><span class="n">11</span>Verify it works — the four gates</h2>
+
+<pre><code>pnpm lint                      <span class="cmt"># zero warnings</span>
+pnpm typecheck                 <span class="cmt"># zero errors, no new `any`</span>
+pnpm test:boundaries           <span class="cmt"># layering intact — NEVER bypass this one</span>
+pnpm test                      <span class="cmt"># zero skipped tests</span>
+
+<span class="cmt"># all four in one go</span>
+check</code></pre>
+
+<h3>Prove the boundary checker actually works</h3>
+<p>A checker that always passes is worse than no checker. Test it deliberately:</p>
+
+<pre><code><span class="cmt"># temporarily add a forbidden import to a domain file</span>
+echo "import { Injectable } from '@nestjs/common';" &gt;&gt; packages/core-domain/src/index.ts
+
+pnpm test:boundaries           <span class="cmt"># MUST FAIL — if it passes, the checker is broken</span>
+
+git checkout packages/core-domain/src/index.ts   <span class="cmt"># undo</span></code></pre>
+
+<div class="box danger">
+  <b>Never weaken a gate to make it green</b>
+  Do not skip a test, loosen a lint rule, add an <code>eslint-disable</code>, cast to <code>any</code>, or add an exception to the boundary checker so a slice can be called done. If a gate fails, the slice is not complete — say so and fix the cause.
+</div>
+
+<!-- ============ 12 ============ -->
+<h2 id="s12"><span class="n">12</span>Vertical slice development — the loop</h2>
+
+<p>One business feature at a time, complete, top to bottom. Never all backend, then all database, then all frontend, then tests.</p>
+
+<div class="flow">Acceptance criteria + expected numbers   ← WRITTEN BEFORE ANY CODE
+  → Domain logic            core-domain
+  → Application use case    core-application
+  → Migration               schema for THIS feature only
+  → Repository/adapter      adapter-postgres
+  → API + contract          core-contracts, apps/api
+  → Vue screen              apps/web
+  → Unit tests              domain, pure
+  → Integration/DB tests
+  → Permission + tenant-isolation tests
+  → pnpm lint · typecheck · test:boundaries · test
+  → Manual UI acceptance    YOU, against the pre-written numbers
+  → Commit
+  → Next slice</div>
+
+<h3>How big is one slice?</h3>
+<table>
+  <tr><th>This is one slice</th><th>This is not</th></tr>
+  <tr><td>Create a product and see it in the product list</td><td>The entire product module</td></tr>
+  <tr><td>Search and filter products by brand</td><td>All of the backend for products</td></tr>
+  <tr><td>Record a purchase that creates a lot and increases stock</td><td>All migrations for phase 3</td></tr>
+  <tr><td>Pay a supplier and see the payable fall</td><td>The repository layer</td></tr>
+</table>
+
+<p>If a slice cannot be demonstrated in the UI in under a minute, it is probably two slices.</p>
+
+<h3>Your working rhythm — one slice per agent conversation</h3>
+<ol>
+  <li>Pick the next slice from <code>SRS_AND_BUILD_GUIDE.md</code> §6.1.</li>
+  <li><b>Write the expected numbers first</b> — before any code exists. This is the single defence against silently accepting wrong AI output.</li>
+  <li>Paste the prompt kernel + slice task block to the agent.</li>
+  <li>Agent replies with a <b>PLAN</b>. This is the cheapest checkpoint — if it looks wrong, stop here.</li>
+  <li>Approve → agent implements the full vertical: domain → use case → migration → repository → API → UI → tests.</li>
+  <li>Agent pastes the <b>real</b> output of all four commands.</li>
+  <li>Review the diff.</li>
+  <li>Run the slice in the real UI yourself and check the numbers against step 2.</li>
+  <li>Commit.</li>
+</ol>
+
+<div class="box warn">
+  <b>A slice is not done because the backend compiles</b>
+  It is not done because tests pass, or because the API returns 200. It is done when the feature works in the real UI and you have personally confirmed the numbers match what you wrote down beforehand.
+</div>
+
+<h3>The ten-step write path — check every mutation has all ten, in one transaction</h3>
+<div class="flow">1  resolve TenantContext
+2  permission check   (entitlement → feature → setting → permission → access)
+3  idempotency check  (operation_id)
+4  PeriodGuard.assertOpen(business_date)
+5  load aggregates
+6  domain invariants
+7  persist changes
+8  post journal + stock movements
+9  write audit event
+10 commit
+                     ONE database transaction. All ten steps, or reject.</div>
+
+<!-- ============ 13 ============ -->
+<h2 id="s13"><span class="n">13</span>Slice review checklist</h2>
+
+<p>Run through this on every diff before you commit. Use a <em>different</em> model than the one that wrote the code to review it — the agent that wrote the bug cannot catch it, because its own tests agree with its own mistake.</p>
+
+<table>
+  <tr><th>Check</th><th>Fail looks like</th></tr>
+  <tr><td>Complete vertical slice</td><td>Backend only, no real UI screen</td></tr>
+  <tr><td>Business logic placement</td><td>Rules inside a controller, a Vue file, SQL, or a DB trigger</td></tr>
+  <tr><td>Money and stock arithmetic</td><td>Any float math — must be integer minor units</td></tr>
+  <tr><td>Tenant isolation</td><td><code>tenant_id</code> read from a body, query string, or URL</td></tr>
+  <tr><td>Cross-tenant response</td><td>Returns <code>403</code> — it must be <code>404</code></td></tr>
+  <tr><td>Tests</td><td>A test skipped, weakened, or an expected number changed to match the code</td></tr>
+  <tr><td>Scope</td><td>Files modified outside the ALLOWED FILES list</td></tr>
+  <tr><td>Write path</td><td>Fewer than ten steps, or split across transactions</td></tr>
+  <tr><td>Over-engineering</td><td><code>Base*</code>, <code>Generic*</code>, <code>*Factory</code>, event bus, single-implementation interface, unrequested config flag</td></tr>
+  <tr><td>Migration</td><td>Covers more than this slice</td></tr>
+  <tr><td>Outbox</td><td>Outbox writes removed as "unused code" — they are deliberate, never delete them</td></tr>
+  <tr><td>IDs</td><td>Autoincrement instead of application-generated ULIDs</td></tr>
+  <tr><td>Deletes</td><td>Hard delete of a posted financial or stock record</td></tr>
+</table>
+
+<!-- ============ 14 ============ -->
+<h2 id="s14"><span class="n">14</span>Git — daily commands</h2>
+
+<pre><code>git status -sb                 <span class="cmt"># short status + branch</span>
+git diff                       <span class="cmt"># unstaged changes</span>
+git diff --staged              <span class="cmt"># what you are about to commit</span>
+git add -p                     <span class="cmt"># stage hunk by hunk — review as you go</span>
+git commit -m "feat(product): create product slice 2.1"
+git log --oneline --graph --decorate -15
+git push</code></pre>
+
+<h3>One branch per slice</h3>
+<pre><code>git checkout -b slice/2.1-create-product
+<span class="cmt"># ... agent implements, you verify ...</span>
+check                          <span class="cmt"># all four gates green</span>
+git add -A &amp;&amp; git commit -m "feat(product): 2.1 create product + list"
+git checkout main &amp;&amp; git merge --no-ff slice/2.1-create-product</code></pre>
+
+<h3>Undoing things</h3>
+<pre><code>git restore &lt;file&gt;             <span class="cmt"># discard unstaged changes to a file</span>
+git restore --staged &lt;file&gt;    <span class="cmt"># unstage, keep changes</span>
+git reset --soft HEAD~1        <span class="cmt"># undo last commit, keep changes staged</span>
+git reset --hard HEAD          <span class="cmt"># DANGER: discard everything uncommitted</span>
+git stash / git stash pop      <span class="cmt"># park work temporarily</span>
+git clean -nd                  <span class="cmt"># preview untracked files that would be deleted</span></code></pre>
+
+<div class="box">
+  <b>Commit before letting an agent loose</b>
+  A clean working tree means <code>git diff</code> shows you exactly what the agent changed, and <code>git reset --hard</code> is a one-command undo if it goes wrong.
+</div>
+
+<h3>Line endings — WSL2 + Windows editors</h3>
+<pre><code>git config --global core.autocrlf input
+git config --global user.name  "SDelux"
+git config --global user.email "shuvodelux@gmail.com"</code></pre>
+
+<!-- ============ 15 ============ -->
+<h2 id="s15"><span class="n">15</span>Troubleshooting</h2>
+
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Cannot connect to the Docker daemon</td><td><code>sudo service docker start</code></td></tr>
+  <tr><td><code>docker: command not found</code> after restart</td><td>WSL restarted; run <code>sudo service docker start</code>, check <code>docker ps</code></td></tr>
+  <tr><td>Postgres connection refused</td><td><code>docker start sher-pg</code>, then <code>docker ps</code> to confirm Up and port 5432 mapped</td></tr>
+  <tr><td>Port 3000 or 5173 already in use</td><td><code>lsof -i :3000</code> → <code>kill -9 &lt;PID&gt;</code></td></tr>
+  <tr><td>Vite HMR does not reload</td><td>Code is on <code>/mnt/c/</code> — move it to <code>~/projects</code>. Also set <code>server.host: true</code></td></tr>
+  <tr><td>Windows browser cannot reach the dev server</td><td>Set <code>host: true</code> in vite config; try <code>http://&lt;hostname -I&gt;:5173</code></td></tr>
+  <tr><td><code>nvm: command not found</code> in a new terminal</td><td>The nvm block is in <code>~/.bashrc</code> — move it to <code>~/.zshrc</code>, then <code>exec zsh</code></td></tr>
+  <tr><td><code>pnpm: command not found</code></td><td><code>corepack enable &amp;&amp; corepack prepare pnpm@9 --activate</code>; check <code>PNPM_HOME</code> in <code>~/.zshrc</code></td></tr>
+  <tr><td>Workspace package not resolving</td><td>Run <code>pnpm install</code> from the repo root, not from inside a package</td></tr>
+  <tr><td><code>ERR_PNPM_OUTDATED_LOCKFILE</code></td><td><code>pnpm install --no-frozen-lockfile</code>, then commit the lockfile</td></tr>
+  <tr><td>Tests wiped your manual data</td><td>Tests are pointed at <code>sher_dev</code> — they must use <code>sher_test</code></td></tr>
+  <tr><td>Migration fails halfway</td><td>Restore the dump, fix the migration, re-run. Migrations are forward-only</td></tr>
+  <tr><td>WSL is slow or stuck</td><td>From PowerShell: <code>wsl --shutdown</code>, then reopen</td></tr>
+  <tr><td>Disk full</td><td><code>pnpm store prune</code>, <code>docker system prune</code>, <code>df -h</code></td></tr>
+  <tr><td>Debit ≠ credit in the journal</td><td><b>Stop building.</b> The write path is broken — report it before the next slice</td></tr>
+</table>
+
+<!-- ============ 16 ============ -->
+<h2 id="s16"><span class="n">16</span>Daily cheat sheet</h2>
+
+<h3>Start of day</h3>
+<pre><code>sudo service docker start &amp;&amp; docker start sher-pg
+sher
+git pull
+pnpm install                   <span class="cmt"># only if package.json / lockfile changed</span>
+pnpm db:migrate                <span class="cmt"># only if there are new migrations</span>
+pnpm dev</code></pre>
+
+<h3>During a slice</h3>
+<pre><code>pnpm test:watch                <span class="cmt"># keep tests running while coding</span>
+psql-dev                       <span class="cmt"># inspect the data</span>
+pnpm db:studio                 <span class="cmt"># or browse it visually</span>
+git diff                       <span class="cmt"># review what the agent changed</span></code></pre>
+
+<h3>Before every commit</h3>
+<pre><code>check                          <span class="cmt"># lint · typecheck · boundaries · test</span>
+<span class="cmt"># then run the feature in the UI and check YOUR numbers</span>
+git add -p &amp;&amp; git commit -m "..."</code></pre>
+
+<h3>End of day</h3>
+<pre><code>git push
+docker stop sher-pg            <span class="cmt"># optional</span>
+<span class="cmt"># weekly: backup sher_dev before risky migrations</span>
+docker exec sher-pg pg_dump -U postgres sher_dev &gt; ~/backups/sher_dev_$(date +%F).sql</code></pre>
+
+<div class="box ok">
+  <b>The one rule that protects everything else</b>
+  Write the expected numbers down <em>before</em> the code exists, then check the real UI against them yourself. Every other gate can be gamed by an agent trying to be helpful. That one cannot.
+</div>
+
+<footer>
+  SherERP · setup and daily operations reference · Companion to <code>SRS_AND_BUILD_GUIDE.md</code> (what to build), <code>AI_CODING_INSTRUCTIONS.md</code> (how to build), <code>AGENTS.md</code> (orientation).
+</footer>
+</main>
+</div>
+
+<script>
+document.querySelectorAll('pre').forEach(function(pre){
+  var b = document.createElement('button');
+  b.className = 'cp'; b.textContent = 'copy';
+  b.onclick = function(){
+    var t = pre.querySelector('code').innerText;
+    navigator.clipboard.writeText(t).then(function(){
+      b.textContent = 'copied'; setTimeout(function(){ b.textContent = 'copy'; }, 1400);
+    });
+  };
+  pre.appendChild(b);
+});
+</script>
+</body>
+</html>
