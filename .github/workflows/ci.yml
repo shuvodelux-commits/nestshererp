@@ -7,6 +7,30 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+
+    # Integration tests run against a real PostgreSQL 16 — the same major version
+    # the production server runs (SRS 6.4). The tests create their own
+    # unprivileged `sher_app` role and connect as it, because a superuser bypasses
+    # row level security and would make the RLS tests pass against nothing.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: sher_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ADMIN_DATABASE_URL: postgres://postgres:dev@localhost:5432/sher_test
+      TEST_DATABASE_URL: postgres://sher_app:sher_app_test@localhost:5432/sher_test
+
     steps:
       - uses: actions/checkout@v4
 

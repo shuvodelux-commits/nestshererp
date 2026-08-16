@@ -1310,7 +1310,7 @@ Rules:
 |---|---|---|---|---|---|
 | 0.1 | Monorepo skeleton + CI boundary checks | DONE | ef3482f | 2026-08-16 | No UI (Phase 0 foundation exception, §6.0). Owner accepted on the four green commands; no UI check applicable. |
 | 0.2 | Money / Qty / UnitCost / Ulid / Clock | CODE COMPLETE | 75b498e | — | No UI (Phase 0 foundation exception, §6.0). 100% branch coverage on money.ts and qty.ts enforced as a build gate. |
-| 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | TODO | — | — | |
+| 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | CODE COMPLETE | — | — | No UI (Phase 0 foundation exception, §6.0). CreateNoteService is the R-D template. CI still has no PostgreSQL service — see the slice report. |
 | 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | TODO | — | — | |
 | 1.2 | Login / logout + forgot password + change password/PIN | TODO | — | — | |
 | 1.3 | Create and edit users | TODO | — | — | |

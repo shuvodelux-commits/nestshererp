@@ -3,9 +3,27 @@
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "types": ["node"],
-    "rootDir": ".",
-    "outDir": "dist"
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@sher/shared-utils": [
+        "../../packages/shared-utils/src/index.ts"
+      ],
+      "@sher/core-contracts": [
+        "../../packages/core-contracts/src/index.ts"
+      ],
+      "@sher/core-application": [
+        "../../packages/core-application/src/index.ts"
+      ],
+      "@sher/adapter-postgres": [
+        "../../packages/adapter-postgres/src/index.ts"
+      ]
+    }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

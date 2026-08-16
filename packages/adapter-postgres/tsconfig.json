@@ -1,8 +1,24 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist"
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@sher/shared-utils": [
+        "../shared-utils/src/index.ts"
+      ],
+      "@sher/core-contracts": [
+        "../core-contracts/src/index.ts"
+      ],
+      "@sher/core-application": [
+        "../core-application/src/index.ts"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "test"
+  ]
 }
