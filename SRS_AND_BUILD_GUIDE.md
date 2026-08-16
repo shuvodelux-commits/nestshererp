@@ -1312,7 +1312,8 @@ Rules:
 | 0.2 | Money / Qty / UnitCost / Ulid / Clock | CODE COMPLETE | 75b498e | — | No UI (Phase 0 foundation exception, §6.0). 100% branch coverage on money.ts and qty.ts enforced as a build gate. |
 | 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | CODE COMPLETE | d019014 | — | No UI (Phase 0 foundation exception, §6.0). CreateNoteService is the R-D template. |
 | 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | CODE COMPLETE | 5a53bc7 | — | First UI slice. `apps/web` created (Vue 3 + Vite + PrimeVue 4, D-37) with the shared design tokens every later screen inherits. Adds `otp_codes` and the non-RLS `user_identifiers` pre-auth index; `audit_events.tenant_id` is now nullable for pre-tenant OTP auditing (§5.3). OTP delivery is the development transport only — real SMS/email is D-33, slice 1.7, and boot refuses the dev transport in production. |
-| 1.2 | Login / logout + forgot password + change password/PIN | TODO | — | — | |
+| 1.2 | Log in / log out (password, PIN, Google) | CODE COMPLETE | 0284d3e | — | **Split from the original 1.2** (§6.1.1 permits splitting within a phase): logging in is one demonstrable feature, and forgot-password and change-password are two more. Adds `refresh_tokens` (server-stored, rotating, revocable) and `UnitOfWork.runWithoutTenant`'s `adoptTenant`, since a login resolves its tenant mid-transaction. Google uses the OIDC redirect flow, not Google's script (UI-06, §6.5 COOP/COEP), verified against Google's JWKS with Node's own crypto. |
+| 1.2b | Forgot password via OTP + change password/PIN in Settings | TODO | — | — | The remainder of the original 1.2. |
 | 1.3 | Create and edit users | TODO | — | — | |
 | 1.4 | Create roles and assign permissions | TODO | — | — | |
 | 1.5 | Change a setting and see it take effect | TODO | — | — | |
