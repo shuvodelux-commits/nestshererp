@@ -197,6 +197,29 @@ export const userIdentifiers = pgTable(
   }),
 );
 
+/**
+ * One row per signed-in device session (§5.3). Not RLS-scoped: a refresh
+ * request arrives with no tenant context — the token is what reveals the
+ * tenant. Stored hashed, so a database read cannot mint a session.
+ */
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: char('id', { length: 26 }).primaryKey(),
+    tenantId: char('tenant_id', { length: 26 }).notNull(),
+    userId: char('user_id', { length: 26 }).notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    rotatedTo: char('rotated_to', { length: 26 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    createdBy: char('created_by', { length: 26 }).notNull(),
+  },
+  (table) => ({
+    unique: unique('refresh_tokens_hash_unique').on(table.tokenHash),
+  }),
+);
+
 /** Class B — transactional document, with the R-C9 reserved columns. */
 export const notes = pgTable(
   'notes',

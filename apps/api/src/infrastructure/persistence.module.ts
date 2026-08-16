@@ -11,17 +11,19 @@ import {
   PostgresOutbox,
   PostgresPeriodGuard,
   PostgresRoleRepository,
+  PostgresSessionRepository,
   PostgresTenantRepository,
   PostgresUnitOfWork,
   PostgresUserIdentifierRepository,
   PostgresUserRepository,
 } from '@sher/adapter-postgres';
-import type { IdentityVerifier } from '@sher/core-application';
+import type { GoogleVerifier, IdentityVerifier } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { SystemClock } from '@sher/shared-utils';
 import type pg from 'pg';
 
 import { DevIdentityVerifier } from '../auth/dev-identity-verifier';
+import { GoogleIdTokenVerifier, UnconfiguredGoogleVerifier } from '../auth/google-verifier';
 import { CryptoOtpCodeGenerator } from '../auth/otp-code-generator';
 import { ScryptPasswordHasher } from '../auth/password-hasher';
 import { JwtTokenIssuer } from '../auth/token-issuer';
@@ -45,6 +47,8 @@ import {
   ROLE_REPOSITORY,
   TENANT_REPOSITORY,
   TOKEN_ISSUER,
+  GOOGLE_VERIFIER,
+  SESSION_REPOSITORY,
   UNIT_OF_WORK,
   USER_IDENTIFIER_REPOSITORY,
   USER_REPOSITORY,
@@ -153,6 +157,19 @@ function selectIdentityVerifier(): IdentityVerifier {
         new PostgresUserIdentifierRepository(clock),
       inject: [CLOCK],
     },
+    {
+      provide: SESSION_REPOSITORY,
+      useFactory: (clock: Clock): PostgresSessionRepository => new PostgresSessionRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: GOOGLE_VERIFIER,
+      useFactory: (config: ApiConfig, clock: Clock): GoogleVerifier =>
+        config.googleClientId === ''
+          ? new UnconfiguredGoogleVerifier()
+          : new GoogleIdTokenVerifier(config.googleClientId, clock),
+      inject: [API_CONFIG, CLOCK],
+    },
   ],
   exports: [
     API_CONFIG,
@@ -175,6 +192,8 @@ function selectIdentityVerifier(): IdentityVerifier {
     ROLE_REPOSITORY,
     USER_REPOSITORY,
     USER_IDENTIFIER_REPOSITORY,
+    SESSION_REPOSITORY,
+    GOOGLE_VERIFIER,
   ],
 })
 export class PersistenceModule {}

@@ -54,14 +54,64 @@ export type CompleteRegistrationRequest = z.infer<typeof completeRegistrationReq
 
 export const registrationResponseSchema = z
   .object({
-    /** 15-minute access token (§5.3). Refresh tokens arrive with login, slice 1.2. */
+    /** 15 minutes (§5.3). */
     accessToken: z.string(),
+    /** 30 days, rotating and revocable — signing up leaves you signed in. */
+    refreshToken: z.string(),
     tenant: z.object({ id: z.string().length(26), name: z.string() }).strict(),
     user: z.object({ id: z.string().length(26), username: z.string() }).strict(),
   })
   .strict();
 
 export type RegistrationResponse = z.infer<typeof registrationResponseSchema>;
+
+/* --- login (D-07) -------------------------------------------------------- */
+
+export const loginWithPasswordRequestSchema = z
+  .object({
+    identifier: z.string().min(1).max(120),
+    password: z.string().min(1).max(200),
+  })
+  .strict();
+
+export type LoginWithPasswordRequest = z.infer<typeof loginWithPasswordRequestSchema>;
+
+export const loginWithGoogleRequestSchema = z
+  .object({
+    /** The ID token Google Identity Services hands the browser. */
+    idToken: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export type LoginWithGoogleRequest = z.infer<typeof loginWithGoogleRequestSchema>;
+
+export const loginWithPinRequestSchema = z
+  .object({
+    /** Proves the device already holds a session — a PIN alone never signs in. */
+    refreshToken: z.string().min(1).max(200),
+    pin: z.string().min(1).max(20),
+  })
+  .strict();
+
+export type LoginWithPinRequest = z.infer<typeof loginWithPinRequestSchema>;
+
+export const refreshRequestSchema = z
+  .object({ refreshToken: z.string().min(1).max(200) })
+  .strict();
+
+export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
+
+export const loginResponseSchema = z
+  .object({
+    /** 15 minutes (§5.3). */
+    accessToken: z.string(),
+    /** 30 days, rotating and revocable — replaced on every use. */
+    refreshToken: z.string(),
+    user: z.object({ id: z.string().length(26), username: z.string() }).strict(),
+  })
+  .strict();
+
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
 
 export const dashboardSummaryResponseSchema = z
   .object({

@@ -1,6 +1,7 @@
 import type {
   CompleteRegistrationRequest,
   DashboardSummaryResponse,
+  LoginResponse,
   RegistrationResponse,
   RequestSignupOtpResponse,
 } from '@sher/core-contracts';
@@ -39,4 +40,28 @@ export function completeRegistration(
 
 export function fetchDashboardSummary(token: string): Promise<DashboardSummaryResponse> {
   return request('/api/v1/dashboard/summary', { token });
+}
+
+/* --- login (D-07) -------------------------------------------------------- */
+
+export function loginWithPassword(identifier: string, password: string): Promise<LoginResponse> {
+  return request('/api/v1/auth/login', { method: 'POST', body: { identifier, password } });
+}
+
+/** Google links to an account that already exists; it never creates one (D-07). */
+export function loginWithGoogle(idToken: string): Promise<LoginResponse> {
+  return request('/api/v1/auth/login/google', { method: 'POST', body: { idToken } });
+}
+
+/** The refresh token is what proves "same device" — a PIN alone is never a login. */
+export function loginWithPin(refreshToken: string, pin: string): Promise<LoginResponse> {
+  return request('/api/v1/auth/login/pin', { method: 'POST', body: { refreshToken, pin } });
+}
+
+export function refreshSession(refreshToken: string): Promise<LoginResponse> {
+  return request('/api/v1/auth/refresh', { method: 'POST', body: { refreshToken } });
+}
+
+export function logout(refreshToken: string): Promise<void> {
+  return request('/api/v1/auth/logout', { method: 'POST', body: { refreshToken } });
 }

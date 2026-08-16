@@ -1,0 +1,254 @@
+/*
+ * The centred card shared by the sign-in and sign-up screens.
+ *
+ * Extracted so the two cannot drift apart: they are the same object showing
+ * different fields, and a user moving between them should not see the geometry
+ * change. Imported into each page's scoped block, so the selectors stay local.
+ */
+
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 40px 16px;
+  background: var(--sher-surface);
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--sher-surface-3);
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius-lg);
+  box-shadow: var(--sher-shadow-raised);
+  padding: 26px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sher-radius);
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.brand-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0;
+  font-size: var(--sher-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lede,
+.sent-to {
+  margin: -6px 0 0;
+  font-size: var(--sher-text-sm);
+  color: var(--sher-text-muted);
+}
+
+.sent-to strong {
+  color: var(--sher-text);
+  font-variant-numeric: tabular-nums;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field label {
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+}
+
+.field input {
+  height: var(--sher-control-h);
+  padding: 0 10px;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-surface-3);
+  font: inherit;
+  font-size: var(--sher-text-base);
+  color: var(--sher-text);
+  transition: border-color var(--sher-transition);
+}
+
+.field input:focus {
+  outline: 2px solid var(--sher-primary);
+  outline-offset: 1px;
+  border-color: var(--sher-primary);
+}
+
+.field input:disabled {
+  background: var(--sher-surface);
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+}
+
+.row .field {
+  flex: 1;
+}
+
+.field-pin {
+  max-width: 110px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--sher-control-h);
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--sher-radius);
+  font: inherit;
+  font-size: var(--sher-text-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--sher-transition);
+}
+
+.btn-primary {
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--sher-primary-strong);
+}
+
+.btn-ghost {
+  background: var(--sher-surface-3);
+  color: var(--sher-text);
+  border-color: var(--sher-line);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--sher-surface-2);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-xs);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--sher-line-soft);
+}
+
+.help {
+  margin: 0;
+  font-size: var(--sher-text-xs);
+  color: var(--sher-text-muted);
+  line-height: 1.5;
+}
+
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: var(--sher-primary-strong);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkish:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(168, 32, 24, 0.3);
+  border-radius: var(--sher-radius);
+  background: var(--sher-bad-bg);
+  color: var(--sher-bad);
+  font-size: var(--sher-text-sm);
+}
+
+.error-code {
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-2xs);
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.dev-code {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px dashed rgba(138, 93, 0, 0.45);
+  border-radius: var(--sher-radius);
+  background: var(--sher-warn-bg);
+  color: var(--sher-warn);
+  font-size: var(--sher-text-sm);
+}
+
+.dev-code strong {
+  font-family: var(--sher-font-mono);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+.fine {
+  margin: 6px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--sher-line-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sher-text-muted);
+}
+
+.fine a {
+  color: var(--sher-primary-strong);
+}

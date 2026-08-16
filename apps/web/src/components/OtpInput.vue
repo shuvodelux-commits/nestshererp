@@ -2,49 +2,60 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 /**
- * Six single-digit boxes behaving as one field.
+ * Single-digit boxes behaving as one field — six for a signup code, four for a
+ * PIN. The behaviour is identical, so both use this rather than two components
+ * that would drift apart.
  *
  * Typing advances, Backspace on an empty box steps back, and pasting a whole
  * code fills every box — a shopkeeper copying a code out of an SMS should not
- * have to type it in one digit at a time. Arrow keys move between boxes so the
+ * have to type it one digit at a time. Arrow keys move between boxes, so the
  * control is fully keyboard-operable (UI-05, UI-42).
  */
-const LENGTH = 6;
+const props = withDefaults(
+  defineProps<{ modelValue: string; disabled?: boolean; length?: number; mask?: boolean }>(),
+  { disabled: false, length: 6, mask: false },
+);
 
-const props = withDefaults(defineProps<{ modelValue: string; disabled?: boolean }>(), {
-  disabled: false,
-});
 const emit = defineEmits<{
   'update:modelValue': [value: string];
   complete: [];
 }>();
 
-/** Narrowed to a plain boolean — `exactOptionalPropertyTypes` rejects an
- *  optional prop bound straight onto an element attribute. */
+/**
+ * Narrowed to plain values — `exactOptionalPropertyTypes` rejects an optional
+ * prop bound straight onto an element attribute.
+ */
 const isDisabled = computed<boolean>(() => props.disabled);
+const size = computed<number>(() => props.length);
+/** A PIN is masked; a signup code is not — you want to read what you typed. */
+const boxType = computed<"text" | "password">(() => (props.mask ? "password" : "text"));
 
 const boxes = ref<HTMLInputElement[]>([]);
+const digits = ref<string[]>(Array.from({ length: props.length }, () => ''));
 
 /** Vue's template ref callback hands back the element or a component instance. */
 function setBoxRef(el: unknown, index: number): void {
   if (el instanceof HTMLInputElement) boxes.value[index] = el;
 }
 
-const digits = ref<string[]>(Array.from({ length: LENGTH }, () => ''));
-
-// Keep the boxes in step when the parent resets the value (a resend clears it).
+// Keep the boxes in step when the parent resets the value — a resend clears it,
+// and a failed PIN attempt blanks it.
 watch(
   () => props.modelValue,
   (value) => {
     if (value === digits.value.join('')) return;
-    digits.value = Array.from({ length: LENGTH }, (_, i) => value[i] ?? '');
+    digits.value = Array.from({ length: size.value }, (_, i) => value[i] ?? '');
   },
 );
+
+watch(size, (next) => {
+  digits.value = Array.from({ length: next }, (_, i) => digits.value[i] ?? '');
+});
 
 function publish(): void {
   const value = digits.value.join('');
   emit('update:modelValue', value);
-  if (value.length === LENGTH) emit('complete');
+  if (value.length === size.value) emit('complete');
 }
 
 function focusBox(index: number): void {
@@ -58,7 +69,7 @@ function onInput(index: number, event: Event): void {
   digits.value[index] = digit;
   input.value = digit;
 
-  if (digit !== '' && index < LENGTH - 1) focusBox(index + 1);
+  if (digit !== '' && index < size.value - 1) focusBox(index + 1);
   publish();
 }
 
@@ -74,19 +85,21 @@ function onKeydown(index: number, event: KeyboardEvent): void {
     event.preventDefault();
     focusBox(index - 1);
   }
-  if (event.key === 'ArrowRight' && index < LENGTH - 1) {
+  if (event.key === 'ArrowRight' && index < size.value - 1) {
     event.preventDefault();
     focusBox(index + 1);
   }
 }
 
 function onPaste(event: ClipboardEvent): void {
-  const pasted = (event.clipboardData?.getData('text') ?? '').replace(/\D/g, '').slice(0, LENGTH);
+  const pasted = (event.clipboardData?.getData('text') ?? '')
+    .replace(/\D/g, '')
+    .slice(0, size.value);
   if (pasted === '') return;
   event.preventDefault();
 
-  digits.value = Array.from({ length: LENGTH }, (_, i) => pasted[i] ?? '');
-  focusBox(Math.min(pasted.length, LENGTH - 1));
+  digits.value = Array.from({ length: size.value }, (_, i) => pasted[i] ?? '');
+  focusBox(Math.min(pasted.length, size.value - 1));
   publish();
 }
 </script>
@@ -98,12 +111,12 @@ function onPaste(event: ClipboardEvent): void {
       :key="index"
       :ref="(el) => setBoxRef(el, index)"
       :value="digit"
-      type="text"
+      :type="boxType"
       inputmode="numeric"
       maxlength="1"
       autocomplete="one-time-code"
       :disabled="isDisabled"
-      :aria-label="`Digit ${String(index + 1)} of ${String(LENGTH)}`"
+      :aria-label="`Digit ${String(index + 1)} of ${String(size)}`"
       @input="onInput(index, $event)"
       @keydown="onKeydown(index, $event)"
       @focus="($event.target as HTMLInputElement).select()"

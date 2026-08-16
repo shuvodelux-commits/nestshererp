@@ -11,6 +11,7 @@ const TENANT_SCOPED_TABLES = [
   // Signup tables. Neither is RLS-scoped — an OTP is verified and an identifier
   // is resolved before a tenant exists — but both must still be truncated
   // between tests, and user_identifiers references users.
+  'refresh_tokens',
   'user_identifiers',
   'otp_codes',
   'idempotency_keys',

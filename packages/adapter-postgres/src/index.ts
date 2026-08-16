@@ -19,3 +19,4 @@ export {
   PostgresUserRepository,
 } from './registration-repository';
 export * as schema from './schema';
+export { PostgresSessionRepository } from './session-repository';

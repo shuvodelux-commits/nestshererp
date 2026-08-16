@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 
+import { logout } from '../../api/auth';
 import { useSession } from '../../auth/session';
 
 /**
@@ -14,7 +16,17 @@ import { useSession } from '../../auth/session';
  * Search is rendered but disabled, with a title saying why — there is nothing
  * to search until products, parties and documents exist (slice 2.3 onward).
  */
-const { businessName, signOut } = useSession();
+const { businessName, refreshToken, clear } = useSession();
+const router = useRouter();
+
+/** Revokes the session server-side, then forgets it here (§5.3). */
+async function signOut(): Promise<void> {
+  const token = refreshToken.value;
+  clear();
+  // Best effort: the device has already forgotten the session either way.
+  if (token !== null) await logout(token).catch(() => undefined);
+  await router.push('/login');
+}
 
 const initials = computed(() => {
   const words = (businessName.value ?? '').trim().split(/\s+/).filter(Boolean);

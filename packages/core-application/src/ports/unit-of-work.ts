@@ -19,14 +19,23 @@ export interface Tx {
 export interface UnitOfWork {
   run<T>(ctx: TenantContext, work: (tx: Tx) => Promise<T>): Promise<T>;
   /**
-   * A transaction with no `app.tenant_id` set, for the signup steps that happen
-   * before a tenant exists (§5.3 D-07: send an OTP to an identifier that has no
-   * account yet). Only tables without a tenant — `otp_codes`, `user_identifiers`
-   * — and platform audit rows are reachable inside it; RLS hides everything else,
-   * which is the intended protection, not an obstacle to work around.
+   * A transaction that starts with no `app.tenant_id`, for the steps that
+   * happen before the tenant is known: sending a signup OTP to an identifier
+   * with no account yet, and resolving a login identifier or refresh token to
+   * the account that owns it. Until a tenant is adopted, only the tables
+   * without one — `otp_codes`, `user_identifiers`, `refresh_tokens` — are
+   * reachable; RLS hides the rest, which is the protection, not an obstacle.
    *
-   * **Do not use this to escape RLS.** Completing a registration uses `run` with
-   * the newly generated tenant id, because by then the tenant is being created.
+   * `adoptTenant` sets `app.tenant_id` **once the token or index has proved
+   * which tenant this is**, so the rest of the work runs tenant-scoped inside
+   * the same transaction (R-D5: a login is not two transactions). It is the
+   * only sanctioned way to widen a transaction's reach.
+   *
+   * **Do not use this to escape RLS.** The tenant id passed to `adoptTenant`
+   * must come from a lookup the caller just performed, never from a request
+   * payload (R-C4).
    */
-  runWithoutTenant<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
+  runWithoutTenant<T>(
+    work: (tx: Tx, adoptTenant: (tenantId: string) => Promise<void>) => Promise<T>,
+  ): Promise<T>;
 }

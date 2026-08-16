@@ -19,3 +19,5 @@ export const TENANT_REPOSITORY = Symbol('TenantRepository');
 export const ROLE_REPOSITORY = Symbol('RoleRepository');
 export const USER_REPOSITORY = Symbol('UserRepository');
 export const USER_IDENTIFIER_REPOSITORY = Symbol('UserIdentifierRepository');
+export const SESSION_REPOSITORY = Symbol('SessionRepository');
+export const GOOGLE_VERIFIER = Symbol('GoogleVerifier');

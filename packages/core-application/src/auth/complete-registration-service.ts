@@ -9,7 +9,7 @@ import type { IdentifierChannel, OtpRejection } from '@sher/core-domain';
 import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { RegistrationResponse } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
-import { Ulid } from '@sher/shared-utils';
+import { addSeconds, Ulid } from '@sher/shared-utils';
 
 import type { AuditWriter } from '../ports/audit-writer';
 import type { PasswordHasher } from '../ports/password-hasher';
@@ -23,6 +23,7 @@ import type {
   UserIdentifierRepository,
   UserRepository,
 } from './registration-repository';
+import type { SessionRepository } from './session-repository';
 
 /**
  * Step two of signup (D-07): verify the OTP, then set username, password and PIN
@@ -53,6 +54,8 @@ export interface CompleteRegistrationCommand {
 /** D-29: every tenant starts in Bangladesh Standard Time; changeable in Settings (§5.21). */
 const DEFAULT_TIMEZONE = 'Asia/Dhaka';
 const OWNER_ROLE_CODE = 'OWNER';
+/** 30 days (§5.3), matching the sessions a login mints. */
+const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 
 const REJECTION_ERRORS: Record<OtpRejection, ErrorCode> = {
   // A consumed code is reported as expired: saying "already used" tells an
@@ -81,6 +84,7 @@ export class CompleteRegistrationService {
     private readonly tenants: TenantRepository,
     private readonly roles: RoleRepository,
     private readonly users: UserRepository,
+    private readonly sessions: SessionRepository,
     private readonly hasher: PasswordHasher,
     private readonly tokens: TokenIssuer,
     private readonly audit: AuditWriter,
@@ -180,10 +184,22 @@ export class CompleteRegistrationService {
       source: 'API',
     });
 
+    // Signing up leaves you signed in, on the same footing as a login: an
+    // access token plus a server-stored session that "log out" can revoke.
+    const refreshToken = this.tokens.issueRefreshToken();
+    await this.sessions.create(tx, {
+      id: Ulid.generate(this.clock),
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      tokenHash: this.tokens.hashRefreshToken(refreshToken),
+      expiresAt: addSeconds(this.clock.now(), REFRESH_TOKEN_SECONDS),
+    });
+
     return {
       ok: true,
       response: {
         accessToken: this.tokens.issueAccessToken(ctx),
+        refreshToken,
         tenant: { id: ctx.tenantId, name: businessName },
         user: { id: ctx.userId, username },
       },

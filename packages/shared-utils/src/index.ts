@@ -4,5 +4,5 @@ export { Money, MONEY_SCALE } from './money';
 export { Qty, QTY_SCALE } from './qty';
 export { UnitCost, UNIT_COST_SCALE } from './unit-cost';
 export { Ulid } from './ulid';
-export { SystemClock, FixedClock } from './clock';
+export { addSeconds, SystemClock, FixedClock } from './clock';
 export type { Clock } from './clock';

@@ -82,6 +82,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     );
   }
 
+  // 204 carries no body — logging out returns nothing to unwrap.
+  if (response.status === 204) return undefined as T;
+
   const payload = (await response.json()) as { data: T };
   return payload.data;
 }

@@ -47,8 +47,21 @@ export interface RoleRepository {
   insertSystemRole(tx: Tx, ctx: TenantContext, role: NewRole): Promise<void>;
 }
 
+/** The stored credentials a login checks against. */
+export interface UserCredentials {
+  readonly userId: string;
+  readonly username: string;
+  readonly passwordHash: string | null;
+  readonly pinHash: string | null;
+}
+
 export interface UserRepository {
   insert(tx: Tx, ctx: TenantContext, user: NewUser): Promise<void>;
+  /**
+   * Null when the user does not exist, belongs to another tenant, or is soft
+   * deleted — a disabled account must not be able to sign in.
+   */
+  findCredentials(tx: Tx, ctx: TenantContext, userId: string): Promise<UserCredentials | null>;
 }
 
 /**
@@ -62,8 +75,16 @@ export interface UserRepository {
  * It is never exposed through an API: knowing an identifier is taken is exactly
  * what an enumeration attack wants, so callers answer with a generic conflict.
  */
+/** Which account an identifier belongs to, resolved before authentication. */
+export interface IdentifierOwner {
+  readonly tenantId: string;
+  readonly userId: string;
+}
+
 export interface UserIdentifierRepository {
   isTaken(tx: Tx, identifier: string): Promise<boolean>;
+  /** Null when no account holds this identifier. */
+  findOwner(tx: Tx, identifier: string): Promise<IdentifierOwner | null>;
   claim(
     tx: Tx,
     entry: {

@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import type {
   AuditWriter,
+  GoogleVerifier,
   IdentityVerifier,
   OtpCodeGenerator,
   OtpRepository,
   PasswordHasher,
   RoleRepository,
+  SessionRepository,
   TenantRepository,
   TokenIssuer,
   UnitOfWork,
@@ -15,6 +17,7 @@ import type {
 import {
   CompleteRegistrationService,
   GetDashboardSummaryService,
+  LoginService,
   RequestSignupOtpService,
   VerifySignupOtpService,
 } from '@sher/core-application';
@@ -27,7 +30,9 @@ import {
   OTP_CODE_GENERATOR,
   OTP_REPOSITORY,
   PASSWORD_HASHER,
+  GOOGLE_VERIFIER,
   ROLE_REPOSITORY,
+  SESSION_REPOSITORY,
   TENANT_REPOSITORY,
   TOKEN_ISSUER,
   UNIT_OF_WORK,
@@ -35,16 +40,18 @@ import {
   USER_REPOSITORY,
 } from '../infrastructure/tokens';
 import { DashboardController } from './dashboard.controller';
+import { LoginController } from './login.controller';
 import { RegistrationController } from './registration.controller';
 import {
   COMPLETE_REGISTRATION_SERVICE,
   GET_DASHBOARD_SUMMARY_SERVICE,
+  LOGIN_SERVICE,
   REQUEST_SIGNUP_OTP_SERVICE,
   VERIFY_SIGNUP_OTP_SERVICE,
 } from './tokens';
 
 @Module({
-  controllers: [RegistrationController, DashboardController],
+  controllers: [RegistrationController, DashboardController, LoginController],
   providers: [
     {
       provide: REQUEST_SIGNUP_OTP_SERVICE,
@@ -89,6 +96,7 @@ import {
         tenants: TenantRepository,
         roles: RoleRepository,
         users: UserRepository,
+        sessions: SessionRepository,
         hasher: PasswordHasher,
         tokens: TokenIssuer,
         audit: AuditWriter,
@@ -101,6 +109,7 @@ import {
           tenants,
           roles,
           users,
+          sessions,
           hasher,
           tokens,
           audit,
@@ -113,8 +122,45 @@ import {
         TENANT_REPOSITORY,
         ROLE_REPOSITORY,
         USER_REPOSITORY,
+        SESSION_REPOSITORY,
         PASSWORD_HASHER,
         TOKEN_ISSUER,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
+    {
+      provide: LOGIN_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        identifiers: UserIdentifierRepository,
+        users: UserRepository,
+        sessions: SessionRepository,
+        hasher: PasswordHasher,
+        tokens: TokenIssuer,
+        google: GoogleVerifier,
+        audit: AuditWriter,
+        clock: Clock,
+      ): LoginService =>
+        new LoginService(
+          uow,
+          identifiers,
+          users,
+          sessions,
+          hasher,
+          tokens,
+          google,
+          audit,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        USER_IDENTIFIER_REPOSITORY,
+        USER_REPOSITORY,
+        SESSION_REPOSITORY,
+        PASSWORD_HASHER,
+        TOKEN_ISSUER,
+        GOOGLE_VERIFIER,
         AUDIT_WRITER,
         CLOCK,
       ],

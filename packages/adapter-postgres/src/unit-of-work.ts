@@ -36,7 +36,13 @@ export class PostgresUnitOfWork implements UnitOfWork {
    * every tenant-scoped row. That is the protection, not a gap: the only tables
    * reachable here are the ones a signup touches before a tenant exists.
    */
-  async runWithoutTenant<T>(work: (tx: Tx) => Promise<T>): Promise<T> {
-    return this.db.transaction(async (transaction) => work(transaction as unknown as Tx));
+  async runWithoutTenant<T>(
+    work: (tx: Tx, adoptTenant: (tenantId: string) => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (transaction) =>
+      work(transaction as unknown as Tx, (tenantId) =>
+        setTenantForTransaction(transaction, tenantId),
+      ),
+    );
   }
 }

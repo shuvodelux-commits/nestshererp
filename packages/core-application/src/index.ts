@@ -15,6 +15,7 @@ export type { IdempotencyRecord, IdempotencyStore } from './ports/idempotency-st
 export type { Outbox, OutboxRecord } from './ports/outbox';
 export type { NumberingService } from './ports/numbering-service';
 export type { PasswordHasher } from './ports/password-hasher';
+export type { GoogleIdentity, GoogleVerifier } from './ports/google-verifier';
 export type { IdentityVerifier, OtpDelivery } from './ports/identity-verifier';
 export type { OtpCodeGenerator } from './ports/otp-code-generator';
 export type { TokenIssuer } from './ports/token-issuer';
@@ -24,14 +25,27 @@ export type { CreateNoteCommand } from './notes/create-note-service';
 export { GetNoteService } from './notes/get-note-service';
 export type { NewOtp, OtpRepository, StoredOtp } from './auth/otp-repository';
 export type {
+  IdentifierOwner,
   NewRole,
   NewTenant,
   NewUser,
   RoleRepository,
   TenantRepository,
+  UserCredentials,
   UserIdentifierRepository,
   UserRepository,
 } from './auth/registration-repository';
+export type {
+  NewSession,
+  SessionRepository,
+  StoredSession,
+} from './auth/session-repository';
+export { LoginService } from './auth/login-service';
+export type {
+  LoginWithGoogleCommand,
+  LoginWithPasswordCommand,
+  LoginWithPinCommand,
+} from './auth/login-service';
 export { RequestSignupOtpService } from './auth/request-signup-otp-service';
 export type { RequestSignupOtpCommand } from './auth/request-signup-otp-service';
 export { VerifySignupOtpService } from './auth/verify-signup-otp-service';

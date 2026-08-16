@@ -20,7 +20,7 @@ import AppShell from '../components/shell/AppShell.vue';
  * UI-27: loading, empty and error states are all implemented; the router guard
  * covers the unauthenticated case.
  */
-const { accessToken, businessName } = useSession();
+const { accessToken, businessName, setBusinessName } = useSession();
 
 const loading = ref(true);
 const error = ref<{ code: string; message: string } | null>(null);
@@ -30,7 +30,7 @@ async function load(): Promise<void> {
   error.value = null;
   try {
     const summary = await fetchDashboardSummary(accessToken.value ?? '');
-    businessName.value = summary.businessName;
+    setBusinessName(summary.businessName);
   } catch (cause) {
     error.value =
       cause instanceof ApiError

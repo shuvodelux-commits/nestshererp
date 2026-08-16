@@ -18,6 +18,17 @@ export interface Clock {
   businessDate(tz: string): string;
 }
 
+/**
+ * An instant a number of seconds after another one.
+ *
+ * Lives here because this file is the only place allowed to construct a `Date`
+ * (R-C8) — a token expiry is still a derived time, and deriving it inline
+ * elsewhere is exactly the ambient-clock use the rule exists to prevent.
+ */
+export function addSeconds(instant: Date, seconds: number): Date {
+  return new Date(instant.getTime() + seconds * 1000);
+}
+
 function businessDateOf(instant: Date, tz: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
