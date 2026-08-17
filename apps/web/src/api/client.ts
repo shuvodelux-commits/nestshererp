@@ -50,7 +50,7 @@ interface ErrorBody {
 }
 
 interface RequestOptions {
-  readonly method?: 'GET' | 'POST' | 'PATCH';
+  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly token?: string | undefined;
   /** ULID, generated once per user intent and reused on retry (UI-34). */

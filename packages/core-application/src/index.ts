@@ -31,6 +31,7 @@ export type {
   NewUser,
   RoleRepository,
   TenantRepository,
+  RoleDetail,
   RoleSummary,
   UserCredentials,
   UserEdit,
@@ -81,3 +82,10 @@ export type {
   SetUserDisabledCommand,
   UpdateUserCommand,
 } from './users/manage-users-service';
+export { ManageRolesService } from './users/manage-roles-service';
+export type {
+  CreateRoleCommand,
+  DeleteRoleCommand,
+  ListRolesCommand,
+  UpdateRoleCommand,
+} from './users/manage-roles-service';

@@ -9,7 +9,7 @@ import type {
   UserIdentifierRepository,
   UserRepository,
 } from '@sher/core-application';
-import { ManageUsersService } from '@sher/core-application';
+import { ManageRolesService, ManageUsersService } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
 import {
@@ -23,11 +23,12 @@ import {
   USER_IDENTIFIER_REPOSITORY,
   USER_REPOSITORY,
 } from '../infrastructure/tokens';
-import { MANAGE_USERS_SERVICE } from './tokens';
+import { RolesController } from './roles.controller';
+import { MANAGE_ROLES_SERVICE, MANAGE_USERS_SERVICE } from './tokens';
 import { UsersController } from './users.controller';
 
 @Module({
-  controllers: [UsersController],
+  controllers: [UsersController, RolesController],
   providers: [
     {
       provide: MANAGE_USERS_SERVICE,
@@ -60,6 +61,28 @@ import { UsersController } from './users.controller';
         ROLE_REPOSITORY,
         USER_IDENTIFIER_REPOSITORY,
         SESSION_REPOSITORY,
+        PASSWORD_HASHER,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
+    {
+      provide: MANAGE_ROLES_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        roles: RoleRepository,
+        users: UserRepository,
+        hasher: PasswordHasher,
+        audit: AuditWriter,
+        clock: Clock,
+      ): ManageRolesService =>
+        new ManageRolesService(uow, accessControl, roles, users, hasher, audit, clock),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        ROLE_REPOSITORY,
+        USER_REPOSITORY,
         PASSWORD_HASHER,
         AUDIT_WRITER,
         CLOCK,

@@ -56,11 +56,27 @@ export interface RoleSummary {
   readonly name: string;
 }
 
+/** A role with what it may do, and how many people hold it. */
+export interface RoleDetail extends RoleSummary {
+  readonly isSystem: boolean;
+  readonly permissions: readonly string[];
+  readonly userCount: number;
+}
+
 export interface RoleRepository {
   insertSystemRole(tx: Tx, ctx: TenantContext, role: NewRole): Promise<void>;
+  /** A role the owner made. Not `is_system`, so it can be deleted again. */
+  insertCustomRole(tx: Tx, ctx: TenantContext, role: NewRole): Promise<void>;
+  rename(tx: Tx, ctx: TenantContext, roleId: string, name: string): Promise<void>;
   grant(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void>;
+  revoke(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void>;
   list(tx: Tx, ctx: TenantContext): Promise<readonly RoleSummary[]>;
+  /** Every role with its permissions and holder count, for the Roles screen. */
+  listDetailed(tx: Tx, ctx: TenantContext): Promise<readonly RoleDetail[]>;
+  findDetail(tx: Tx, ctx: TenantContext, roleId: string): Promise<RoleDetail | null>;
   findByCode(tx: Tx, ctx: TenantContext, code: string): Promise<RoleSummary | null>;
+  /** Soft delete (§3.6) — a role that was used stays readable in the audit trail. */
+  softDelete(tx: Tx, ctx: TenantContext, roleId: string): Promise<void>;
 }
 
 /** The stored credentials a login checks against. */

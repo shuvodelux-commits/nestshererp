@@ -3,6 +3,7 @@ import type {
   NewRole,
   NewTenant,
   NewUser,
+  RoleDetail,
   RoleRepository,
   RoleSummary,
   TenantContext,
@@ -75,19 +76,122 @@ export class PostgresRoleRepository implements RoleRepository {
     });
   }
 
-  async grant(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void> {
+  /** Same row shape, `is_system` false — which is what makes it deletable. */
+  async insertCustomRole(tx: Tx, ctx: TenantContext, role: NewRole): Promise<void> {
     const now = this.clock.now();
-    await txOf(tx).insert(rolePermissions).values({
-      id: Ulid.generate(this.clock),
+    await txOf(tx).insert(roles).values({
+      id: role.id,
       tenantId: ctx.tenantId,
-      roleId,
-      permissionCode,
+      code: role.code,
+      name: role.name,
+      isSystem: false,
       createdAt: now,
       updatedAt: now,
       createdBy: ctx.userId,
       updatedBy: ctx.userId,
       version: 1,
     });
+  }
+
+  async rename(tx: Tx, ctx: TenantContext, roleId: string, name: string): Promise<void> {
+    await txOf(tx)
+      .update(roles)
+      .set({ name, updatedAt: this.clock.now(), updatedBy: ctx.userId })
+      .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.id, roleId)));
+  }
+
+  async softDelete(tx: Tx, ctx: TenantContext, roleId: string): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx)
+      .update(roles)
+      .set({ deletedAt: now, deletedBy: ctx.userId, updatedAt: now, updatedBy: ctx.userId })
+      .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.id, roleId)));
+  }
+
+  /**
+   * Read as three scoped queries rather than one join with aggregates: the row
+   * counts here are a handful of roles per tenant, and a correct, obvious query
+   * beats a clever one nobody can check.
+   */
+  async listDetailed(tx: Tx, ctx: TenantContext): Promise<readonly RoleDetail[]> {
+    const summaries = await this.list(tx, ctx);
+    return this.decorate(tx, ctx, summaries);
+  }
+
+  async findDetail(tx: Tx, ctx: TenantContext, roleId: string): Promise<RoleDetail | null> {
+    const rows = await txOf(tx)
+      .select({ id: roles.id, code: roles.code, name: roles.name })
+      .from(roles)
+      .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.id, roleId), isNull(roles.deletedAt)))
+      .limit(1);
+
+    const row = rows[0];
+    if (row === undefined) return null;
+    const [detail] = await this.decorate(tx, ctx, [{ ...row, id: row.id.trim() }]);
+    return detail ?? null;
+  }
+
+  private async decorate(
+    tx: Tx,
+    ctx: TenantContext,
+    summaries: readonly RoleSummary[],
+  ): Promise<readonly RoleDetail[]> {
+    const grants = await txOf(tx)
+      .select({ roleId: rolePermissions.roleId, code: rolePermissions.permissionCode })
+      .from(rolePermissions)
+      .where(and(eq(rolePermissions.tenantId, ctx.tenantId), isNull(rolePermissions.deletedAt)));
+
+    const holders = await txOf(tx)
+      .select({ roleId: users.roleId })
+      .from(users)
+      .where(and(eq(users.tenantId, ctx.tenantId), isNull(users.deletedAt)));
+
+    const flags = await txOf(tx)
+      .select({ id: roles.id, isSystem: roles.isSystem })
+      .from(roles)
+      .where(and(eq(roles.tenantId, ctx.tenantId), isNull(roles.deletedAt)));
+
+    const systemById = new Map(flags.map((row) => [row.id.trim(), row.isSystem]));
+
+    return summaries.map((role) => ({
+      ...role,
+      isSystem: systemById.get(role.id) ?? false,
+      permissions: grants
+        .filter((grant) => grant.roleId.trim() === role.id)
+        .map((grant) => grant.code),
+      userCount: holders.filter((holder) => holder.roleId.trim() === role.id).length,
+    }));
+  }
+
+  /**
+   * Granting a permission that was previously revoked **revives that row**
+   * rather than inserting a second one. `role_permissions` is unique on
+   * (tenant, role, code) and a revoke only soft-deletes, so a plain insert
+   * would collide the moment an owner unticked a box and ticked it again.
+   */
+  async grant(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx)
+      .insert(rolePermissions)
+      .values({
+        id: Ulid.generate(this.clock),
+        tenantId: ctx.tenantId,
+        roleId,
+        permissionCode,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+        version: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          rolePermissions.tenantId,
+          rolePermissions.roleId,
+          rolePermissions.permissionCode,
+        ],
+        set: { deletedAt: null, deletedBy: null, updatedAt: now, updatedBy: ctx.userId },
+      });
   }
 
   async list(tx: Tx, ctx: TenantContext): Promise<readonly RoleSummary[]> {
@@ -98,6 +202,25 @@ export class PostgresRoleRepository implements RoleRepository {
       .orderBy(roles.name);
 
     return rows.map((row) => ({ ...row, id: row.id.trim() }));
+  }
+
+  /**
+   * Soft delete, not a row removal: `role_permissions` is Class A and the audit
+   * trail may still reference the grant that existed.
+   */
+  async revoke(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx)
+      .update(rolePermissions)
+      .set({ deletedAt: now, deletedBy: ctx.userId, updatedAt: now, updatedBy: ctx.userId })
+      .where(
+        and(
+          eq(rolePermissions.tenantId, ctx.tenantId),
+          eq(rolePermissions.roleId, roleId),
+          eq(rolePermissions.permissionCode, permissionCode),
+          isNull(rolePermissions.deletedAt),
+        ),
+      );
   }
 
   async findByCode(tx: Tx, ctx: TenantContext, code: string): Promise<RoleSummary | null> {

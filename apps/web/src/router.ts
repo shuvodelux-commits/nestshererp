@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage.vue';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.vue';
 import GoogleCallbackPage from './pages/GoogleCallbackPage.vue';
 import LoginPage from './pages/LoginPage.vue';
+import RolesPage from './pages/RolesPage.vue';
 import UsersPage from './pages/UsersPage.vue';
 import RegisterPage from './pages/RegisterPage.vue';
 import SettingsSecurityPage from './pages/SettingsSecurityPage.vue';
@@ -32,6 +33,7 @@ const router = createRouter({
     { path: GOOGLE_REDIRECT_PATH, name: 'google-callback', component: GoogleCallbackPage },
     { path: '/dashboard', name: 'dashboard', component: DashboardPage },
     { path: '/users', name: 'users', component: UsersPage },
+    { path: '/roles', name: 'roles', component: RolesPage },
     { path: '/settings/security', name: 'settings-security', component: SettingsSecurityPage },
   ],
 });

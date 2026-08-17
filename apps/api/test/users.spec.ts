@@ -158,12 +158,16 @@ describe('the roles a business starts with (§5.26)', () => {
         ORDER BY r.code, p.permission_code`,
     );
 
+    // Slice 1.4 added the two role permissions; Owner holds those too, and a
+    // Manager who could re-cut roles would not be "no settings/users" (§5.26).
     expect(granted.rows).toEqual([
       { code: 'MANAGER', permission_code: 'user.account.view' },
       { code: 'OWNER', permission_code: 'user.account.create' },
       { code: 'OWNER', permission_code: 'user.account.disable' },
       { code: 'OWNER', permission_code: 'user.account.edit' },
       { code: 'OWNER', permission_code: 'user.account.view' },
+      { code: 'OWNER', permission_code: 'user.role.manage' },
+      { code: 'OWNER', permission_code: 'user.role.view' },
     ]);
   });
 });

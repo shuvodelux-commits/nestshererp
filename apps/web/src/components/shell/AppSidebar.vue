@@ -21,6 +21,7 @@ const { businessName } = useSession();
 const items = [
   { label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1' },
   { label: 'Users', icon: '◑', to: '/users', slice: '1.3' },
+  { label: 'Roles', icon: '◈', to: '/roles', slice: '1.4' },
   // Security is the whole of Settings today. The rest of §5.21 — costing method,
   // negative stock policy, terminology, numbering — arrives in slice 1.5, and
   // listing those names now would render controls that 403 (UI-09).

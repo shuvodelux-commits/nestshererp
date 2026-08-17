@@ -1,8 +1,8 @@
 // zod schemas, DTOs, error codes and permission codes shared by the API,
 // the application layer and (from Phase 1) the Vue client.
 export { AppError, ErrorCode, httpStatusFor } from './errors';
-export { OWNER_ROLE_CODE, Permission, SEED_ROLES } from './permissions';
-export type { SeedRole } from './permissions';
+export { OWNER_ROLE_CODE, PERMISSION_CATALOGUE, Permission, SEED_ROLES } from './permissions';
+export type { PermissionDescriptor, SeedRole } from './permissions';
 export { createNoteRequestSchema, noteResponseSchema } from './notes';
 export type { CreateNoteRequest, NoteResponse } from './notes';
 export {
@@ -61,3 +61,19 @@ export type {
   UserListResponse,
   UserResponse,
 } from './users';
+export {
+  createRoleRequestSchema,
+  deleteRoleRequestSchema,
+  permissionDescriptorSchema,
+  roleDetailSchema,
+  roleListResponseSchema,
+  updateRoleRequestSchema,
+} from './roles';
+export type {
+  CreateRoleRequest,
+  DeleteRoleRequest,
+  PermissionDescriptorResponse,
+  RoleDetailResponse,
+  RoleListResponse,
+  UpdateRoleRequest,
+} from './roles';
