@@ -1,3 +1,4 @@
+import { OWNER_ROLE_CODE, SEED_ROLES } from '@sher/core-contracts';
 import type { IdentifierChannel } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { addSeconds, Ulid } from '@sher/shared-utils';
@@ -66,7 +67,6 @@ export interface ProvisionedTenant {
   readonly username: string;
 }
 
-const OWNER_ROLE_CODE = 'OWNER';
 /** 30 days (§5.3), matching the sessions a login mints. */
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 
@@ -76,17 +76,33 @@ export async function provisionTenant(
   deps: ProvisionTenantDeps,
   command: ProvisionTenantCommand,
 ): Promise<ProvisionedTenant> {
-  const roleId = Ulid.generate(deps.clock);
-
   await deps.tenants.insert(tx, ctx, {
     id: ctx.tenantId,
     name: command.businessName,
     timezone: ctx.timezone,
   });
-  await deps.roles.insertSystemRole(tx, ctx, { id: roleId, code: OWNER_ROLE_CODE, name: 'Owner' });
+
+  // §5.26 ships all six roles with every tenant, not just the one the founder
+  // holds — otherwise the first person hired could only be made an Owner.
+  let ownerRoleId: string | null = null;
+  for (const seed of SEED_ROLES) {
+    const roleId = Ulid.generate(deps.clock);
+    if (seed.code === OWNER_ROLE_CODE) ownerRoleId = roleId;
+
+    await deps.roles.insertSystemRole(tx, ctx, {
+      id: roleId,
+      code: seed.code,
+      name: seed.name,
+    });
+    for (const permission of seed.permissions) {
+      await deps.roles.grant(tx, ctx, roleId, permission);
+    }
+  }
+  if (ownerRoleId === null) throw new Error('SEED_ROLES must contain the Owner role');
+
   await deps.users.insert(tx, ctx, {
     id: ctx.userId,
-    roleId,
+    roleId: ownerRoleId,
     username: command.username,
     displayName: command.username,
     email: command.channel === 'EMAIL' ? command.identifier : null,

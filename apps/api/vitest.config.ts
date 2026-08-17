@@ -20,6 +20,10 @@ export default defineConfig({
   test: {
     fileParallelism: false,
     testTimeout: 30000,
+    // Hooks are as slow as tests here: `beforeAll` runs migrations and
+    // `beforeEach` truncates every table, against a database eleven spec files
+    // are taking turns on. Left at the 10s default these flake under load.
+    hookTimeout: 30000,
     env: {
       DATABASE_URL:
         process.env['TEST_DATABASE_URL'] ?? 'postgres://sher_app:sher_app_test@localhost:5432/sher_test',

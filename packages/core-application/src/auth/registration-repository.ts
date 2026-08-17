@@ -49,8 +49,18 @@ export interface TenantRepository {
   findName(tx: Tx, ctx: TenantContext): Promise<string | null>;
 }
 
+/** A role as the Users screen needs it: something to assign, with a name. */
+export interface RoleSummary {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface RoleRepository {
   insertSystemRole(tx: Tx, ctx: TenantContext, role: NewRole): Promise<void>;
+  grant(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void>;
+  list(tx: Tx, ctx: TenantContext): Promise<readonly RoleSummary[]>;
+  findByCode(tx: Tx, ctx: TenantContext, code: string): Promise<RoleSummary | null>;
 }
 
 /** The stored credentials a login checks against. */
@@ -61,8 +71,37 @@ export interface UserCredentials {
   readonly pinHash: string | null;
 }
 
+/** A user as the Users list shows them. Never carries a hash. */
+export interface UserSummary {
+  readonly id: string;
+  readonly username: string;
+  readonly displayName: string;
+  readonly email: string | null;
+  readonly phone: string | null;
+  readonly roleId: string;
+  readonly roleCode: string;
+  readonly roleName: string;
+  /** A disabled user is soft deleted (§3.6) and cannot sign in. */
+  readonly disabled: boolean;
+  /** Whether they can sign in yet — a newly created user has no password. */
+  readonly hasPassword: boolean;
+}
+
+export interface UserEdit {
+  readonly displayName: string;
+  readonly roleId: string;
+}
+
 export interface UserRepository {
   insert(tx: Tx, ctx: TenantContext, user: NewUser): Promise<void>;
+  /** Everyone in the tenant, disabled included — hiding them hides the trail. */
+  list(tx: Tx, ctx: TenantContext): Promise<readonly UserSummary[]>;
+  findSummary(tx: Tx, ctx: TenantContext, userId: string): Promise<UserSummary | null>;
+  update(tx: Tx, ctx: TenantContext, userId: string, edit: UserEdit): Promise<void>;
+  /** Soft delete (§3.6). Reversible, and the audit trail keeps the row. */
+  setDisabled(tx: Tx, ctx: TenantContext, userId: string, disabled: boolean): Promise<void>;
+  /** Live holders of a role — what "refuse to remove the last Owner" counts. */
+  countActiveWithRole(tx: Tx, ctx: TenantContext, roleId: string): Promise<number>;
   /**
    * Null when the user does not exist, belongs to another tenant, or is soft
    * deleted — a disabled account must not be able to sign in.

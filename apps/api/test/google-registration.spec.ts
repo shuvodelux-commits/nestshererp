@@ -135,7 +135,11 @@ describe('creating the business from a Google account', () => {
     const tenantId = response.body.data.tenant.id as string;
     const tenants = await inTenant(tenantId, 'SELECT name, timezone FROM tenants');
     expect(tenants.rows).toEqual([{ name: 'Karim Traders', timezone: 'Asia/Dhaka' }]);
-    const roles = await inTenant(tenantId, 'SELECT code, is_system FROM roles');
+    // §5.26 ships all six roles with every tenant; the founder holds Owner.
+    const roles = await inTenant(
+      tenantId,
+      "SELECT code, is_system FROM roles WHERE code = 'OWNER'",
+    );
     expect(roles.rows).toEqual([{ code: 'OWNER', is_system: true }]);
   });
 

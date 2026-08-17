@@ -4,18 +4,22 @@ import type {
   NewTenant,
   NewUser,
   RoleRepository,
+  RoleSummary,
   TenantContext,
   TenantRepository,
   Tx,
   UserCredentials,
+  UserEdit,
   UserIdentifierRepository,
   UserRepository,
+  UserSummary,
 } from '@sher/core-application';
 import type { IdentifierChannel } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
+import { Ulid } from '@sher/shared-utils';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
-import { roles, tenants, userIdentifiers, users } from './schema';
+import { rolePermissions, roles, tenants, userIdentifiers, users } from './schema';
 import { txOf } from './unit-of-work';
 
 /**
@@ -70,10 +74,163 @@ export class PostgresRoleRepository implements RoleRepository {
       version: 1,
     });
   }
+
+  async grant(tx: Tx, ctx: TenantContext, roleId: string, permissionCode: string): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx).insert(rolePermissions).values({
+      id: Ulid.generate(this.clock),
+      tenantId: ctx.tenantId,
+      roleId,
+      permissionCode,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: ctx.userId,
+      updatedBy: ctx.userId,
+      version: 1,
+    });
+  }
+
+  async list(tx: Tx, ctx: TenantContext): Promise<readonly RoleSummary[]> {
+    const rows = await txOf(tx)
+      .select({ id: roles.id, code: roles.code, name: roles.name })
+      .from(roles)
+      .where(and(eq(roles.tenantId, ctx.tenantId), isNull(roles.deletedAt)))
+      .orderBy(roles.name);
+
+    return rows.map((row) => ({ ...row, id: row.id.trim() }));
+  }
+
+  async findByCode(tx: Tx, ctx: TenantContext, code: string): Promise<RoleSummary | null> {
+    const rows = await txOf(tx)
+      .select({ id: roles.id, code: roles.code, name: roles.name })
+      .from(roles)
+      .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.code, code), isNull(roles.deletedAt)))
+      .limit(1);
+
+    const row = rows[0];
+    return row === undefined ? null : { ...row, id: row.id.trim() };
+  }
+}
+
+/** Explicit column list — never `SELECT *`, which breaks on a schema change. */
+const USER_SUMMARY = {
+  id: users.id,
+  username: users.username,
+  displayName: users.displayName,
+  email: users.email,
+  phone: users.phone,
+  roleId: users.roleId,
+  roleCode: roles.code,
+  roleName: roles.name,
+  deletedAt: users.deletedAt,
+  passwordHash: users.passwordHash,
+};
+
+interface UserSummaryRow {
+  id: string;
+  username: string | null;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  deletedAt: Date | null;
+  passwordHash: string | null;
+}
+
+/** Never leaks the hash itself — only whether one exists (§5.26, R-E8). */
+function toSummary(row: UserSummaryRow): UserSummary {
+  return {
+    id: row.id.trim(),
+    username: row.username ?? '',
+    displayName: row.displayName,
+    email: row.email,
+    phone: row.phone,
+    roleId: row.roleId.trim(),
+    roleCode: row.roleCode,
+    roleName: row.roleName,
+    disabled: row.deletedAt !== null,
+    hasPassword: row.passwordHash !== null,
+  };
 }
 
 export class PostgresUserRepository implements UserRepository {
   constructor(private readonly clock: Clock) {}
+
+  /**
+   * Disabled users are included. A list that hid them would make someone who
+   * left look as though they had never existed, and would leave no way to put
+   * them back.
+   */
+  async list(tx: Tx, ctx: TenantContext): Promise<readonly UserSummary[]> {
+    const rows = await txOf(tx)
+      .select(USER_SUMMARY)
+      .from(users)
+      .innerJoin(roles, and(eq(roles.id, users.roleId), eq(roles.tenantId, users.tenantId)))
+      .where(eq(users.tenantId, ctx.tenantId))
+      .orderBy(users.displayName);
+
+    return rows.map(toSummary);
+  }
+
+  async findSummary(tx: Tx, ctx: TenantContext, userId: string): Promise<UserSummary | null> {
+    const rows = await txOf(tx)
+      .select(USER_SUMMARY)
+      .from(users)
+      .innerJoin(roles, and(eq(roles.id, users.roleId), eq(roles.tenantId, users.tenantId)))
+      .where(and(eq(users.tenantId, ctx.tenantId), eq(users.id, userId)))
+      .limit(1);
+
+    const row = rows[0];
+    return row === undefined ? null : toSummary(row);
+  }
+
+  async update(tx: Tx, ctx: TenantContext, userId: string, edit: UserEdit): Promise<void> {
+    await txOf(tx)
+      .update(users)
+      .set({
+        displayName: edit.displayName,
+        roleId: edit.roleId,
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+      })
+      .where(and(eq(users.tenantId, ctx.tenantId), eq(users.id, userId)));
+  }
+
+  /** Soft delete (§3.6) — reversible, and the row stays for the audit trail. */
+  async setDisabled(
+    tx: Tx,
+    ctx: TenantContext,
+    userId: string,
+    disabled: boolean,
+  ): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx)
+      .update(users)
+      .set({
+        deletedAt: disabled ? now : null,
+        deletedBy: disabled ? ctx.userId : null,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+      })
+      .where(and(eq(users.tenantId, ctx.tenantId), eq(users.id, userId)));
+  }
+
+  async countActiveWithRole(tx: Tx, ctx: TenantContext, roleId: string): Promise<number> {
+    const rows = await txOf(tx)
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.tenantId, ctx.tenantId),
+          eq(users.roleId, roleId),
+          isNull(users.deletedAt),
+        ),
+      );
+
+    return rows.length;
+  }
 
   async findCredentials(
     tx: Tx,

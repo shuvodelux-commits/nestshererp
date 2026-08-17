@@ -232,7 +232,11 @@ describe('completing registration', () => {
     const tenants = await inTenant(tenantId, 'SELECT id, name, timezone FROM tenants');
     expect(tenants.rows).toEqual([{ id: tenantId, name: BUSINESS, timezone: 'Asia/Dhaka' }]);
 
-    const roles = await inTenant(tenantId, 'SELECT code, name, is_system FROM roles');
+    // §5.26 ships all six roles with every tenant; the founder holds Owner.
+    const roles = await inTenant(
+      tenantId,
+      "SELECT code, name, is_system FROM roles WHERE code = 'OWNER'",
+    );
     expect(roles.rows).toEqual([{ code: 'OWNER', name: 'Owner', is_system: true }]);
 
     const users = await inTenant(

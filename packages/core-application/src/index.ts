@@ -31,9 +31,12 @@ export type {
   NewUser,
   RoleRepository,
   TenantRepository,
+  RoleSummary,
   UserCredentials,
+  UserEdit,
   UserIdentifierRepository,
   UserRepository,
+  UserSummary,
 } from './auth/registration-repository';
 export type {
   NewSession,
@@ -71,3 +74,10 @@ export type {
   ChangePinCommand,
   SecuritySettings,
 } from './auth/change-credentials-service';
+export { ManageUsersService } from './users/manage-users-service';
+export type {
+  CreateUserCommand,
+  ListUsersCommand,
+  SetUserDisabledCommand,
+  UpdateUserCommand,
+} from './users/manage-users-service';
