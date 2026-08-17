@@ -14,6 +14,16 @@ import { ref } from 'vue';
  * revocable server-side, so a stolen one can be killed — which is the mitigation
  * that matters more than the storage choice.
  */
+/**
+ * What this user may do, so the app stops drawing controls that would 403
+ * (UI-09; §5.26 "hide the control in the UI **and** enforce server-side").
+ *
+ * Held in memory only, deliberately. It is a hint for drawing the screen, not
+ * an authority — every endpoint checks for itself — and persisting it would
+ * mean a role change quietly stayed invisible until the browser was closed.
+ */
+const permissions = ref<readonly string[]>([]);
+
 const ACCESS_KEY = 'sher.accessToken';
 const REFRESH_KEY = 'sher.refreshToken';
 const BUSINESS_KEY = 'sher.businessName';
@@ -36,7 +46,20 @@ export function useSession() {
     businessName,
     username,
 
+    permissions,
+
     isSignedIn: (): boolean => accessToken.value !== null,
+
+    /**
+     * Whether to *offer* something. Never a security decision — the server
+     * refuses regardless, and a screen that believed a lie here would gain
+     * nothing by it.
+     */
+    can: (permission: string): boolean => permissions.value.includes(permission),
+
+    setPermissions(granted: readonly string[]): void {
+      permissions.value = [...granted];
+    },
 
     /**
      * True when this browser has been signed in before and can offer PIN entry.
@@ -70,6 +93,7 @@ export function useSession() {
 
     /** A real sign-out: nothing about this account stays on the device. */
     clear(): void {
+      permissions.value = [];
       accessToken.value = null;
       refreshToken.value = null;
       businessName.value = null;

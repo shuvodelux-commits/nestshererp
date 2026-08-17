@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
+
+import { loadMyAccess } from '../../auth/access';
 import AppSidebar from './AppSidebar.vue';
 import AppTopBar from './AppTopBar.vue';
 
@@ -10,6 +13,10 @@ import AppTopBar from './AppTopBar.vue';
  * a separate layout, not a variant of this one.
  */
 defineProps<{ title: string; helpBn?: string }>();
+
+// UI-09: the sidebar cannot be permission-filtered until it knows the
+// permissions. Loaded here, once, because every signed-in screen sits inside it.
+onMounted(() => void loadMyAccess());
 </script>
 
 <template>

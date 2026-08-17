@@ -188,8 +188,8 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 | # | Rule |
 |---|---|
 | UI-14 | **The primary UI language is English.** Labels, buttons, menus, table headers and messages are English. The UI is not bilingual. |
-| UI-15 | **Bangla helper text** sits beside or below an English label and explains the *business meaning* — a short natural sentence a shopkeeper would say, never a word-for-word translation. Example: `Due` → `যে টাকা কাস্টমারের কাছে এখনও পাওনা আছে`, not `বকেয়া`. |
-| UI-16 | Bangla helper text is used **only where it removes real confusion**: accounting and inventory concepts (due, payable, COGS, valuation, lot, adjustment, void/reverse, period lock), consequential actions, and the first field of an unfamiliar flow. **Not** on obvious fields (Name, Phone, Address), not on every field, not on every screen. |
+| UI-15 | **Bangla helper text** sits beside or below the English label and uses the familiar words spoken in Bangladeshi shops. A short direct phrase is correct when it is what people naturally say (`Login` → `লগইন করুন`, `Customer name` → `কাস্টমারের নাম`, `Cash counter` → `ক্যাশ কাউন্টার`). For accounting meaning, prefer a natural explanation (`Due` → `কাস্টমারের কাছে যে টাকা এখনো পাওনা আছে`) over a formal dictionary word. |
+| UI-16 | Bangla helper text is used where it removes confusion or speeds a high-frequency flow: accounting/inventory concepts, consequential actions, the first field of an unfamiliar flow, and the POS customer/cash controls named in §5.7. Do not mechanically translate every field on every back-office screen. |
 | UI-17 | Helper text is secondary in the visual hierarchy — smaller, muted — and never replaces the English label. |
 | UI-18 | Every string, English and Bangla, is an i18n key from Phase 1 — `sales.invoice.due.label` and `sales.invoice.due.help_bn`. A helper key may be absent; that is the normal case. No hardcoded strings. |
 | UI-19 | One helper string per business concept, reused everywhere. Two different Bangla explanations of "due" is a defect. |
@@ -269,6 +269,8 @@ The following tokens and component shapes are the single SherERP visual language
 - A module landing page follows: header → filters/tabs → primary table/chart card at roughly two-thirds width → secondary summary/progress card at one-third. Forms and detail screens still follow UI-22 rather than forcing this dashboard layout.
 - The summary/progress card uses one horizontal stacked bar, then a legend with dot, label, percentage and right-aligned value, followed by a full-width `Show all` action when applicable.
 - Reuse the shared shell, card, table, badge, button, filter and state components. A new card style, navigation layout, accent colour or page composition requires an explicit edit to this section before implementation.
+
+**Approved natural Bangla terms:** `Login` → `লগইন করুন` · `Customer name` → `কাস্টমারের নাম` · `Phone` → `ফোন নম্বর` · `Cash counter` → `ক্যাশ কাউন্টার` · `More customer information` → `কাস্টমারের আরও তথ্য` · `Guardian/Father's name` → `অভিভাবক/বাবার নাম` · `Address` → `ঠিকানা` · `Search invoices by phone` → `ফোন নম্বর দিয়ে আগের ইনভয়েস খুঁজুন` · `Save as customer` → `কাস্টমার হিসেবে সংরক্ষণ করুন`. These phrases are i18n values, not hardcoded component text.
 
 **Deliberately not decided here:** logo artwork · POS p95 performance numbers (open item O-5, Phase 6) · full Bangla UI (D-12, V1.1) · PWA install prompt and persistent-storage gate (D-24, Phase 12) · print stylesheets beyond D-22 and §5.27.
 
@@ -449,7 +451,8 @@ Master data (products, parties) has neither `business_date` nor `status` transit
 |---|---|
 | POS product search | `pg_trgm` GIN on `(brand \|\| ' ' \|\| name)`, tenant-scoped |
 | Barcode scan | unique `(tenant_id, barcode)` |
-| Invoice lookup by phone | `(tenant_id, phone)` on parties |
+| Registered customer lookup by phone | `(tenant_id, phone)` on parties |
+| Invoice lookup by captured phone | `(tenant_id, customer_phone_snapshot, business_date DESC, id DESC)` on sales invoices; snapshot phone is not unique |
 | Ledger statement | `(tenant_id, party_id, business_date)` on journal_lines |
 | Stock on hand | `(tenant_id, product_id, location_id, lot_id)` on movements |
 
@@ -493,7 +496,7 @@ All final. Not discussion points.
 | ID | Decision |
 |---|---|
 | **D-01** | **Offline write authority — REVISED 2026-08-16.** **Single writer per tenant, bound to a registered browser profile.** Exactly one browser profile holds `OFFLINE_RW`; every other profile and device is read-only offline. Authority is bound to the profile, not the machine — a different browser, a different OS user, or a cleared profile on the same PC is a **different** writer and must be re-registered. Transfer follows the device-authority state machine in §5.23 (drain → revoke → authorize → snapshot), always audited. IndexedDB is **not** the storage engine — see D-23. |
-| **D-02** | **Customer phone.** Unique per `(tenant_id, phone)` **within the CUSTOMER role only** — POS searches invoices by phone. Other roles may share a number. Walk-in customer is a real, `system_reserved` record exempt from the constraint. |
+| **D-02** | **Customer phone and guest sale identity — REVISED 2026-08-17.** A registered customer's phone is mandatory and unique per `(tenant_id, phone)` **within the CUSTOMER role only**. Other roles may share a number. The walk-in customer is one real, `system_reserved` party exempt from the constraint. A fully paid new buyer does not create an individual party: the sale uses the walk-in party and stores immutable invoice snapshots of required customer name + phone and optional guardian/father name + address. Snapshot phones are searchable but not unique. If the sale leaves due, customer creation is mandatory and atomic with the sale. A later return continues using the walk-in party when it leaves no due, advance or store credit; an individual customer is created only when a balance must survive, or when the shopkeeper confirms creation for later use. |
 | **D-03** | **Invoice deletion.** Posted invoices are reversed/voided with history retained; all related effects (stock, due, cash, expense) reverse. Draft invoices may be hard-deleted. |
 | **D-04** | **Party system.** One internal `parties` table with role flags (CUSTOMER, SUPPLIER, VENDOR, EXPENSE, EMPLOYEE). UI shows separate Customer / Supplier / Vendor / Expense ledgers as **views over the same journal**. Selling to a supplier requires explicitly choosing the transaction type; the party then appears in both histories with full purchase and sale history. |
 | **D-05** | **Costing method — REVISED 2026-08-16.** **One costing method per tenant: `FIFO` or `AVERAGE`.** It drives **both** the COGS posted to the journal **and** the valuation report, so the two can never disagree. **LIFO is removed from V1.** Physical issue order is always FIFO/FEFO (DR13.2) and is **not** configurable — the earlier "two independent settings" wording described a setting that had only one legal value and produced a valuation that drifted permanently from the INVENTORY account. See §3.11 INV-05 for the method-aware invariant. |
@@ -693,6 +696,10 @@ Product, brand, category/group, SKU/code, barcode, unit, selling price, reorder 
 ## 5.6 M05 / M06 / M07 Parties (unified — D-04)
 One `parties` table + `party_roles`. Customer: phone mandatory, unique within the CUSTOMER role (D-02), group, loyalty/premium classification, notes, status, history, ledger, credit limit (warning-only). Supplier: contact info, purchase history, payable, payments, purchase returns, statement, ledger. Vendor/consignment (entitlement-gated): vendor-owned stock, vendor cost, vendor payable, vendor payment, vendor return, source transaction history.
 
+**Guest versus registered customer:** the system-reserved walk-in party represents fully paid buyers who have not been saved as individual customers. Their invoice still captures required name and phone plus optional guardian/father name and address as immutable snapshots. These snapshots make the invoice searchable and printable but do not create an individual party or individual ledger. Repeated snapshot phones are allowed; uniqueness begins only when a CUSTOMER party is created.
+
+Creating a registered customer from a guest snapshot copies the details only after the phone passes the CUSTOMER-role uniqueness rule. The shopkeeper confirms conversion for a fully paid transaction. Conversion is mandatory and atomic with any sale, return or credit operation that would otherwise leave due, advance or store credit. Historical invoice snapshots never change when the resulting party is edited.
+
 **Inventory must distinguish Owned Stock from Vendor-Owned Stock.** While held, vendor stock is excluded from valuation and COGS. On sale it is converted to owned stock at vendor cost inside the sale transaction (deemed purchase — DR13.10), which is what creates the vendor payable.
 
 **Party selection defaults:** Sales/POS shows customers by default; Purchase screens show suppliers by default. Selling to a supplier is possible but must be an explicit user choice — never show every party type by default.
@@ -700,18 +707,28 @@ One `parties` table + `party_roles`. Customer: phone mandatory, unique within th
 ## 5.7 M08 Sales & POS
 Fast product search, grid/list, barcode scan, brand/category filters, customer selection, walk-in customer, quantity editing, permission-gated price editing, discount, grand total, multiple payment methods, cash paid, due, invoice generation, printing, reprint, cancellation/correction, permission-controlled transaction editing.
 
+**Customer control:** a searchable customer combobox defaults to the walk-in/new-buyer flow. Selecting a registered customer immediately shows current due and advance derived from journal lines, never recomputed from invoices. Directly below it is `Search invoices by phone` (`ফোন নম্বর দিয়ে আগের ইনভয়েস খুঁজুন`). Searching a phone returns both registered-customer invoices and guest invoices matched through `customer_phone_snapshot`, newest first.
+
+For a new buyer, `Customer name` (`কাস্টমারের নাম`) and `Phone` (`ফোন নম্বর`) are required on the invoice. `More customer information` (`কাস্টমারের আরও তথ্য`) expands optional `Guardian/Father's name` (`অভিভাবক/বাবার নাম`) and `Address` (`ঠিকানা`). These fields remain collapsed during normal counter work. If calculated due is greater than zero, posting first creates the CUSTOMER party and then links/posts the sale inside the same transaction; failure of either rolls back both. A fully paid sale stays on the system walk-in party unless the shopkeeper explicitly chooses `Save as customer` (`কাস্টমার হিসেবে সংরক্ষণ করুন`). Finding older guest invoices for the phone may offer that choice but never silently creates a party.
+
 Source selection: Own Stock · Vendor/Consignment. Vendor/consignment requires vendor, quantity and vendor cost, and posts via the deemed-purchase rule (DR13.10). Sale templates per D-26.
 
 **Negative stock policy** is a setting with three values: `BLOCK` · `WARN` · `ALLOW`. Default `WARN`. When `ALLOW`, costing follows D-19 provisional cost.
 
-**Cost visibility in POS** is behind a protected control (eye icon) requiring `inventory.cost.view`. Where the temporary-reveal behaviour is used, the cost displays for ~2000 ms then hides. Product search must never return purchase cost to a user lacking the permission — the field is absent from the response, not blanked.
+**Cost visibility in POS** is behind a small eye control on each selected cart line and requires `inventory.cost.view`. It reveals `Estimated cost` for ~2000 ms, then hides. For FIFO it is the estimated COGS of the selected quantity from the next FIFO/FEFO lot consumptions; for AVERAGE it is selected quantity × current average unit cost. It shows total and per-unit cost and is recomputed when quantity changes. Negative/open provisional stock is labelled `Estimated cost — provisional`. The server uses the same costing service as sale posting; this is never a client calculation and never merely "last purchase price". Bangla helper: `বর্তমান স্টক ও কস্টিং পদ্ধতি অনুযায়ী এই বিক্রির আনুমানিক খরচ`. Product/cart responses must omit every cost field for a user lacking the permission — never return blank or zero.
 
 ## 5.8 M09 Sales Invoice & Payments
 Invoice creation, numbering, payment allocation, multiple payment methods, cash, bank, due, customer balance, invoice search (by phone), reprint, cancellation/correction, payment history.
 
+Every sales invoice stores the customer identity as it appeared at posting time: `customer_name_snapshot` and `customer_phone_snapshot` required; `customer_guardian_name_snapshot` and `customer_address_snapshot` nullable; `party_id` links either the selected/created registered customer or the system walk-in party. Snapshot fields are document facts and never change when party master data changes. Posted corrections create the normal new document version rather than rewriting historical snapshots.
+
+**Guest accounting:** a fully paid guest invoice posts using the system walk-in party and creates no individual customer ledger. If the transaction leaves due, advance or store credit, an individual customer must exist and every related journal line uses that party. A later fully settled return/refund remains linked to the original invoice and continues using the system walk-in party when it leaves no remaining due or credit.
+
 **Payment allocation:** select the invoice(s) being paid → apply → overpayment is retained as an **advance**, applicable later against due. Auto-FIFO allocation is an option; unallocated amounts sit as an on-account balance. Ledgers support current balance, due balance, advance balance, partial payments, sales returns, purchase returns, and cash refunds.
 
-A sale transaction is atomic across: sale → items → inventory consumption → stock movement → payment → customer ledger → cash/bank → audit.
+A sale transaction is atomic across: sale → customer snapshot/party creation when required → items → inventory consumption → stock movement → payment → party-ledger posting when balance-bearing (walk-in reference otherwise) → cash/bank → audit.
+
+**Required tests:** full-paid guest → one walk-in-linked invoice, searchable by snapshot phone, no individual party · guest sale with due → one customer and invoice created atomically, receivable on that party · duplicate registered phone → rejected with no sale · fully refunded guest return → still walk-in, no individual party · return creating store credit → confirmed/created party owns the credit · selected registered customer shows journal-derived due/advance · unauthorized POS response contains no cost fields · FIFO and AVERAGE eye reveal matches the posting costing service for the selected quantity exactly.
 
 ## 5.9 M10 / M11 Purchase and Purchase Orders
 Purchase: supplier, date, reference/invoice, product, quantity, purchase price, discount, additional costs, payment, due, lot creation, inventory increase, supplier ledger, cash/bank movement, purchase return. Different purchase prices create separate lots.
@@ -785,6 +802,8 @@ Physical count, system quantity, physical quantity, difference, adjustment reaso
 
 ## 5.14 M16 Returns
 Sales and purchase returns with original transaction reference, product, quantity, lot, reason, stock disposition, refund/credit, ledger adjustment, cash/bank adjustment, audit. **Returned inventory must have an explicit disposition.**
+
+For a return against a fully paid guest invoice, preserve the original invoice identity snapshot and continue using the system walk-in party when the return is fully settled and leaves no due, advance or store credit. Do not create a customer merely because goods were returned. If the return creates a balance that must survive the transaction, require confirmation, create or match the registered customer by the snapshot phone, and attach that balance to the resulting party inside the return transaction.
 
 ## 5.15 M17 / M18 Ledgers
 Projections of journal lines — no independent writers. Statement columns: Date · Reference · Description · Debit · Credit · Running Balance. Default reporting uses `business_date`; `created_at` remains available for audit. Terminology configurable (Debit/Credit · Cash In/Cash Out · পাবো/দিব) **without changing accounting semantics**.
@@ -1546,6 +1565,8 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 
 | Date | Change |
 |---|---|
+| 2026-08-17 | **D-02 and POS guest-customer workflow revised by owner approval.** Fully paid new buyers use the system walk-in party while sales invoices retain immutable required name/phone and optional guardian/address snapshots searchable by phone. Due creates and links a registered customer atomically. A fully settled guest return continues using walk-in and does not create a party; a surviving due/advance/store credit requires a confirmed customer. §3.9, §5.6–§5.8 and §5.14 updated with UI behaviour, index and exact tests. POS cost-eye semantics now use the posting costing service: selected-quantity FIFO/FEFO estimated COGS or AVERAGE cost, permission-gated and provisional-labelled where applicable. |
+| 2026-08-17 | **Natural Bangla UI wording clarified.** UI-15/UI-16 and §2.7.I now permit familiar shop phrases on high-frequency POS controls (`লগইন করুন`, `কাস্টমারের নাম`, `ক্যাশ কাউন্টার`) while retaining English primary labels and centralized i18n keys. |
 | 2026-08-17 | **Development cadence revised for the one-month online-V1 target.** One-screen micro-slices are replaced by four large weekly module-scale vertical increments covering Phases 0–11. Focused risk-based tests run during implementation; full regression and owner UI acceptance run once at each module gate. Phases 12–15 remain post-V1. Critical accounting, inventory, tenant, security, idempotency, reversal and backup/restore coverage remains mandatory. §6 and `AI_CODING_INSTRUCTIONS.md` revised by owner request. |
 | 2026-08-17 | **Binding visual system added to §2.7.I.** Fixed slate/white palette, 256px shared shell, typography, card/table/button/badge shapes and module page composition apply from the first screen. The supplied Tailwind/`lucide-react` wording was adapted to the existing Vue + PrimeVue stack without adding a second UI framework or React dependency. |
 | 2026-08-17 | **Write path classified by mutation type.** The ten-step path remains mandatory for transactional money/stock/document writes; security/identity and master/configuration writes use explicit smaller paths instead of fake period/journal/stock steps. `AI_CODING_INSTRUCTIONS.md` R-D revised. |

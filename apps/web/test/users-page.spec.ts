@@ -56,7 +56,15 @@ const ROLES = [
 ];
 
 beforeEach(() => {
-  useSession().signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
+  const session = useSession();
+  session.signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
+  // An owner, so the controls are offered. The hidden case has its own suite.
+  session.setPermissions([
+    'user.account.view',
+    'user.account.create',
+    'user.account.edit',
+    'user.account.disable',
+  ]);
   list.mockReset();
   create.mockReset();
   update.mockReset();
@@ -166,5 +174,53 @@ describe('UsersPage', () => {
     expect(dialog.text()).toContain('Disable Rahim Uddin?');
     expect(dialog.text()).toContain('signed out everywhere');
     expect(wrapper.find('#confirm-toggle').exists()).toBe(true);
+  });
+});
+
+/**
+ * UI-09: "Never render a control that will 403." A Manager holds
+ * `user.account.view` and nothing else, so they can see the team without being
+ * offered buttons that would refuse them.
+ */
+describe('UsersPage for someone who may look but not change', () => {
+  beforeEach(() => {
+    useSession().setPermissions(['user.account.view']);
+  });
+
+  it('still lists everyone', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('Karim Ahmed');
+    expect(wrapper.text()).toContain('Rahim Uddin');
+  });
+
+  it('offers no Add, and drops the actions column entirely', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).not.toContain('Add user');
+    expect(wrapper.findAll('.linkish')).toHaveLength(0);
+    // The column header goes too — an empty one would imply something was there.
+    expect(wrapper.text()).not.toContain('Actions');
+  });
+
+  it('says why, rather than leaving the absence unexplained', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('not make changes');
+  });
+});
+
+/** Editing and disabling are separate codes (§5.26), and show separately. */
+describe('UsersPage for someone who may edit but not disable', () => {
+  beforeEach(() => {
+    useSession().setPermissions(['user.account.view', 'user.account.edit']);
+  });
+
+  it('offers Edit and withholds Disable', async () => {
+    const wrapper = await mountLoaded();
+
+    const actions = wrapper.findAll('tbody tr')[1]!.findAll('.linkish');
+    expect(actions).toHaveLength(1);
+    expect(actions[0]!.text()).toBe('Edit');
   });
 });

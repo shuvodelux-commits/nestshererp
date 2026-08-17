@@ -12,4 +12,14 @@ import type { Tx } from './unit-of-work';
 export interface AccessControl {
   /** Throws AppError(PERMISSION_DENIED) when the user's role lacks the code. */
   require(tx: Tx, ctx: TenantContext, permissionCode: string): Promise<void>;
+  /**
+   * Everything this user's role holds, so the client can stop rendering
+   * controls that would 403 (UI-09, §5.26: "hide the control in the UI **and**
+   * enforce server-side").
+   *
+   * This is a convenience for the screen, never an authorisation decision. Every
+   * use case still calls `require` — a client that lied about its own
+   * permissions would gain nothing.
+   */
+  permissionsOf(tx: Tx, ctx: TenantContext): Promise<readonly string[]>;
 }

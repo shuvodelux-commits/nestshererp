@@ -6,6 +6,7 @@ import { createUser, fetchUsers, setUserDisabled, updateUser } from '../api/user
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
+import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 
 /**
@@ -24,6 +25,19 @@ import AppShell from '../components/shell/AppShell.vue';
  * or email, so the person who added them never knows their credential.
  */
 const session = useSession();
+
+/**
+ * UI-09: only offer what this caller may actually do. Adding, editing and
+ * disabling are three separate permissions (§5.26 keeps destructive actions
+ * apart), so a role may hold one without the others and the screen shows
+ * exactly that much.
+ *
+ * The server enforces regardless — this only decides what to render.
+ */
+const canCreate = computed(() => session.can('user.account.create'));
+const canEdit = computed(() => session.can('user.account.edit'));
+const canDisable = computed(() => session.can('user.account.disable'));
+const canDoAnything = computed(() => canCreate.value || canEdit.value || canDisable.value);
 
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
@@ -183,11 +197,8 @@ async function toggleDisabled(): Promise<void> {
     </div>
 
     <AppCard v-else-if="loadError !== null" title="Could not load your users">
-      <p class="notice is-bad" role="alert">
-        <span class="code">{{ loadError.code }}</span>
-        {{ loadError.message }}
-      </p>
-      <button type="button" class="btn btn-primary" @click="load">Try again</button>
+      <ErrorNotice :code="loadError.code" :message="loadError.message" />
+      <button type="button" class="btn btn-primary retry" @click="load">Try again</button>
     </AppCard>
 
     <template v-else>
@@ -195,7 +206,14 @@ async function toggleDisabled(): Promise<void> {
 
       <div class="bar">
         <p class="count">{{ users.length }} {{ users.length === 1 ? 'person' : 'people' }}</p>
-        <button type="button" class="btn btn-primary" @click="openCreate">Add user</button>
+        <button
+          v-if="canCreate"
+          type="button"
+          class="btn btn-primary"
+          @click="openCreate"
+        >
+          Add user
+        </button>
       </div>
 
       <div class="table-wrap">
@@ -207,7 +225,7 @@ async function toggleDisabled(): Promise<void> {
               <th>Mobile / email</th>
               <th>Role</th>
               <th>Status</th>
-              <th class="actions-col">Actions</th>
+              <th v-if="canDoAnything" class="actions-col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -221,9 +239,12 @@ async function toggleDisabled(): Promise<void> {
                 <span v-else-if="!user.hasPassword" class="pill pill-warn">Awaiting password</span>
                 <span v-else class="pill pill-ok">Active</span>
               </td>
-              <td class="actions">
-                <button type="button" class="linkish" @click="openEdit(user)">Edit</button>
+              <td v-if="canDoAnything" class="actions">
+                <button v-if="canEdit" type="button" class="linkish" @click="openEdit(user)">
+                  Edit
+                </button>
                 <button
+                  v-if="canDisable"
                   type="button"
                   class="linkish"
                   :class="{ danger: !user.disabled }"
@@ -237,7 +258,11 @@ async function toggleDisabled(): Promise<void> {
         </table>
       </div>
 
-      <p class="fine">
+      <p v-if="!canDoAnything" class="fine">
+        You can see who works here, but not make changes. Ask the business owner
+        to add someone or adjust an account.
+      </p>
+      <p v-if="canCreate" class="fine">
         A new person has no password until they set one themselves — which is
         why you never have to think one up for them. Tell them to open the
         sign-in page and click <strong>“First time here? Set your password”</strong>,
@@ -251,10 +276,7 @@ async function toggleDisabled(): Promise<void> {
         <h2>{{ editing.mode === 'CREATE' ? 'Add user' : 'Edit user' }}</h2>
 
         <form @submit.prevent="submit">
-          <p v-if="formError !== null" class="notice is-bad" role="alert">
-            <span class="code">{{ formError.code }}</span>
-            {{ formError.message }}
-          </p>
+          <ErrorNotice v-if="formError !== null" :code="formError.code" :message="formError.message" />
 
           <div class="field">
             <label for="display-name">Full name</label>
@@ -322,10 +344,7 @@ async function toggleDisabled(): Promise<void> {
         </p>
 
         <form @submit.prevent="toggleDisabled">
-          <p v-if="formError !== null" class="notice is-bad" role="alert">
-            <span class="code">{{ formError.code }}</span>
-            {{ formError.message }}
-          </p>
+          <ErrorNotice v-if="formError !== null" :code="formError.code" :message="formError.message" />
 
           <div class="field">
             <label for="confirm-toggle">Your password</label>
@@ -596,6 +615,10 @@ form {
   display: flex;
   justify-content: flex-end;
   gap: var(--sher-space-3);
+}
+
+.retry {
+  margin-top: var(--sher-space-4);
 }
 
 .btn {

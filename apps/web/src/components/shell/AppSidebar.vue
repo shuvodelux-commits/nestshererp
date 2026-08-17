@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { useSession } from '../../auth/session';
@@ -16,17 +17,32 @@ import { useSession } from '../../auth/session';
  * becomes real machinery once roles exist (slice 1.4).
  */
 const route = useRoute();
-const { businessName } = useSession();
+const session = useSession();
+const { businessName } = session;
 
+/**
+ * `needs` is the permission that makes a destination reachable. An entry with
+ * none is reachable by anyone signed in — the dashboard shows only your own
+ * business name, and Security only ever edits your own credentials.
+ */
 const items = [
-  { label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1' },
-  { label: 'Users', icon: '◑', to: '/users', slice: '1.3' },
-  { label: 'Roles', icon: '◈', to: '/roles', slice: '1.4' },
+  { label: 'Dashboard', icon: '▤', to: '/dashboard', slice: '1.1', needs: null },
+  { label: 'Users', icon: '◑', to: '/users', slice: '1.3', needs: 'user.account.view' },
+  { label: 'Roles', icon: '◈', to: '/roles', slice: '1.4', needs: 'user.role.view' },
   // Security is the whole of Settings today. The rest of §5.21 — costing method,
   // negative stock policy, terminology, numbering — arrives in slice 1.5, and
   // listing those names now would render controls that 403 (UI-09).
-  { label: 'Security', icon: '⚿', to: '/settings/security', slice: '1.2b' },
+  { label: 'Security', icon: '⚿', to: '/settings/security', slice: '1.2b', needs: null },
 ] as const;
+
+/**
+ * UI-09: "Never render a control that will 403." A destination the caller cannot
+ * open is **absent**, not greyed — a disabled item is still a rendered control,
+ * and it advertises a feature they cannot use.
+ */
+const visible = computed(() =>
+  items.filter((item) => item.needs === null || session.can(item.needs)),
+);
 </script>
 
 <template>
@@ -41,7 +57,7 @@ const items = [
 
     <nav class="nav" aria-label="Modules">
       <RouterLink
-        v-for="item in items"
+        v-for="item in visible"
         :key="item.to"
         :to="item.to"
         class="nav-item"

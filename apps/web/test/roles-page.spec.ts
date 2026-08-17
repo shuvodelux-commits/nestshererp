@@ -71,7 +71,10 @@ const CUSTOM_ROLE = {
 };
 
 beforeEach(() => {
-  useSession().signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
+  const session = useSession();
+  session.signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
+  // An owner, so the controls are offered. The hidden case has its own suite.
+  session.setPermissions(['user.role.view', 'user.role.manage']);
   list.mockReset();
   create.mockReset();
   update.mockReset();
@@ -183,5 +186,38 @@ describe('RolesPage', () => {
       permissions: ['user.account.view'],
       confirmPassword: 'Passw0rd23',
     });
+  });
+});
+
+/**
+ * UI-09: "Never render a control that will 403." A Manager may read this screen
+ * — they hold `user.role.view` — but not change it. Offering buttons that refuse
+ * them, and then explaining the refusal, is what the rule exists to prevent.
+ */
+describe('RolesPage for someone who may look but not change', () => {
+  beforeEach(() => {
+    useSession().setPermissions(['user.role.view']);
+  });
+
+  it('still shows the roles and what each may do', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('Owner');
+    expect(wrapper.text()).toContain('See the user list');
+  });
+
+  it('offers no Add, no Edit and no Delete', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.find('.bar button').exists()).toBe(false);
+    expect(wrapper.findAll('.linkish')).toHaveLength(0);
+    expect(wrapper.text()).not.toContain('Add role');
+  });
+
+  it('says why, instead of leaving the absence unexplained', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('not change it');
+    expect(wrapper.text()).toContain('Ask the business owner');
   });
 });

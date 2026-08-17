@@ -6,6 +6,7 @@ import { changePassword, changePin, fetchSecuritySettings } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
+import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import OtpInput from '../components/OtpInput.vue';
 
@@ -156,10 +157,7 @@ async function signInAgain(): Promise<void> {
 
     <!-- Error: the server's own code and message, plus a retry (UI-28). -->
     <AppCard v-else-if="loadError !== null" title="Could not load your security settings">
-      <p class="notice is-bad" role="alert">
-        <span class="code">{{ loadError.code }}</span>
-        {{ loadError.message }}
-      </p>
+      <ErrorNotice :code="loadError.code" :message="loadError.message" />
       <button type="button" class="btn btn-primary" @click="loadSettings">Try again</button>
     </AppCard>
 

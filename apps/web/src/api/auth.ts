@@ -2,6 +2,7 @@ import type {
   CompleteRegistrationRequest,
   DashboardSummaryResponse,
   LoginResponse,
+  MyAccessResponse,
   RegistrationResponse,
   RequestPasswordResetResponse,
   RequestSignupOtpResponse,
@@ -38,6 +39,14 @@ export function completeRegistration(
   payload: CompleteRegistrationRequest,
 ): Promise<RegistrationResponse> {
   return request('/api/v1/auth/registration', { method: 'POST', body: payload });
+}
+
+/**
+ * Who is signed in and what they may do (UI-09). The permission list decides
+ * what the screen *offers*; the server decides what it allows.
+ */
+export function fetchMyAccess(token: string): Promise<MyAccessResponse> {
+  return request('/api/v1/me', { token });
 }
 
 export function fetchDashboardSummary(token: string): Promise<DashboardSummaryResponse> {

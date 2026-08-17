@@ -6,6 +6,7 @@ import { createRole, deleteRole, fetchRoles, updateRole } from '../api/roles';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
+import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 
 /**
@@ -24,6 +25,15 @@ import AppShell from '../components/shell/AppShell.vue';
  * without changing.
  */
 const session = useSession();
+
+/**
+ * UI-09: a control the caller cannot use is not rendered. Seeing roles and
+ * changing them are separate permissions, so a Manager can read this screen
+ * without being shown buttons that would refuse them.
+ *
+ * The server enforces regardless — this only decides what to offer.
+ */
+const canManage = computed(() => session.can('user.role.manage'));
 
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
@@ -177,11 +187,8 @@ async function confirmDelete(): Promise<void> {
     </div>
 
     <AppCard v-else-if="loadError !== null" title="Could not load your roles">
-      <p class="notice is-bad" role="alert">
-        <span class="code">{{ loadError.code }}</span>
-        {{ loadError.message }}
-      </p>
-      <button type="button" class="btn btn-primary" @click="load">Try again</button>
+      <ErrorNotice :code="loadError.code" :message="loadError.message" />
+      <button type="button" class="btn btn-primary retry" @click="load">Try again</button>
     </AppCard>
 
     <template v-else>
@@ -189,7 +196,14 @@ async function confirmDelete(): Promise<void> {
 
       <div class="bar">
         <p class="count">{{ roles.length }} roles</p>
-        <button type="button" class="btn btn-primary" @click="openCreate">Add role</button>
+        <button
+          v-if="canManage"
+          type="button"
+          class="btn btn-primary"
+          @click="openCreate"
+        >
+          Add role
+        </button>
       </div>
 
       <div class="grid">
@@ -210,7 +224,7 @@ async function confirmDelete(): Promise<void> {
           </ul>
           <p v-else class="perms-empty">Cannot do anything yet.</p>
 
-          <div class="role-actions">
+          <div v-if="canManage" class="role-actions">
             <button type="button" class="linkish" @click="openEdit(role)">
               {{ role.locked ? 'Rename' : 'Edit' }}
             </button>
@@ -226,6 +240,10 @@ async function confirmDelete(): Promise<void> {
         </section>
       </div>
 
+      <p v-if="!canManage" class="fine">
+        You can see what each role may do, but not change it. Ask the business
+        owner if a role needs adjusting.
+      </p>
       <p class="fine">
         These are the only things SherERP can do so far. Selling, stock,
         purchases and reports each bring their own permissions as they are
@@ -239,10 +257,7 @@ async function confirmDelete(): Promise<void> {
         <h2>{{ creating ? 'Add role' : `Edit ${editing?.name ?? ''}` }}</h2>
 
         <form @submit.prevent="save">
-          <p v-if="formError !== null" class="notice is-bad" role="alert">
-            <span class="code">{{ formError.code }}</span>
-            {{ formError.message }}
-          </p>
+          <ErrorNotice v-if="formError !== null" :code="formError.code" :message="formError.message" />
 
           <div class="field">
             <label for="role-name">Role name</label>
@@ -308,10 +323,7 @@ async function confirmDelete(): Promise<void> {
         </p>
 
         <form @submit.prevent="confirmDelete">
-          <p v-if="formError !== null" class="notice is-bad" role="alert">
-            <span class="code">{{ formError.code }}</span>
-            {{ formError.message }}
-          </p>
+          <ErrorNotice v-if="formError !== null" :code="formError.code" :message="formError.message" />
 
           <div class="field">
             <label for="delete-confirm">Your password</label>
@@ -610,6 +622,10 @@ form {
   display: flex;
   justify-content: flex-end;
   gap: var(--sher-space-3);
+}
+
+.retry {
+  margin-top: var(--sher-space-4);
 }
 
 .btn {

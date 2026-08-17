@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import type {
+  AccessControl,
   AuditWriter,
   GoogleVerifier,
   IdentityVerifier,
@@ -18,6 +19,7 @@ import {
   ChangeCredentialsService,
   CompleteRegistrationService,
   GetDashboardSummaryService,
+  GetMyAccessService,
   LoginService,
   RegisterWithGoogleService,
   RequestPasswordResetService,
@@ -28,6 +30,7 @@ import {
 import type { Clock } from '@sher/shared-utils';
 
 import {
+  ACCESS_CONTROL,
   AUDIT_WRITER,
   CLOCK,
   IDENTITY_VERIFIER,
@@ -44,6 +47,7 @@ import {
   USER_REPOSITORY,
 } from '../infrastructure/tokens';
 import { DashboardController } from './dashboard.controller';
+import { MeController } from './me.controller';
 import { LoginController } from './login.controller';
 import { PasswordRecoveryController } from './password-recovery.controller';
 import { RegistrationController } from './registration.controller';
@@ -52,6 +56,7 @@ import {
   CHANGE_CREDENTIALS_SERVICE,
   COMPLETE_REGISTRATION_SERVICE,
   GET_DASHBOARD_SUMMARY_SERVICE,
+  GET_MY_ACCESS_SERVICE,
   LOGIN_SERVICE,
   REGISTER_WITH_GOOGLE_SERVICE,
   REQUEST_PASSWORD_RESET_SERVICE,
@@ -64,6 +69,7 @@ import {
   controllers: [
     RegistrationController,
     DashboardController,
+    MeController,
     LoginController,
     PasswordRecoveryController,
     SecurityController,
@@ -296,6 +302,16 @@ import {
         TOKEN_ISSUER,
         AUDIT_WRITER,
       ],
+    },
+    {
+      provide: GET_MY_ACCESS_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        users: UserRepository,
+        tenants: TenantRepository,
+      ): GetMyAccessService => new GetMyAccessService(uow, accessControl, users, tenants),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, USER_REPOSITORY, TENANT_REPOSITORY],
     },
     {
       provide: GET_DASHBOARD_SUMMARY_SERVICE,

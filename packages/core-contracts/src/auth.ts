@@ -219,3 +219,27 @@ export const dashboardSummaryResponseSchema = z
   .strict();
 
 export type DashboardSummaryResponse = z.infer<typeof dashboardSummaryResponseSchema>;
+
+/**
+ * Who is signed in and what they may do — what UI-09's "never render a control
+ * that will 403" needs in order to be possible at all.
+ *
+ * The permission list is for drawing the screen, never for deciding anything:
+ * every use case checks for itself server-side (§5.26).
+ */
+export const myAccessResponseSchema = z
+  .object({
+    user: z
+      .object({
+        id: z.string().length(26),
+        username: z.string(),
+        displayName: z.string(),
+        roleName: z.string(),
+      })
+      .strict(),
+    businessName: z.string(),
+    permissions: z.array(z.string()),
+  })
+  .strict();
+
+export type MyAccessResponse = z.infer<typeof myAccessResponseSchema>;

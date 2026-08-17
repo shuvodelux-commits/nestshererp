@@ -308,6 +308,51 @@ describe('permissions (R-E8)', () => {
     expect(response.body.error.code).toBe('PERMISSION_DENIED');
   });
 
+  it('explains the refusal in words, keeping the code out of the sentence', async () => {
+    const owner = await registerOwner();
+    await addCashier(owner);
+    const cashierToken = await signInAs('01799887766', 'Cashier99');
+
+    const response = await listUsers(cashierToken);
+
+    // The message is what a shopkeeper reads; it must not be developer text.
+    expect(response.body.error.message).toBe(
+      'You do not have permission to see the user list. Ask the business owner.',
+    );
+    expect(response.body.error.message).not.toContain('user.account.view');
+    // The permission still travels, in `details`, for the support call.
+    expect(response.body.error.details).toEqual({ permission: 'user.account.view' });
+  });
+
+  it('tells a caller what they may do, so the screen can hide the rest (UI-09)', async () => {
+    const owner = await registerOwner();
+    await addCashier(owner);
+    const cashierToken = await signInAs('01799887766', 'Cashier99');
+
+    const asOwner = await request(app.getHttpServer())
+      .get('/api/v1/me')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+    expect(asOwner.status).toBe(200);
+    expect(asOwner.body.data.user.roleName).toBe('Owner');
+    expect(asOwner.body.data.businessName).toBe('Karim Traders');
+    expect(asOwner.body.data.permissions).toContain('user.account.create');
+
+    // A cashier holds none of them, which is exactly what the sidebar needs to
+    // know in order not to offer Users at all.
+    const asCashier = await request(app.getHttpServer())
+      .get('/api/v1/me')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    expect(asCashier.status).toBe(200);
+    expect(asCashier.body.data.user.roleName).toBe('Cashier');
+    expect(asCashier.body.data.permissions).toEqual([]);
+  });
+
+  it('refuses to describe a caller with no token', async () => {
+    await registerOwner();
+
+    expect((await request(app.getHttpServer()).get('/api/v1/me')).status).toBe(401);
+  });
+
   it('lets a manager see the team but not add to it', async () => {
     const owner = await registerOwner();
     const roles = await rolesOf(owner.accessToken);

@@ -89,3 +89,4 @@ export type {
   ListRolesCommand,
   UpdateRoleCommand,
 } from './users/manage-roles-service';
+export { GetMyAccessService } from './auth/get-my-access-service';
