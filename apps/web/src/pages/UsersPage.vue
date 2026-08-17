@@ -19,9 +19,9 @@ import AppShell from '../components/shell/AppShell.vue';
  * own password**. §5.3 calls these step-up actions; the check happens on the
  * server, and this screen only collects what it needs to.
  *
- * A new user gets no password. They set their own through "Forgot password",
- * which proves they hold the phone or email — so the person who added them
- * never knows their credential.
+ * A new user gets no password. They set their own on the sign-in page, through
+ * the same screen that resets a forgotten one — it proves they hold the phone
+ * or email, so the person who added them never knows their credential.
  */
 const session = useSession();
 
@@ -124,7 +124,7 @@ async function submit(): Promise<void> {
         roleId: roleId.value,
         confirmPassword: confirmPassword.value,
       });
-      notice.value = `${created.displayName} was added. Ask them to use “Forgot password” to set their password.`;
+      notice.value = `${created.displayName} was added. Tell them to sign in and choose “First time here? Set your password”.`;
     } else {
       await updateUser(session.accessToken.value ?? '', target.user.id, {
         displayName: displayName.value.trim(),
@@ -238,9 +238,10 @@ async function toggleDisabled(): Promise<void> {
       </div>
 
       <p class="fine">
-        A new person has no password until they set one. Ask them to open the
-        sign-in page and use <strong>Forgot password</strong> with the mobile
-        number or email you entered here.
+        A new person has no password until they set one themselves — which is
+        why you never have to think one up for them. Tell them to open the
+        sign-in page and click <strong>“First time here? Set your password”</strong>,
+        using the mobile number or email you entered above.
       </p>
     </template>
 

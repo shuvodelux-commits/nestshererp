@@ -4,7 +4,7 @@
 
 Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`. This file is *how to build*, not *what to build*. It does not repeat requirements.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. **Therefore the rules are enforced by CI, not by review.** Where CI cannot check a rule, it is written so a human can check it in under a minute.
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11) in one month. Work is therefore organised as four large weekly **module increments**, with focused tests while each module is built and full regression at its module gate.
 
 ---
 
@@ -32,7 +32,7 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 
 | # | Rule |
 |---|---|
-| A1 | Implement **only** the slice described in the task block. |
+| A1 | Implement **only** the module increment described in the task block. A module increment may contain several closely related user actions, but it must remain one coherent business area. |
 | A2 | Do not modify files outside the task block's ALLOWED FILES list. If you must, **STOP and report**. |
 | A3 | Do not add npm dependencies. If one is genuinely required, STOP and report with the reason and two alternatives. |
 | A4 | Do not reorganise folders, rename packages, or "clean up" adjacent code. |
@@ -43,40 +43,42 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 
 ---
 
-## R-S — Vertical Slice Workflow
+## R-S — Module-Scale Vertical Workflow
 
-**SherERP is built one business feature at a time, complete, top to bottom.** A slice is one thing a user can do — not one layer, not one module.
+**SherERP is built one complete business module at a time, top to bottom.** A module increment is larger than the former one-screen slices: it contains the related actions needed to make one business area genuinely usable, such as product create/edit/list/search, or purchase create/list/detail/payment/void.
 
-Every slice is implemented in this order, in one change:
+Inside a module, implement one usable path at a time so integration problems remain local. Do not wait until the end to connect the layers or UI. The module is the acceptance and full-regression boundary.
+
+Every module increment follows this order:
 
 ```
  1  Acceptance criteria + expected numbers   ← given in the task block, never invented
  2  Domain logic            packages/core-domain
- 3  Application use case    packages/core-application
- 4  Migration               this feature's schema only
+ 3  Application use cases   packages/core-application
+ 4  Migration               this module's schema only
  5  Repository/adapter      packages/adapter-postgres
  6  API + contract          packages/core-contracts, apps/api
- 7  Frontend screen         apps/web
- 8  Unit tests              domain, pure, no DB
- 9  Integration/DB tests
-10  Permission + tenant-isolation tests
-11  Full verification       lint · typecheck · test:boundaries · test
-12  Update the slice status ledger   SRS_AND_BUILD_GUIDE.md 6.1.1, same commit
-13  Report for manual acceptance
+ 7  Frontend screens        apps/web, using the shared design system
+ 8  Focused tests           only the changed rules and critical paths
+ 9  Internal UI checkpoints while the module is assembled
+10  Module regression       lint · typecheck · test:boundaries · test
+11  End-to-end module scenario in the real UI
+12  Update the status ledger and report for owner acceptance
 ```
 
 | # | Rule |
 |---|---|
-| S1 | **Never** build all backend, then all database, then all frontend, then tests. Layer-at-a-time work is rejected even if every layer is correct. |
-| S2 | A slice is not complete because the backend compiles, tests pass, or the endpoint returns 200. It is complete when the feature works **in the UI** and the owner has confirmed the numbers. |
-| S3 | If a slice has no user-visible outcome, say so before starting — it is either foundation work (see S5) or it is mis-scoped. |
-| S4 | Do not start the next slice. One slice per change, one slice per conversation. |
-| S4b | The last step of a slice is updating its row in the **slice status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1), in the same commit as the code. Set `CODE COMPLETE` — **only the owner sets `DONE`**. Do not create a separate status file, task log or progress README. |
-| S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific slice in the current phase that is blocked without it. "We will need it later" is not that. |
-| S6 | Write the migration for **this slice only**. Do not create tables a later slice will need. |
-| S7 | The UI in a slice may be minimal, but it must be real and reachable — a route, a form or table, wired to the real API, with loading and error states. A stub or a TODO is not a slice. |
+| S1 | **Never** build all backend, then all database, then all frontend. Each internal path is connected domain → application → database → API → UI before the next path begins. |
+| S2 | A module is not complete because the backend compiles or endpoints return 200. It is complete when all listed module actions work **in the UI**, focused tests pass, full regression passes once at the module gate, and the owner confirms the pre-written numbers. |
+| S3 | If a module has no user-visible outcome, say so before starting — it is either Phase 0 foundation work or it is mis-scoped. |
+| S4 | Do not start a second module while the current module is incomplete. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
+| S4b | At module completion, update the status ledger (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Set `CODE COMPLETE`; **only the owner sets `DONE`** after manual acceptance. The owner may record the accepted code commit in a small follow-up ledger commit; a commit is not required to contain its own hash. |
+| S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific current module path that is blocked without it. "We will need it later" is not that. |
+| S6 | Write migrations for **this module only**. Do not create tables for a later module. |
+| S7 | Every module UI must be real and reachable, reuse the shared shell/tokens/components, and include loading, empty, error and permission-denied behaviour. A stub or disconnected mock is not delivery. |
+| S8 | Full regression is run once when the complete module is ready for acceptance. During implementation run only the smallest relevant checks after each internal path. A failing focused check blocks further work just as a failing full suite would. |
 
-If the task block's scope cannot be delivered end to end in one change, **stop and propose a split** before writing code.
+If a proposed module cannot be completed and accepted within roughly 3–5 working days, split it into two cohesive module increments before writing code. Do not return to one-screen micro-slices.
 
 ---
 
@@ -130,9 +132,13 @@ A controller containing an `if` about business meaning, a calculation, or a repo
 
 ---
 
-## R-D — Write Path
+## R-D — Write Paths by Mutation Class
 
-Every mutating use case follows this order, inside **one** database transaction:
+The ten-step path is mandatory for **business documents that affect money, stock, balances, business dates or posted history**. It must not be imitated with meaningless no-op steps in authentication or simple configuration changes.
+
+### Class T — transactional business writes
+
+Follow this order inside **one** database transaction:
 
 ```
 1  Resolve TenantContext
@@ -149,15 +155,25 @@ Every mutating use case follows this order, inside **one** database transaction:
 
 | # | Rule |
 |---|---|
-| D1 | All ten steps, or the change is rejected. No partial write paths. |
-| D2 | Permission check happens in `core-application`, not only in a controller guard. MCP, background jobs and future offline bypass HTTP guards entirely. |
-| D3 | Every mutation accepts `operation_id` and is idempotent — a repeat returns the original result, never a second record. |
-| D4 | Every mutation writes an audit event with before/after values for money and stock fields. |
+| D1 | Every Class T write uses all ten steps. A missing applicable step rejects the change; a step may be explicitly marked `not applicable` only when the document has no stock or no journal effect by definition. |
+| D2 | Business permission checks happen in `core-application`, not only in a controller guard. Self-service Class S actions authenticate the subject instead of inventing a role permission. |
+| D3 | Every Class T creation accepts `operation_id` and is idempotent. Class M creation also does when a retry could duplicate a record. Credential and token operations never store secret-bearing request fingerprints. |
+| D4 | Every accepted mutation writes an appropriate audit event. Money and stock changes include exact before/after values; secrets are always excluded. |
 | D5 | No business operation spans two transactions. If it seems to need to, STOP and report. |
 | D6 | Cost values are never trusted from a client. The server computes them. |
 | D7 | The outbox write stays even though nothing reads it until Phase 12. It is the SRS-mandated future-compatibility exception. **Do not remove it as dead code.** |
 | D8 | **Cash balances are never assigned, only moved.** An opening cash figure that differs from the previous session's counted close requires a posted movement with a declared source or destination. Never write an opening balance that absorbs a difference, and never compute a "starting balance" by carrying a number forward without a journal entry behind it (§5.16.5). |
 | D9 | **A computed expected amount is immutable once stored.** Expected closing cash is written at End Day and never recalculated on read, never adjusted to match the count, never overwritten. The difference posts to `CASH_SHORT_OVER`; the expected figure itself stands as the record of what the system believed (§5.16.4). |
+
+### Class S — security and identity writes
+
+Signup, login, logout, OTP, password/PIN, session and identity-provider operations use: validated identity context → rate/attempt guard where applicable → load account/session → security invariant → persist → revoke/rotate sessions where applicable → security audit → commit. They do not use a period guard, numbering, journal or stock movement. Passwords, PINs, OTPs and tokens must never appear in audit before/after data or idempotency fingerprints.
+
+### Class M — master-data and configuration writes
+
+Products, parties, users, roles and settings use: tenant context → permission/step-up where required → idempotency when retry could create a duplicate → load → invariant/optimistic lock → persist → audit + outbox → commit. They do not use period guard, journal or stock movements unless the specific action creates an opening balance or another posted financial effect; that action is Class T.
+
+Every task block must state `WRITE CLASS: T`, `S`, `M`, or `READ ONLY`. If one module contains more than one class, list the class beside each mutation.
 
 ---
 
@@ -185,7 +201,7 @@ Do not implement hypothetical future requirements. No speculative features, unus
 - outbox writes (D7)
 - repository interfaces shaped so a SQLite adapter can be added later (D-14)
 
-Anything not on that list and not required by the current slice does not get built.
+Anything not on that list and not required by the current module does not get built.
 
 ### DRY — carefully
 
@@ -272,7 +288,7 @@ Do not create:
 | A "just in case" config flag | Untested code path that rots |
 | `PATCH /sales/{id} {status:"VOIDED"}` | State changes are explicit action endpoints running their own use case |
 | Sending cost/profit fields the client is expected to hide | Readable in the network tab |
-| Building the next slice's schema "while we're here" | Violates S6 |
+| Building the next module's schema "while we're here" | Violates S6 |
 
 Existing project-specific architectural rules (R-B, R-C, R-D) remain authoritative over any general principle.
 
@@ -282,18 +298,20 @@ Existing project-specific architectural rules (R-B, R-C, R-D) remain authoritati
 
 | # | Rule |
 |---|---|
-| E1 | Tests ship **in the same change** as the code. A change with no tests is incomplete. |
+| E1 | Tests ship with the module. During implementation run focused tests for the changed rule/path; run the complete suite once at the module gate. |
 | E2 | Never skip, disable, weaken, or delete an existing test. No `.skip`, no `.only`, no commented assertions. |
-| E3 | Any change touching money or stock must run the golden invariants `INV-01..INV-10` and they must pass. |
+| E3 | A module touching money or stock must run the applicable golden invariants at its module gate. While implementing, run the directly affected invariant tests only. |
 | E4 | Domain tests are pure and fast — no database, no HTTP. |
-| E5 | Every use case has a cross-tenant isolation test proving tenant B cannot read or write tenant A's row, and that the denial is **404**, not 403. |
-| E6 | Every mutation has an idempotency test: same `operation_id` twice ⇒ one record. |
+| E5 | Cross-tenant tests are required once per new repository/query pattern and for every endpoint that bypasses that shared pattern. Do not repeat the identical isolation assertion for endpoints that use the already-proven path. Denial of a specific inaccessible record remains **404**, not 403. |
+| E6 | Every Class T creation has an idempotency test: same `operation_id` twice ⇒ one record. Class M creation needs one only when retry could duplicate data. Class S credential/token operations use their security replay/rotation tests instead. |
 | E7 | Assert **exact expected numbers** from the task block — never "greater than zero", never snapshot output. |
-| E8 | Every slice ships permission tests: positive · negative per affected seed role · cross-tenant on every new endpoint · **cost-visibility checked against the serialized response body**, not the UI · step-up rejection where the action is sensitive. |
-| E9 | A slice touching the journal asserts INV-01 and INV-09; touching stock asserts INV-02..INV-05; touching cash asserts INV-07 a/b/c; touching reports asserts INV-10 against an equivalent journal query. |
-| E10 | Any slice touching the cash drawer runs the §5.16.6 worked example as a test with those exact numbers, including all three Day-2 outcomes and the assertion that Day 1's shortage is unchanged by each. |
+| E8 | Test the permission matrix once per module: one allowed role, every materially different denied role group, step-up rejection for sensitive actions, and cost visibility against the serialized response body. Do not repeat identical role assertions on every endpoint when one shared application permission path is already proven. |
+| E9 | A module touching the journal asserts INV-01 and INV-09; stock asserts INV-02..INV-05; cash asserts INV-07 a/b/c; reports assert INV-10 against the equivalent journal/movement query. |
+| E10 | The completed Cash module runs the §5.16.6 worked example with the exact numbers, including all three Day-2 outcomes and proof that Day 1's shortage is unchanged. It is not rerun after unrelated internal cash-screen edits. |
+| E11 | UI tests are one smoke test per module workflow plus tests for any new shared state component. Reusing an already-tested loading/error/empty shell does not require repeating the same component test on every page. |
+| E12 | Do not test framework behaviour, trivial getters, DTO field copies or visual token values in multiple places. Test business rules, security boundaries, transaction rollback, serialization secrecy, and the user's critical workflow. |
 
-E8's cost-visibility check is what catches the leak where Vue hides a cost column while the API still sends it.
+E8's cost-visibility check is what catches the leak where Vue hides a cost column while the API still sends it. Reducing repetition never means reducing accounting, inventory, security or tenant-isolation coverage.
 
 ---
 
@@ -302,7 +320,7 @@ E8's cost-visibility check is what catches the leak where Vue hides a cost colum
 When finished, report in exactly this format. Do not narrate outside it.
 
 ```
-## Slice
+## Module increment
 ## Acceptance criteria and the numbers I verified
 ## Assumptions
 ## Files changed
@@ -319,8 +337,8 @@ When finished, report in exactly this format. Do not narrate outside it.
 | F1 | Paste **real** test runner output. Never describe, summarise, or fabricate results. |
 | F2 | If any of `lint`, `typecheck`, `test:boundaries`, `test` fails, the task is **not complete**. Say so. |
 | F3 | State every assumption. An unstated assumption in an accounting system becomes a wrong number nobody can trace. |
-| F4 | Report risks you noticed even if outside your slice. |
-| F5 | The UI section must tell the owner exactly what to click to accept the slice. A slice they cannot find is a slice they cannot accept. |
+| F4 | Report risks you noticed even if outside the current module. |
+| F5 | The UI section must tell the owner exactly what to click to accept the module workflow. A module they cannot find or complete is not accepted. |
 
 ---
 
@@ -335,7 +353,7 @@ When finished, report in exactly this format. Do not narrate outside it.
 5. A test fails and the fix would require changing the test's expected number.
 6. You are about to write the same business rule in a second place.
 7. You need an internal account that is not on the closed list in §2.4.
-8. The slice cannot be delivered end to end in one change.
+8. The module cannot be delivered end to end within its agreed 3–5 day timebox; propose a cohesive split instead.
 9. You cannot satisfy the rule set without an exception.
 
 Stopping is always correct. A half-correct accounting system is worse than an unfinished one.
@@ -344,7 +362,7 @@ Stopping is always correct. A half-correct accounting system is worse than an un
 
 ## Definition of Done
 
-Four gates. **A slice is not done because the code runs.**
+Four gates. **A module is not done because the code runs.** Focused checks protect work in progress; these full gates run once when the complete module increment is ready for acceptance.
 
 ### Gate 1 — Automated (CI blocks the merge)
 
@@ -352,10 +370,10 @@ Four gates. **A slice is not done because the code runs.**
 - [ ] `pnpm typecheck` passes, zero `any` introduced
 - [ ] `pnpm test:boundaries` passes, no layering violation
 - [ ] `pnpm test` passes, **no skipped tests**
-- [ ] Golden invariants relevant to the slice pass (R-E9)
-- [ ] Cross-tenant isolation test exists and passes for every new endpoint
-- [ ] Idempotency test exists for every new mutation
-- [ ] Permission tests: positive, negative per seed role, cost-visibility on the serialized body
+- [ ] Golden invariants relevant to the module pass (R-E9)
+- [ ] New repository/query patterns have cross-tenant proof; exceptional endpoints have their own isolation test
+- [ ] Class T creations and duplicate-prone Class M creations have idempotency proof
+- [ ] Module permission matrix passes; cost-visibility is checked on the serialized body
 - [ ] Migration runs clean on an empty DB **and** on a seeded DB
 - [ ] OpenAPI regenerates with no manual edits
 - [ ] `saas-smoke` and `onprem-smoke` green — *from Phase 1 onward; these gates do not exist in Phase 0*
@@ -363,14 +381,14 @@ Four gates. **A slice is not done because the code runs.**
 ### Gate 2 — Owner Review (60 seconds, no code reading)
 
 - [ ] The agent pasted **real** test output with counts — not a description
-- [ ] "Files changed" matches the slice, nothing extra
+- [ ] "Files changed" matches the module, nothing extra
 - [ ] "Files intentionally NOT touched" is filled in, not empty
 - [ ] No new dependency you did not approve
 - [ ] At least one assumption is stated — if "none", be suspicious
 - [ ] No `if (isOnPrem)` outside the three provider implementations
 - [ ] Nothing in the diff puts business logic in a controller or a Vue file
 - [ ] No new `Base*`, `Generic*`, or `*Factory` class appeared
-- [ ] The migration covers this slice only
+- [ ] Migrations cover this module only
 
 ### Gate 3 — Manual UI Acceptance (the one that matters)
 
@@ -378,12 +396,12 @@ Four gates. **A slice is not done because the code runs.**
 
 - [ ] Executed **in the real UI**, not via API calls or curl
 - [ ] Every figure matches exactly — stock, cost, profit, ledger, cash, report
-- [ ] Reversal path tested where the slice can be reversed: void it, confirm everything returns to the prior state
+- [ ] Reversal path tested where the module can reverse a posted action: void it, confirm everything returns to the prior state
 - [ ] Backdated path tested where applicable
 - [ ] Numbers still correct after a page refresh and a re-login
 - [ ] The screen is usable — loading state, error state, no console errors
 
-**Baseline scenario — re-run whenever a transactional slice lands:**
+**Baseline scenario — run at every transactional module gate once the prerequisite Purchase and Sales modules exist:**
 
 ```
 Create product → Purchase 10 @ ৳100 → stock = 10, valuation = ৳1,000
@@ -395,19 +413,19 @@ Create product → Purchase 10 @ ৳100 → stock = 10, valuation = ৳1,000
 
 Any disagreement between two reports is a **blocking** defect, never a rounding excuse (INV-10).
 
-### Gate 4 — Slice-Specific
+### Gate 4 — Module-Specific
 
-- [ ] Audit events written for every mutation, with before/after money and stock values
+- [ ] Appropriate audit events written for every accepted mutation; money and stock changes include exact before/after values and secrets are absent
 - [ ] New permissions registered in the seed role matrix
 - [ ] Reports reconcile to journal and movements
 - [ ] Reserved columns present on any new transaction table (R-C9)
 - [ ] Period lock respected for any document carrying a business date
 - [ ] Correct column class used (R-C5)
 
-### Phase Exit
+### Module/Roadmap Exit
 
-- [ ] Every slice in the phase passes Gates 1–4
-- [ ] The phase exit criteria in `SRS_AND_BUILD_GUIDE.md` §6.1 are met
+- [ ] The weekly module increment passes Gates 1–4
+- [ ] Every roadmap phase included in that module meets its exit criteria in `SRS_AND_BUILD_GUIDE.md` §6.1
 - [ ] Full regression green, including previous phases
 - [ ] The baseline scenario still passes end to end
 
@@ -422,30 +440,28 @@ Any disagreement between two reports is a **blocking** defect, never a rounding 
 | Two reports disagree | One is wrong and you cannot tell which |
 | Business logic added to a controller or Vue component | Kills the future offline path silently |
 | `tenant_id` read from a request payload | Cross-tenant vulnerability |
-| The slice has no working UI | It is not a slice |
+| The module has no working UI workflow | It is not delivered |
 | The agent said "should work" without pasted output | Unverified |
 
 ---
 
 ## Prompt Kernel
 
-Paste this at the top of every task, then the slice task block.
+Paste this at the top of every task, then the module task block.
 
 ```
-You are implementing ONE VERTICAL SLICE of the SherERP project. You are not designing the product.
+You are implementing ONE MODULE-SCALE VERTICAL INCREMENT of SherERP. You are not redesigning the product.
 
 MANDATORY READING before writing any code:
 - AI_CODING_INSTRUCTIONS.md          <- binding rules; violations reject the whole change
 - SRS_AND_BUILD_GUIDE.md, only the sections named in the task block
 
-WHAT A SLICE IS
-One business feature, built completely across every layer and verified end to end:
-acceptance criteria -> domain -> application use case -> migration -> repository ->
-API/contract -> Vue screen -> unit tests -> integration tests -> permission and
-tenant-isolation tests -> full verification -> manual UI acceptance.
-Never build all backend, then all database, then all frontend, then tests.
-A slice is NOT complete because the backend compiles or the tests pass.
-If it cannot be delivered end to end in one change, STOP and propose a split.
+WHAT A MODULE INCREMENT IS
+One coherent business area containing all related user actions needed to make it usable,
+built through every layer. Connect each internal path domain -> application -> database ->
+API -> Vue before starting the next path. Run focused tests while building. When the whole
+module is ready, run full regression once and perform the pre-written scenario in the real UI.
+If the module cannot be completed in 3-5 working days, propose two cohesive increments.
 
 NON-NEGOTIABLE RULES:
 1. Business logic goes in packages/core-domain (pure TypeScript) and packages/core-application.
@@ -456,11 +472,12 @@ NON-NEGOTIABLE RULES:
    helpers. Floating point arithmetic on money or stock is forbidden.
 5. Every table has tenant_id. Every query is tenant-scoped. tenant_id is never read from a
    request body, query string, or URL.
-6. Every mutating use case follows all ten steps of the R-D write path, inside ONE database
-   transaction: permission check, idempotency by operation_id, period guard, audit, outbox.
+6. State WRITE CLASS T, S, M or READ ONLY for each mutation. Class T financial/stock writes
+   follow the complete ten-step path in one transaction. Class S and M follow their defined paths.
 7. Never hard-delete a posted financial or stock record.
-8. Write tests in the same change. Never skip, disable or weaken an existing test.
-   Assert the exact expected numbers given in the task block.
+8. Add only risk-based tests required by R-E. Never skip, disable or weaken an existing test.
+   Assert exact expected business numbers. Run focused tests during work and full regression
+   once when the module is complete.
 9. Do not modify anything outside the ALLOWED FILES list. If you believe you must, STOP and report.
 10. Do not change any requirement or decision. If one seems wrong or contradictory, STOP and
     report it - do not improvise a fix.
@@ -478,7 +495,7 @@ BEFORE YOU CODE: write a short plan (files to add/change, migration, API, UI, te
 for approval if the task block says PLAN FIRST.
 
 WHEN DONE, report in exactly this format:
-## Slice / ## Acceptance criteria and the numbers I verified / ## Assumptions /
+## Module increment / ## Acceptance criteria and the numbers I verified / ## Assumptions /
 ## Files changed / ## Files intentionally NOT touched / ## Database (PostgreSQL migration) /
 ## UI (route, screen, what the owner should click) / ## Tests (paste the real runner output) /
 ## Not implemented / ## Risks I noticed
@@ -489,9 +506,10 @@ WHEN DONE, report in exactly this format:
 **Claude Code** — prepend:
 
 ```
-Work autonomously but incrementally. State your plan first, then implement the full vertical
-slice, then run `pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste
-the real output. Do not mark the task complete if any command fails or if the UI is missing.
+Work autonomously but incrementally. State your plan first, then implement the full module
+through every layer. Run focused tests while building. At the module gate run
+`pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste the real output.
+Do not mark the module complete if any gate fails or if its UI workflow is missing.
 If you disagree with the spec, say so instead of improvising.
 ```
 
@@ -515,7 +533,7 @@ exist in the listed files, say so instead of assuming it.
 ```
 Check this diff against AI_CODING_INSTRUCTIONS.md.
 
-- Is this a complete vertical slice, or did it stop at the backend? Is there a real UI?
+- Is this a complete module workflow, or did it stop at the backend? Is there a real UI?
 - Did business logic get into a controller or a Vue file?
 - Is float arithmetic used anywhere on money or stock?
 - Is tenant_id read from a request body, query string, or URL?
@@ -524,7 +542,7 @@ Check this diff against AI_CODING_INSTRUCTIONS.md.
 - Are all ten write-path steps present, in one transaction?
 - Was any unnecessary abstraction added - Base*, Generic*, *Factory, a single-implementation
   interface, an event bus, a config flag nobody asked for?
-- Does the migration cover only this slice?
+- Do migrations cover only this module?
 
 Do not write code. List the problems only.
 ```
@@ -713,7 +731,7 @@ Do not start Phase 1 until every box is ticked.
 
 ## Working With the Agent
 
-**Always say:**
+**At the module gate always say:**
 
 > Run `pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste the real output with pass/fail counts. If any command fails, the task is not complete.
 
@@ -725,11 +743,11 @@ Do not start Phase 1 until every box is ticked.
 | "I improved the business rule to…" | "Stop. Decisions are final in SRS_AND_BUILD_GUIDE.md. Revert it." |
 | "Tests should pass now" | "Paste the actual output." |
 | "I also refactored some other files" | "Revert everything outside the ALLOWED FILES list." |
-| "I'll add the UI in the next task" | "Then the slice isn't done. Finish it." |
+| "I'll add the UI after this module" | "Then the module isn't complete. Finish its real workflow." |
 | "I added a base class to reduce duplication" | "Remove it. Show me the two real call sites first." |
 | "This is a bit unusual, normally you'd…" | "Follow the spec. If the spec is wrong, report it — don't change it." |
 
-**One slice per conversation.** When a chat gets long the agent starts forgetting the rules at the top. Start fresh and re-paste the kernel.
+**One module increment per conversation.** Use internal checkpoints and compact summaries when the conversation grows; do not mix a second business module into the same context.
 
 ### When things go wrong
 
@@ -737,10 +755,10 @@ Do not start Phase 1 until every box is ticked.
 |---|---|
 | Tests fail and the agent wants to change an expected number | **Stop.** The number in the spec is right until you decide otherwise. Investigate the code |
 | Two reports show different totals | Blocking defect (INV-10). Do not build further until resolved |
-| Agent touched 40 files for a small slice | Reject entirely. Re-prompt with a tighter ALLOWED FILES list |
-| Agent delivered backend only | Reject. The slice is not started until the UI works |
+| Agent touched unrelated files outside the module | Reject those changes and re-prompt with a tighter ALLOWED FILES list |
+| Agent delivered backend only | Reject. The module is not delivered until its UI workflow works |
 | You don't understand the diff | Ask a second agent: "Explain what this change does and what could break" |
-| Worked yesterday, broken today | `git log` — find what changed. This is why you commit every working slice |
+| Worked yesterday, broken today | `git log` — return to the last focused-test checkpoint or accepted module gate |
 | You feel lost | Go back to the last green commit. Never build on something you don't trust |
 
-**Commit every completed slice.** A commit is a save point — cheap to make, priceless when needed.
+**Commit internal checkpoints and every completed module.** Checkpoint commits are recovery points; only a module-gate commit is eligible for owner acceptance.

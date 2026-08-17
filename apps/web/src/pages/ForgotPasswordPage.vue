@@ -139,10 +139,16 @@ async function goToLogin(): Promise<void> {
 
       <!-- ------------------------------------------------ step 1: identifier -->
       <template v-if="step === 'IDENTIFIER'">
-        <h1>Reset your password</h1>
+        <!--
+          One screen serves two people: someone who forgot a password, and
+          someone who was just added to a business and has never had one. The
+          server cannot tell them apart before the code is verified — and must
+          not, or this page would report which numbers hold an account.
+        -->
+        <h1>Set or reset your password</h1>
         <p class="lede">
-          Enter the mobile number or email you registered with. We will send a
-          6-digit code to it.
+          Enter the mobile number or email your business is registered under —
+          or the one your owner added you with. We will send a 6-digit code to it.
         </p>
 
         <form @submit.prevent="sendCode">

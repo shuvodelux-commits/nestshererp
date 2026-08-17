@@ -134,7 +134,7 @@ describe('UsersPage', () => {
       confirmPassword: 'Passw0rd23',
     });
     // Told what to do next: they still have no password.
-    expect(wrapper.text()).toContain('Forgot password');
+    expect(wrapper.text()).toContain('Set your password');
     expect(list).toHaveBeenCalledTimes(2);
   });
 

@@ -195,8 +195,18 @@ function useAnotherAccount(): void {
             Use PIN instead
           </button>
 
+          <!--
+            Both links go to the same screen. Someone who has just been added by
+            their owner has never had a password, so "Forgot your password?"
+            reads as none of their business and they never click it — the
+            mechanism was there, the wording hid it.
+          -->
           <p class="help">
             <RouterLink to="/forgot-password">Forgot your password?</RouterLink>
+            <br />
+            <RouterLink to="/forgot-password">
+              First time here? Set your password
+            </RouterLink>
           </p>
         </form>
 

@@ -7,7 +7,8 @@
     "dev": "pnpm --filter \"@sher/api...\" build && node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "db:migrate": "node dist/migrate.js"
+    "db:migrate": "node dist/migrate.js",
+    "db:backfill": "node dist/backfill-seed-roles.js"
   },
   "dependencies": {
     "@nestjs/common": "10.4.15",

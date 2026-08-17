@@ -6,8 +6,8 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 
 | File | Contains | Read it for |
 |---|---|---|
-| `SRS_AND_BUILD_GUIDE.md` | Requirements, final decisions D-01…D-32, architecture, data rules, module specs, phase and slice plan, acceptance criteria, risks | **WHAT** to build |
-| `AI_CODING_INSTRUCTIONS.md` | Vertical slice workflow, coding standards, anti-overengineering rules, layering, tests, Definition of Done, prompt kernel | **HOW** to build |
+| `SRS_AND_BUILD_GUIDE.md` | Requirements, final decisions, architecture, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
+| `AI_CODING_INSTRUCTIONS.md` | Module-scale vertical workflow, coding standards, anti-overengineering rules, layering, risk-based tests, Definition of Done, prompt kernel | **HOW** to build |
 | `AGENTS.md` | This file | Orientation |
 
 `docs/archive/` holds superseded planning documents. **Do not read them** — they contradict the current spec.
@@ -21,16 +21,17 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 - Decisions that change: edit the section **and** add one line to the change log at the end of `SRS_AND_BUILD_GUIDE.md`.
 - Source code, tests, schema and migrations are the source of truth for implementation detail.
 
-## Vertical slices — how work is organised
+## Module-scale vertical increments — how work is organised
 
-One business feature at a time, complete, top to bottom:
+One coherent business module at a time, normally 3–5 working days. Inside it, connect each user path top to bottom before starting the next path:
 
 ```
-acceptance criteria → domain → use case → migration → repository →
-API/contract → Vue screen → tests → verification → manual UI acceptance → commit
+module acceptance criteria → domain → use cases → module migration → repositories →
+API/contracts → consistent Vue workflows → focused tests/checkpoints →
+one full module regression → manual UI acceptance → module-gate commit
 ```
 
-Never all backend, then all database, then all frontend, then tests. **A slice is not done because the backend compiles or the tests pass** — it is done when it works in the UI and the owner has confirmed the numbers. Phase 0 is the only exception.
+Never all backend, then all database, then all frontend. Run focused risk-based tests while building; run the full four-command regression once when the complete module is ready. **A module is not done because the backend compiles or focused tests pass** — it is done when its whole workflow works in the UI and the owner confirms the numbers. Phase 0 is the only no-UI exception.
 
 ## Structure
 
@@ -59,7 +60,7 @@ pnpm db:migrate
 docker start sher-pg     # PostgreSQL 16; sher_dev + sher_test
 ```
 
-A slice is complete only when all four checks pass, the **real** output is pasted, and the UI has been accepted.
+At a module gate, completion requires all four checks, pasted **real** output, and owner UI acceptance. Internal paths use the smallest relevant focused tests and checkpoint commits.
 
 ## Critical rules
 
@@ -68,24 +69,24 @@ A slice is complete only when all four checks pass, the **real** output is paste
 3. **All IDs are ULIDs generated in application code.** No autoincrement.
 4. **Money and quantity are integers in minor units.** Money scale 2, quantity scale 3, unit cost scale 4. Float arithmetic on money or stock is forbidden.
 5. **Every table has `tenant_id`, sourced from `TenantContext`** — never from a request body, query string, or URL. Cross-tenant denials return `404`, not `403`.
-6. **Every mutation runs the ten-step write path in one transaction:** tenant context → permission → idempotency → period guard → load → invariants → persist → post journal + movements → audit + outbox → commit.
+6. **Classify every mutation.** Class T financial/stock/document writes run the ten-step path in one transaction. Class S security/identity and Class M master/configuration writes use the smaller paths defined in `AI_CODING_INSTRUCTIONS.md` R-D; never invent fake period, journal or stock steps.
 7. **Never hard-delete a posted financial or stock record.** Void/reverse + soft delete. Movements, journal lines and audit are append-only.
 8. **Cash balances are moved, never assigned.** Opening cash differing from the previous counted close needs a posted movement with a declared source or destination. A stored expected amount is immutable — the drawer difference posts to `CASH_SHORT_OVER`, it never edits the expectation.
 9. **Reports derive monetary figures from journal lines and stock movements**, never from document fields (INV-10).
 10. **Choose the simplest thing that works.** No `BaseRepository`, `GenericRepository`, `RepositoryFactory`, generic CRUD, manager classes, single-implementation interfaces, or unrequested config flags.
-11. **Tests ship with the code.** Never skip, weaken, or delete one. Assert exact expected numbers from the task block.
+11. **Risk-based tests ship with the module.** Never skip, weaken or delete an existing test. Keep exact-number, journal/stock/cash, tenant, security, idempotency, reversal and transaction tests; avoid repeating identical framework, permission and UI-state assertions.
 12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number — **STOP and report.**
 
 Priority when rules conflict: SRS → security/tenant isolation → accounting/inventory correctness → architecture → transactions → tests → API compatibility → SOLID/KISS/YAGNI/DRY → preference. Never use a coding principle to override a business requirement.
 
 ## Scope discipline
 
-Implement only the slice in the task block. Do not touch files outside its ALLOWED FILES list, add dependencies, reorganise folders, refactor adjacent code, or build the next slice's schema. If you think you must, stop and report.
+Implement only the module increment in the task block. Do not touch files outside its ALLOWED FILES list, add dependencies, reorganise folders, refactor adjacent code, or build the next module's schema. If you think you must, stop and report.
 
-Report as: Slice · Acceptance criteria and numbers verified · Assumptions · Files changed · Files intentionally NOT touched · Database · UI (what to click) · Tests (real output) · Not implemented · Risks noticed.
+Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (focused plus module-gate real output) · Not implemented · Risks noticed.
 
-## Recording a finished slice
+## Recording a finished module
 
-The last step of every slice is updating its row in the **slice status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1), in the same commit as the code. This is the only permanent record of what is built — do not create a status file, task log, or progress README instead.
+The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
 
-Set status to `CODE COMPLETE` and fill in the commit. **Only the owner sets `DONE`**, after running the feature in the UI and confirming the numbers. Never delete or edit an existing row's history.
+Set status to `CODE COMPLETE`. **Only the owner sets `DONE`**, after running the complete module workflow and confirming the numbers. The owner may fill the accepted code commit in a small follow-up ledger commit; a commit cannot contain its own final hash. Never delete or rewrite existing history.

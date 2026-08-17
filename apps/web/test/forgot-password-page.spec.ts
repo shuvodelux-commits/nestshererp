@@ -58,7 +58,7 @@ describe('ForgotPasswordPage', () => {
   it('opens on the identifier step', () => {
     const wrapper = mount(ForgotPasswordPage);
 
-    expect(wrapper.text()).toContain('Reset your password');
+    expect(wrapper.text()).toContain('Set or reset your password');
     expect(wrapper.find('button[type="submit"]').text()).toContain('Send code');
   });
 
@@ -135,7 +135,7 @@ describe('ForgotPasswordPage', () => {
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
-    expect(wrapper.text()).toContain('Reset your password');
+    expect(wrapper.text()).toContain('Set or reset your password');
     expect(wrapper.text()).toContain('OTP_EXPIRED');
   });
 });

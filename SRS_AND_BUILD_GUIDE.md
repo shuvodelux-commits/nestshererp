@@ -166,8 +166,8 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 |---|---|
 | UI-01 | Borrow **interaction and navigation patterns** from the consumer apps users already know: persistent left sidebar, top bar with one global search, a bell for notifications, an avatar menu top-right, cards for summaries, paged lists, and a bottom bar or hamburger on small screens. |
 | UI-02 | **Never copy their visual identity** — no imitation of the colours, logo, typeface or brand styling of Facebook, YouTube or any other product. SherERP has its own plain, professional look. This is a legal line as much as a design one. |
-| UI-03 | **Component library: PrimeVue 4** (styled mode), self-hosted (D-37). No second UI library. |
-| UI-04 | Icons come from one self-hosted set, and only for meanings a user already knows (search, bell, cart, print, filter, back, menu, user). An icon needing a legend gets a text label instead. |
+| UI-03 | **Component library: PrimeVue 4** (styled mode), self-hosted (D-37). The visual rules below are implemented through the existing PrimeVue preset and shared CSS tokens. Tailwind utility syntax in a design reference describes appearance, not a dependency; do not add Tailwind or a second UI library. |
+| UI-04 | Icons come from one self-hosted Vue-compatible set, 16–18px with a visually consistent 2px stroke, and only for familiar meanings (search, bell, cart, print, filter, back, menu, user). `lucide-react` is not used because this is a Vue application. An icon needing a legend gets a text label instead. |
 | UI-05 | Every screen is understandable without a manual: visible labels, no icon-only primary actions, no hidden gestures, no hover-only affordances. |
 | UI-06 | **All assets are self-hosted** — fonts, icons, images. §6.5 requires COOP/COEP for SQLite WASM in Phase 12; a CDN font breaks it. |
 | UI-07 | The API base URL is read at runtime from `/config.json` (§6.5). `import.meta.env.VITE_API_URL` is banned — it forces a per-customer frontend build. |
@@ -176,7 +176,7 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 
 | # | Rule |
 |---|---|
-| UI-08 | One shell: left sidebar (modules) · top bar (global search, notifications, business date, cash-session state, avatar menu) · content area. POS runs full-screen without the sidebar. |
+| UI-08 | One shared shell: fixed 256px white left sidebar with right border · main content on slate-50 · page top bar inside main content · content padding 32px horizontal / 24px vertical and maximum width about 1400px. Sidebar order is brand → primary navigation → flexible spacer → Support/Settings → user profile pinned to bottom. POS runs full-screen without the sidebar. |
 | UI-09 | Navigation is generated from the permission-filtered feature list, ordered entitlement → feature setting → permission (§5.21). **Never render a control that will 403.** |
 | UI-10 | The sidebar is one level deep wherever possible; a second level only where a module genuinely has sub-areas. No third level. |
 | UI-11 | Responsive navigation: sidebar on desktop, collapsible drawer on tablet, bottom bar with the 4–5 most-used destinations on phone. The same destinations, the same names, in the same order, on all three. |
@@ -201,7 +201,7 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 | # | Rule |
 |---|---|
 | UI-22 | Every screen is one of: **List** (filter bar → table → paging), **Detail** (header facts → tabbed sections → actions), **Form** (single column, grouped fields, sticky save bar), **Dialog** (short confirmations, single-purpose input). A screen fitting none of the four is a design question — stop and ask. |
-| UI-23 | Dashboard and summary figures use **cards**; transactional data uses **tables**. A card always carries the `Why?` drill-down where §5.20 requires one. |
+| UI-23 | Dashboard and summary figures use **cards**; transactional data uses **tables inside cards**, never bare floating lists. A card always carries the `Why?` drill-down where §5.20 requires one. |
 | UI-24 | Lists use keyset pagination (§3.9), never offset. Lists that can exceed ~500 rows use virtual scroll. |
 | UI-25 | Filters are visible on the screen, not hidden behind a menu, and the active filter set is readable at a glance. |
 | UI-26 | Destructive or financial actions (void, reverse, unlock period) are explicit buttons opening a confirmation that names the document and the consequence, with Bangla helper text per UI-16. Never an inline toggle, never a swipe. |
@@ -242,9 +242,35 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 | UI-41 | Back office targets desktop ≥1280px, usable at 1024px. POS and Daybook target tablet landscape. Phone is best-effort until Phase 13, but the navigation in UI-11 works from Phase 1. |
 | UI-42 | Minimum accessibility: every input labelled, focus always visible, POS tap targets ≥40px, contrast ≥4.5:1. Full WCAG conformance is not claimed. |
 | UI-43 | Zero console errors or warnings on an accepted screen (Gate 3). |
-| UI-44 | Every slice's screen ships one component test: renders, shows loading, shows error. Business assertions stay in domain and integration tests, never in a component test. |
+| UI-44 | Each module ships one UI workflow smoke test. Shared loading, empty, error and permission-denied components are tested once; pages reusing them do not repeat identical state tests. Business assertions stay in domain and integration tests. |
 
-**Deliberately not decided here:** colour palette and logo · POS p95 performance numbers (open item O-5, Phase 6) · full Bangla UI (D-12, V1.1) · PWA install prompt and persistent-storage gate (D-24, Phase 12) · print stylesheets beyond D-22 and §5.27.
+### I. Binding visual system — consistent from the first screen
+
+The following tokens and component shapes are the single SherERP visual language. They are stored centrally in the PrimeVue preset and shared design CSS; pages may consume them but must not redefine them.
+
+| Role | Binding value |
+|---|---|
+| Sidebar/card background | `#ffffff` |
+| Page background | `#f8fafc` |
+| Primary text and primary action | `#0f172a` |
+| Secondary text | `#64748b` |
+| Muted labels | `#94a3b8` |
+| Borders | `#e2e8f0` |
+| Success badge | background `#d1fae5`, text `#047857` |
+| Danger/due badge | background `#ffe4e6`, text `#be123c` |
+| Chart neutrals | `#0f172a`, `#94a3b8`, `#e2e8f0` |
+
+- No blue, purple or gradients. Saturated colour is limited to status badges and small category dots.
+- Typography uses the self-hosted system sans stack. Page title: 24px bold; eyebrow: 14px secondary; card title: 18px semibold; table header: 12px uppercase with tracking and muted colour; body/table: 14px.
+- Standard card: white, 16px radius, 1px slate-200 border, 24px padding.
+- Primary button: slate-900 background, white text, 8px radius, 16px × 8px padding. Secondary button: white with slate-200 border and the same radius/padding.
+- Active navigation and active segmented tab use a solid slate-900 pill with white text. Inactive items use secondary text and slate-100 hover/fill.
+- Tables have no vertical borders; rows use thin slate-100 dividers. Text aligns left, numbers right, and state is a rounded badge rather than plain coloured text. Pagination sits bottom-right.
+- A module landing page follows: header → filters/tabs → primary table/chart card at roughly two-thirds width → secondary summary/progress card at one-third. Forms and detail screens still follow UI-22 rather than forcing this dashboard layout.
+- The summary/progress card uses one horizontal stacked bar, then a legend with dot, label, percentage and right-aligned value, followed by a full-width `Show all` action when applicable.
+- Reuse the shared shell, card, table, badge, button, filter and state components. A new card style, navigation layout, accent colour or page composition requires an explicit edit to this section before implementation.
+
+**Deliberately not decided here:** logo artwork · POS p95 performance numbers (open item O-5, Phase 6) · full Bangla UI (D-12, V1.1) · PWA install prompt and persistent-storage gate (D-24, Phase 12) · print stylesheets beyond D-22 and §5.27.
 
 ---
 
@@ -1233,49 +1259,48 @@ S-DB-04  Print 15 Aug · add a backdated 15 Aug entry · reprint → new entry p
 
 # PART 6 — BUILD PLAN
 
-## 6.0 Vertical slice development
+## 6.0 Module-scale vertical development
 
-**SherERP is built one business feature at a time, complete, top to bottom.**
+**SherERP is built one complete business module at a time, top to bottom.** This replaces the earlier one-screen micro-slice cadence from 2026-08-17 onward. Existing completed slice history remains valid.
 
-A **slice** is one business feature a user can actually perform, built across every layer and verified end to end before the next slice starts:
+A **module increment** contains the related user actions needed to make one business area useful. Each internal path is connected across every layer before the next path begins, but focused tests and UI checkpoints replace repeated full-suite runs. Full regression and owner acceptance happen once at the module gate:
 
 ```
 Acceptance criteria (expected numbers written FIRST)
   → Domain logic            (core-domain)
-  → Application use case    (core-application)
-  → Migration               (schema for this feature only)
+  → Application use cases   (core-application)
+  → Migration               (schema for this module only)
   → Repository/adapter      (adapter-postgres)
   → API + contract          (core-contracts, apps/api)
-  → Frontend screen         (apps/web)
-  → Unit tests              (domain, pure)
-  → Integration/DB tests
-  → Permission + tenant-isolation tests
-  → Full automated verification (lint, typecheck, boundaries, test)
-  → Manual UI acceptance     (owner, against the pre-written numbers)
-  → Commit
-  → Next slice
+  → Frontend workflows      (apps/web, shared visual system from §2.7.I)
+  → Focused risk-based tests while each path is built
+  → Internal UI checkpoints
+  → Full automated verification ONCE at module completion
+  → End-to-end manual UI acceptance against pre-written numbers
+  → Module-gate commit
+  → Next module
 ```
 
 **This is forbidden:** all backend → all database → all frontend → tests at the end. It defers every integration risk to the point where fixing it is most expensive, and it produces nothing the owner can verify for months.
 
-**A slice is not complete because the backend compiles, the tests pass, or the API returns 200.** It is complete when the feature works in the real UI and the owner has confirmed the numbers.
+**A module is not complete because the backend compiles, focused tests pass, or endpoints return 200.** It is complete when the entire listed workflow works in the real UI, full regression passes at the module gate, and the owner confirms the numbers.
 
-### How big is a slice?
+### How big is a module increment?
 
-One feature. Not one layer, not one module. Concretely:
+Target one working week and several dependent business areas, not one screen and not an arbitrary collection of unrelated work. The four one-month modules in §6.1 are the binding size examples.
 
-| This is one slice | This is not |
-|---|---|
-| "Create a product and see it in the product list" | "The entire product module" |
-| "Search and filter products by brand" | "All of the backend for products" |
-| "Record a purchase that creates a lot and increases stock" | "All migrations for phase 3" |
-| "Pay a supplier and see the payable fall" | "The repository layer" |
+| This is one module increment | Too small | Too large |
+|---|---|---|
+| Business setup: remaining access/admin + catalog + parties | Create product form only | Business setup + inventory + sales |
+| Stock, money and purchasing: the complete foundation required to buy and pay | Opening-stock API only | Stock/purchase + unrelated SaaS billing |
+| Sales and corrections: sell, pay/due, print, reverse, return and adjust | Add line to cart only | Sales + backup/restore + bank reconciliation |
+| Control and operations: reports/Daybook + SaaS operations + bank reconciliation | One dashboard card | Control module + offline/MCP |
 
-If a slice cannot be demonstrated in the UI in under a minute, it is probably two slices.
+Use checkpoint commits inside the module. If a weekly module cannot be completed within five working days, keep unfinished paths visibly unfinished and split at a real workflow boundary, not by technical layer.
 
 ### Foundation exception
 
-Infrastructure may be built without a UI **only** when it is genuinely foundational and every later slice depends on it:
+Infrastructure may be built without a UI **only** when it is genuinely foundational and every later module depends on it:
 
 - monorepo structure and dependency boundaries
 - `Money` / `Qty` / `UnitCost`, `Ulid`, `Clock`
@@ -1283,41 +1308,56 @@ Infrastructure may be built without a UI **only** when it is genuinely foundatio
 - audit, idempotency, permission, numbering, period-guard, outbox and posting **interfaces**
 - migration infrastructure and the test harness
 
-This is **Phase 0 only**. "Foundation" is not a licence to build large amounts of future functionality before delivering a working vertical slice. If an agent proposes foundation work outside Phase 0, it must name the specific slice in the current phase that is blocked without it.
+This is **Phase 0 only**. "Foundation" is not a licence to build future functionality before a working module. Outside Phase 0, proposed foundation work must name the current module path that is blocked without it.
 
 ## 6.1 Phases
 
-Each phase is a list of slices. Every slice ends in a working screen and an owner acceptance, except in Phase 0.
+The roadmap phases group requirements and dependencies. For the one-month V1 build, adjacent phase scopes are consolidated into the four weekly delivery modules below. Items in a phase scope cell are internal paths, not separate full-regression or owner-acceptance events. Phase 0 keeps its historical foundation slices.
 
-| Phase | Name | Slices | Phase exit criteria |
+| Phase | Module increment | Scope included in the one module gate | Module exit criteria |
 |---|---|---|---|
 | **0** | Foundation kernel *(no UI — the only exception)* | 0.1 monorepo + CI boundary checks · 0.2 Money/Qty/UnitCost/Ulid/Clock · 0.3 TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + one reference use case | `/health` returns 200; all CI gates green; boundary checker proven to catch a violation; cross-tenant, RLS, idempotency, period-lock and concurrent-numbering tests pass |
-| **1** | Tenant, auth, settings, audit | 1.1 register tenant via OTP (mobile **or** email) → set username/password/PIN → land on an empty dashboard · 1.2 log in / log out (email+password, phone+password, PIN, Google) + forgot-password via OTP + change password/PIN in Settings · 1.3 create and edit users · 1.4 create roles and assign permissions · 1.5 change a setting and see it take effect · 1.6 view the audit trail of everything above · 1.7 deployment-mode providers (D-33…D-36) + boot validation + license states | Owner registers, creates a user, assigns a role, changes a setting — all in the UI, all audited. Both `saas-smoke` and `onprem-smoke` green; registration returns 404 in single-tenant mode |
-| **2** | Master data | 2.1 create a product, see it listed · 2.2 brands and categories · 2.3 product search + brand/category filter · 2.4 barcode search and scan · 2.5 units and conversion (D-10) · 2.6 create a party and assign roles · 2.7 party search + role-filtered lists · 2.8 customer phone uniqueness + walk-in customer | Products and parties fully usable in the UI with permissions enforced |
-| **3** | Inventory core *(Gate G2)* | 3.1 opening stock entry → movement + journal + lot · 3.2 stock list with on-hand quantities · 3.3 lot list and lot detail per product · 3.4 costing method setting (FIFO/AVERAGE) · 3.5 stock valuation report · 3.6 negative-stock policy · 3.7 stock movement history with drill-down | Opening stock posts movements and journal; **INV-01…INV-05 green under both costing methods**; valuation equals the `INVENTORY` account exactly |
-| **4** | Money accounts | 4.1 create cash accounts (`CASH:{id}` — drawer, safe) with opening balances · 4.2 **Start Day** with counted opening cash + declared source/destination for any difference · 4.3 **End Day** with expected vs counted and short/over posting · 4.4 create a bank account with opening balance · 4.5 cash and bank statements · 4.6 owner injection / withdrawal | Cash and bank balances provable from journal; **the §5.16.6 worked example reproduces exactly**, including the Day-1 shortage surviving all three Day-2 outcomes; INV-07 a/b/c green |
-| **5** | Purchase vertical *(first real milestone)* | 5.1 record a purchase → lot + stock + payable · 5.2 purchase list and detail · 5.3 pay a supplier → payable falls, cash falls · 5.4 supplier ledger statement · 5.5 edit and void a purchase with full reversal | Purchase → stock → lot → payable → payment → ledger → cash, verified manually with pre-written numbers |
-| **6** | Sales vertical *(Gate G3)* | 6.1 POS sell from own stock → invoice + stock out + COGS · 6.2 customer selection and walk-in · 6.3 multi-method payment and due · 6.4 print and reprint an invoice · 6.5 customer ledger statement · 6.6 receive a payment with allocation and advance · 6.7 sale templates (D-26) · 6.8 void a sale with full reversal | Full core business cycle passes manually; POS performance budget met |
-| **7** | Corrections & adjustments | 7.1 sales return · 7.2 purchase return · 7.3 stock reconciliation · 7.4 record an expense (incl. salary to a party) · 7.5 backdate a transaction · 7.6 close a period and prove `PERIOD_LOCKED` · 7.7 unlock with step-up auth and reason | Correction scenarios pass; locked-period write returns `PERIOD_LOCKED`; every correction auditable |
-| **8** | Purchasing extras | 8.1 purchase order → approve → convert · 8.2 landed cost allocation · 8.3 consignment sale (deemed purchase, DR13.10) · 8.4 serial capture on purchase and sale · 8.5 warranty claim lifecycle incl. supplier send | Consignment, landed-cost and warranty scenarios pass with correct journals |
-| **9** | Reporting *(Gate G4)* | 9.1 sales reports · 9.2 purchase reports · 9.3 inventory reports · 9.4 finance reports · 9.5 "Why?" drill-down on every total · 9.6 dashboard cards · 9.7 Daybook view · 9.8 Daybook day-end print | Report figures reconcile to journal and movements (INV-10); **Daybook totals equal Reports totals**; day-end print verified on A4 and 80mm |
-| **10** | SaaS layer | 10.1 subscription plans and entitlement gating · 10.2 tenant lifecycle · 10.3 `.sherdb` export · 10.4 `.sherdb` import/restore · 10.5 SMS wallet + bKash top-up | Entitlement gating verified per feature; backup → wipe → restore matches exactly |
-| **11** | Bank reconciliation | 11.1 import a statement · 11.2 match transactions · 11.3 create missing transactions · 11.4 mark reconciled · 11.5 review flag on later edits | Reconciliation scenarios pass |
+| **1** | Business platform | Existing registration/login/credential/user work plus roles and permissions, settings, audit viewer, and deployment-mode boot validation | Owner registers, signs in, creates a user, assigns a role, changes a setting and sees the audit trail. Both deployment smoke modes pass |
+| **2** | Catalog and parties | Product create/edit/list/search, brands, categories, barcode, units/conversion; party create/edit/list/search, role flags, customer-phone uniqueness and walk-in customer | Products and parties fully usable in the consistent UI with permissions enforced |
+| **3** | Inventory core *(Gate G2)* | Opening stock, movement + journal + lot, stock and lot views, FIFO/AVERAGE setting, valuation, negative-stock policy and movement drill-down | **INV-01…INV-05 green under both costing methods**; valuation equals `INVENTORY` exactly |
+| **4** | Money accounts | Cash accounts, Start Day, End Day, bank account, statements and owner injection/withdrawal | §5.16.6 reproduces exactly; cash/bank prove from journal; INV-07 a/b/c green |
+| **5** | Purchasing *(first real milestone)* | Purchase create/list/detail, lot + stock + payable posting, supplier payment, supplier ledger, edit and void/reversal | Purchase → stock → payable → payment → ledger → cash works as one UI scenario with exact numbers |
+| **6** | Sales and POS *(Gate G3)* | POS sale, customer/walk-in, multi-method payment and due, invoice detail/print, customer ledger, receipt allocation/advance, templates and void/reversal | Full buy–stock–sell cycle passes manually and POS performance budget is met |
+| **7** | Corrections and adjustments | Sales/purchase returns, stock reconciliation, expense, backdating, period close and controlled unlock | Correction scenarios pass; locked writes return `PERIOD_LOCKED`; every correction is auditable |
+| **8** | Purchasing extras | Purchase orders, landed cost, consignment, serial capture and warranty lifecycle | All scenarios pass with correct journals |
+| **9** | Reporting and Daybook *(Gate G4)* | Sales, purchase, inventory and finance reports; Why drill-down; dashboard; Daybook and day-end print | INV-10; Daybook totals equal Reports; A4 and 80mm output verified |
+| **10** | SaaS operations | Plans/entitlements, tenant lifecycle, export/import/restore, SMS wallet and bKash top-up | Entitlements work; backup → wipe → restore matches exactly |
+| **11** | Bank reconciliation | Import, matching, missing transaction creation, reconcile and later-edit review | Reconciliation scenarios pass |
 | **12** | Offline *(Gate G5)* | Sliced at the start of the phase: **persistence gate (D-24) first** · profile registration + device authority · SQLite WASM/OPFS adapter · outbox push · pull · conflict quarantine · local backup export/import | SY-01…SY-16 pass; an offline day equals the online result exactly; no write is ever accepted without granted persistent storage |
 | **13** | PWA polish | Sliced at the start of the phase | Core POS and reports usable on a tablet |
 | **14** | AI/MCP + on-prem packaging | Sliced at the start of the phase; read tools before any write tool | AI actions audited, permission-bound, explainable; on-prem install and upgrade verified on a clean VM |
 | **15** | Reusable core extraction | Package hardening | Core packages published internally, one sample reuse |
 
-## 6.1.1 Slice status ledger
+### One-month online V1 delivery target
 
-**The only record of what is built.** The agent appends or updates its own row as the final step of a slice, in the same commit as the code. Nothing else tracks progress — do not create a status file, a task log, or a README for this.
+The owner-selected one-month target is the complete **online V1 scope through Phase 11**. Offline, PWA polish, MCP/on-prem packaging and reusable-core extraction (Phases 12–15) remain post-V1. The four module gates are intentionally large:
+
+| Week | Module gate | Required outcome |
+|---|---|---|
+| 1 | **Business setup** — finish Phase 1 + Phase 2 | Owner/staff authentication, roles, settings and audit; products, units, customers and suppliers fully usable |
+| 2 | **Stock, money and purchasing** — Phases 3–5 | Inventory/costing, cash/bank sessions and statements, complete purchase/payable/payment/void workflow |
+| 3 | **Sales and corrections** — Phases 6–8 | POS/sales/payments/printing/void plus returns, expenses, reconciliation, periods, purchase orders, landed cost, consignment, serial and warranty |
+| 4 | **Control and operations** — Phases 9–11 | Reports, Why drill-down, dashboard, Daybook/print, SaaS lifecycle/backup/SMS wallet, and bank reconciliation; clean-database full regression |
+
+This schedule is exceptionally aggressive. The date does not change the meaning of `DONE`: unfinished paths remain unfinished rather than being hidden, mocked or accepted without tests. Never remove tenant isolation, journal/stock invariants, idempotency, reversal, cash correctness, backup-restore proof or owner acceptance to protect the date.
+
+During a module, run focused tests for the path being built. At each module gate run the four complete commands and the module's manual UI scenario. At the end of Week 4, run the full suite and the complete buy–stock–sell baseline again on a clean database.
+
+## 6.1.1 Delivery status ledger
+
+**The only record of what is built.** Historical micro-slice rows remain unchanged. From the module-scale revision onward, related rows are internal scope checkpoints and receive one full regression/owner acceptance at their weekly module gate. Nothing else tracks progress — do not create a status file, task log or README.
 
 Rules:
 
-- A row is added when a slice **starts** (status `IN PROGRESS`), and completed when it ends.
+- A row is added when a module or explicitly tracked internal path **starts** (`IN PROGRESS`) and updated when code is complete.
 - `DONE` requires all four gates green **and** owner acceptance. An agent may set `CODE COMPLETE`; **only the owner sets `DONE`.**
-- Commit hash is the merge commit of the slice.
-- Never delete or rewrite a row. A slice reopened later gets a new row with the same number and a note.
+- Commit is the accepted code/module-gate commit. Because a commit cannot contain its own hash, the owner may fill it in with the `DONE` follow-up ledger commit.
+- Never delete or rewrite historical rows. A reopened tracked path gets a new row with the same number and a note.
 - Each phase exit is tagged in git: `git tag phase-3-complete`.
 
 | Slice | Name | Status | Commit | Owner accepted | Note |
@@ -1335,11 +1375,11 @@ Rules:
 | 1.6 | Audit trail of everything above | TODO | — | — | |
 | 1.7 | Deployment-mode providers (D-33…D-36) + boot validation + license states | TODO | — | — | |
 
-Rows for Phase 2 onward are added as each phase begins, from the slice lists in §6.1.
+Rows for Phase 2 onward are added as each delivery module begins, from the scope in §6.1 and the one-month grouping above.
 
-**Critical path:** `0 → 1 → 2 → 3 → 5 → 6 → 7 → 9 → 12`. Phases 4, 8, 10, 11 can absorb slippage. 13/14 come strictly after 12.
+**Online V1 critical path:** `0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11`. Phase 4 is mandatory before purchase/sales payments because those operations require real cash accounts. Offline 12 follows only after online V1 is stable; 13/14 come after 12.
 
-**Slice lists for phases 0–11 are fixed above.** Phases 12–15 are sliced at the start of the phase, because slicing them now would encode decisions that have not been made. Adding, splitting or reordering a slice within a phase is fine and expected; skipping the manual acceptance at the end of one is not.
+**Module scope for phases 0–11 is fixed above.** Phases 12–15 are detailed at the start of their phase because decisions remain open. Splitting a module is allowed only at a real workflow boundary when it cannot fit the five-day timebox; manual acceptance remains mandatory at the resulting module gate.
 
 ## 6.2 Why this order differs from the module numbering
 
@@ -1359,8 +1399,8 @@ Rows for Phase 2 onward are added as each phase begins, from the slice lists in 
 
 | Level | Complete when |
 |---|---|
-| **Slice** | All four gates in `AI_CODING_INSTRUCTIONS.md` pass, including manual UI acceptance against numbers written before the code existed |
-| **Phase** | Every slice in the phase is complete · the phase exit criteria in §6.1 are met · full regression green including earlier phases · the baseline scenario still passes end to end |
+| **Internal path** | Connected through domain, application, database, API and UI; its focused risk-based tests pass. This is a checkpoint, not an accepted release |
+| **Module/Phase** | All internal paths work together · all four gates in `AI_CODING_INSTRUCTIONS.md` pass once · full regression is green · owner accepts the pre-written UI scenario |
 | **Gate** | Owner has personally run the gate's scenarios and signed off (§6.3) |
 | **V1** | Phases 0–11 complete; offline (12) and MCP (14) are post-V1 |
 
@@ -1411,33 +1451,33 @@ Four containers via Docker Compose: `nginx`, `api`, `db`, `backup`. PostgreSQL b
 
 ## 6.6 Working rhythm
 
-One slice at a time, one slice per agent conversation:
+One module increment at a time, one module per agent conversation:
 
 ```
-1  Pick the next slice from §6.1
-2  Write the acceptance criteria and expected numbers  ← BEFORE any code
-3  Paste the kernel + slice task block
-4  Agent replies with a PLAN                           ← cheapest checkpoint; if it looks wrong, stop here
-5  Approve → agent implements the full vertical: domain → use case → migration →
-   repository → API → UI → tests
-6  Agent pastes REAL output of lint, typecheck, boundaries, test
-7  Review the diff against the owner checklist
-8  Run the slice in the real UI yourself and check the numbers
-9  Commit
-10 Next slice
+1  Pick the next module from §6.1 and timebox it to 3–5 working days
+2  Write its complete UI workflow, acceptance criteria and expected numbers BEFORE code
+3  List WRITE CLASS T/S/M/READ ONLY for each mutation and paste the module task block
+4  Agent replies with one plan covering domain, database, API, shared UI components and focused tests
+5  Build one internal path at a time through every layer; run only its focused tests and make a checkpoint commit
+6  Repeat until the complete module workflow is connected
+7  Run full lint, typecheck, boundaries and test ONCE at the module gate; paste real output
+8  Review the complete module diff and run its real UI scenario yourself
+9  Record owner acceptance and the module-gate commit in the ledger
+10 Start the next module
 ```
 
-Never skip step 8. Automated tests written by the agent that wrote the bug will happily agree with the bug — the numbers you wrote at step 2 are the only independent check in the system.
+Never skip step 8. Reducing repetitive automated tests makes the pre-written manual numbers more important, not less.
 
 Before each phase: read the phase row · confirm the previous phase's exit criteria are met · **write the manual scenarios with expected numbers before any code exists.**
 
 ## 6.7 Honest expectations
 
-- Phases 0–2 will feel disproportionately slow. You are building the foundations and machinery. Phase 0 produces nothing you can show anyone — just `/health` returning OK. That is correct.
+- The owner-selected one-month target is online V1 through Phase 11. It is an exceptionally aggressive target, not permission to mark incomplete work done. Phases 12–15 remain outside the month.
+- Foundation work already completed remains valuable; do not restart it to fit the new cadence.
 - **Phase 5 is the first real milestone.** Buy stock, see it in inventory, pay the supplier, watch the ledger and cash agree — the architecture is proven and everything after is repetition of a working pattern.
 - Something will be wrong in the money math at least once. The invariants and manual scenarios will catch it — if you actually run them.
 - You will be tempted to skip Phase 0's boundary checker to reach visible features. Don't. It is the one thing that cannot be retrofitted, and it is what keeps the offline plan alive.
-- **The biggest risk is not bad AI code. It is accepting good-looking AI code without verifying the numbers.**
+- **The biggest risk is not bad AI code. It is accepting good-looking AI code without verifying the numbers.** Bigger modules must still end in exact owner-checked scenarios.
 
 ---
 
@@ -1506,6 +1546,9 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 
 | Date | Change |
 |---|---|
+| 2026-08-17 | **Development cadence revised for the one-month online-V1 target.** One-screen micro-slices are replaced by four large weekly module-scale vertical increments covering Phases 0–11. Focused risk-based tests run during implementation; full regression and owner UI acceptance run once at each module gate. Phases 12–15 remain post-V1. Critical accounting, inventory, tenant, security, idempotency, reversal and backup/restore coverage remains mandatory. §6 and `AI_CODING_INSTRUCTIONS.md` revised by owner request. |
+| 2026-08-17 | **Binding visual system added to §2.7.I.** Fixed slate/white palette, 256px shared shell, typography, card/table/button/badge shapes and module page composition apply from the first screen. The supplied Tailwind/`lucide-react` wording was adapted to the existing Vue + PrimeVue stack without adding a second UI framework or React dependency. |
+| 2026-08-17 | **Write path classified by mutation type.** The ten-step path remains mandatory for transactional money/stock/document writes; security/identity and master/configuration writes use explicit smaller paths instead of fake period/journal/stock steps. `AI_CODING_INSTRUCTIONS.md` R-D revised. |
 | 2026-08-17 | **D-07 revised again — Google may now create a tenant**, reversing "Google alone never creates a tenant" in §5.3. An unknown verified Google email is offered a one-field signup (business name); `username` is derived from the email local-part and `password_hash`/`pin_hash` are left **NULL**, so the account can only be entered through Google until the user sets a password via forgot-password. Requested by the owner 2026-08-17 after Google OAuth went live; the owner chose "business name only, derive the rest" over collecting a password and PIN. Consequence accepted: a Google-created account has no password and no PIN, and PIN login is unavailable on it until slice 1.3 builds the set-a-first-credential flow. Slice 1.2c |
 | 2026-08-16 | **D-05 revised.** LIFO removed. One costing method per tenant (`FIFO`/`AVERAGE`) drives both journal COGS and valuation. The "lot consumption method" setting is removed — physical issue is always FIFO/FEFO. Reason: INV-05 was mathematically unsatisfiable under AVG and LIFO; valuation drifted permanently from the `INVENTORY` account |
 | 2026-08-16 | **D-09 revised (owner override).** VAT/tax removed from V1; columns reserved and `NULL`. Accepted consequence: no VAT-compliant invoice until V2 |
