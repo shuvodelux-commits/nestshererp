@@ -1,3 +1,7 @@
+import type { LoginResponse } from '@sher/core-contracts';
+
+import { useSession } from '../auth/session';
+
 /**
  * The HTTP client.
  *
@@ -53,7 +57,51 @@ interface RequestOptions {
   readonly idempotencyKey?: string;
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/**
+ * One renewal at a time, shared by every caller that hits a 401 together.
+ *
+ * Refresh tokens **rotate**: using one revokes it and issues a replacement. Two
+ * renewals racing would each revoke the other's token and end the session
+ * outright, so concurrent callers wait on the same promise instead.
+ */
+let renewalInFlight: Promise<boolean> | null = null;
+
+function currentAccessToken(): string | null {
+  return useSession().accessToken.value;
+}
+
+async function renewAccessToken(): Promise<boolean> {
+  renewalInFlight ??= renewOnce().finally(() => {
+    renewalInFlight = null;
+  });
+  return renewalInFlight;
+}
+
+/**
+ * Called directly rather than through `api/auth`, which imports this module —
+ * routing it back through there would be a circular import.
+ */
+async function renewOnce(): Promise<boolean> {
+  const session = useSession();
+  const refreshToken = session.refreshToken.value;
+  if (refreshToken === null) return false;
+
+  try {
+    const renewed = await send<LoginResponse>('/api/v1/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken },
+    });
+    session.signIn(renewed, renewed.user.username);
+    return true;
+  } catch {
+    // The session is genuinely over — revoked, expired, or already rotated.
+    // Forget it so the router sends the user to sign in rather than looping.
+    session.clear();
+    return false;
+  }
+}
+
+async function send<T>(path: string, options: RequestOptions): Promise<T> {
   const { apiBaseUrl } = await loadConfig();
   const headers: Record<string, string> = {};
 
@@ -87,4 +135,30 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const payload = (await response.json()) as { data: T };
   return payload.data;
+}
+
+/**
+ * Sends a request, renewing an expired access token once and retrying.
+ *
+ * Access tokens last 15 minutes; refresh tokens last 30 days (§5.3). Without
+ * this, a screen left open for a quarter of an hour throws the user back to the
+ * login page even though their session is still perfectly valid.
+ *
+ * Only requests that carried a bearer token are retried. Signing in, refreshing
+ * and logging out send none, so a 401 from those is a real answer and is passed
+ * straight through — which is also what stops a failed refresh from looping.
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  try {
+    return await send<T>(path, options);
+  } catch (cause) {
+    const expired = cause instanceof ApiError && cause.status === 401;
+    if (!expired || options.token === undefined) throw cause;
+
+    if (!(await renewAccessToken())) throw cause;
+
+    // Deliberately re-read the token rather than reusing the one passed in:
+    // the renewal above replaced it, and the caller still holds the old value.
+    return send<T>(path, { ...options, token: currentAccessToken() ?? options.token });
+  }
 }
