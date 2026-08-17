@@ -40,18 +40,29 @@ export interface ChangePasswordCommand {
    * Unknown or already revoked, every session goes.
    */
   readonly refreshToken: string;
-  readonly currentPassword: string;
+  /** Absent when the account has no password yet — see `authorize`. */
+  readonly currentPassword?: string | undefined;
   readonly newPassword: string;
 }
 
 export interface ChangePinCommand {
   readonly ctx: TenantContext;
-  readonly currentPin: string;
+  readonly currentPin?: string | undefined;
   readonly newPin: string;
+}
+
+/** What the caller may do with each credential right now. */
+export interface SecuritySettings {
+  readonly hasPassword: boolean;
+  readonly hasPin: boolean;
 }
 
 function wrongCredential(): AppError {
   return new AppError(ErrorCode.UNAUTHENTICATED, 'That current credential is not correct');
+}
+
+function currentRequired(credential: 'password' | 'PIN'): AppError {
+  return new AppError(ErrorCode.VALIDATION_FAILED, `Your current ${credential} is required`);
 }
 
 export class ChangeCredentialsService {
@@ -76,8 +87,13 @@ export class ChangeCredentialsService {
     const tokenHash = this.tokens.hashRefreshToken(command.refreshToken);
 
     await this.uow.run(ctx, async (tx) => {
-      const current = await this.verifyCurrent(tx, ctx, (stored) => stored.passwordHash);
-      if (!(await this.hasher.verify(command.currentPassword, current))) throw wrongCredential();
+      const replacing = await this.authorize(
+        tx,
+        ctx,
+        (stored) => stored.passwordHash,
+        command.currentPassword,
+        'password',
+      );
 
       await this.users.updatePasswordHash(
         tx,
@@ -88,17 +104,28 @@ export class ChangeCredentialsService {
 
       // §5.3: "changing a password invalidates all other sessions". Anything
       // signed in with the old password stops working; this device does not.
-      const keep = await this.sessions.findByTokenHash(tx, tokenHash);
-      const keepId = keep !== null && keep.userId === ctx.userId ? keep.id : null;
-      await this.sessions.revokeAllForUser(tx, ctx.tenantId, ctx.userId, keepId);
+      //
+      // Setting a *first* password revokes nothing: there was no old password
+      // for those sessions to have been established with, so there is nothing
+      // to invalidate. Signing a Google user out of their phone because they
+      // added a password would be a surprise the spec does not ask for.
+      let revoked = 'NONE';
+      if (replacing) {
+        const keep = await this.sessions.findByTokenHash(tx, tokenHash);
+        const keepId = keep !== null && keep.userId === ctx.userId ? keep.id : null;
+        await this.sessions.revokeAllForUser(tx, ctx.tenantId, ctx.userId, keepId);
+        revoked = keepId === null ? 'ALL' : 'OTHERS';
+      }
 
       await this.audit.append(tx, ctx, {
         entityType: 'user',
         entityId: ctx.userId,
-        action: 'PASSWORD_CHANGED',
+        // Setting a first credential and replacing one are different events, and
+        // an audit trail that called both "changed" would hide which happened.
+        action: replacing ? 'PASSWORD_CHANGED' : 'PASSWORD_SET',
         before: null,
         // Never the password, old or new — only that one credential changed.
-        after: { credential: 'PASSWORD', otherSessionsRevoked: keepId === null ? 'ALL' : 'OTHERS' },
+        after: { credential: 'PASSWORD', otherSessionsRevoked: revoked },
         source: 'API',
       });
     });
@@ -117,15 +144,20 @@ export class ChangeCredentialsService {
     const { ctx } = command;
 
     await this.uow.run(ctx, async (tx) => {
-      const current = await this.verifyCurrent(tx, ctx, (stored) => stored.pinHash);
-      if (!(await this.hasher.verify(command.currentPin, current))) throw wrongCredential();
+      const replacing = await this.authorize(
+        tx,
+        ctx,
+        (stored) => stored.pinHash,
+        command.currentPin,
+        'PIN',
+      );
 
       await this.users.updatePinHash(tx, ctx, ctx.userId, await this.hasher.hash(command.newPin));
 
       await this.audit.append(tx, ctx, {
         entityType: 'user',
         entityId: ctx.userId,
-        action: 'PIN_CHANGED',
+        action: replacing ? 'PIN_CHANGED' : 'PIN_SET',
         before: null,
         after: { credential: 'PIN' },
         source: 'API',
@@ -133,21 +165,44 @@ export class ChangeCredentialsService {
     });
   }
 
+  /** Which credentials this user holds, so Settings can offer Set or Change. */
+  async read(ctx: TenantContext): Promise<SecuritySettings> {
+    return this.uow.run(ctx, async (tx) => {
+      const stored = await this.users.findCredentials(tx, ctx, ctx.userId);
+      if (stored === null) throw new AppError(ErrorCode.NOT_FOUND, 'User not found');
+      return { hasPassword: stored.passwordHash !== null, hasPin: stored.pinHash !== null };
+    });
+  }
+
   /**
-   * The stored hash the current credential is checked against. A user who holds
-   * no such credential yet cannot *change* it — that is setting a first one, and
-   * it belongs to the administrator flow in slice 1.3, not here.
+   * Decides whether this is a **change** or a first **set**, and enforces the
+   * rule that goes with it. Returns true when an existing credential was
+   * replaced.
+   *
+   * A user who signed up through Google holds no password and no PIN (D-07:
+   * Google is the credential). There is nothing for them to prove, so a valid
+   * access token is the authority — they are already signed in as themselves.
+   * Once a credential exists, the current one is required again.
+   *
+   * **The branch is decided from what is stored, never from what was sent.** A
+   * caller who omits `current` when one exists is refused rather than let
+   * through; otherwise omitting a field would be a way past the check.
    */
-  private async verifyCurrent(
+  private async authorize(
     tx: Tx,
     ctx: TenantContext,
     select: (stored: { passwordHash: string | null; pinHash: string | null }) => string | null,
-  ): Promise<string> {
+    current: string | undefined,
+    credential: 'password' | 'PIN',
+  ): Promise<boolean> {
     const stored = await this.users.findCredentials(tx, ctx, ctx.userId);
     if (stored === null) throw wrongCredential();
 
     const hash = select(stored);
-    if (hash === null) throw wrongCredential();
-    return hash;
+    if (hash === null) return false;
+
+    if (current === undefined || current === '') throw currentRequired(credential);
+    if (!(await this.hasher.verify(current, hash))) throw wrongCredential();
+    return true;
   }
 }

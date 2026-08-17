@@ -9,7 +9,7 @@ import type { IdentifierChannel, OtpPurpose, OtpRejection } from '@sher/core-dom
 import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { RegistrationResponse } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
-import { addSeconds, Ulid } from '@sher/shared-utils';
+import { Ulid } from '@sher/shared-utils';
 
 import type { AuditWriter } from '../ports/audit-writer';
 import type { PasswordHasher } from '../ports/password-hasher';
@@ -24,6 +24,7 @@ import type {
   UserRepository,
 } from './registration-repository';
 import type { SessionRepository } from './session-repository';
+import { provisionTenant } from './tenant-provisioning';
 
 /**
  * Step two of signup (D-07): verify the OTP, then set username, password and PIN
@@ -53,9 +54,6 @@ export interface CompleteRegistrationCommand {
 
 /** D-29: every tenant starts in Bangladesh Standard Time; changeable in Settings (§5.21). */
 const DEFAULT_TIMEZONE = 'Asia/Dhaka';
-const OWNER_ROLE_CODE = 'OWNER';
-/** 30 days (§5.3), matching the sessions a login mints. */
-const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const SIGNUP: OtpPurpose = 'SIGNUP';
 
 const REJECTION_ERRORS: Record<OtpRejection, ErrorCode> = {
@@ -146,61 +144,39 @@ export class CompleteRegistrationService {
 
     const businessName = command.businessName.trim();
     const username = command.username.trim();
-    const roleId = Ulid.generate(this.clock);
 
-    await this.tenants.insert(tx, ctx, {
-      id: ctx.tenantId,
-      name: businessName,
-      timezone: DEFAULT_TIMEZONE,
-    });
-    await this.roles.insertSystemRole(tx, ctx, {
-      id: roleId,
-      code: OWNER_ROLE_CODE,
-      name: 'Owner',
-    });
-    await this.users.insert(tx, ctx, {
-      id: ctx.userId,
-      roleId,
-      username,
-      displayName: username,
-      email: channel === 'EMAIL' ? identifier : null,
-      phone: channel === 'PHONE' ? identifier : null,
-      passwordHash: await this.hasher.hash(command.password),
-      pinHash: await this.hasher.hash(command.pin),
-    });
-    await this.identifiers.claim(tx, {
-      id: Ulid.generate(this.clock),
-      identifier,
-      channel,
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-    });
-
-    await this.audit.append(tx, ctx, {
-      entityType: 'tenant',
-      entityId: ctx.tenantId,
-      action: 'CREATE',
-      before: null,
-      after: { name: businessName, username, channel },
-      source: 'API',
-    });
-
-    // Signing up leaves you signed in, on the same footing as a login: an
-    // access token plus a server-stored session that "log out" can revoke.
-    const refreshToken = this.tokens.issueRefreshToken();
-    await this.sessions.create(tx, {
-      id: Ulid.generate(this.clock),
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      tokenHash: this.tokens.hashRefreshToken(refreshToken),
-      expiresAt: addSeconds(this.clock.now(), REFRESH_TOKEN_SECONDS),
-    });
+    // The shared rule (`provisionTenant`): what it means to create a business
+    // is written once and used by both signup paths — OTP here, Google in
+    // RegisterWithGoogleService. Only the proof of identity differs.
+    const provisioned = await provisionTenant(
+      tx,
+      ctx,
+      {
+        tenants: this.tenants,
+        roles: this.roles,
+        users: this.users,
+        identifiers: this.identifiers,
+        sessions: this.sessions,
+        tokens: this.tokens,
+        audit: this.audit,
+        clock: this.clock,
+      },
+      {
+        businessName,
+        username,
+        identifier,
+        channel,
+        passwordHash: await this.hasher.hash(command.password),
+        pinHash: await this.hasher.hash(command.pin),
+        verifiedBy: 'OTP',
+      },
+    );
 
     return {
       ok: true,
       response: {
-        accessToken: this.tokens.issueAccessToken(ctx),
-        refreshToken,
+        accessToken: provisioned.accessToken,
+        refreshToken: provisioned.refreshToken,
         tenant: { id: ctx.tenantId, name: businessName },
         user: { id: ctx.userId, username },
       },

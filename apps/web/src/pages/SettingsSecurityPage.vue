@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { changePassword, changePin } from '../api/auth';
+import { changePassword, changePin, fetchSecuritySettings } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
@@ -10,21 +10,54 @@ import AppShell from '../components/shell/AppShell.vue';
 import OtpInput from '../components/OtpInput.vue';
 
 /**
- * Settings → Security (§5.3): change your password or your PIN.
+ * Settings → Security (§5.3): set or change your password and your PIN.
  *
  * Two independent forms on one screen, because they are two independent
  * credentials with two different consequences — changing the password signs out
  * every other device, changing the PIN signs out nothing. Merging them into one
  * "update credentials" form would hide that difference at the moment it matters.
  *
- * Each requires the current credential, which is checked server-side; this
- * screen never decides whether one is correct.
+ * Each card is in one of two states, decided by what the account actually holds:
+ *
+ *   **Set** — no credential yet. An account created through Google has neither
+ *   (D-07: Google is the credential), so there is nothing to prove and no
+ *   "current" field is shown. Being signed in is the authority.
+ *
+ *   **Change** — a credential exists, so the current one is required.
+ *
+ * The screen only *asks* for the right thing; the server decides what was
+ * actually required, from what is stored rather than from what was sent.
  *
  * UI-27: loading, success and error states are explicit per form.
  * UI-35: submits disable in flight.
  */
 const router = useRouter();
 const session = useSession();
+
+/* --- which credentials exist --------------------------------------------- */
+const loading = ref(true);
+const loadError = ref<{ code: string; message: string } | null>(null);
+const hasPassword = ref(false);
+const hasPin = ref(false);
+
+async function loadSettings(): Promise<void> {
+  loading.value = true;
+  loadError.value = null;
+  try {
+    const settings = await fetchSecuritySettings(session.accessToken.value ?? '');
+    hasPassword.value = settings.hasPassword;
+    hasPin.value = settings.hasPin;
+  } catch (cause) {
+    loadError.value =
+      cause instanceof ApiError
+        ? { code: cause.code, message: cause.message }
+        : { code: 'UNEXPECTED', message: cause instanceof Error ? cause.message : String(cause) };
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(loadSettings);
 
 type Outcome = { kind: 'OK'; message: string } | { kind: 'ERROR'; code: string; message: string };
 
@@ -47,19 +80,25 @@ const passwordOutcome = ref<Outcome | null>(null);
 async function submitPassword(): Promise<void> {
   passwordBusy.value = true;
   passwordOutcome.value = null;
+  const wasSetting = !hasPassword.value;
   try {
     await changePassword(
       session.accessToken.value ?? '',
       // This device's session is the one the server spares.
       session.refreshToken.value ?? '',
-      currentPassword.value,
+      wasSetting ? null : currentPassword.value,
       newPassword.value,
     );
     currentPassword.value = '';
     newPassword.value = '';
+    // The card flips to "Change" from here on, so the next edit asks for the
+    // current password — the same rule a password user has always had.
+    hasPassword.value = true;
     passwordOutcome.value = {
       kind: 'OK',
-      message: 'Password changed. Every other signed-in device has been signed out.',
+      message: wasSetting
+        ? 'Password set. You can now sign in with your mobile number or email as well as Google.'
+        : 'Password changed. Every other signed-in device has been signed out.',
     };
   } catch (cause) {
     passwordOutcome.value = describe(cause);
@@ -77,11 +116,22 @@ const pinOutcome = ref<Outcome | null>(null);
 async function submitPin(): Promise<void> {
   pinBusy.value = true;
   pinOutcome.value = null;
+  const wasSetting = !hasPin.value;
   try {
-    await changePin(session.accessToken.value ?? '', currentPin.value, newPin.value);
+    await changePin(
+      session.accessToken.value ?? '',
+      wasSetting ? null : currentPin.value,
+      newPin.value,
+    );
     currentPin.value = '';
     newPin.value = '';
-    pinOutcome.value = { kind: 'OK', message: 'PIN changed. Use it next time you unlock this device.' };
+    hasPin.value = true;
+    pinOutcome.value = {
+      kind: 'OK',
+      message: wasSetting
+        ? 'PIN set. Use it to unlock this device next time.'
+        : 'PIN changed. Use it next time you unlock this device.',
+    };
   } catch (cause) {
     pinOutcome.value = describe(cause);
   } finally {
@@ -97,11 +147,31 @@ async function signInAgain(): Promise<void> {
 </script>
 
 <template>
-  <AppShell title="Security" help-bn="পাসওয়ার্ড আর পিন এখান থেকে বদলান">
+  <AppShell title="Security" help-bn="পাসওয়ার্ড আর পিন এখান থেকে ঠিক করুন">
+    <!-- Loading: a skeleton, not a bare spinner (UI-27). -->
+    <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading security settings">
+      <div class="skeleton" />
+      <div class="skeleton" />
+    </div>
+
+    <!-- Error: the server's own code and message, plus a retry (UI-28). -->
+    <AppCard v-else-if="loadError !== null" title="Could not load your security settings">
+      <p class="notice is-bad" role="alert">
+        <span class="code">{{ loadError.code }}</span>
+        {{ loadError.message }}
+      </p>
+      <button type="button" class="btn btn-primary" @click="loadSettings">Try again</button>
+    </AppCard>
+
+    <template v-else>
     <!-- ------------------------------------------------------- password -->
     <AppCard
-      title="Password"
-      subtitle="Changing your password signs out every other device. This one stays signed in."
+      :title="hasPassword ? 'Password' : 'Set a password'"
+      :subtitle="
+        hasPassword
+          ? 'Changing your password signs out every other device. This one stays signed in.'
+          : 'You signed in with Google, so this account has no password yet. Add one to sign in with your mobile number or email too.'
+      "
     >
       <form class="form" @submit.prevent="submitPassword">
         <p
@@ -122,7 +192,8 @@ async function signInAgain(): Promise<void> {
           </button>
         </p>
 
-        <div class="field">
+        <!-- Absent when there is no password to prove — a Google account. -->
+        <div v-if="hasPassword" class="field">
           <label for="current-password">Current password</label>
           <input
             id="current-password"
@@ -135,7 +206,7 @@ async function signInAgain(): Promise<void> {
         </div>
 
         <div class="field">
-          <label for="new-password">New password</label>
+          <label for="new-password">{{ hasPassword ? 'New password' : 'Password' }}</label>
           <input
             id="new-password"
             v-model="newPassword"
@@ -150,16 +221,20 @@ async function signInAgain(): Promise<void> {
         <button
           type="submit"
           class="btn btn-primary"
-          :disabled="passwordBusy || currentPassword.length === 0 || newPassword.length === 0"
+          :disabled="
+            passwordBusy ||
+            newPassword.length === 0 ||
+            (hasPassword && currentPassword.length === 0)
+          "
         >
-          {{ passwordBusy ? 'Saving…' : 'Change password' }}
+          {{ passwordBusy ? 'Saving…' : hasPassword ? 'Change password' : 'Set password' }}
         </button>
       </form>
     </AppCard>
 
     <!-- ------------------------------------------------------------ PIN -->
     <AppCard
-      title="PIN"
+      :title="hasPin ? 'PIN' : 'Set a PIN'"
       subtitle="A 4-digit convenience credential for unlocking a device you have already signed in on. It never replaces your password on a new device."
     >
       <form class="form" @submit.prevent="submitPin">
@@ -177,7 +252,7 @@ async function signInAgain(): Promise<void> {
           Two four-box groups on one screen: `role="group"` with its own label
           is what tells a screen reader which "Digit 1 of 4" belongs to which.
         -->
-        <div class="pin-field">
+        <div v-if="hasPin" class="pin-field">
           <span class="pin-label">Current PIN</span>
           <OtpInput
             v-model="currentPin"
@@ -190,7 +265,7 @@ async function signInAgain(): Promise<void> {
         </div>
 
         <div class="pin-field">
-          <span class="pin-label">New PIN</span>
+          <span class="pin-label">{{ hasPin ? 'New PIN' : 'PIN' }}</span>
           <OtpInput
             v-model="newPin"
             :length="4"
@@ -204,12 +279,13 @@ async function signInAgain(): Promise<void> {
         <button
           type="submit"
           class="btn btn-primary"
-          :disabled="pinBusy || currentPin.length !== 4 || newPin.length !== 4"
+          :disabled="pinBusy || newPin.length !== 4 || (hasPin && currentPin.length !== 4)"
         >
-          {{ pinBusy ? 'Saving…' : 'Change PIN' }}
+          {{ pinBusy ? 'Saving…' : hasPin ? 'Change PIN' : 'Set PIN' }}
         </button>
       </form>
     </AppCard>
+    </template>
   </AppShell>
 </template>
 
@@ -219,6 +295,35 @@ async function signInAgain(): Promise<void> {
   flex-direction: column;
   gap: var(--sher-space-4);
   max-width: 420px;
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-5);
+}
+
+.skeleton {
+  height: 210px;
+  border-radius: var(--sher-radius-lg);
+  border: 1px solid var(--sher-line);
+  background: linear-gradient(
+    100deg,
+    var(--sher-surface-3) 30%,
+    var(--sher-surface-2) 50%,
+    var(--sher-surface-3) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .field {

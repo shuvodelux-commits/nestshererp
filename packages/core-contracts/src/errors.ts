@@ -24,6 +24,13 @@ export const ErrorCode = {
   OTP_EXPIRED: 'OTP_EXPIRED',
   OTP_MAX_ATTEMPTS_EXCEEDED: 'OTP_MAX_ATTEMPTS_EXCEEDED',
   IDENTIFIER_ALREADY_REGISTERED: 'IDENTIFIER_ALREADY_REGISTERED',
+  /**
+   * A verified Google email with no account here yet (§5.3, D-07 revised
+   * 2026-08-17). Deliberately distinguishable, unlike a failed password login:
+   * the caller proved they own the address, so telling them it has no business
+   * reveals nothing — and it is what sends them to the one-field signup.
+   */
+  GOOGLE_ACCOUNT_UNKNOWN: 'GOOGLE_ACCOUNT_UNKNOWN',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -41,6 +48,9 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   OTP_EXPIRED: 400,
   OTP_MAX_ATTEMPTS_EXCEEDED: 400,
   IDENTIFIER_ALREADY_REGISTERED: 409,
+  // 404: there is no account for this identity — not 401, because the caller's
+  // Google credential was perfectly valid.
+  GOOGLE_ACCOUNT_UNKNOWN: 404,
 };
 
 export function httpStatusFor(code: ErrorCode): number {

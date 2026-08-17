@@ -205,9 +205,9 @@ function useAnotherAccount(): void {
         <GoogleButton :disabled="busy" @click="signInWithGoogle" />
 
         <p class="fine">
-          New here? <RouterLink to="/register">Create your business account</RouterLink>. A Google
-          account signs you in to an account that already exists — it never
-          creates one.
+          New here? <RouterLink to="/register">Create your business account</RouterLink>, or
+          continue with Google — if that address has no business yet, we will ask
+          for a name and set one up.
         </p>
       </template>
     </main>

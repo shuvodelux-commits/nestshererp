@@ -257,7 +257,16 @@ describe('completing registration', () => {
         tenant_id: tenantId,
         action: 'CREATE',
         before_json: null,
-        after_json: { name: BUSINESS, username: USERNAME, channel: 'PHONE' },
+        // `verifiedBy` and the two credential flags distinguish this from a
+        // Google signup, which is verified differently and holds neither.
+        after_json: {
+          name: BUSINESS,
+          username: USERNAME,
+          channel: 'PHONE',
+          verifiedBy: 'OTP',
+          hasPassword: 'YES',
+          hasPin: 'YES',
+        },
         source: 'API',
       },
     ]);

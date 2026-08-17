@@ -627,7 +627,21 @@ DAILY LOGIN                          FORGOT PASSWORD
 
 **Username** is set at signup, unique per tenant, and is a display/audit identity — it is not a login identifier in V1. Login always uses email, phone, PIN or Google.
 
-**Google OAuth.** A Google account is linked to an existing user by verified email. If the email is unknown, signup still requires the OTP flow — Google alone never creates a tenant.
+**Google OAuth.** A Google account is linked to an existing user by verified email. If the email is **known**, Google signs that user in.
+
+If the email is **unknown, Google may create the tenant** (revised 2026-08-17 — see the change log). Google's `email_verified` claim is the identity proof that the signup OTP would otherwise provide, so no OTP is sent on this path. Exactly one field is collected — the **business name** — and nothing is stored until it is submitted, so an abandoned form leaves no half-made tenant. The rest is derived:
+
+| Field | Value on a Google-created account |
+|---|---|
+| `email` | the verified Google address, claimed in `user_identifiers` as the `EMAIL` channel |
+| `username` | derived from the email local-part (`usernameFromEmail`, `core-domain`) — a display/audit identity, still not a login identifier |
+| `password_hash` | **NULL** — Google is the only way in until the user sets one |
+| `pin_hash` | **NULL** — PIN unlock is unavailable until the user sets one in Settings |
+| `phone` | NULL — this path verifies an email, never a phone |
+
+**A Google-created account therefore has no password and no PIN.** Its recovery route is forgot-password (§5.3, slice 1.2b), which sends an OTP to that same verified email and sets a password — this is the escape hatch if Google is ever unreachable, and it is why the credential columns are nullable (migration 0002). PIN is set afterwards in Settings → Security, which requires the current PIN and so is only reachable once one exists; **setting a first PIN is not built** and belongs with the administrator flow in slice 1.3.
+
+The unknown-email response is distinguishable (`GOOGLE_ACCOUNT_UNKNOWN`), unlike a failed password login. This is not an enumeration oracle: the caller must present a Google ID token for the address, which only its owner can obtain, so it reveals nothing they could not learn about their own mailbox.
 
 **OTP rules.** 6 digits · 5-minute expiry · single use · invalidated on a new request · maximum 5 verification attempts then the code dies · per-identifier and per-IP rate limits · code is stored hashed, never logged, never returned in a response body. Every send, failure and lockout is audited (R-13, SIM-swap).
 
@@ -1314,6 +1328,7 @@ Rules:
 | 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | CODE COMPLETE | 5a53bc7 | — | First UI slice. `apps/web` created (Vue 3 + Vite + PrimeVue 4, D-37) with the shared design tokens every later screen inherits. Adds `otp_codes` and the non-RLS `user_identifiers` pre-auth index; `audit_events.tenant_id` is now nullable for pre-tenant OTP auditing (§5.3). OTP delivery is the development transport only — real SMS/email is D-33, slice 1.7, and boot refuses the dev transport in production. |
 | 1.2 | Log in / log out (password, PIN, Google) | CODE COMPLETE | 0284d3e | — | **Split from the original 1.2** (§6.1.1 permits splitting within a phase): logging in is one demonstrable feature, and forgot-password and change-password are two more. Adds `refresh_tokens` (server-stored, rotating, revocable) and `UnitOfWork.runWithoutTenant`'s `adoptTenant`, since a login resolves its tenant mid-transaction. Google uses the OIDC redirect flow, not Google's script (UI-06, §6.5 COOP/COEP), verified against Google's JWKS with Node's own crypto. |
 | 1.2b | Forgot password via OTP + change password/PIN in Settings | CODE COMPLETE | ffa2567 | — | The remainder of the original 1.2. `otp_codes.purpose` now admits `PASSWORD_RESET` and **every** OTP lookup is scoped by purpose, so a signup code can never be spent to reset a password. A recovery reset revokes every session (nobody is trusted through a forgotten password); a Settings password change revokes all *others* and spares the device presenting its own refresh token (§5.3). Neither operation checks a permission code (it acts only on the caller's own row, and no role holds any permission until slice 1.4) nor writes an idempotency key (`idempotency_keys` stores a request fingerprint, and a fingerprint of a credential change would put a plaintext password in a row — security outranks write-path uniformity in the principle priority). Both departures are argued in the use-case headers. First screen under `/settings`. Also fixes a defect found during acceptance: `AppErrorFilter` mapped **every** framework exception to `INTERNAL_ERROR`, so a request to a route a stale build did not have returned 500 instead of 404 — indistinguishable from a broken server, and the cause was discarded rather than logged. Framework refusals now keep their own status and unexpected errors are written to stderr (never to the response). |
+| 1.2c | Google sign-in completes signup for an unknown email | IN PROGRESS | — | — | Implements the 2026-08-17 D-07 revision (see the change log). Not in the original phase plan — added because Google OAuth went live and the owner chose to let it create the tenant. No migration: the credential columns have been nullable since 0002, which is exactly the case they were made nullable for. |
 | 1.3 | Create and edit users | TODO | — | — | |
 | 1.4 | Create roles and assign permissions | TODO | — | — | |
 | 1.5 | Change a setting and see it take effect | TODO | — | — | |
@@ -1491,6 +1506,7 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 
 | Date | Change |
 |---|---|
+| 2026-08-17 | **D-07 revised again — Google may now create a tenant**, reversing "Google alone never creates a tenant" in §5.3. An unknown verified Google email is offered a one-field signup (business name); `username` is derived from the email local-part and `password_hash`/`pin_hash` are left **NULL**, so the account can only be entered through Google until the user sets a password via forgot-password. Requested by the owner 2026-08-17 after Google OAuth went live; the owner chose "business name only, derive the rest" over collecting a password and PIN. Consequence accepted: a Google-created account has no password and no PIN, and PIN login is unavailable on it until slice 1.3 builds the set-a-first-credential flow. Slice 1.2c |
 | 2026-08-16 | **D-05 revised.** LIFO removed. One costing method per tenant (`FIFO`/`AVERAGE`) drives both journal COGS and valuation. The "lot consumption method" setting is removed — physical issue is always FIFO/FEFO. Reason: INV-05 was mathematically unsatisfiable under AVG and LIFO; valuation drifted permanently from the `INVENTORY` account |
 | 2026-08-16 | **D-09 revised (owner override).** VAT/tax removed from V1; columns reserved and `NULL`. Accepted consequence: no VAT-compliant invoice until V2 |
 | 2026-08-16 | **DR13.10 defined.** Consignment sale posts as a deemed purchase at the moment of sale, reusing the standard path. Previously the balancing entry was undefined |

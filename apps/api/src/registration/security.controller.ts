@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
 import type { ChangeCredentialsService, TenantContext } from '@sher/core-application';
+import type { SecuritySettingsResponse } from '@sher/core-contracts';
 import {
   AppError,
   changePasswordRequestSchema,
@@ -24,6 +25,12 @@ export class SecurityController {
   constructor(
     @Inject(CHANGE_CREDENTIALS_SERVICE) private readonly credentials: ChangeCredentialsService,
   ) {}
+
+  /** Which credentials exist, so the screen offers Set or Change (never both). */
+  @Get()
+  async read(@Ctx() ctx: TenantContext): Promise<{ data: SecuritySettingsResponse }> {
+    return { data: await this.credentials.read(ctx) };
+  }
 
   @Post('password')
   @HttpCode(204)

@@ -5,6 +5,7 @@ import type {
   RegistrationResponse,
   RequestPasswordResetResponse,
   RequestSignupOtpResponse,
+  SecuritySettingsResponse,
 } from '@sher/core-contracts';
 
 import { request } from './client';
@@ -49,9 +50,27 @@ export function loginWithPassword(identifier: string, password: string): Promise
   return request('/api/v1/auth/login', { method: 'POST', body: { identifier, password } });
 }
 
-/** Google links to an account that already exists; it never creates one (D-07). */
+/**
+ * Signs in the account holding the verified Google email. Fails with
+ * `GOOGLE_ACCOUNT_UNKNOWN` when there is none — the caller then collects a
+ * business name and calls `registerWithGoogle` (§5.3, D-07 revised).
+ */
 export function loginWithGoogle(idToken: string): Promise<LoginResponse> {
   return request('/api/v1/auth/login/google', { method: 'POST', body: { idToken } });
+}
+
+/**
+ * Creates the business for a verified Google email. The same ID token is sent
+ * again and verified again server-side — the earlier exchange is not trusted.
+ */
+export function registerWithGoogle(
+  idToken: string,
+  businessName: string,
+): Promise<RegistrationResponse> {
+  return request('/api/v1/auth/registration/google', {
+    method: 'POST',
+    body: { idToken, businessName },
+  });
 }
 
 /** The refresh token is what proves "same device" — a PIN alone is never a login. */
@@ -91,27 +110,44 @@ export function resetPassword(
 
 /* --- Settings → Security (§5.3) ------------------------------------------ */
 
+/** Whether this account already holds a password and a PIN — Set versus Change. */
+export function fetchSecuritySettings(token: string): Promise<SecuritySettingsResponse> {
+  return request('/api/v1/settings/security', { token });
+}
+
 /**
  * The refresh token travels with the request so the server knows which session
  * to spare: changing a password invalidates all **other** sessions, not this one.
+ *
+ * `currentPassword` is omitted when the account has none yet — a Google signup
+ * setting its first one. The server decides whether it was actually required;
+ * leaving it out is never a way past that check.
  */
 export function changePassword(
   token: string,
   refreshToken: string,
-  currentPassword: string,
+  currentPassword: string | null,
   newPassword: string,
 ): Promise<void> {
   return request('/api/v1/settings/security/password', {
     method: 'POST',
     token,
-    body: { refreshToken, currentPassword, newPassword },
+    body: {
+      refreshToken,
+      newPassword,
+      ...(currentPassword === null ? {} : { currentPassword }),
+    },
   });
 }
 
-export function changePin(token: string, currentPin: string, newPin: string): Promise<void> {
+export function changePin(
+  token: string,
+  currentPin: string | null,
+  newPin: string,
+): Promise<void> {
   return request('/api/v1/settings/security/pin', {
     method: 'POST',
     token,
-    body: { currentPin, newPin },
+    body: { newPin, ...(currentPin === null ? {} : { currentPin }) },
   });
 }

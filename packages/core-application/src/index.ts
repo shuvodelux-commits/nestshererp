@@ -53,6 +53,14 @@ export type { VerifySignupOtpCommand } from './auth/verify-signup-otp-service';
 export { CompleteRegistrationService } from './auth/complete-registration-service';
 export type { CompleteRegistrationCommand } from './auth/complete-registration-service';
 export { GetDashboardSummaryService } from './auth/get-dashboard-summary-service';
+export { RegisterWithGoogleService } from './auth/register-with-google-service';
+export type { RegisterWithGoogleCommand } from './auth/register-with-google-service';
+export { provisionTenant } from './auth/tenant-provisioning';
+export type {
+  ProvisionedTenant,
+  ProvisionTenantCommand,
+  ProvisionTenantDeps,
+} from './auth/tenant-provisioning';
 export { RequestPasswordResetService } from './auth/request-password-reset-service';
 export type { RequestPasswordResetCommand } from './auth/request-password-reset-service';
 export { ResetPasswordService } from './auth/reset-password-service';
@@ -61,4 +69,5 @@ export { ChangeCredentialsService } from './auth/change-credentials-service';
 export type {
   ChangePasswordCommand,
   ChangePinCommand,
+  SecuritySettings,
 } from './auth/change-credentials-service';

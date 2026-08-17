@@ -50,7 +50,7 @@ describe('RegisterPage', () => {
 
     expect(wrapper.text()).toContain('Mobile number or email');
     expect(wrapper.find('button[type="submit"]').text()).toContain('Send code');
-    expect(wrapper.text()).toContain('Sign in with Google');
+    expect(wrapper.text()).toContain('Continue with Google');
   });
 
   it('disables the submit button while the request is in flight (UI-35)', async () => {

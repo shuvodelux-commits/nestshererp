@@ -14,10 +14,17 @@ const password = vi.fn();
 const pin = vi.fn();
 const push = vi.fn();
 
+const settings = vi.fn();
+
 vi.mock('../src/api/auth', () => ({
-  changePassword: (token: string, refreshToken: string, current: string, next: string) =>
-    password(token, refreshToken, current, next),
-  changePin: (token: string, current: string, next: string) => pin(token, current, next),
+  fetchSecuritySettings: (token: string) => settings(token),
+  changePassword: (
+    token: string,
+    refreshToken: string,
+    current: string | null,
+    next: string,
+  ) => password(token, refreshToken, current, next),
+  changePin: (token: string, current: string | null, next: string) => pin(token, current, next),
 }));
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }));
@@ -34,11 +41,24 @@ beforeEach(() => {
   password.mockReset();
   pin.mockReset();
   push.mockReset();
+  settings.mockReset();
+  // Most tests are about an account that already holds both credentials.
+  settings.mockResolvedValue({ hasPassword: true, hasPin: true });
 });
 
 afterEach(() => {
   useSession().clear();
 });
+
+/**
+ * The page asks the server which credentials exist before it can decide between
+ * "Set" and "Change", so every test waits for that answer first.
+ */
+async function mountLoaded() {
+  const wrapper = mount(SettingsSecurityPage);
+  await flushPromises();
+  return wrapper;
+}
 
 /** The password form is the first of the two on the page. */
 function passwordForm(wrapper: ReturnType<typeof mount>) {
@@ -58,8 +78,8 @@ async function typePin(group: ReturnType<typeof mount>, index: number, value: st
 }
 
 describe('SettingsSecurityPage', () => {
-  it('offers both credentials, and says which one signs other devices out', () => {
-    const wrapper = mount(SettingsSecurityPage);
+  it('offers both credentials, and says which one signs other devices out', async () => {
+    const wrapper = await mountLoaded();
 
     expect(wrapper.text()).toContain('Password');
     expect(wrapper.text()).toContain('PIN');
@@ -67,7 +87,7 @@ describe('SettingsSecurityPage', () => {
   });
 
   it('keeps the password submit disabled until both fields are filled', async () => {
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
 
     expect(passwordForm(wrapper).find('button[type="submit"]').attributes('disabled')).toBeDefined();
 
@@ -82,7 +102,7 @@ describe('SettingsSecurityPage', () => {
   it("sends this device's refresh token so the current session survives", async () => {
     password.mockResolvedValue(undefined);
 
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
     await wrapper.find('#current-password').setValue('Passw0rd23');
     await wrapper.find('#new-password').setValue('Newpass99');
     await passwordForm(wrapper).trigger('submit');
@@ -102,7 +122,7 @@ describe('SettingsSecurityPage', () => {
   it('disables the password submit while the request is in flight (UI-35)', async () => {
     password.mockReturnValue(new Promise(() => undefined));
 
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
     await wrapper.find('#current-password').setValue('Passw0rd23');
     await wrapper.find('#new-password').setValue('Newpass99');
     await passwordForm(wrapper).trigger('submit');
@@ -118,7 +138,7 @@ describe('SettingsSecurityPage', () => {
       new ApiError('UNAUTHENTICATED', 'That current credential is not correct', 401),
     );
 
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
     await wrapper.find('#current-password').setValue('Wrongpass99');
     await wrapper.find('#new-password').setValue('Newpass99');
     await passwordForm(wrapper).trigger('submit');
@@ -132,7 +152,7 @@ describe('SettingsSecurityPage', () => {
   it('changes the PIN through its own form, leaving the password form alone', async () => {
     pin.mockResolvedValue(undefined);
 
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
     await typePin(wrapper, 0, '4821');
     await typePin(wrapper, 1, '7305');
     await pinForm(wrapper).trigger('submit');
@@ -144,7 +164,7 @@ describe('SettingsSecurityPage', () => {
   });
 
   it('keeps the PIN submit disabled until both PINs are four digits', async () => {
-    const wrapper = mount(SettingsSecurityPage);
+    const wrapper = await mountLoaded();
 
     expect(pinForm(wrapper).find('button[type="submit"]').attributes('disabled')).toBeDefined();
 
@@ -152,5 +172,72 @@ describe('SettingsSecurityPage', () => {
     await typePin(wrapper, 1, '730');
 
     expect(pinForm(wrapper).find('button[type="submit"]').attributes('disabled')).toBeDefined();
+  });
+
+  it('shows a skeleton until the server says which credentials exist (UI-27)', () => {
+    settings.mockReturnValue(new Promise(() => undefined));
+
+    const wrapper = mount(SettingsSecurityPage);
+
+    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true);
+    expect(wrapper.findAll('form')).toHaveLength(0);
+  });
+
+  it("surfaces the server's code if the settings cannot be read (UI-28)", async () => {
+    settings.mockRejectedValue(new ApiError('UNAUTHENTICATED', 'Token expired', 401));
+
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('UNAUTHENTICATED');
+    expect(wrapper.text()).toContain('Token expired');
+    expect(wrapper.text()).toContain('Try again');
+  });
+});
+
+/**
+ * An account created through Google holds neither credential, so the screen
+ * offers to **set** them and asks for no current one — there is none to give.
+ */
+describe('SettingsSecurityPage with no credentials yet', () => {
+  beforeEach(() => {
+    settings.mockResolvedValue({ hasPassword: false, hasPin: false });
+  });
+
+  it('offers Set rather than Change, and hides the current-credential fields', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.text()).toContain('Set a password');
+    expect(wrapper.text()).toContain('Set a PIN');
+    expect(wrapper.find('#current-password').exists()).toBe(false);
+    expect(passwordForm(wrapper).find('button[type="submit"]').text()).toContain('Set password');
+    // One PIN group, not two: there is no current PIN to confirm.
+    expect(wrapper.findAll('.otp')).toHaveLength(1);
+  });
+
+  it('sends no current password, and flips to Change once one exists', async () => {
+    password.mockResolvedValue(undefined);
+
+    const wrapper = await mountLoaded();
+    await wrapper.find('#new-password').setValue('Newpass99');
+    await passwordForm(wrapper).trigger('submit');
+    await flushPromises();
+
+    expect(password).toHaveBeenCalledWith('test-access', 'test-refresh', null, 'Newpass99');
+    expect(wrapper.text()).toContain('Password set');
+    // The next edit is a change, so the current password is asked for again.
+    expect(wrapper.find('#current-password').exists()).toBe(true);
+  });
+
+  it('sends no current PIN, and flips to Change once one exists', async () => {
+    pin.mockResolvedValue(undefined);
+
+    const wrapper = await mountLoaded();
+    await typePin(wrapper, 0, '4821');
+    await pinForm(wrapper).trigger('submit');
+    await flushPromises();
+
+    expect(pin).toHaveBeenCalledWith('test-access', null, '4821');
+    expect(wrapper.text()).toContain('PIN set');
+    expect(wrapper.findAll('.otp')).toHaveLength(2);
   });
 });

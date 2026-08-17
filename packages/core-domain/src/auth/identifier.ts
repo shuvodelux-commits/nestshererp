@@ -33,3 +33,33 @@ export function classifyIdentifier(value: string): IdentifierChannel | null {
 export function normalizeIdentifier(value: string, channel: IdentifierChannel): string {
   return channel === 'EMAIL' ? value.trim().toLowerCase() : value.trim();
 }
+
+/**
+ * The username for an account Google creates (§5.3 Google OAuth, D-07 revised
+ * 2026-08-17). That path collects only a business name, so the username has to
+ * come from the one other thing known about the person: their address.
+ *
+ * Username is a display and audit identity, never a login identifier, so this
+ * only has to be stable, readable and non-empty. Uniqueness is per tenant and
+ * the tenant is brand new with exactly one user, so a collision is impossible
+ * here by construction — this deliberately does not try to de-duplicate.
+ *
+ * Gmail's dots and `+tags` are **kept**, not stripped: `a.b@gmail.com` and
+ * `ab@gmail.com` reach the same mailbox at Google but are different strings
+ * here, and silently folding them would make one person's username depend on
+ * which spelling they happened to type.
+ */
+const USERNAME_DISALLOWED = /[^a-z0-9._-]/g;
+const USERNAME_EDGE_SEPARATORS = /^[._-]+|[._-]+$/g;
+
+/** Used when an address has no usable characters before the `@` at all. */
+export const DERIVED_USERNAME_FALLBACK = 'owner';
+
+export function usernameFromEmail(email: string): string {
+  const localPart = email.trim().toLowerCase().split('@')[0] ?? '';
+  const cleaned = localPart
+    .replace(USERNAME_DISALLOWED, '')
+    .replace(USERNAME_EDGE_SEPARATORS, '');
+
+  return cleaned === '' ? DERIVED_USERNAME_FALLBACK : cleaned;
+}

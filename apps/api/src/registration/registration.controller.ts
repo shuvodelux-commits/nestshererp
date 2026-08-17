@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, Inject, Post } from '@nestjs/common';
 import type {
   CompleteRegistrationService,
+  RegisterWithGoogleService,
   RequestSignupOtpService,
   VerifySignupOtpService,
 } from '@sher/core-application';
@@ -9,12 +10,14 @@ import {
   AppError,
   completeRegistrationRequestSchema,
   ErrorCode,
+  registerWithGoogleRequestSchema,
   requestSignupOtpRequestSchema,
   verifySignupOtpRequestSchema,
 } from '@sher/core-contracts';
 
 import {
   COMPLETE_REGISTRATION_SERVICE,
+  REGISTER_WITH_GOOGLE_SERVICE,
   REQUEST_SIGNUP_OTP_SERVICE,
   VERIFY_SIGNUP_OTP_SERVICE,
 } from './tokens';
@@ -34,6 +37,7 @@ export class RegistrationController {
     @Inject(REQUEST_SIGNUP_OTP_SERVICE) private readonly requestOtp: RequestSignupOtpService,
     @Inject(VERIFY_SIGNUP_OTP_SERVICE) private readonly verifyOtp: VerifySignupOtpService,
     @Inject(COMPLETE_REGISTRATION_SERVICE) private readonly complete: CompleteRegistrationService,
+    @Inject(REGISTER_WITH_GOOGLE_SERVICE) private readonly google: RegisterWithGoogleService,
   ) {}
 
   @Post('otp')
@@ -59,6 +63,14 @@ export class RegistrationController {
     const parsed = completeRegistrationRequestSchema.safeParse(body);
     if (!parsed.success) throw invalidBody(parsed.error.issues);
     return { data: await this.complete.execute(parsed.data) };
+  }
+
+  /** Signup by Google: one field, no OTP (§5.3, D-07 revised 2026-08-17). */
+  @Post('google')
+  async registerWithGoogle(@Body() body: unknown): Promise<{ data: RegistrationResponse }> {
+    const parsed = registerWithGoogleRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    return { data: await this.google.execute(parsed.data) };
   }
 }
 

@@ -34,8 +34,14 @@ export interface NewUser {
   readonly displayName: string;
   readonly email: string | null;
   readonly phone: string | null;
-  readonly passwordHash: string;
-  readonly pinHash: string;
+  /**
+   * Null on an account Google created (§5.3, D-07 revised 2026-08-17) — that
+   * path collects only a business name, so there is no password to hash. A
+   * placeholder hash would be a password nobody chose.
+   */
+  readonly passwordHash: string | null;
+  /** Null on a Google-created account, for the same reason. */
+  readonly pinHash: string | null;
 }
 
 export interface TenantRepository {

@@ -2,7 +2,12 @@ import { FixedClock } from '@sher/shared-utils';
 import { describe, expect, it } from 'vitest';
 
 import { isValidPassword, isValidPin } from '../src/auth/credentials';
-import { classifyIdentifier, normalizeIdentifier } from '../src/auth/identifier';
+import {
+  classifyIdentifier,
+  DERIVED_USERNAME_FALLBACK,
+  normalizeIdentifier,
+  usernameFromEmail,
+} from '../src/auth/identifier';
 import { OTP_MAX_ATTEMPTS, rejectionFor } from '../src/auth/otp';
 
 describe('classifyIdentifier (§5.3 identifier rules)', () => {
@@ -33,6 +38,48 @@ describe('normalizeIdentifier', () => {
 
   it('leaves a phone number alone apart from trimming', () => {
     expect(normalizeIdentifier(' 01712345678 ', 'PHONE')).toBe('01712345678');
+  });
+});
+
+describe('usernameFromEmail (§5.3 Google OAuth, D-07 revised 2026-08-17)', () => {
+  it('takes the local part of the address', () => {
+    expect(usernameFromEmail('karim@shop.com.bd')).toBe('karim');
+    expect(usernameFromEmail('shoaibadmisec@gmail.com')).toBe('shoaibadmisec');
+  });
+
+  it('lowercases, so the same address always derives the same username', () => {
+    expect(usernameFromEmail('Karim.Traders@Gmail.com')).toBe('karim.traders');
+  });
+
+  it('keeps dots and plus-tags apart rather than folding Gmail aliases', () => {
+    // a.b@gmail.com and ab@gmail.com reach one mailbox at Google, but folding
+    // them would make the username depend on which spelling was typed.
+    expect(usernameFromEmail('a.b@gmail.com')).toBe('a.b');
+    expect(usernameFromEmail('ab@gmail.com')).toBe('ab');
+    // `+` is not in the allowed set, so the tag is flattened, not honoured.
+    expect(usernameFromEmail('karim+shop@gmail.com')).toBe('karimshop');
+  });
+
+  it('drops characters that are not username-safe', () => {
+    expect(usernameFromEmail("o'brien!@shop.com")).toBe('obrien');
+    expect(usernameFromEmail('karim_traders-01@shop.com')).toBe('karim_traders-01');
+  });
+
+  it('trims separators off both ends', () => {
+    expect(usernameFromEmail('.karim.@shop.com')).toBe('karim');
+    expect(usernameFromEmail('--karim--@shop.com')).toBe('karim');
+  });
+
+  it('falls back when nothing usable survives', () => {
+    expect(usernameFromEmail('!!!@shop.com')).toBe(DERIVED_USERNAME_FALLBACK);
+    expect(usernameFromEmail('@shop.com')).toBe(DERIVED_USERNAME_FALLBACK);
+  });
+
+  it('is deterministic — the same address always gives the same answer', () => {
+    const answers = new Set(
+      Array.from({ length: 50 }, () => usernameFromEmail(' Karim.Traders@Gmail.com ')),
+    );
+    expect(answers).toEqual(new Set(['karim.traders']));
   });
 });
 

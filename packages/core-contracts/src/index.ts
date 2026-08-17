@@ -7,6 +7,7 @@ export type { CreateNoteRequest, NoteResponse } from './notes';
 export {
   changePasswordRequestSchema,
   changePinRequestSchema,
+  securitySettingsResponseSchema,
   completeRegistrationRequestSchema,
   dashboardSummaryResponseSchema,
   requestPasswordResetRequestSchema,
@@ -19,12 +20,14 @@ export {
   loginWithPasswordRequestSchema,
   loginWithPinRequestSchema,
   refreshRequestSchema,
+  registerWithGoogleRequestSchema,
   requestSignupOtpResponseSchema,
   verifySignupOtpRequestSchema,
 } from './auth';
 export type {
   ChangePasswordRequest,
   ChangePinRequest,
+  SecuritySettingsResponse,
   CompleteRegistrationRequest,
   DashboardSummaryResponse,
   RequestPasswordResetRequest,
@@ -37,6 +40,7 @@ export type {
   LoginWithPasswordRequest,
   LoginWithPinRequest,
   RefreshRequest,
+  RegisterWithGoogleRequest,
   RequestSignupOtpResponse,
   VerifySignupOtpRequest,
 } from './auth';

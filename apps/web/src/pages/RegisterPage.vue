@@ -43,10 +43,11 @@ const password = ref('');
 const pin = ref('');
 
 /**
- * Google here is a **sign-in**, not a signup: D-07 is explicit that Google
- * alone never creates a tenant. The button is offered because someone who
- * already has an account often lands on this page by mistake, and sending them
- * to Google is kinder than making them find the sign-in link.
+ * Google is a complete alternative to this form (§5.3, D-07 revised
+ * 2026-08-17): the redirect ends on the callback page, which signs in an
+ * existing account or asks for a business name and creates one. It skips the
+ * OTP entirely, because Google's `email_verified` claim is the same proof the
+ * code would have provided.
  */
 async function useGoogle(): Promise<void> {
   busy.value = true;
@@ -204,12 +205,13 @@ watch(otpCode, () => {
 
         <div class="divider"><span>or</span></div>
 
-        <GoogleButton :disabled="busy" label="Sign in with Google" @click="useGoogle" />
+        <GoogleButton :disabled="busy" label="Continue with Google" @click="useGoogle" />
 
         <p class="fine">
-          One field, classified as email or phone by format. A Google account can
-          only be linked to an account that already exists — signing up always
-          verifies a number or email first.
+          One field, classified as email or phone by format. Continuing with
+          Google skips the code — the address is already verified — and asks only
+          for your business name. That account signs in with Google until you set
+          a password.
         </p>
       </template>
 

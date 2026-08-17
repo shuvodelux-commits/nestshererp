@@ -113,6 +113,26 @@ export const loginResponseSchema = z
 
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 
+/**
+ * Signup by Google (§5.3, D-07 revised 2026-08-17).
+ *
+ * One field. The ID token is the same one the browser already presented to
+ * `/auth/login/google` and had answered `GOOGLE_ACCOUNT_UNKNOWN`; the server
+ * verifies it again here rather than trusting that exchange, so this endpoint
+ * cannot be used to create a tenant for an email the caller does not own.
+ *
+ * No `username`, `password` or `pin`: the username is derived from the verified
+ * email and the two credentials are left NULL.
+ */
+export const registerWithGoogleRequestSchema = z
+  .object({
+    idToken: z.string().min(1).max(4096),
+    businessName: z.string().min(1).max(200),
+  })
+  .strict();
+
+export type RegisterWithGoogleRequest = z.infer<typeof registerWithGoogleRequestSchema>;
+
 /* --- forgot password (D-07) ---------------------------------------------- */
 
 export const requestPasswordResetRequestSchema = z
@@ -151,11 +171,18 @@ export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
 
 /* --- change password / PIN in Settings (§5.3) ---------------------------- */
 
+/**
+ * `current*` is **optional in the shape only**. Whether it is actually required
+ * is decided server-side from what is stored: an account that has no password
+ * yet — a Google signup — is setting a first one and has nothing to prove,
+ * while an account that has one must supply it. Omitting the field is never a
+ * way past that check.
+ */
 export const changePasswordRequestSchema = z
   .object({
     /** This device's session, so it survives while every other one is revoked. */
     refreshToken: z.string().min(1).max(200),
-    currentPassword: z.string().min(1).max(200),
+    currentPassword: z.string().min(1).max(200).optional(),
     newPassword: z.string().min(1).max(200),
   })
   .strict();
@@ -164,12 +191,26 @@ export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
 
 export const changePinRequestSchema = z
   .object({
-    currentPin: z.string().min(1).max(20),
+    currentPin: z.string().min(1).max(20).optional(),
     newPin: z.string().min(1).max(20),
   })
   .strict();
 
 export type ChangePinRequest = z.infer<typeof changePinRequestSchema>;
+
+/**
+ * Which credentials the signed-in user holds, so Settings can offer "Set" or
+ * "Change" rather than guessing. Carries no hashes and no hints about their
+ * content — only whether each exists.
+ */
+export const securitySettingsResponseSchema = z
+  .object({
+    hasPassword: z.boolean(),
+    hasPin: z.boolean(),
+  })
+  .strict();
+
+export type SecuritySettingsResponse = z.infer<typeof securitySettingsResponseSchema>;
 
 export const dashboardSummaryResponseSchema = z
   .object({

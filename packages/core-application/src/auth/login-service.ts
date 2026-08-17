@@ -75,12 +75,30 @@ export class LoginService {
   }
 
   /**
-   * Google is a **link**, never a signup: an account must already exist for the
-   * verified email. D-07 — "Google alone never creates a tenant."
+   * Google sign-in. If the verified email already has an account, this signs
+   * that user in.
+   *
+   * If it does not, the answer is `GOOGLE_ACCOUNT_UNKNOWN` rather than the
+   * generic failure every other login path returns — the caller is then sent to
+   * the one-field signup that creates the business (§5.3, D-07 revised
+   * 2026-08-17). **This is not the enumeration leak the generic answer exists
+   * to prevent:** reaching this line requires a Google ID token for the address,
+   * which only its owner can obtain, so it discloses nothing the caller could
+   * not already learn about their own mailbox.
    */
   async withGoogle(command: LoginWithGoogleCommand): Promise<LoginResponse> {
     const identity = await this.google.verify(command.idToken);
     const identifier = normalizeIdentifier(identity.email, 'EMAIL');
+
+    const known = await this.uow.runWithoutTenant((tx) =>
+      this.identifiers.findOwner(tx, identifier),
+    );
+    if (known === null) {
+      throw new AppError(
+        ErrorCode.GOOGLE_ACCOUNT_UNKNOWN,
+        'This Google account has no business here yet.',
+      );
+    }
 
     return this.signIn(identifier, () => Promise.resolve(true));
   }

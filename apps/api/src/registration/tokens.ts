@@ -6,3 +6,4 @@ export const LOGIN_SERVICE = Symbol('LoginService');
 export const REQUEST_PASSWORD_RESET_SERVICE = Symbol('RequestPasswordResetService');
 export const RESET_PASSWORD_SERVICE = Symbol('ResetPasswordService');
 export const CHANGE_CREDENTIALS_SERVICE = Symbol('ChangeCredentialsService');
+export const REGISTER_WITH_GOOGLE_SERVICE = Symbol('RegisterWithGoogleService');
