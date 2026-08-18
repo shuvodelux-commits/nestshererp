@@ -148,7 +148,11 @@ async function signInAgain(): Promise<void> {
 </script>
 
 <template>
-  <AppShell title="Security" help-bn="পাসওয়ার্ড আর পিন এখান থেকে ঠিক করুন">
+  <AppShell
+    title="Security"
+    :breadcrumb="['Dashboard', 'Settings']"
+    help-bn="পাসওয়ার্ড আর পিন এখান থেকে ঠিক করুন"
+  >
     <!-- Loading: a skeleton, not a bare spinner (UI-27). -->
     <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading security settings">
       <div class="skeleton" />
@@ -158,136 +162,145 @@ async function signInAgain(): Promise<void> {
     <!-- Error: the server's own code and message, plus a retry (UI-28). -->
     <AppCard v-else-if="loadError !== null" title="Could not load your security settings">
       <ErrorNotice :code="loadError.code" :message="loadError.message" />
-      <button type="button" class="btn btn-primary" @click="loadSettings">Try again</button>
+      <button type="button" class="btn btn-ghost retry" @click="loadSettings">Try again</button>
     </AppCard>
 
     <template v-else>
-    <!-- ------------------------------------------------------- password -->
-    <AppCard
-      :title="hasPassword ? 'Password' : 'Set a password'"
-      :subtitle="
-        hasPassword
-          ? 'Changing your password signs out every other device. This one stays signed in.'
-          : 'You signed in with Google, so this account has no password yet. Add one to sign in with your mobile number or email too.'
-      "
-    >
-      <form class="form" @submit.prevent="submitPassword">
-        <p
-          v-if="passwordOutcome !== null"
-          class="notice"
-          :class="passwordOutcome.kind === 'OK' ? 'is-ok' : 'is-bad'"
-          role="status"
-        >
-          <span v-if="passwordOutcome.kind === 'ERROR'" class="code">{{ passwordOutcome.code }}</span>
-          {{ passwordOutcome.message }}
-          <button
-            v-if="passwordOutcome.kind === 'ERROR' && passwordOutcome.code === 'UNAUTHENTICATED'"
-            type="button"
-            class="linkish"
-            @click="signInAgain"
-          >
-            Sign in again
-          </button>
-        </p>
-
-        <!-- Absent when there is no password to prove — a Google account. -->
-        <div v-if="hasPassword" class="field">
-          <label for="current-password">Current password</label>
-          <input
-            id="current-password"
-            v-model="currentPassword"
-            type="password"
-            autocomplete="current-password"
-            required
-            :disabled="passwordBusy"
-          />
-        </div>
-
-        <div class="field">
-          <label for="new-password">{{ hasPassword ? 'New password' : 'Password' }}</label>
-          <input
-            id="new-password"
-            v-model="newPassword"
-            type="password"
-            autocomplete="new-password"
-            required
-            :disabled="passwordBusy"
-          />
-          <p class="sher-bn">অন্তত ৮ অক্ষর, একটি অক্ষর আর একটি সংখ্যা থাকতে হবে</p>
-        </div>
-
-        <button
-          type="submit"
-          class="btn btn-primary"
-          :disabled="
-            passwordBusy ||
-            newPassword.length === 0 ||
-            (hasPassword && currentPassword.length === 0)
+      <!-- Two cards side by side on a wide screen: both are short forms, and a
+           420px column of fields inside a full-width card is mostly empty. -->
+      <div class="settings-grid">
+        <!-- ------------------------------------------------------- password -->
+        <AppCard
+          :title="hasPassword ? 'Password' : 'Set a password'"
+          :subtitle="
+            hasPassword
+              ? 'Changing your password signs out every other device. This one stays signed in.'
+              : 'You signed in with Google, so this account has no password yet. Add one to sign in with your mobile number or email too.'
           "
         >
-          {{ passwordBusy ? 'Saving…' : hasPassword ? 'Change password' : 'Set password' }}
-        </button>
-      </form>
-    </AppCard>
+          <form class="form" @submit.prevent="submitPassword">
+            <p
+              v-if="passwordOutcome !== null"
+              class="notice"
+              :class="passwordOutcome.kind === 'OK' ? 'is-ok' : 'is-bad'"
+              role="status"
+            >
+              <span v-if="passwordOutcome.kind === 'ERROR'" class="code">{{ passwordOutcome.code }}</span>
+              {{ passwordOutcome.message }}
+              <button
+                v-if="passwordOutcome.kind === 'ERROR' && passwordOutcome.code === 'UNAUTHENTICATED'"
+                type="button"
+                class="linkish"
+                @click="signInAgain"
+              >
+                Sign in again
+              </button>
+            </p>
 
-    <!-- ------------------------------------------------------------ PIN -->
-    <AppCard
-      :title="hasPin ? 'PIN' : 'Set a PIN'"
-      subtitle="A 4-digit convenience credential for unlocking a device you have already signed in on. It never replaces your password on a new device."
-    >
-      <form class="form" @submit.prevent="submitPin">
-        <p
-          v-if="pinOutcome !== null"
-          class="notice"
-          :class="pinOutcome.kind === 'OK' ? 'is-ok' : 'is-bad'"
-          role="status"
+            <!-- Absent when there is no password to prove — a Google account. -->
+            <div v-if="hasPassword" class="field">
+              <label for="current-password">Current password</label>
+              <input
+                id="current-password"
+                v-model="currentPassword"
+                type="password"
+                autocomplete="current-password"
+                required
+                :disabled="passwordBusy"
+              />
+            </div>
+
+            <div class="field">
+              <label for="new-password">{{ hasPassword ? 'New password' : 'Password' }}</label>
+              <input
+                id="new-password"
+                v-model="newPassword"
+                type="password"
+                autocomplete="new-password"
+                required
+                :disabled="passwordBusy"
+              />
+              <p class="sher-bn">অন্তত ৮ অক্ষর, একটি অক্ষর আর একটি সংখ্যা থাকতে হবে</p>
+            </div>
+
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="
+                passwordBusy ||
+                newPassword.length === 0 ||
+                (hasPassword && currentPassword.length === 0)
+              "
+            >
+              {{ passwordBusy ? 'Saving…' : hasPassword ? 'Change password' : 'Set password' }}
+            </button>
+          </form>
+        </AppCard>
+
+        <!-- ------------------------------------------------------------ PIN -->
+        <AppCard
+          :title="hasPin ? 'PIN' : 'Set a PIN'"
+          subtitle="A 4-digit convenience credential for unlocking a device you have already signed in on. It never replaces your password on a new device."
         >
-          <span v-if="pinOutcome.kind === 'ERROR'" class="code">{{ pinOutcome.code }}</span>
-          {{ pinOutcome.message }}
-        </p>
+          <form class="form" @submit.prevent="submitPin">
+            <p
+              v-if="pinOutcome !== null"
+              class="notice"
+              :class="pinOutcome.kind === 'OK' ? 'is-ok' : 'is-bad'"
+              role="status"
+            >
+              <span v-if="pinOutcome.kind === 'ERROR'" class="code">{{ pinOutcome.code }}</span>
+              {{ pinOutcome.message }}
+            </p>
 
-        <!--
-          Two four-box groups on one screen: `role="group"` with its own label
-          is what tells a screen reader which "Digit 1 of 4" belongs to which.
-        -->
-        <div v-if="hasPin" class="pin-field">
-          <span class="pin-label">Current PIN</span>
-          <OtpInput
-            v-model="currentPin"
-            :length="4"
-            mask
-            :disabled="pinBusy"
-            role="group"
-            aria-label="Current PIN"
-          />
-        </div>
+            <!--
+              Two four-box groups on one screen: `role="group"` with its own label
+              is what tells a screen reader which "Digit 1 of 4" belongs to which.
+            -->
+            <div v-if="hasPin" class="pin-field">
+              <span class="pin-label">Current PIN</span>
+              <OtpInput
+                v-model="currentPin"
+                :length="4"
+                mask
+                :disabled="pinBusy"
+                role="group"
+                aria-label="Current PIN"
+              />
+            </div>
 
-        <div class="pin-field">
-          <span class="pin-label">{{ hasPin ? 'New PIN' : 'PIN' }}</span>
-          <OtpInput
-            v-model="newPin"
-            :length="4"
-            mask
-            :disabled="pinBusy"
-            role="group"
-            aria-label="New PIN"
-          />
-        </div>
+            <div class="pin-field">
+              <span class="pin-label">{{ hasPin ? 'New PIN' : 'PIN' }}</span>
+              <OtpInput
+                v-model="newPin"
+                :length="4"
+                mask
+                :disabled="pinBusy"
+                role="group"
+                aria-label="New PIN"
+              />
+            </div>
 
-        <button
-          type="submit"
-          class="btn btn-primary"
-          :disabled="pinBusy || newPin.length !== 4 || (hasPin && currentPin.length !== 4)"
-        >
-          {{ pinBusy ? 'Saving…' : hasPin ? 'Change PIN' : 'Set PIN' }}
-        </button>
-      </form>
-    </AppCard>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="pinBusy || newPin.length !== 4 || (hasPin && currentPin.length !== 4)"
+            >
+              {{ pinBusy ? 'Saving…' : hasPin ? 'Change PIN' : 'Set PIN' }}
+            </button>
+          </form>
+        </AppCard>
+      </div>
     </template>
   </AppShell>
 </template>
 
 <style scoped>
+/*
+ * Fields, buttons, notices and skeletons come from `design/components.css`.
+ * What is left is this screen's own: a single-column form narrow enough to
+ * read (UI-22's Form pattern) and the PIN group's label.
+ */
 .form {
   display: flex;
   flex-direction: column;
@@ -295,134 +308,40 @@ async function signInAgain(): Promise<void> {
   max-width: 420px;
 }
 
-.skeletons {
-  display: flex;
-  flex-direction: column;
+.form .btn {
+  align-self: flex-start;
+}
+
+.skeletons,
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--sher-space-5);
+  align-items: start;
+}
+
+.retry {
+  margin-top: var(--sher-space-4);
 }
 
 .skeleton {
-  height: 210px;
-  border-radius: var(--sher-radius-lg);
-  border: 1px solid var(--sher-line);
-  background: linear-gradient(
-    100deg,
-    var(--sher-surface-3) 30%,
-    var(--sher-surface-2) 50%,
-    var(--sher-surface-3) 70%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  height: 230px;
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.field label,
-.pin-label {
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
-}
-
-.field input {
-  height: var(--sher-control-h);
-  padding: 0 11px;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-surface);
-  font: inherit;
-  font-size: var(--sher-text-base);
-}
-
-.field input:focus {
-  outline: 2px solid var(--sher-primary);
-  outline-offset: -1px;
-}
-
-.field input:disabled {
-  background: var(--sher-surface-2);
-  color: var(--sher-text-muted);
-}
-
+/* Two four-box groups on one screen: the group carries its own label, which is
+   what tells a screen reader which "Digit 1 of 4" belongs to which. */
 .pin-field {
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
 
-.btn {
-  height: var(--sher-control-h);
-  padding: 0 16px;
-  border-radius: var(--sher-radius);
-  border: 0;
-  font: inherit;
-  font-size: var(--sher-text-base);
+.pin-label {
+  font-size: var(--sher-text-sm);
   font-weight: 600;
-  cursor: pointer;
-  align-self: flex-start;
 }
 
-.btn-primary {
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.notice {
-  margin: 0;
-  padding: 9px 11px;
-  border-radius: var(--sher-radius);
-  border: 1px solid;
-  font-size: var(--sher-text-sm);
-}
-
-.is-ok {
-  border-color: var(--sher-line);
-  background: var(--sher-primary-soft);
-  color: var(--sher-text);
-}
-
-.is-bad {
-  border-color: var(--sher-bad);
-  background: var(--sher-surface-2);
-  color: var(--sher-text);
-}
-
-.code {
-  display: block;
-  font-family: var(--sher-font-mono);
-  font-size: var(--sher-text-2xs);
-  letter-spacing: 0.04em;
-  color: var(--sher-bad);
-  margin-bottom: 2px;
-}
-
-.linkish {
-  display: block;
-  margin-top: 5px;
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-primary-strong);
-  text-decoration: underline;
-  cursor: pointer;
+.notice .linkish {
+  margin-left: auto;
 }
 </style>

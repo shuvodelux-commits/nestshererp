@@ -22,7 +22,12 @@ vi.mock('../src/api/roles', () => ({
 }));
 
 vi.mock('../src/components/shell/AppShell.vue', () => ({
-  default: { name: 'AppShell', template: '<div><slot /></div>' },
+  // The real shell renders a page header whose `actions` slot holds the screen's
+  // primary button, so the stand-in must render that slot too.
+  default: {
+    name: 'AppShell',
+    template: '<div><div class="page-actions"><slot name="actions" /></div><slot /></div>',
+  },
 }));
 
 const CATALOGUE = [
@@ -174,7 +179,7 @@ describe('RolesPage', () => {
     create.mockResolvedValue(CUSTOM_ROLE);
     const wrapper = await mountLoaded();
 
-    await wrapper.find('.bar button').trigger('click');
+    await wrapper.find('.page-actions button').trigger('click');
     await wrapper.find('#role-name').setValue('Shift Supervisor');
     await wrapper.find('input[type="checkbox"]').setValue(true);
     await wrapper.find('#role-confirm').setValue('Passw0rd23');
@@ -209,7 +214,7 @@ describe('RolesPage for someone who may look but not change', () => {
   it('offers no Add, no Edit and no Delete', async () => {
     const wrapper = await mountLoaded();
 
-    expect(wrapper.find('.bar button').exists()).toBe(false);
+    expect(wrapper.find('.page-actions button').exists()).toBe(false);
     expect(wrapper.findAll('.linkish')).toHaveLength(0);
     expect(wrapper.text()).not.toContain('Add role');
   });

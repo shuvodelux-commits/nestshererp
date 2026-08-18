@@ -14,7 +14,7 @@ defineProps<{ code: string; message: string; tone?: 'error' | 'warning' }>();
 </script>
 
 <template>
-  <p class="notice" :class="tone === 'warning' ? 'is-warning' : 'is-error'" role="alert">
+  <p class="error-notice" :class="tone === 'warning' ? 'is-warning' : 'is-error'" role="alert">
     <span class="message">{{ message }}</span>
     <span class="reference">
       Reference: <code>{{ code }}</code>
@@ -23,9 +23,9 @@ defineProps<{ code: string; message: string; tone?: 'error' | 'warning' }>();
 </template>
 
 <style scoped>
-.notice {
+.error-notice {
   margin: 0;
-  padding: 10px 12px;
+  padding: 11px 14px;
   border: 1px solid;
   border-radius: var(--sher-radius);
   display: flex;
@@ -34,12 +34,12 @@ defineProps<{ code: string; message: string; tone?: 'error' | 'warning' }>();
 }
 
 .is-error {
-  border-color: rgba(168, 32, 24, 0.35);
+  border-color: var(--sher-bad-line);
   background: var(--sher-bad-bg);
 }
 
 .is-warning {
-  border-color: rgba(138, 93, 0, 0.35);
+  border-color: var(--sher-warn-line);
   background: var(--sher-warn-bg);
 }
 

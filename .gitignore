@@ -6,3 +6,13 @@ dist/
 *.tsbuildinfo
 coverage/
 .DS_Store
+
+# Owner-supplied design source: prototype screens, reference shots and the
+# superseded set. Cited by the SRS change log (§2.7.I) but deliberately not
+# tracked — 25MB of JPEGs and a .zip would sit in git history permanently, and
+# deleting them later would not reclaim it. Keep them beside the repo, not in it.
+design-system/
+
+# Superseded copies of the three canonical documents. AGENTS.md keeps exactly
+# one copy of each; a second one in the tree is how a stale spec gets read.
+Old/

@@ -132,15 +132,15 @@ function onPaste(event: ClipboardEvent): void {
 
 input {
   width: 100%;
-  height: 40px;
+  height: 46px;
   min-width: 0;
   padding: 0;
-  border: 1px solid var(--sher-line);
+  border: 1px solid var(--sher-line-strong);
   border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
+  background: var(--sher-raised);
   text-align: center;
   font: inherit;
-  font-size: 17px;
+  font-size: var(--sher-text-lg);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--sher-text);
@@ -154,6 +154,6 @@ input:focus {
 }
 
 input:disabled {
-  background: var(--sher-surface);
+  background: var(--sher-sunken);
 }
 </style>

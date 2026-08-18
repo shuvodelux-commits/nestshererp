@@ -1,9 +1,16 @@
 /*
- * The centred card shared by the sign-in and sign-up screens.
+ * The centred card shared by sign-in, sign-up, password recovery and the
+ * Google callback.
  *
- * Extracted so the two cannot drift apart: they are the same object showing
+ * Extracted so the four cannot drift apart: they are the same object showing
  * different fields, and a user moving between them should not see the geometry
  * change. Imported into each page's scoped block, so the selectors stay local.
+ *
+ * Buttons, fields, help text and notices are **not** redefined here — they come
+ * from `design/components.css` like everywhere else. What is left below is only
+ * what a signed-out, single-column card needs: the page it sits on, the card
+ * itself, the brand lockup, and the full-width button shape that a 400px form
+ * uses instead of the shell's inline one.
  */
 
 .page {
@@ -12,55 +19,64 @@
   min-height: 100%;
   padding: 40px 16px;
   background: var(--sher-surface);
+  /* A quiet wash behind the card so a signed-out screen still looks like part
+     of the application rather than a bare login form. */
+  background-image: radial-gradient(
+    circle at 50% 0%,
+    var(--sher-primary-softer) 0%,
+    transparent 55%
+  );
 }
 
 .card {
   width: 100%;
-  max-width: 400px;
-  background: var(--sher-surface-3);
+  max-width: 420px;
+  background: var(--sher-raised);
   border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius-lg);
+  border-radius: var(--sher-radius-xl);
   box-shadow: var(--sher-shadow-raised);
-  padding: 26px 24px 20px;
+  padding: 28px 26px 22px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 4px;
+  gap: 10px;
+  margin-bottom: 2px;
 }
 
 .brand-mark {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   border-radius: var(--sher-radius);
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
+  background: var(--sher-tone-blue-fill);
+  color: var(--sher-on-tone);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--sher-text-lg);
+  box-shadow: var(--sher-shadow-tone);
 }
 
 .brand-text {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--sher-text-lg);
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 h1 {
   margin: 0;
-  font-size: var(--sher-text-lg);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--sher-text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .lede,
 .sent-to {
-  margin: -6px 0 0;
+  margin: -8px 0 0;
   font-size: var(--sher-text-sm);
   color: var(--sher-text-muted);
 }
@@ -77,40 +93,6 @@ form {
   margin-top: 2px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.field label {
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
-}
-
-.field input {
-  height: var(--sher-control-h);
-  padding: 0 10px;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
-  font: inherit;
-  font-size: var(--sher-text-base);
-  color: var(--sher-text);
-  transition: border-color var(--sher-transition);
-}
-
-.field input:focus {
-  outline: 2px solid var(--sher-primary);
-  outline-offset: 1px;
-  border-color: var(--sher-primary);
-}
-
-.field input:disabled {
-  background: var(--sher-surface);
-}
-
 .row {
   display: flex;
   gap: 12px;
@@ -121,55 +103,19 @@ form {
 }
 
 .field-pin {
-  max-width: 110px;
+  max-width: 120px;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+/* One decision per screen, so the action fills the column. */
+.card .btn {
   width: 100%;
-  height: var(--sher-control-h);
-  padding: 0 16px;
-  border: 1px solid transparent;
-  border-radius: var(--sher-radius);
-  font: inherit;
-  font-size: var(--sher-text-base);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--sher-transition);
-}
-
-.btn-primary {
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--sher-primary-strong);
-}
-
-.btn-ghost {
-  background: var(--sher-surface-3);
-  color: var(--sher-text);
-  border-color: var(--sher-line);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  background: var(--sher-surface-2);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--sher-text-muted);
+  color: var(--sher-text-faint);
   font-size: var(--sher-text-xs);
 }
 
@@ -178,42 +124,24 @@ form {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--sher-line-soft);
+  background: var(--sher-line);
 }
 
-.help {
-  margin: 0;
-  font-size: var(--sher-text-xs);
-  color: var(--sher-text-muted);
-  line-height: 1.5;
-}
-
-.linkish {
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-size: inherit;
-  color: var(--sher-primary-strong);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.linkish:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
+/*
+ * UI-28: the server's message first, its code beside it. `ErrorNotice.vue` is
+ * the same idea for screens inside the shell; a signed-out page cannot import
+ * the shell, so the shape is repeated here and nowhere else.
+ */
 .error {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   margin: 0;
-  padding: 9px 11px;
-  border: 1px solid rgba(168, 32, 24, 0.3);
+  padding: 11px 13px;
+  border: 1px solid var(--sher-bad-line);
   border-radius: var(--sher-radius);
   background: var(--sher-bad-bg);
-  color: var(--sher-bad);
+  color: var(--sher-text);
   font-size: var(--sher-text-sm);
 }
 
@@ -221,13 +149,14 @@ form {
   font-family: var(--sher-font-mono);
   font-size: var(--sher-text-2xs);
   letter-spacing: 0.04em;
-  opacity: 0.85;
+  color: var(--sher-bad);
 }
 
+/* Development only: the OTP the server would have texted. */
 .dev-code {
   margin: 0;
-  padding: 9px 11px;
-  border: 1px dashed rgba(138, 93, 0, 0.45);
+  padding: 11px 13px;
+  border: 1px dashed var(--sher-warn-line);
   border-radius: var(--sher-radius);
   background: var(--sher-warn-bg);
   color: var(--sher-warn);
@@ -236,19 +165,21 @@ form {
 
 .dev-code strong {
   font-family: var(--sher-font-mono);
-  font-size: 15px;
+  font-size: var(--sher-text-lg);
   letter-spacing: 0.08em;
 }
 
 .fine {
   margin: 6px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--sher-line-soft);
-  font-size: 11px;
-  line-height: 1.5;
+  padding-top: 12px;
+  border-top: 1px solid var(--sher-line);
+  font-size: var(--sher-text-xs);
+  line-height: 1.6;
   color: var(--sher-text-muted);
 }
 
-.fine a {
-  color: var(--sher-primary-strong);
+.fine a,
+.fine .linkish {
+  color: var(--sher-primary-text);
+  font-size: inherit;
 }

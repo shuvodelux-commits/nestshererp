@@ -1,18 +1,30 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { loadMyAccess } from '../../auth/access';
 import AppSidebar from './AppSidebar.vue';
 import AppTopBar from './AppTopBar.vue';
 
 /**
- * UI-08: one shell — left sidebar (modules) · top bar · content area, targeting
- * desktop ≥1280px and usable at 1024px (UI-41).
+ * UI-08: one shell — 256px left sidebar (modules) · top bar · content area,
+ * targeting desktop ≥1280px and usable at 1024px (UI-41).
+ *
+ * The page header inside the content area is part of the shell, not of each
+ * page: every module gets the same breadcrumb → title → Bangla helper line on
+ * the left and its own actions on the right. A page that drew its own header
+ * would be the first crack in §2.7.I.
  *
  * POS runs full-screen without the sidebar when it arrives in Phase 6. That is
  * a separate layout, not a variant of this one.
  */
-defineProps<{ title: string; helpBn?: string }>();
+defineProps<{
+  title: string;
+  helpBn?: string;
+  /** Trail above the title, most general first. The title is not repeated. */
+  breadcrumb?: readonly string[];
+}>();
+
+const collapsed = ref(false);
 
 // UI-09: the sidebar cannot be permission-filtered until it knows the
 // permissions. Loaded here, once, because every signed-in screen sits inside it.
@@ -21,15 +33,35 @@ onMounted(() => void loadMyAccess());
 
 <template>
   <div class="shell">
-    <AppSidebar />
+    <AppSidebar :collapsed="collapsed" />
+
     <div class="main">
-      <AppTopBar />
-      <div class="content">
-        <div class="page-title">
-          <h1>{{ title }}</h1>
-          <p v-if="helpBn !== undefined" class="sher-bn">{{ helpBn }}</p>
+      <AppTopBar :collapsed="collapsed" @toggle-sidebar="collapsed = !collapsed" />
+
+      <div class="scroll">
+        <div class="content">
+          <header class="page-head">
+            <div class="page-head-text">
+              <nav v-if="breadcrumb !== undefined" class="crumbs" aria-label="Breadcrumb">
+                <span v-for="crumb in breadcrumb" :key="crumb" class="crumb">{{ crumb }}</span>
+              </nav>
+              <h1>{{ title }}</h1>
+              <p v-if="helpBn !== undefined" class="sher-bn">{{ helpBn }}</p>
+            </div>
+
+            <!-- A module's own primary actions: "Add user", "Add role", Export. -->
+            <div class="page-actions">
+              <slot name="actions" />
+            </div>
+          </header>
+
+          <slot />
         </div>
-        <slot />
+
+        <footer class="foot">
+          <span>© {{ new Date().getFullYear() }} SherERP. All rights reserved.</span>
+          <span>Made in Bangladesh</span>
+        </footer>
       </div>
     </div>
   </div>
@@ -49,23 +81,94 @@ onMounted(() => void loadMyAccess());
   background: var(--sher-surface);
 }
 
-.content {
+.scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 30px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* §2.7.I: 32px horizontal / 24px vertical padding, ~1400px maximum width. */
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: var(--sher-content-max);
+  margin: 0 auto;
+  padding: 24px 32px 32px;
   display: flex;
   flex-direction: column;
   gap: var(--sher-space-5);
 }
 
-.page-title h1 {
-  margin: 0;
-  font-size: var(--sher-text-xl);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sher-space-4);
+  flex-wrap: wrap;
 }
 
-.page-title p {
-  margin: 3px 0 0;
+.page-head-text {
+  min-width: 0;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--sher-text-xs);
+  color: var(--sher-text-muted);
+  margin-bottom: 4px;
+}
+
+.crumb + .crumb::before {
+  content: '›';
+  margin-right: 6px;
+  color: var(--sher-text-faint);
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: var(--sher-text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.page-head p {
+  margin: 4px 0 0;
+}
+
+.page-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sher-space-3);
+  flex-wrap: wrap;
+}
+
+.page-actions:empty {
+  display: none;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sher-space-4);
+  width: 100%;
+  max-width: var(--sher-content-max);
+  margin: 0 auto;
+  padding: 16px 32px 20px;
+  border-top: 1px solid var(--sher-line);
+  font-size: var(--sher-text-xs);
+  color: var(--sher-text-muted);
+}
+
+@media (max-width: 1023px) {
+  .content {
+    padding: 20px 16px 24px;
+  }
+
+  .foot {
+    padding: 14px 16px 18px;
+  }
 }
 </style>

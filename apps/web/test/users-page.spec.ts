@@ -23,7 +23,12 @@ vi.mock('../src/api/users', () => ({
 }));
 
 vi.mock('../src/components/shell/AppShell.vue', () => ({
-  default: { name: 'AppShell', template: '<div><slot /></div>' },
+  // The real shell renders a page header whose `actions` slot holds the screen's
+  // primary button, so the stand-in must render that slot too.
+  default: {
+    name: 'AppShell',
+    template: '<div><div class="page-actions"><slot name="actions" /></div><slot /></div>',
+  },
 }));
 
 const OWNER = {
@@ -115,7 +120,7 @@ describe('UsersPage', () => {
   it('asks for your own password when adding someone (§5.3 step-up)', async () => {
     const wrapper = await mountLoaded();
 
-    await wrapper.find('.bar button').trigger('click');
+    await wrapper.find('.page-actions button').trigger('click');
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
     expect(wrapper.find('#confirm').exists()).toBe(true);
@@ -126,7 +131,7 @@ describe('UsersPage', () => {
     create.mockResolvedValue({ ...CASHIER, displayName: 'Nasrin Akter' });
     const wrapper = await mountLoaded();
 
-    await wrapper.find('.bar button').trigger('click');
+    await wrapper.find('.page-actions button').trigger('click');
     await wrapper.find('#display-name').setValue('Nasrin Akter');
     await wrapper.find('#username').setValue('nasrin');
     await wrapper.find('#identifier').setValue('01711111111');

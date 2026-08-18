@@ -1,0 +1,414 @@
+/*
+ * The shared component shapes of §2.7.I — buttons, fields, tables, badges,
+ * dialogs, notices and skeletons.
+ *
+ * Why these live in one global sheet rather than in each page's scoped block:
+ * before this file, four screens each carried their own copy of `.btn`,
+ * `.field`, `.dialog` and the table rules. Four copies is four chances to
+ * drift, and at thirty modules it is thirty. A page now writes CSS only for a
+ * layout that is genuinely its own; everything a second screen will also need
+ * is here, and §2.7.I's last rule — "reuse the shared shell, card, table,
+ * badge, button, filter and state components" — has somewhere to point.
+ *
+ * Everything resolves to a token from `tokens.css`. No hex values below.
+ */
+
+/* ------------------------------------------------------------------ buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sher-space-2);
+  height: var(--sher-control-h);
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--sher-radius);
+  font: inherit;
+  font-size: var(--sher-text-base);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--sher-transition),
+    border-color var(--sher-transition),
+    color var(--sher-transition);
+}
+
+.btn-primary {
+  background: var(--sher-primary);
+  color: var(--sher-on-primary);
+  box-shadow: var(--sher-shadow);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--sher-primary-strong);
+}
+
+.btn-ghost {
+  background: var(--sher-raised);
+  color: var(--sher-text);
+  border-color: var(--sher-line-strong);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--sher-hover);
+}
+
+/* UI-26: a destructive action is an explicit button, and it looks like one. */
+.btn-danger {
+  background: var(--sher-raised);
+  color: var(--sher-bad);
+  border-color: var(--sher-bad-line);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--sher-bad-bg);
+}
+
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* A button that reads as a link: row actions, "Sign in again", "View all". */
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+  color: var(--sher-primary-text);
+  cursor: pointer;
+}
+
+.linkish:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.linkish.danger {
+  color: var(--sher-bad);
+}
+
+.linkish:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* An icon-only control. UI-05 forbids these for a *primary* action, so this is
+   for row actions and shell affordances that also carry an accessible name. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: var(--sher-control-h-sm);
+  height: var(--sher-control-h-sm);
+  border: 1px solid transparent;
+  border-radius: var(--sher-radius);
+  background: transparent;
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-base);
+  cursor: pointer;
+  transition:
+    background var(--sher-transition),
+    color var(--sher-transition);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--sher-hover);
+  color: var(--sher-text);
+}
+
+/* ------------------------------------------------------------------- fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field label {
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+  color: var(--sher-text);
+}
+
+.field input,
+.field select {
+  height: var(--sher-control-h);
+  padding: 0 12px;
+  border: 1px solid var(--sher-line-strong);
+  border-radius: var(--sher-radius);
+  background: var(--sher-raised);
+  font: inherit;
+  font-size: var(--sher-text-base);
+  color: var(--sher-text);
+  transition:
+    border-color var(--sher-transition),
+    box-shadow var(--sher-transition);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--sher-primary);
+  box-shadow: 0 0 0 3px var(--sher-primary-soft);
+}
+
+.field input:disabled,
+.field select:disabled {
+  background: var(--sher-sunken);
+  color: var(--sher-text-muted);
+  cursor: not-allowed;
+}
+
+.field input::placeholder {
+  color: var(--sher-text-muted);
+}
+
+/* The one-line explanation under a control. English; the Bangla sibling is
+   `.sher-bn` (UI-17), and a field may carry either or both. */
+.help {
+  margin: 0;
+  font-size: var(--sher-text-xs);
+  color: var(--sher-text-muted);
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------- tables */
+
+/*
+ * §2.7.I: no vertical borders, thin dividers, left-aligned text, right-aligned
+ * numbers, state as a badge. The card is the container; the table inside it
+ * stays clean and dense, because UI-42's contrast floor cannot spare
+ * decoration behind rows.
+ */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius-lg);
+  background: var(--sher-raised);
+  box-shadow: var(--sher-shadow-card);
+}
+
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sher-text-base);
+}
+
+.table-wrap thead th {
+  text-align: left;
+  font-size: var(--sher-text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sher-text-muted);
+  font-weight: 600;
+  background: var(--sher-sunken);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--sher-line);
+  white-space: nowrap;
+}
+
+.table-wrap tbody td {
+  padding: var(--sher-row-pad);
+  border-bottom: 1px solid var(--sher-line-soft);
+  vertical-align: middle;
+}
+
+.table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-wrap tbody tr:hover {
+  background: var(--sher-primary-softer);
+}
+
+.mono {
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-sm);
+}
+
+.actions-col {
+  width: 1%;
+}
+
+.actions {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--sher-space-4);
+}
+
+/* ------------------------------------------------------------------ badges */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--sher-text-xs);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--sher-radius-pill);
+  border: 1px solid var(--sher-line);
+  background: var(--sher-sunken);
+  color: var(--sher-text-muted);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.pill-ok {
+  background: var(--sher-ok-bg);
+  color: var(--sher-ok);
+  border-color: var(--sher-ok-line);
+}
+
+.pill-warn {
+  background: var(--sher-warn-bg);
+  color: var(--sher-warn);
+  border-color: var(--sher-warn-line);
+}
+
+.pill-bad {
+  background: var(--sher-bad-bg);
+  color: var(--sher-bad);
+  border-color: var(--sher-bad-line);
+}
+
+.pill-info {
+  background: var(--sher-info-bg);
+  color: var(--sher-info);
+  border-color: var(--sher-info-line);
+}
+
+/* ------------------------------------------------------------------ notices */
+
+/*
+ * UI-28: an error shows the server's code and message. `.notice` is the inline
+ * banner for the result of an action; `ErrorNotice.vue` is the component for a
+ * failure that carries a code.
+ */
+.notice {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: var(--sher-radius);
+  border: 1px solid;
+  font-size: var(--sher-text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--sher-space-2);
+  flex-wrap: wrap;
+}
+
+.notice.is-ok {
+  border-color: var(--sher-ok-line);
+  background: var(--sher-ok-bg);
+  color: var(--sher-text);
+}
+
+.notice.is-bad {
+  border-color: var(--sher-bad-line);
+  background: var(--sher-bad-bg);
+  color: var(--sher-text);
+}
+
+.notice .code {
+  display: block;
+  width: 100%;
+  font-family: var(--sher-font-mono);
+  font-size: var(--sher-text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--sher-bad);
+}
+
+/* Small print: a consequence, a caveat, or what a caller may not do. */
+.fine {
+  margin: 0;
+  font-size: var(--sher-text-xs);
+  line-height: 1.6;
+  color: var(--sher-text-muted);
+}
+
+/* ----------------------------------------------------------------- dialogs */
+
+/* UI-22's fourth pattern: short confirmations and single-purpose input. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--sher-space-4);
+  background: var(--sher-scrim);
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 2 * var(--sher-space-4));
+  overflow-y: auto;
+  background: var(--sher-raised);
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius-lg);
+  box-shadow: var(--sher-shadow-raised);
+  padding: var(--sher-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-3);
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: var(--sher-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dialog .lede {
+  margin: 0;
+  font-size: var(--sher-text-sm);
+  color: var(--sher-text-muted);
+}
+
+.dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-4);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sher-space-3);
+  padding-top: var(--sher-space-1);
+}
+
+/* --------------------------------------------------------------- skeletons */
+
+/* UI-27: tables load as skeleton rows, never a bare spinner. */
+.skeleton {
+  border-radius: var(--sher-radius-lg);
+  border: 1px solid var(--sher-line);
+  background: linear-gradient(
+    100deg,
+    var(--sher-raised) 30%,
+    var(--sher-sunken) 50%,
+    var(--sher-raised) 70%
+  );
+  background-size: 200% 100%;
+  animation: sher-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sher-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}

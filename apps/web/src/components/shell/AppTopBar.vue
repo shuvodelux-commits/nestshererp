@@ -1,39 +1,68 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { logout } from '../../api/auth';
+import { forgetMyAccess } from '../../auth/access';
 import { useSession } from '../../auth/session';
+import { useTheme } from '../../design/theme';
 
 /**
- * UI-08: global search, business date, avatar menu.
+ * UI-08: global search, business date, avatar menu — plus the control that
+ * collapses the sidebar.
  *
  * Two items §2.7 calls for are deliberately **not** here yet: the notification
  * bell (nothing emits a notification until later phases) and the cash-session
  * indicator (M19, Phase 6). Rendering either as a dead control would violate
- * UI-05; their space in the bar is what stays reserved, not a greyed icon.
+ * UI-05; their space in the bar is what stays reserved, not a greyed icon. The
+ * language selector is likewise absent — the UI is English with Bangla helper
+ * text (UI-14), so there is nothing to switch.
  *
  * Search is rendered but disabled, with a title saying why — there is nothing
  * to search until products, parties and documents exist (slice 2.3 onward).
  */
-const { businessName, refreshToken, clear } = useSession();
+defineProps<{ collapsed: boolean }>();
+const emit = defineEmits<{ toggleSidebar: [] }>();
+
+const { businessName, username, refreshToken, clear } = useSession();
+const { theme, toggle: toggleTheme } = useTheme();
 const router = useRouter();
+
+const menuOpen = ref(false);
+const menuRoot = ref<HTMLElement | null>(null);
+
+function closeOnOutside(event: MouseEvent): void {
+  if (menuRoot.value !== null && !menuRoot.value.contains(event.target as Node)) {
+    menuOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener('click', closeOnOutside));
+onBeforeUnmount(() => document.removeEventListener('click', closeOnOutside));
 
 /** Revokes the session server-side, then forgets it here (§5.3). */
 async function signOut(): Promise<void> {
   const token = refreshToken.value;
+  menuOpen.value = false;
   clear();
+  forgetMyAccess();
   // Best effort: the device has already forgotten the session either way.
   if (token !== null) await logout(token).catch(() => undefined);
   await router.push('/login');
 }
 
+async function openSecurity(): Promise<void> {
+  menuOpen.value = false;
+  await router.push('/settings/security');
+}
+
 const initials = computed(() => {
-  const words = (businessName.value ?? '').trim().split(/\s+/).filter(Boolean);
+  const name = (username.value ?? businessName.value ?? '').trim();
+  const words = name.split(/\s+/).filter(Boolean);
   if (words.length === 0) return '—';
   const first = words[0]?.charAt(0) ?? '';
-  const second = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
-  return (first + second).toUpperCase();
+  const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
+  return (first + last).toUpperCase();
 });
 
 /**
@@ -52,29 +81,72 @@ const businessDate = computed(() =>
 
 <template>
   <header class="topbar">
+    <button
+      type="button"
+      class="icon-btn hamburger"
+      :aria-expanded="!collapsed"
+      aria-label="Collapse or expand the sidebar"
+      @click="emit('toggleSidebar')"
+    >
+      <i class="pi pi-bars" aria-hidden="true" />
+    </button>
+
     <label class="search" title="Search arrives with products and parties">
-      <span class="ico" aria-hidden="true">⌕</span>
+      <i class="pi pi-search" aria-hidden="true" />
       <input
         type="search"
         placeholder="Search products, parties, documents"
         disabled
         aria-label="Global search"
       />
-      <kbd>/</kbd>
+      <kbd>Ctrl K</kbd>
     </label>
 
     <div class="topbar-right">
       <div class="bizdate">
-        <span class="bizdate-label">Business date</span>
-        <span class="bizdate-value">{{ businessDate }}</span>
+        <i class="pi pi-calendar" aria-hidden="true" />
+        <span class="bizdate-text">
+          <span class="bizdate-label">Business date</span>
+          <span class="bizdate-value">{{ businessDate }}</span>
+        </span>
       </div>
 
-      <div class="avatar-group">
-        <span class="avatar" aria-hidden="true">{{ initials }}</span>
-        <span class="avatar-name">{{ businessName ?? 'SherERP' }}</span>
-      </div>
+      <button
+        type="button"
+        class="icon-btn"
+        :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+        @click="toggleTheme"
+      >
+        <i class="pi" :class="theme === 'dark' ? 'pi-sun' : 'pi-moon'" aria-hidden="true" />
+      </button>
 
-      <button type="button" class="sign-out" @click="signOut()">Sign out</button>
+      <div ref="menuRoot" class="account">
+        <button
+          type="button"
+          class="account-btn"
+          :aria-expanded="menuOpen"
+          aria-haspopup="menu"
+          @click="menuOpen = !menuOpen"
+        >
+          <span class="avatar" aria-hidden="true">{{ initials }}</span>
+          <span class="account-text">
+            <strong>{{ username ?? 'Signed in' }}</strong>
+            <span>{{ businessName ?? 'SherERP' }}</span>
+          </span>
+          <i class="pi pi-angle-down" aria-hidden="true" />
+        </button>
+
+        <div v-if="menuOpen" class="menu" role="menu">
+          <button type="button" role="menuitem" class="menu-item" @click="openSecurity">
+            <i class="pi pi-lock" aria-hidden="true" />
+            Password &amp; PIN
+          </button>
+          <button type="button" role="menuitem" class="menu-item is-danger" @click="signOut()">
+            <i class="pi pi-sign-out" aria-hidden="true" />
+            Sign out
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 </template>
@@ -83,28 +155,32 @@ const businessDate = computed(() =>
 .topbar {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 9px 18px;
+  gap: var(--sher-space-4);
+  padding: 12px 24px;
   background: var(--sher-headerbar);
   border-bottom: var(--sher-border-w) solid var(--sher-line);
+}
+
+.hamburger {
+  flex-shrink: 0;
 }
 
 .search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
-  max-width: 460px;
+  max-width: 480px;
   height: var(--sher-control-h);
-  padding: 0 10px;
-  border: 1px solid var(--sher-line);
+  padding: 0 14px;
+  border: 1px solid var(--sher-line-strong);
   border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
+  background: var(--sher-sunken);
 }
 
-.search .ico {
-  color: var(--sher-text-muted);
-  font-size: 14px;
+.search .pi {
+  color: var(--sher-text-faint);
+  font-size: var(--sher-text-base);
 }
 
 .search input {
@@ -127,91 +203,177 @@ const businessDate = computed(() =>
 }
 
 .search kbd {
-  font-family: var(--sher-font-mono);
+  font-family: var(--sher-font);
   font-size: var(--sher-text-2xs);
-  border: 1px solid var(--sher-line);
-  border-radius: 3px;
-  padding: 1px 5px;
+  font-weight: 600;
+  border: 1px solid var(--sher-line-strong);
+  border-radius: var(--sher-radius-sm);
+  padding: 2px 6px;
   color: var(--sher-text-muted);
-  background: var(--sher-surface-2);
+  background: var(--sher-raised);
 }
 
 .topbar-right {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--sher-space-3);
 }
 
 .bizdate {
   display: flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--sher-control-h);
+  padding: 0 14px;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-sunken);
+}
+
+.bizdate .pi {
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-base);
+}
+
+.bizdate-text {
+  display: flex;
   flex-direction: column;
   line-height: 1.25;
-  text-align: right;
 }
 
 .bizdate-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--sher-text-2xs);
   color: var(--sher-text-muted);
 }
 
 .bizdate-value {
-  font-size: var(--sher-text-base);
+  font-size: var(--sher-text-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.avatar-group {
+/* ------------------------------------------------------------ account menu */
+.account {
+  position: relative;
+}
+
+.account-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.avatar {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
-  display: grid;
-  place-items: center;
-  font-size: var(--sher-text-2xs);
-  font-weight: 700;
-}
-
-.avatar-name {
-  font-size: var(--sher-text-base);
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sign-out {
+  gap: 10px;
   height: var(--sher-control-h);
-  padding: 0 12px;
-  border: 1px solid var(--sher-line);
+  padding: 0 10px 0 6px;
+  border: 1px solid transparent;
   border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
+  background: transparent;
   font: inherit;
-  font-size: var(--sher-text-base);
-  font-weight: 600;
   color: var(--sher-text);
   cursor: pointer;
   transition: background var(--sher-transition);
 }
 
-.sign-out:hover {
-  background: var(--sher-surface-2);
+.account-btn:hover {
+  background: var(--sher-hover);
 }
 
-@media (max-width: 767px) {
-  .bizdate,
-  .avatar-name,
+.account-btn .pi-angle-down {
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-xs);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--sher-tone-blue-fill);
+  color: var(--sher-on-tone);
+  display: grid;
+  place-items: center;
+  font-size: var(--sher-text-xs);
+  font-weight: 700;
+}
+
+.account-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: left;
+  min-width: 0;
+}
+
+.account-text strong {
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-text span {
+  font-size: var(--sher-text-2xs);
+  color: var(--sher-text-muted);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-raised);
+  box-shadow: var(--sher-shadow-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--sher-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--sher-text-sm);
+  color: var(--sher-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item .pi {
+  font-size: var(--sher-text-base);
+  color: var(--sher-text-muted);
+}
+
+.menu-item:hover {
+  background: var(--sher-hover);
+}
+
+.menu-item.is-danger,
+.menu-item.is-danger .pi {
+  color: var(--sher-bad);
+}
+
+@media (max-width: 1023px) {
+  .topbar {
+    padding: 10px 16px;
+  }
+
+  .bizdate-label,
+  .account-text,
   .search kbd {
     display: none;
   }

@@ -51,9 +51,9 @@ const isDisabled = computed<boolean>(() => props.disabled);
   width: 100%;
   height: var(--sher-control-h);
   padding: 0 16px;
-  border: 1px solid var(--sher-line);
+  border: 1px solid var(--sher-line-strong);
   border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
+  background: var(--sher-raised);
   font: inherit;
   font-size: var(--sher-text-base);
   font-weight: 600;
@@ -63,7 +63,7 @@ const isDisabled = computed<boolean>(() => props.disabled);
 }
 
 .google:hover:not(:disabled) {
-  background: var(--sher-surface-2);
+  background: var(--sher-hover);
 }
 
 .google:disabled {

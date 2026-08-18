@@ -1,56 +1,113 @@
 /*
- * SherERP design tokens — direction "Counter" from the shell study.
+ * SherERP design tokens — the visual system approved in §2.7.I.
  *
- * The SRS deliberately leaves the colour palette undecided (§2.7, "Deliberately
- * not decided here"). This file is where that decision lives, so every later
- * module inherits one visual system instead of inventing its own. A component
- * hardcoding a hex value is a review failure.
+ * Every colour, radius, shadow and type size in the application resolves to a
+ * variable declared here. A component hardcoding a hex value is a review
+ * failure: the point of one file is that a screen built in Phase 9 looks like a
+ * screen built in Phase 1 without anyone having to remember what blue we used.
  *
- * The look is a flat, crisp desktop application: KDE Breeze's density and
- * hairline borders, one notch softer, with a deeper blue that stays legible as
- * a button fill and as link text. A **light** sidebar, with the accent spent
- * only on the selected row and the primary button — not a dark rail.
+ * The look: a light application surface with white cards on a cool grey page,
+ * a white sidebar whose accent is spent on the selected row, one blue primary
+ * action, and saturated colour reserved for status and for the dashboard
+ * summary tiles. Dark mode is the same system with the surfaces inverted — it
+ * is a **user choice** stored on the device (`theme.ts`), never the operating
+ * system silently flipping a shop's ERP to a theme nobody chose.
  *
- * Geometry is part of the decision, not decoration. §2.7's design goal says
- * that where familiarity and counter speed conflict, the counter wins: 32px
- * controls and 13px base type put roughly a third more rows on a 1280px screen
- * than a roomier desktop theme would.
+ * Geometry follows §2.7.I: 12px cards, 8px controls, 40px control height,
+ * 14px body. That is roomier than a spreadsheet and denser than a marketing
+ * site, which is what a counter that runs all day needs.
  */
 
 :root {
-  /* --- colour ---------------------------------------------------------- */
-  --sher-primary: #1b5e9e;
-  --sher-primary-strong: #144a7d;
-  --sher-primary-soft: #deeaf5;
+  color-scheme: light;
+
+  /* --- brand and primary action ---------------------------------------- */
+  --sher-primary: #2563eb;
+  --sher-primary-strong: #1d4ed8;
+  --sher-primary-soft: #e8f0fe;
+  --sher-primary-softer: #f2f7ff;
+  --sher-primary-text: #1d4ed8;
   --sher-on-primary: #ffffff;
 
-  --sher-surface: #f1f3f5;
-  --sher-surface-2: #e7eaee;
-  --sher-surface-3: #ffffff;
-  --sher-sidebar: #e9ecf0;
+  /* --- surfaces --------------------------------------------------------- */
+  /* `surface` is the page, `raised` is a card, `sunken` is a table head or a
+     filled input — three levels, never a fourth. */
+  --sher-surface: #f4f6fa;
+  --sher-raised: #ffffff;
+  --sher-sunken: #f7f9fc;
+  --sher-sidebar: #ffffff;
   --sher-headerbar: #ffffff;
+  --sher-hover: rgba(15, 23, 42, 0.045);
+  --sher-scrim: rgba(15, 23, 42, 0.42);
 
-  --sher-line: #cfd4da;
-  --sher-line-soft: #e1e5e9;
+  --sher-line: #e5e9f0;
+  --sher-line-strong: #d5dbe5;
+  --sher-line-soft: #eef1f6;
 
-  --sher-text: #1f2429;
-  --sher-text-muted: #616b75;
+  /* --- text ------------------------------------------------------------- */
+  --sher-text: #0f172a;
+  --sher-text-muted: #64748b;
+  --sher-text-faint: #94a3b8;
 
-  /* Semantic colours. Held constant — meaning is never part of a theme choice. */
-  --sher-ok: #1f7a4d;
-  --sher-ok-bg: #e7f3ec;
-  --sher-warn: #8a5d00;
-  --sher-warn-bg: #fbf1dc;
-  --sher-bad: #a82018;
-  --sher-bad-bg: #fae9e7;
+  /* --- status ----------------------------------------------------------- */
+  /* Meaning is never part of a theme choice: green is good in both themes. The
+     values shift only far enough to hold UI-42's 4.5:1 against each surface. */
+  --sher-ok: #15803d;
+  --sher-ok-bg: #dcfce7;
+  --sher-ok-line: #a7f3c4;
+  --sher-warn: #b45309;
+  --sher-warn-bg: #fef3c7;
+  --sher-warn-line: #fcd88a;
+  --sher-bad: #be123c;
+  --sher-bad-bg: #ffe4e6;
+  --sher-bad-line: #fbc0ca;
+  --sher-info: #1d4ed8;
+  --sher-info-bg: #e8f0fe;
+  --sher-info-line: #c3d9fd;
 
-  /* --- geometry -------------------------------------------------------- */
-  --sher-radius: 4px;
-  --sher-radius-lg: 5px;
+  /*
+   * --- summary-tile tones ------------------------------------------------
+   * The six dashboard/list tiles in §2.7.I. Each tone carries a fill (the
+   * gradient used on a dashboard KPI tile), a disc (the icon badge on a list
+   * screen's white tile) and a figure colour for the number itself. A screen
+   * picks a tone by *meaning* — money in is blue, cost is slate, profit is
+   * green, attention is amber, receivable is violet, payable is rose — so the
+   * same colour never means two things in two modules.
+   */
+  --sher-tone-blue: #2563eb;
+  --sher-tone-blue-fill: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  --sher-tone-slate: #475569;
+  --sher-tone-slate-fill: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+  --sher-tone-green: #15803d;
+  --sher-tone-green-fill: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  --sher-tone-amber: #b45309;
+  --sher-tone-amber-fill: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  --sher-tone-violet: #6d28d9;
+  --sher-tone-violet-fill: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
+  --sher-tone-rose: #be123c;
+  --sher-tone-rose-fill: linear-gradient(135deg, #fb7185 0%, #e11d48 100%);
+  /* On a gradient fill the text is always white in both themes — the fill is
+     dark enough in either, and flipping it would break contrast. */
+  --sher-on-tone: #ffffff;
+  --sher-tone-disc-alpha: 0.12;
+
+  /* --- navigation ------------------------------------------------------- */
+  /* Light: a soft blue pill with blue text. Dark: a solid blue pill. Both
+     read as "you are here" at a glance without shouting down the page. */
+  --sher-nav-active-bg: var(--sher-primary-soft);
+  --sher-nav-active-fg: var(--sher-primary-text);
+  --sher-nav-active-icon: var(--sher-primary);
+
+  /* --- geometry --------------------------------------------------------- */
+  --sher-radius-sm: 6px;
+  --sher-radius: 8px;
+  --sher-radius-lg: 12px;
+  --sher-radius-xl: 16px;
   --sher-radius-pill: 999px;
-  --sher-control-h: 32px;
-  --sher-row-pad: 8px 13px;
-  --sher-nav-pad: 7px 10px;
+  --sher-control-h: 40px;
+  --sher-control-h-sm: 32px;
+  --sher-card-pad: 20px;
+  --sher-row-pad: 12px 16px;
   --sher-border-w: 1px;
 
   --sher-space-1: 4px;
@@ -58,9 +115,13 @@
   --sher-space-3: 12px;
   --sher-space-4: 16px;
   --sher-space-5: 20px;
-  --sher-space-6: 30px;
+  --sher-space-6: 28px;
 
-  /* --- type ------------------------------------------------------------ */
+  --sher-sidebar-width: 256px;
+  --sher-sidebar-width-collapsed: 68px;
+  --sher-content-max: 1400px;
+
+  /* --- type ------------------------------------------------------------- */
   /* System stack — UI-06 bans a CDN font, because §6.5 requires COOP/COEP on
      the app origin for SQLite WASM in Phase 12 and a cross-origin font breaks
      it. System faces are never fetched, so they satisfy that rule. */
@@ -70,18 +131,91 @@
     sans-serif;
   --sher-font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
 
-  --sher-text-2xs: 10.5px;
-  --sher-text-xs: 11.5px;
-  --sher-text-sm: 12.5px;
-  --sher-text-base: 13px;
-  --sher-text-lg: 15.5px;
-  --sher-text-xl: 19px;
+  --sher-text-2xs: 11px;
+  --sher-text-xs: 12px;
+  --sher-text-sm: 13px;
+  --sher-text-base: 14px;
+  --sher-text-lg: 18px;
+  --sher-text-xl: 24px;
+  --sher-text-2xl: 30px;
 
-  --sher-shadow: 0 1px 2px rgba(31, 36, 41, 0.06);
-  --sher-shadow-raised: 0 6px 22px rgba(31, 36, 41, 0.1);
+  /* --- elevation and motion --------------------------------------------- */
+  --sher-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --sher-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --sher-shadow-raised: 0 12px 34px rgba(15, 23, 42, 0.16);
+  --sher-shadow-tone: 0 8px 20px rgba(37, 99, 235, 0.18);
   --sher-transition: 150ms ease;
+}
 
-  --sher-sidebar-width: 232px;
+/*
+ * Dark mode. Only the tokens change — no component gets a `.dark` branch, and
+ * no screen is laid out twice. Applied by `theme.ts` as `data-theme="dark"` on
+ * <html>, which also carries `.sher-dark` for the PrimeVue preset.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --sher-primary: #3b82f6;
+  --sher-primary-strong: #2563eb;
+  --sher-primary-soft: rgba(59, 130, 246, 0.16);
+  --sher-primary-softer: rgba(59, 130, 246, 0.08);
+  --sher-primary-text: #93c5fd;
+
+  --sher-surface: #080c14;
+  --sher-raised: #0f1623;
+  --sher-sunken: #141c2b;
+  --sher-sidebar: #0b111c;
+  --sher-headerbar: #0b111c;
+  --sher-hover: rgba(148, 163, 184, 0.1);
+  --sher-scrim: rgba(2, 6, 12, 0.68);
+
+  --sher-line: #1e293b;
+  --sher-line-strong: #2b3a50;
+  --sher-line-soft: #16202f;
+
+  --sher-text: #e8edf6;
+  --sher-text-muted: #94a3b8;
+  --sher-text-faint: #64748b;
+
+  --sher-ok: #4ade80;
+  --sher-ok-bg: rgba(34, 197, 94, 0.14);
+  --sher-ok-line: rgba(34, 197, 94, 0.34);
+  --sher-warn: #fbbf24;
+  --sher-warn-bg: rgba(245, 158, 11, 0.14);
+  --sher-warn-line: rgba(245, 158, 11, 0.34);
+  --sher-bad: #fb7185;
+  --sher-bad-bg: rgba(244, 63, 94, 0.14);
+  --sher-bad-line: rgba(244, 63, 94, 0.34);
+  --sher-info: #93c5fd;
+  --sher-info-bg: rgba(59, 130, 246, 0.14);
+  --sher-info-line: rgba(59, 130, 246, 0.34);
+
+  /* The tiles keep their meaning but stop being poster paint: on a near-black
+     page a full gradient glares, so the fill is a tinted panel and the figure
+     carries the colour. */
+  --sher-tone-blue: #60a5fa;
+  --sher-tone-blue-fill: linear-gradient(135deg, rgba(37, 99, 235, 0.32) 0%, rgba(30, 64, 175, 0.14) 100%);
+  --sher-tone-slate: #cbd5e1;
+  --sher-tone-slate-fill: linear-gradient(135deg, rgba(100, 116, 139, 0.32) 0%, rgba(51, 65, 85, 0.14) 100%);
+  --sher-tone-green: #4ade80;
+  --sher-tone-green-fill: linear-gradient(135deg, rgba(22, 163, 74, 0.32) 0%, rgba(21, 128, 61, 0.14) 100%);
+  --sher-tone-amber: #fbbf24;
+  --sher-tone-amber-fill: linear-gradient(135deg, rgba(217, 119, 6, 0.34) 0%, rgba(146, 64, 14, 0.14) 100%);
+  --sher-tone-violet: #c4b5fd;
+  --sher-tone-violet-fill: linear-gradient(135deg, rgba(124, 58, 237, 0.34) 0%, rgba(76, 29, 149, 0.14) 100%);
+  --sher-tone-rose: #fda4af;
+  --sher-tone-rose-fill: linear-gradient(135deg, rgba(225, 29, 72, 0.32) 0%, rgba(159, 18, 57, 0.14) 100%);
+  --sher-on-tone: #f8fafc;
+  --sher-tone-disc-alpha: 0.2;
+
+  --sher-nav-active-bg: var(--sher-primary-strong);
+  --sher-nav-active-fg: #ffffff;
+  --sher-nav-active-icon: #ffffff;
+
+  --sher-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sher-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --sher-shadow-raised: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --sher-shadow-tone: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -112,14 +246,15 @@ body {
 .sher-bn {
   font-family: var(--sher-font-bn);
   font-size: var(--sher-text-xs);
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--sher-text-muted);
 }
 
 /* Focus is always visible (UI-42). */
 :focus-visible {
   outline: 2px solid var(--sher-primary);
-  outline-offset: 1px;
+  outline-offset: 2px;
+  border-radius: var(--sher-radius-sm);
 }
 
 @media (prefers-reduced-motion: reduce) {

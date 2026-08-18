@@ -8,6 +8,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
+import StatCard from '../components/StatCard.vue';
 
 /**
  * The people who work in this business (slice 1.3, §5.3).
@@ -43,6 +44,26 @@ const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
 const users = ref<UserResponse[]>([]);
 const roles = ref<RoleSummaryResponse[]>([]);
+
+/**
+ * UI-23's summary tiles, counted from the rows this screen already loaded.
+ * Nothing is fetched twice, so a tile can never disagree with its table.
+ */
+const activeCount = computed(
+  () => users.value.filter((user) => !user.disabled && user.hasPassword).length,
+);
+const awaitingCount = computed(
+  () => users.value.filter((user) => !user.disabled && !user.hasPassword).length,
+);
+const disabledCount = computed(() => users.value.filter((user) => user.disabled).length);
+
+/** The initials disc beside a name in the table. */
+function initialsOf(displayName: string): string {
+  const words = displayName.trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.charAt(0) ?? '';
+  const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
+  return (first + last).toUpperCase() || '—';
+}
 
 /** Which dialog is open, if any. */
 type Editing = { mode: 'CREATE' } | { mode: 'EDIT'; user: UserResponse } | null;
@@ -190,30 +211,67 @@ async function toggleDisabled(): Promise<void> {
 }
 </script>
 
+
 <template>
-  <AppShell title="Users" help-bn="যারা এই ব্যবসায় কাজ করেন — কে কী করতে পারবে তা এখানে ঠিক হয়">
+  <AppShell
+    title="Users"
+    :breadcrumb="['Dashboard', 'Users']"
+    help-bn="যারা এই ব্যবসায় কাজ করেন — কে কী করতে পারবে তা এখানে ঠিক হয়"
+  >
+    <template #actions>
+      <button v-if="canCreate" type="button" class="btn btn-primary" @click="openCreate">
+        <i class="pi pi-user-plus" aria-hidden="true" />
+        Add user
+      </button>
+    </template>
+
     <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading users">
-      <div class="skeleton" />
+      <div class="skeleton skeleton-tiles" />
+      <div class="skeleton skeleton-table" />
     </div>
 
     <AppCard v-else-if="loadError !== null" title="Could not load your users">
       <ErrorNotice :code="loadError.code" :message="loadError.message" />
-      <button type="button" class="btn btn-primary retry" @click="load">Try again</button>
+      <button type="button" class="btn btn-ghost retry" @click="load">Try again</button>
     </AppCard>
 
     <template v-else>
       <p v-if="notice !== null" class="notice is-ok" role="status">{{ notice }}</p>
 
-      <div class="bar">
-        <p class="count">{{ users.length }} {{ users.length === 1 ? 'person' : 'people' }}</p>
-        <button
-          v-if="canCreate"
-          type="button"
-          class="btn btn-primary"
-          @click="openCreate"
-        >
-          Add user
-        </button>
+      <!--
+        UI-23: summary figures are cards. These are counted from the rows on
+        this screen, not from a second source — a tile that could disagree with
+        the table beneath it is worse than no tile.
+      -->
+      <div class="tiles">
+        <StatCard
+          label="People"
+          :value="String(users.length)"
+          detail="Everyone with an account"
+          icon="pi-users"
+          tone="blue"
+        />
+        <StatCard
+          label="Active"
+          :value="String(activeCount)"
+          detail="Can sign in today"
+          icon="pi-check-circle"
+          tone="green"
+        />
+        <StatCard
+          label="Awaiting password"
+          :value="String(awaitingCount)"
+          detail="Added, not yet set up"
+          icon="pi-key"
+          tone="amber"
+        />
+        <StatCard
+          label="Disabled"
+          :value="String(disabledCount)"
+          detail="Blocked from signing in"
+          icon="pi-ban"
+          tone="rose"
+        />
       </div>
 
       <div class="table-wrap">
@@ -230,7 +288,12 @@ async function toggleDisabled(): Promise<void> {
           </thead>
           <tbody>
             <tr v-for="user in users" :key="user.id" :class="{ 'is-disabled': user.disabled }">
-              <td>{{ user.displayName }}</td>
+              <td>
+                <span class="person">
+                  <span class="person-mark" aria-hidden="true">{{ initialsOf(user.displayName) }}</span>
+                  <span class="person-name">{{ user.displayName }}</span>
+                </span>
+              </td>
               <td class="mono">{{ user.username }}</td>
               <td class="mono">{{ user.phone ?? user.email }}</td>
               <td>{{ user.roleName }}</td>
@@ -382,309 +445,66 @@ async function toggleDisabled(): Promise<void> {
 </template>
 
 <style scoped>
+/*
+ * Buttons, fields, tables, badges, dialogs, notices and skeletons come from
+ * `design/components.css`. What is left here is the two things only this
+ * screen has: the tile row and the avatar in the name column.
+ */
 .skeletons {
   display: flex;
   flex-direction: column;
   gap: var(--sher-space-5);
 }
 
-.skeleton {
-  height: 260px;
-  border-radius: var(--sher-radius-lg);
-  border: 1px solid var(--sher-line);
-  background: linear-gradient(
-    100deg,
-    var(--sher-surface-3) 30%,
-    var(--sher-surface-2) 50%,
-    var(--sher-surface-3) 70%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+.skeleton-tiles {
+  height: 118px;
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sher-space-4);
-}
-
-.count {
-  margin: 0;
-  color: var(--sher-text-muted);
-  font-size: var(--sher-text-sm);
-}
-
-/*
- * §2.7-D: the container may be a panel, the table stays clean and dense. No
- * translucency behind rows — UI-42's contrast floor cannot spare it.
- */
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--sher-text-base);
-}
-
-thead th {
-  text-align: left;
-  font-size: var(--sher-text-2xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--sher-text-muted);
-  font-weight: 600;
-  background: var(--sher-surface-2);
-  padding: 7px 13px;
-  border-bottom: 1px solid var(--sher-line);
-  white-space: nowrap;
-}
-
-tbody td {
-  padding: var(--sher-row-pad);
-  border-bottom: 1px solid var(--sher-line-soft);
-}
-
-tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-tbody tr:hover {
-  background: var(--sher-primary-soft);
-}
-
-tbody tr.is-disabled td:not(.actions) {
-  color: var(--sher-text-muted);
-}
-
-.mono {
-  font-family: var(--sher-font-mono);
-  font-size: var(--sher-text-sm);
-}
-
-.actions-col {
-  width: 1%;
-}
-
-.actions {
-  white-space: nowrap;
-  display: flex;
-  gap: var(--sher-space-3);
-}
-
-.pill {
-  display: inline-block;
-  font-size: var(--sher-text-2xs);
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: var(--sher-radius-pill);
-  border: 1px solid var(--sher-line);
-  white-space: nowrap;
-}
-
-.pill-ok {
-  background: var(--sher-ok-bg);
-  color: var(--sher-ok);
-  border-color: rgba(31, 122, 77, 0.3);
-}
-
-.pill-warn {
-  background: var(--sher-warn-bg);
-  color: var(--sher-warn);
-  border-color: rgba(138, 93, 0, 0.3);
-}
-
-.pill-bad {
-  background: var(--sher-bad-bg);
-  color: var(--sher-bad);
-  border-color: rgba(168, 32, 24, 0.3);
-}
-
-.linkish {
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-primary-strong);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.linkish.danger {
-  color: var(--sher-bad);
-}
-
-/* --- dialog -------------------------------------------------------------- */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: var(--sher-space-4);
-  background: rgba(31, 36, 41, 0.35);
-}
-
-.dialog {
-  width: 100%;
-  max-width: 400px;
-  background: var(--sher-surface-3);
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius-lg);
-  box-shadow: var(--sher-shadow-raised);
-  padding: var(--sher-space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-3);
-}
-
-.dialog h2 {
-  margin: 0;
-  font-size: var(--sher-text-lg);
-  font-weight: 600;
-}
-
-.lede {
-  margin: 0;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-text-muted);
-}
-
-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-4);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.field label {
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
-}
-
-.field input,
-.field select {
-  height: var(--sher-control-h);
-  padding: 0 10px;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
-  font: inherit;
-  font-size: var(--sher-text-base);
-  color: var(--sher-text);
-}
-
-.field input:focus,
-.field select:focus {
-  outline: 2px solid var(--sher-primary);
-  outline-offset: 1px;
-}
-
-.field input:disabled,
-.field select:disabled {
-  background: var(--sher-surface);
-}
-
-.help {
-  margin: 0;
-  font-size: var(--sher-text-xs);
-  color: var(--sher-text-muted);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--sher-space-3);
+.skeleton-table {
+  height: 320px;
 }
 
 .retry {
   margin-top: var(--sher-space-4);
 }
 
-.btn {
-  height: var(--sher-control-h);
-  padding: 0 16px;
-  border-radius: var(--sher-radius);
-  border: 1px solid transparent;
-  font: inherit;
-  font-size: var(--sher-text-base);
-  font-weight: 600;
-  cursor: pointer;
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sher-space-4);
 }
 
-.btn-primary {
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--sher-primary-strong);
-}
-
-.btn-ghost {
-  background: var(--sher-surface-3);
-  color: var(--sher-text);
-  border-color: var(--sher-line);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.notice {
-  margin: 0;
-  padding: 9px 11px;
-  border-radius: var(--sher-radius);
-  border: 1px solid;
-  font-size: var(--sher-text-sm);
-}
-
-.is-ok {
-  border-color: var(--sher-line);
+.person-mark {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
   background: var(--sher-primary-soft);
-  color: var(--sher-text);
+  color: var(--sher-primary-text);
+  font-size: var(--sher-text-xs);
+  font-weight: 700;
 }
 
-.is-bad {
-  border-color: var(--sher-bad);
-  background: var(--sher-bad-bg);
-  color: var(--sher-text);
+.person-name {
+  font-weight: 600;
 }
 
-.code {
-  display: block;
-  font-family: var(--sher-font-mono);
-  font-size: var(--sher-text-2xs);
-  letter-spacing: 0.04em;
-  color: var(--sher-bad);
-  margin-bottom: 2px;
-}
-
-.fine {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
+/* A disabled account still reads, but it stops competing with the active ones. */
+tbody tr.is-disabled td:not(.actions) {
   color: var(--sher-text-muted);
+}
+
+tbody tr.is-disabled .person-mark {
+  background: var(--sher-sunken);
+  color: var(--sher-text-faint);
 }
 </style>

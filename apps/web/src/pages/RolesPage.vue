@@ -8,6 +8,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
+import StatCard from '../components/StatCard.vue';
 
 /**
  * Roles and what they may do (slice 1.4, §5.26).
@@ -65,6 +66,15 @@ const groups = computed(() => {
   }
   return [...seen.entries()].map(([name, permissions]) => ({ name, permissions }));
 });
+
+/**
+ * UI-23's summary tiles, counted from the roles this screen already loaded —
+ * never a second source that could disagree with the cards below.
+ */
+const peopleCovered = computed(() =>
+  roles.value.reduce((total, role) => total + role.userCount, 0),
+);
+const customCount = computed(() => roles.value.filter((role) => !role.isSystem).length);
 
 function describe(cause: unknown): { code: string; message: string } {
   return cause instanceof ApiError
@@ -179,48 +189,80 @@ async function confirmDelete(): Promise<void> {
 }
 </script>
 
+
 <template>
-  <AppShell title="Roles" help-bn="কোন পদের মানুষ কী কী করতে পারবে — এখানে ঠিক করুন">
+  <AppShell
+    title="Roles &amp; Permissions"
+    :breadcrumb="['Dashboard', 'Roles & Permissions']"
+    help-bn="কোন পদের মানুষ কী কী করতে পারবে — এখানে ঠিক করুন"
+  >
+    <template #actions>
+      <button v-if="canManage" type="button" class="btn btn-primary" @click="openCreate">
+        <i class="pi pi-plus" aria-hidden="true" />
+        Add role
+      </button>
+    </template>
+
     <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading roles">
-      <div class="skeleton" />
-      <div class="skeleton" />
+      <div class="skeleton skeleton-tiles" />
+      <div class="skeleton skeleton-grid" />
     </div>
 
     <AppCard v-else-if="loadError !== null" title="Could not load your roles">
       <ErrorNotice :code="loadError.code" :message="loadError.message" />
-      <button type="button" class="btn btn-primary retry" @click="load">Try again</button>
+      <button type="button" class="btn btn-ghost retry" @click="load">Try again</button>
     </AppCard>
 
     <template v-else>
       <p v-if="notice !== null" class="notice is-ok" role="status">{{ notice }}</p>
 
-      <div class="bar">
-        <p class="count">{{ roles.length }} roles</p>
-        <button
-          v-if="canManage"
-          type="button"
-          class="btn btn-primary"
-          @click="openCreate"
-        >
-          Add role
-        </button>
+      <!-- Counted from the roles already on screen (UI-23). -->
+      <div class="tiles">
+        <StatCard
+          label="Roles"
+          :value="String(roles.length)"
+          detail="Positions in this business"
+          icon="pi-shield"
+          tone="blue"
+        />
+        <StatCard
+          label="People covered"
+          :value="String(peopleCovered)"
+          detail="Accounts holding a role"
+          icon="pi-users"
+          tone="green"
+        />
+        <StatCard
+          label="Your own roles"
+          :value="String(customCount)"
+          detail="Added by this business"
+          icon="pi-pencil"
+          tone="violet"
+        />
       </div>
 
       <div class="grid">
         <section v-for="role in roles" :key="role.id" class="role">
           <header>
-            <h2>{{ role.name }}</h2>
-            <span v-if="role.locked" class="pill">Always full access</span>
+            <span class="role-mark" aria-hidden="true">
+              <i class="pi" :class="role.locked ? 'pi-crown' : 'pi-shield'" />
+            </span>
+            <div class="role-head-text">
+              <h2>{{ role.name }}</h2>
+              <p class="held">
+                {{ role.userCount }}
+                {{ role.userCount === 1 ? 'person holds this' : 'people hold this' }}
+              </p>
+            </div>
+            <span v-if="role.locked" class="pill pill-info">Always full access</span>
             <span v-else-if="role.isSystem" class="pill">Built in</span>
           </header>
 
-          <p class="held">
-            {{ role.userCount }}
-            {{ role.userCount === 1 ? 'person holds this' : 'people hold this' }}
-          </p>
-
           <ul v-if="role.permissions.length > 0" class="perms">
-            <li v-for="code in role.permissions" :key="code">{{ labelFor(code) }}</li>
+            <li v-for="code in role.permissions" :key="code">
+              <i class="pi pi-check" aria-hidden="true" />
+              {{ labelFor(code) }}
+            </li>
           </ul>
           <p v-else class="perms-empty">Cannot do anything yet.</p>
 
@@ -253,7 +295,7 @@ async function confirmDelete(): Promise<void> {
 
     <!-- ------------------------------------------------- add / edit dialog -->
     <div v-if="creating || editing !== null" class="scrim" @click.self="close">
-      <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog is-wide" role="dialog" aria-modal="true">
         <h2>{{ creating ? 'Add role' : `Edit ${editing?.name ?? ''}` }}</h2>
 
         <form @submit.prevent="save">
@@ -343,7 +385,7 @@ async function confirmDelete(): Promise<void> {
             </button>
             <button
               type="submit"
-              class="btn btn-primary"
+              class="btn btn-danger"
               :disabled="busy || deletePassword === ''"
             >
               {{ busy ? 'Deleting…' : 'Delete role' }}
@@ -356,225 +398,158 @@ async function confirmDelete(): Promise<void> {
 </template>
 
 <style scoped>
+/*
+ * Buttons, fields, badges, dialogs and notices come from
+ * `design/components.css`. Only the role card and its permission list are
+ * this screen's own.
+ */
 .skeletons {
-  display: grid;
-  gap: var(--sher-space-5);
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-}
-
-.skeleton {
-  height: 180px;
-  border-radius: var(--sher-radius-lg);
-  border: 1px solid var(--sher-line);
-  background: linear-gradient(
-    100deg,
-    var(--sher-surface-3) 30%,
-    var(--sher-surface-2) 50%,
-    var(--sher-surface-3) 70%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-.bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sher-space-4);
+  flex-direction: column;
+  gap: var(--sher-space-5);
 }
 
-.count {
-  margin: 0;
-  color: var(--sher-text-muted);
-  font-size: var(--sher-text-sm);
+.skeleton-tiles {
+  height: 118px;
+}
+
+.skeleton-grid {
+  height: 300px;
+}
+
+.retry {
+  margin-top: var(--sher-space-4);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sher-space-4);
 }
 
 .grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--sher-space-4);
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
 .role {
-  background: var(--sher-surface-3);
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius-lg);
-  padding: var(--sher-space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--sher-space-2);
+  gap: var(--sher-space-3);
+  padding: var(--sher-card-pad);
+  background: var(--sher-raised);
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius-lg);
+  box-shadow: var(--sher-shadow-card);
 }
 
 .role header {
   display: flex;
-  align-items: center;
-  gap: var(--sher-space-2);
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sher-space-3);
+}
+
+.role-mark {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sher-radius);
+  background: var(--sher-primary-soft);
+  color: var(--sher-primary-text);
+  font-size: var(--sher-text-lg);
+}
+
+.role-head-text {
+  min-width: 0;
 }
 
 .role h2 {
   margin: 0;
   font-size: var(--sher-text-lg);
   font-weight: 600;
-}
-
-.pill {
-  font-size: var(--sher-text-2xs);
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: var(--sher-radius-pill);
-  border: 1px solid var(--sher-line);
-  background: var(--sher-surface-2);
-  color: var(--sher-text-muted);
-  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .held {
-  margin: 0;
-  font-size: var(--sher-text-sm);
+  margin: 2px 0 0;
+  font-size: var(--sher-text-xs);
   color: var(--sher-text-muted);
 }
 
+.role header .pill {
+  margin-left: auto;
+}
+
 .perms {
+  list-style: none;
   margin: 0;
-  padding-left: 18px;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-text);
+  padding: var(--sher-space-3) 0 0;
+  border-top: 1px solid var(--sher-line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 
 .perms li {
-  padding: 1px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--sher-text-sm);
+}
+
+.perms .pi {
+  font-size: var(--sher-text-xs);
+  color: var(--sher-ok);
 }
 
 .perms-empty {
   margin: 0;
+  padding-top: var(--sher-space-3);
+  border-top: 1px solid var(--sher-line-soft);
   font-size: var(--sher-text-sm);
   color: var(--sher-text-muted);
-  font-style: italic;
 }
 
 .role-actions {
   margin-top: auto;
-  padding-top: var(--sher-space-2);
+  padding-top: var(--sher-space-3);
+  border-top: 1px solid var(--sher-line-soft);
   display: flex;
-  gap: var(--sher-space-3);
+  gap: var(--sher-space-4);
 }
 
-.linkish {
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-primary-strong);
-  text-decoration: underline;
-  cursor: pointer;
+/* --- the permission picker ---------------------------------------------- */
+/* Wider than a confirmation, because a tick-box list two columns narrow is
+   how a role gets mis-set. */
+.dialog.is-wide {
+  max-width: 520px;
 }
 
-.linkish.danger {
-  color: var(--sher-bad);
-}
-
-/* --- dialog -------------------------------------------------------------- */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: var(--sher-space-4);
-  background: rgba(31, 36, 41, 0.35);
-  overflow-y: auto;
-}
-
-.dialog {
-  width: 100%;
-  max-width: 460px;
-  background: var(--sher-surface-3);
+.perms-field {
+  margin: 0;
+  padding: var(--sher-space-3) var(--sher-space-4) var(--sher-space-4);
   border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius-lg);
-  box-shadow: var(--sher-shadow-raised);
-  padding: var(--sher-space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-3);
-}
-
-.dialog h2 {
-  margin: 0;
-  font-size: var(--sher-text-lg);
-  font-weight: 600;
-}
-
-.lede {
-  margin: 0;
-  font-size: var(--sher-text-sm);
-  color: var(--sher-text-muted);
-}
-
-form {
+  border-radius: var(--sher-radius);
+  background: var(--sher-sunken);
   display: flex;
   flex-direction: column;
   gap: var(--sher-space-4);
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.field label {
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
-}
-
-.field input {
-  height: var(--sher-control-h);
-  padding: 0 10px;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-surface-3);
-  font: inherit;
-  font-size: var(--sher-text-base);
-  color: var(--sher-text);
-}
-
-.field input:focus {
-  outline: 2px solid var(--sher-primary);
-  outline-offset: 1px;
-}
-
-.perms-field {
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  padding: var(--sher-space-3);
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-3);
-}
-
 .perms-field legend {
+  padding: 0 6px;
   font-size: var(--sher-text-sm);
   font-weight: 600;
-  padding: 0 var(--sher-space-2);
 }
 
 .group-name {
-  margin: 0 0 var(--sher-space-1);
+  margin: 0 0 8px;
   font-size: var(--sher-text-2xs);
-  letter-spacing: 0.06em;
   text-transform: uppercase;
+  letter-spacing: 0.07em;
   color: var(--sher-text-muted);
   font-weight: 600;
 }
@@ -582,24 +557,27 @@ form {
 .check {
   display: flex;
   align-items: flex-start;
-  gap: var(--sher-space-2);
-  padding: 4px 0;
+  gap: 10px;
+  padding: 6px 0;
   cursor: pointer;
 }
 
 .check input {
   margin-top: 3px;
-  flex-shrink: 0;
+  accent-color: var(--sher-primary);
+  width: 16px;
+  height: 16px;
 }
 
 .check span {
   display: flex;
   flex-direction: column;
+  line-height: 1.4;
 }
 
 .check strong {
-  font-size: var(--sher-text-base);
-  font-weight: 550;
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
 }
 
 .check em {
@@ -610,88 +588,10 @@ form {
 
 .locked-note {
   margin: 0;
-  padding: 9px 11px;
+  padding: 11px 14px;
+  border: 1px solid var(--sher-info-line);
   border-radius: var(--sher-radius);
-  border: 1px solid var(--sher-line);
-  background: var(--sher-surface-2);
+  background: var(--sher-info-bg);
   font-size: var(--sher-text-sm);
-  color: var(--sher-text-muted);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--sher-space-3);
-}
-
-.retry {
-  margin-top: var(--sher-space-4);
-}
-
-.btn {
-  height: var(--sher-control-h);
-  padding: 0 16px;
-  border-radius: var(--sher-radius);
-  border: 1px solid transparent;
-  font: inherit;
-  font-size: var(--sher-text-base);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-primary {
-  background: var(--sher-primary);
-  color: var(--sher-on-primary);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--sher-primary-strong);
-}
-
-.btn-ghost {
-  background: var(--sher-surface-3);
-  color: var(--sher-text);
-  border-color: var(--sher-line);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.notice {
-  margin: 0;
-  padding: 9px 11px;
-  border-radius: var(--sher-radius);
-  border: 1px solid;
-  font-size: var(--sher-text-sm);
-}
-
-.is-ok {
-  border-color: var(--sher-line);
-  background: var(--sher-primary-soft);
-  color: var(--sher-text);
-}
-
-.is-bad {
-  border-color: var(--sher-bad);
-  background: var(--sher-bad-bg);
-  color: var(--sher-text);
-}
-
-.code {
-  display: block;
-  font-family: var(--sher-font-mono);
-  font-size: var(--sher-text-2xs);
-  letter-spacing: 0.04em;
-  color: var(--sher-bad);
-  margin-bottom: 2px;
-}
-
-.fine {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--sher-text-muted);
 }
 </style>
