@@ -55,6 +55,15 @@ interface RequestOptions {
   readonly token?: string | undefined;
   /** ULID, generated once per user intent and reused on retry (UI-34). */
   readonly idempotencyKey?: string;
+  /**
+   * Return the whole response body instead of unwrapping `data`.
+   *
+   * §5.26 puts warnings **beside** `data`, not inside it — "return 200 with
+   * `warnings` … the client must display them" — so a caller that needs them
+   * has to see the envelope. Unwrapping is still the default, because almost
+   * nothing does.
+   */
+  readonly envelope?: boolean;
 }
 
 /**
@@ -134,7 +143,7 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
   if (response.status === 204) return undefined as T;
 
   const payload = (await response.json()) as { data: T };
-  return payload.data;
+  return options.envelope === true ? (payload as T) : payload.data;
 }
 
 /**

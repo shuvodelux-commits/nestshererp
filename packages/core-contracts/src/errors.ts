@@ -31,6 +31,12 @@ export const ErrorCode = {
    * reveals nothing — and it is what sends them to the one-field signup.
    */
   GOOGLE_ACCOUNT_UNKNOWN: 'GOOGLE_ACCOUNT_UNKNOWN',
+  /**
+   * D-36: the licence term has run out and its 30-day grace period with it.
+   * Reads and backup export continue — there is no state in which customer data
+   * is destroyed, hidden or made un-exportable — but new business writes stop.
+   */
+  LICENSE_READ_ONLY: 'LICENSE_READ_ONLY',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -51,6 +57,9 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   // 404: there is no account for this identity — not 401, because the caller's
   // Google credential was perfectly valid.
   GOOGLE_ACCOUNT_UNKNOWN: 404,
+  // 423 Locked (§5.26). Not 403: the caller has every permission they need,
+  // and nothing about their account is wrong — the deployment is out of term.
+  LICENSE_READ_ONLY: 423,
 };
 
 export function httpStatusFor(code: ErrorCode): number {

@@ -1,0 +1,26 @@
+-- Phase 1, slice 1.6 — let the audit trail identify a record that is not a ULID.
+--
+-- Forward-only and additive (SRS 3.10). Nothing is dropped or renamed; one
+-- column is widened, which every existing row already satisfies.
+--
+-- **The defect this fixes.** `audit_events.entity_id` was `CHAR(26)`, written in
+-- 0001 when every auditable entity was a row with a ULID primary key. `CHAR(n)`
+-- is blank-padded: storing a shorter value silently returns it padded to 26
+-- characters. Slice 1.5 audits a setting, whose identity is its catalogue key
+-- (`serial_tracking_enabled`), and §5.22 audits a permission denial, whose
+-- identity is the permission code (`settings.module.toggle`). Both came back
+-- with trailing spaces, so a client comparing them to the real key found no
+-- match — and a permission code longer than 26 characters would have been
+-- rejected outright rather than recorded.
+--
+-- §5.22 asks for "entity, entity ID". It does not say the id is a ULID, and for
+-- configuration it is not: a setting's id is its key. TEXT is what that
+-- requires.
+--
+-- Safe on existing data: every row written before this migration holds a
+-- 26-character ULID, so there is no trailing whitespace for the conversion to
+-- strip, and PostgreSQL removes it in any case when casting `bpchar` to `text`.
+-- The index on (tenant_id, entity_type, entity_id) is rebuilt automatically by
+-- the type change.
+ALTER TABLE audit_events
+  ALTER COLUMN entity_id TYPE TEXT;

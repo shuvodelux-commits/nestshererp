@@ -29,6 +29,89 @@ export function addSeconds(instant: Date, seconds: number): Date {
   return new Date(instant.getTime() + seconds * 1000);
 }
 
+/**
+ * An ISO-8601 string as an instant, or `null` when it is not one.
+ *
+ * Here for the same reason as `addSeconds`: this file is the only place allowed
+ * to construct a `Date` (R-C8). Parsing a timestamp that arrived from outside —
+ * a licence key, an API response, a stored string — is not reading the ambient
+ * clock, but the rule is enforced syntactically and rightly so: an exception
+ * carved out for "just parsing" is exactly how an ambient `new Date()` gets
+ * back in.
+ *
+ * Returns null rather than throwing, because every current caller is reading
+ * data it does not control and has a defined answer for "that was not a date".
+ */
+export function parseInstant(iso: string | undefined | null): Date | null {
+  if (iso === undefined || iso === null || iso === '') return null;
+  const instant = new Date(iso);
+  return Number.isNaN(instant.getTime()) ? null : instant;
+}
+
+/**
+ * The instant a tenant-local calendar day begins, as UTC.
+ *
+ * The inverse of `businessDate`, and it lives here for the same reason
+ * `addSeconds` does: this file is the only place allowed to construct a `Date`
+ * (R-C8). Filtering "everything that happened on the 18th" needs the boundary
+ * as an instant, because `created_at` is stored in UTC — and in Dhaka the 18th
+ * begins at 18:00 UTC on the 17th. Comparing the UTC date instead would put six
+ * hours of the day in the wrong bucket, which is the §3.5 mistake where "both
+ * numbers look plausible".
+ *
+ * `date` is `YYYY-MM-DD`. Resolved by asking what UTC offset the zone was
+ * actually using at that moment rather than assuming a fixed one, so a zone
+ * with daylight saving stays correct.
+ */
+export function startOfBusinessDay(date: string, tz: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new RangeError(`invalid business date: ${date}`);
+
+  // First guess: treat the local wall time as if it were UTC. That is wrong by
+  // exactly the zone's offset, which the second step measures and removes.
+  const asIfUtc = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(asIfUtc.getTime())) throw new RangeError(`invalid business date: ${date}`);
+
+  const offsetMs = zoneOffsetMs(asIfUtc, tz);
+  const corrected = new Date(asIfUtc.getTime() - offsetMs);
+
+  // One more pass: near a daylight-saving change the offset at the corrected
+  // instant can differ from the offset at the guess.
+  return new Date(asIfUtc.getTime() - zoneOffsetMs(corrected, tz));
+}
+
+/** How far ahead of UTC `tz` is at `instant`, in milliseconds. */
+function zoneOffsetMs(instant: Date, tz: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+
+  const find = (type: string): number => {
+    const part = parts.find((candidate) => candidate.type === type);
+    if (part === undefined) throw new RangeError(`cannot resolve ${type} in timezone ${tz}`);
+    return Number(part.value);
+  };
+
+  // `hour` formats midnight as 24 with hour12:false in some runtimes.
+  const hour = find('hour') % 24;
+  const asUtc = Date.UTC(
+    find('year'),
+    find('month') - 1,
+    find('day'),
+    hour,
+    find('minute'),
+    find('second'),
+  );
+
+  return asUtc - instant.getTime();
+}
+
 function businessDateOf(instant: Date, tz: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,

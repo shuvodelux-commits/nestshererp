@@ -2,8 +2,8 @@
 // no Node built-ins — enforced by `pnpm test:boundaries`.
 // Re-exported so apps/api reaches the domain through this layer rather than
 // importing core-domain directly (§2.1: api → application → domain).
-export { OTP_LENGTH } from '@sher/core-domain';
-export type { IdentifierChannel, OtpPurpose } from '@sher/core-domain';
+export { licenseAllowsWrites, licenseStateAt, OTP_LENGTH } from '@sher/core-domain';
+export type { IdentifierChannel, LicenseState, LicenseTerm, OtpPurpose } from '@sher/core-domain';
 
 export type { TenantContext } from './ports/tenant-context';
 export type { Tx, UnitOfWork } from './ports/unit-of-work';
@@ -90,3 +90,35 @@ export type {
   UpdateRoleCommand,
 } from './users/manage-roles-service';
 export { GetMyAccessService } from './auth/get-my-access-service';
+export {
+  cascadeOff,
+  effectiveSettings,
+  effectiveValue,
+  isAllowedValue,
+  settingDescriptor,
+  unmetParents,
+} from './settings/feature-dependencies';
+export type {
+  BusinessProfile,
+  BusinessProfileRepository,
+  SettingsRepository,
+  StoredSetting,
+} from './settings/settings-repository';
+export { ManageSettingsService } from './settings/manage-settings-service';
+export type {
+  GetSettingsCommand,
+  UpdateBusinessProfileCommand,
+  UpdateSettingCommand,
+  UpdateSettingResult,
+} from './settings/manage-settings-service';
+export type {
+  AuditEventRow,
+  AuditFacets,
+  AuditFilter,
+  AuditQueryRepository,
+} from './audit/audit-query-repository';
+export { ListAuditEventsService } from './audit/list-audit-events-service';
+export type { ListAuditEventsCommand } from './audit/list-audit-events-service';
+export { RecordPermissionDenialService } from './audit/record-permission-denial-service';
+export type { RecordPermissionDenialCommand } from './audit/record-permission-denial-service';
+export type { Entitlement, EntitlementProvider } from './ports/entitlement-provider';

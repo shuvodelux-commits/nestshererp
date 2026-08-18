@@ -26,6 +26,28 @@ export const Permission = {
    */
   ROLE_VIEW: 'user.role.view',
   ROLE_MANAGE: 'user.role.manage',
+
+  /**
+   * Settings and feature controls (slice 1.5, §5.21).
+   *
+   * Three codes, not one. §5.26 keeps "destructive and financially meaningful
+   * actions" on their own code, and the three acts here are not the same size:
+   * reading what the shop is configured to do, choosing how a running feature
+   * behaves, and switching a whole module off for everybody. `settings.module.toggle`
+   * is the name §5.26 gives the last of those.
+   */
+  SETTING_VIEW: 'settings.setting.view',
+  SETTING_EDIT: 'settings.setting.edit',
+  SETTING_TOGGLE: 'settings.module.toggle',
+
+  /**
+   * The audit trail (slice 1.6, §5.22).
+   *
+   * View only — there is no write, edit or delete code, because the trail is
+   * append-only and "audit logging cannot be disabled by configuration"
+   * (§5.26). A permission to change it would be a permission to forge history.
+   */
+  AUDIT_VIEW: 'audit.event.view',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -84,6 +106,33 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     label: 'Change what roles may do',
     detail: 'Create roles and change their permissions. This changes what other people can do.',
   },
+  {
+    code: Permission.SETTING_VIEW,
+    group: 'Settings',
+    label: 'See settings',
+    detail: 'Open the Settings screen and see how the business is set up.',
+  },
+  {
+    code: Permission.SETTING_EDIT,
+    group: 'Settings',
+    label: 'Change settings',
+    detail:
+      'Change the business name, the timezone, and how features behave — including the costing method, which decides what every sale is recorded as costing.',
+  },
+  {
+    code: Permission.SETTING_TOGGLE,
+    group: 'Settings',
+    label: 'Turn features on and off',
+    detail:
+      'Switch whole parts of SherERP on or off for everyone. Turning one off also turns off anything that depends on it.',
+  },
+  {
+    code: Permission.AUDIT_VIEW,
+    group: 'Audit',
+    label: 'See the audit trail',
+    detail:
+      'Open the Audit screen and see every change anyone has made, with what it was before and after.',
+  },
 ];
 
 /**
@@ -115,6 +164,10 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.USER_DISABLE,
       Permission.ROLE_VIEW,
       Permission.ROLE_MANAGE,
+      Permission.SETTING_VIEW,
+      Permission.SETTING_EDIT,
+      Permission.SETTING_TOGGLE,
+      Permission.AUDIT_VIEW,
     ],
   },
   // "All operations, cost and profit visible; no settings/users." A manager can

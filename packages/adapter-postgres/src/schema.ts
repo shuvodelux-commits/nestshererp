@@ -122,7 +122,10 @@ export const auditEvents = pgTable('audit_events', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
   entityType: text('entity_type').notNull(),
-  entityId: char('entity_id', { length: 26 }).notNull(),
+  // TEXT, not CHAR(26): an audited entity is not always a ULID. A setting is
+  // identified by its catalogue key and a denial by its permission code, and
+  // CHAR would blank-pad both (migration 0006).
+  entityId: text('entity_id').notNull(),
   action: text('action').notNull(),
   beforeJson: jsonb('before_json'),
   afterJson: jsonb('after_json'),
@@ -250,5 +253,29 @@ export const notes = pgTable(
   (table) => ({
     operationUnique: unique('notes_tenant_operation_unique').on(table.tenantId, table.operationId),
     numberUnique: unique('notes_tenant_number_unique').on(table.tenantId, table.noteNumber),
+  }),
+);
+
+/**
+ * Class A — tenant settings (§5.21, migration 0005). One row per setting a
+ * tenant has actually changed; an absent row means the shipped default.
+ */
+export const settings = pgTable(
+  'settings',
+  {
+    id: char('id', { length: 26 }).primaryKey(),
+    tenantId: char('tenant_id', { length: 26 }).notNull(),
+    settingKey: text('setting_key').notNull(),
+    value: text('value').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    createdBy: char('created_by', { length: 26 }).notNull(),
+    updatedBy: char('updated_by', { length: 26 }).notNull(),
+    version: integer('version').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: char('deleted_by', { length: 26 }),
+  },
+  (table) => ({
+    keyUnique: unique('settings_tenant_key_unique').on(table.tenantId, table.settingKey),
   }),
 );

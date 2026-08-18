@@ -11,3 +11,5 @@ export {
 export type { IdentifierChannel } from './auth/identifier';
 export { isExpired, OTP_LENGTH, OTP_MAX_ATTEMPTS, OTP_TTL_SECONDS, rejectionFor } from './auth/otp';
 export type { OtpPurpose, OtpRejection, OtpState } from './auth/otp';
+export { licenseAllowsWrites, licenseStateAt } from './licensing/license-state';
+export type { LicenseState, LicenseTerm } from './licensing/license-state';

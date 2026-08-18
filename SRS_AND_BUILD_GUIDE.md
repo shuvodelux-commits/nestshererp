@@ -1,7 +1,11 @@
-# SherERP — SRS & Build Guide
+# SherERP — Master SRS & Build Guide v4.0 (Merged Canonical)
 
-**Single source of truth for requirements, decisions, architecture and build order.**
-Supersedes SRS v3.0 and the entire former `docs/` planning package (archived under `docs/archive/`, do not read).
+**Canonical reconciliation date:** 2026-08-18
+
+**Single source of truth for requirements, decisions, architecture, UI behaviour and build order.**
+Supersedes the previous `SRS_AND_BUILD_GUIDE.md`, SRS v3.0, the former `docs/` planning package, and the historical Confirmed Module documents.
+
+This version merges the strongest architectural/accounting/sync rules from the current implementation SRS with every owner-confirmed business/UI requirement reconciled on 2026-08-18. Where an older confirmed requirement conflicts with a newer decision, this document is authoritative.
 
 Companion files: `AI_CODING_INSTRUCTIONS.md` (how to write code), `AGENTS.md` (repo orientation). Nothing else.
 
@@ -20,12 +24,17 @@ Multi-tenant SaaS ERP for Bangladeshi SME retail/wholesale: POS, inventory with 
 ## 1.2 Delivery sequence
 
 ```
-Online (PostgreSQL)  →  full browser offline (SQLite WASM + OPFS, single writer)  →  MCP
+Online-first
+  → Sync infrastructure
+  → PWA Offline (SQLite WASM + OPFS, single writer)
+  → Mobile
+  → Optional Tauri desktop packaging in a future phase
+  → MCP
 ```
 
-V1 is **online-first**. Full offline is a later phase, but every V1 schema and layering decision is made so it stays possible.
+V1 is **online-first**. Sync-readiness is designed from day one. Full browser offline is a later phase and remains the canonical offline runtime. Mobile follows the PWA path first. **Tauri is deferred, not part of V1 and not a prerequisite for offline**; a future Tauri shell may package the same application only if a demonstrated OS-integration need justifies it. MCP remains a later integration phase.
 
-**Tauri is rejected (D-20).** Offline is delivered inside the PWA itself — SQLite WASM over OPFS, running the same domain and application code compiled to run in the browser. There is no desktop shell, no local Node/NestJS sidecar, and no second runtime to package or update.
+No future Tauri implementation may fork business rules, create a second transaction engine, or bypass the REST/application-service/domain boundaries defined here.
 
 ## 1.3 Stack (final)
 
@@ -39,8 +48,9 @@ V1 is **online-first**. Full offline is a later phase, but every V1 schema and l
 | Offline storage | **SQLite WASM + OPFS** in the browser, via the same repository interfaces (D-23). Requires PWA install + `navigator.storage.persist()` before any local write (D-24) |
 | Offline write authority | Single writer per tenant, bound to a registered browser profile (D-01) |
 | Receipt printing | WebUSB ESC-POS primary, browser print dialog fallback (D-22) |
-| Mobile | PWA. React Native deferred and likely dropped (D-28) |
-| Rejected | Tauri desktop shell and local Node/NestJS sidecar (D-20) · T3 stack (D-21) |
+| Mobile | PWA first. Native mobile may be evaluated later without duplicating domain rules (D-28) |
+| Future desktop | Optional Tauri packaging **after Mobile**, only if justified; it must reuse the same domain/application services and offline database contract (D-20) |
+| Rejected for V1 | Tauri/local Node sidecar as the primary offline architecture · T3 stack (D-21) |
 | AI | MCP over the same application services (later phase) |
 
 Do not substitute any of these.
@@ -65,9 +75,9 @@ shererp/
 └── docs/archive/            Historical planning docs. DO NOT READ.
 ```
 
-**Created later, in their own phase, not now:** `packages/adapter-sqlite-wasm` (Phase 12 — SQLite WASM over OPFS, loaded inside `apps/web`) and `apps/mcp` (Phase 14). Creating empty packages ahead of time is speculative scaffolding — the layering that makes them possible is what matters, not the folders.
+**Created later, in their own phase, not now:** `packages/adapter-sqlite-wasm` (Phase 12 — SQLite WASM over OPFS, loaded inside `apps/web`) and `apps/mcp` (Phase 15). Creating empty packages ahead of time is speculative scaffolding — the layering that makes them possible is what matters, not the folders.
 
-**There is no `apps/desktop`.** Tauri is rejected (D-20); the offline adapter is a browser-side package consumed by `apps/web`, which means `core-domain` and `core-application` must stay free of Node built-ins (`fs`, `path`, `crypto`) as well as of NestJS and Drizzle — they will be bundled for the browser. The boundary checker enforces this from Phase 0.
+**There is no `apps/desktop` in V1 or the PWA-offline phase.** The offline adapter is a browser-side package consumed by `apps/web`. A future Tauri phase may add a packaging shell only after the Mobile phase and must not move business logic out of `core-domain`/`core-application`. Those packages therefore remain free of Node built-ins (`fs`, `path`, `crypto`) as well as NestJS and Drizzle. The boundary checker enforces this from Phase 0.
 
 **Dependency rule, one direction only, CI-enforced:**
 
@@ -167,7 +177,7 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 | UI-01 | Borrow **interaction and navigation patterns** from the consumer apps users already know: persistent left sidebar, top bar with one global search, a bell for notifications, an avatar menu top-right, cards for summaries, paged lists, and a bottom bar or hamburger on small screens. |
 | UI-02 | **Never copy their visual identity** — no imitation of the colours, logo, typeface or brand styling of Facebook, YouTube or any other product. SherERP has its own plain, professional look. This is a legal line as much as a design one. |
 | UI-03 | **Component library: PrimeVue 4** (styled mode), self-hosted (D-37). The visual rules below are implemented through the existing PrimeVue preset and shared CSS tokens. Tailwind utility syntax in a design reference describes appearance, not a dependency; do not add Tailwind or a second UI library. |
-| UI-04 | Icons come from one self-hosted Vue-compatible set, 16–18px with a visually consistent 2px stroke, and only for familiar meanings (search, bell, cart, print, filter, back, menu, user). `lucide-react` is not used because this is a Vue application. An icon needing a legend gets a text label instead. |
+| UI-04 | Icons come from one self-hosted Vue-compatible set — **primeicons**, which ships with PrimeVue — 16–18px, and only for familiar meanings (search, bell, cart, print, filter, back, menu, user). `lucide-react` is not used because this is a Vue application, and no second icon set is added. An icon needing a legend gets a text label instead. |
 | UI-05 | Every screen is understandable without a manual: visible labels, no icon-only primary actions, no hidden gestures, no hover-only affordances. |
 | UI-06 | **All assets are self-hosted** — fonts, icons, images. §6.5 requires COOP/COEP for SQLite WASM in Phase 12; a CDN font breaks it. |
 | UI-07 | The API base URL is read at runtime from `/config.json` (§6.5). `import.meta.env.VITE_API_URL` is banned — it forces a per-customer frontend build. |
@@ -176,7 +186,7 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 
 | # | Rule |
 |---|---|
-| UI-08 | One shared shell: fixed 256px white left sidebar with right border · main content on slate-50 · page top bar inside main content · content padding 32px horizontal / 24px vertical and maximum width about 1400px. Sidebar order is brand → primary navigation → flexible spacer → Support/Settings → user profile pinned to bottom. POS runs full-screen without the sidebar. |
+| UI-08 | One shared shell: 256px left sidebar with right border, collapsible to a 68px icon rail · main content on the page background · top bar inside main content · content padding 32px horizontal / 24px vertical and maximum width about 1400px. Sidebar order is brand → primary navigation → flexible spacer → business identity pinned to the bottom. The top bar carries sidebar toggle · global search · business date · theme toggle · account menu. The page header (breadcrumb → title → Bangla helper on the left, the screen's own actions on the right) belongs to the shell, not to each page. POS runs full-screen without the sidebar. Colours and geometry are §2.7.I. |
 | UI-09 | Navigation is generated from the permission-filtered feature list, ordered entitlement → feature setting → permission (§5.21). **Never render a control that will 403.** |
 | UI-10 | The sidebar is one level deep wherever possible; a second level only where a module genuinely has sub-areas. No third level. |
 | UI-11 | Responsive navigation: sidebar on desktop, collapsible drawer on tablet, bottom bar with the 4–5 most-used destinations on phone. The same destinations, the same names, in the same order, on all three. |
@@ -246,29 +256,39 @@ Rules are numbered `UI-nn` so a task block or a review can cite them. UI-14…UI
 
 ### I. Binding visual system — consistent from the first screen
 
-The following tokens and component shapes are the single SherERP visual language. They are stored centrally in the PrimeVue preset and shared design CSS; pages may consume them but must not redefine them.
+**Revised 2026-08-18** from the owner-approved prototype set (`design-system/prototypes`, `design-system/references`). The tokens and component shapes below are the single SherERP visual language. They are stored centrally in `apps/web/src/design/` and the PrimeVue preset; pages consume them and must not redefine them.
 
-| Role | Binding value |
-|---|---|
-| Sidebar/card background | `#ffffff` |
-| Page background | `#f8fafc` |
-| Primary text and primary action | `#0f172a` |
-| Secondary text | `#64748b` |
-| Muted labels | `#94a3b8` |
-| Borders | `#e2e8f0` |
-| Success badge | background `#d1fae5`, text `#047857` |
-| Danger/due badge | background `#ffe4e6`, text `#be123c` |
-| Chart neutrals | `#0f172a`, `#94a3b8`, `#e2e8f0` |
+**Two themes ship, and the theme is a per-device user choice.** Light is the default; dark is selected by the person using the machine and remembered on that device. `prefers-color-scheme` is deliberately **not** followed — a shop PC left on a vendor default, or a phone that darkens at sunset, must never flip a running counter to a theme nobody in the shop chose.
 
-- No blue, purple or gradients. Saturated colour is limited to status badges and small category dots.
-- Typography uses the self-hosted system sans stack. Page title: 24px bold; eyebrow: 14px secondary; card title: 18px semibold; table header: 12px uppercase with tracking and muted colour; body/table: 14px.
-- Standard card: white, 16px radius, 1px slate-200 border, 24px padding.
-- Primary button: slate-900 background, white text, 8px radius, 16px × 8px padding. Secondary button: white with slate-200 border and the same radius/padding.
-- Active navigation and active segmented tab use a solid slate-900 pill with white text. Inactive items use secondary text and slate-100 hover/fill.
-- Tables have no vertical borders; rows use thin slate-100 dividers. Text aligns left, numbers right, and state is a rounded badge rather than plain coloured text. Pagination sits bottom-right.
-- A module landing page follows: header → filters/tabs → primary table/chart card at roughly two-thirds width → secondary summary/progress card at one-third. Forms and detail screens still follow UI-22 rather than forcing this dashboard layout.
+| Role | Light | Dark |
+|---|---|---|
+| Page background | `#f4f6fa` | `#080c14` |
+| Card / raised surface | `#ffffff` | `#0f1623` |
+| Sidebar and top bar | `#ffffff` | `#0b111c` |
+| Sunken (table head, filled input, tile) | `#f7f9fc` | `#141c2b` |
+| Primary action and active navigation | `#2563eb` (hover `#1d4ed8`) | `#3b82f6` (hover `#2563eb`) |
+| Primary text | `#0f172a` | `#e8edf6` |
+| Secondary text | `#64748b` | `#94a3b8` |
+| Muted labels | `#94a3b8` | `#64748b` |
+| Borders | `#e5e9f0`, strong `#d5dbe5` | `#1e293b`, strong `#2b3a50` |
+| Success badge | bg `#dcfce7`, text `#15803d` | bg `rgba(34,197,94,.14)`, text `#4ade80` |
+| Warning badge | bg `#fef3c7`, text `#b45309` | bg `rgba(245,158,11,.14)`, text `#fbbf24` |
+| Danger/due badge | bg `#ffe4e6`, text `#be123c` | bg `rgba(244,63,94,.14)`, text `#fb7185` |
+| Info badge | bg `#e8f0fe`, text `#1d4ed8` | bg `rgba(59,130,246,.14)`, text `#93c5fd` |
+
+**Summary-tile tones — chosen by meaning, never by taste.** Money in is **blue**, cost is **slate**, profit is **green**, something needing attention is **amber**, a receivable is **violet**, a payable is **rose**. A module may not reuse a tone for a different meaning.
+
+- Saturated colour is limited to: the primary action, the active navigation pill, status badges, category dots and summary tiles. **Gradients are allowed only** on a summary tile's fill, the brand mark and the avatar. Tables, forms, charts and page chrome stay neutral in both themes.
+- Typography uses the self-hosted system sans stack. Page title 24px bold; breadcrumb 12px secondary; card title 18px semibold; table header 12px uppercase with tracking and muted colour; body/table 14px; helper and fine print 12px. Bangla helper text is 12px, muted, never replacing the English label (UI-17).
+- Geometry: card radius 12px (auth card 16px), control radius 8px, badge fully rounded; control height 40px (32px for compact row controls); card padding 20px; content padding 32px horizontal / 24px vertical; maximum content width 1400px; sidebar 256px, 68px collapsed.
+- Shell: white/dark sidebar with brand → primary navigation → flexible spacer → business identity pinned to the bottom. The top bar carries sidebar toggle · global search · business date · theme toggle · account menu. The page header lives inside the content area: breadcrumb → title → Bangla helper on the left, the screen's own actions on the right. POS runs full-screen without the sidebar.
+- Buttons: primary is solid primary with white text; secondary is the card surface with a strong border; danger is the card surface with danger text and border. All 8px radius, 40px tall, 18px horizontal padding. Icon-only controls are permitted for row actions and shell affordances only, always with an accessible name (UI-05).
+- Active navigation is a soft primary pill with primary text in light, a solid primary pill with white text in dark. Inactive items use secondary text with a neutral hover fill.
+- Tables have no vertical borders; rows use thin dividers. Text aligns left, money and quantity align right with tabular figures, and state is a rounded badge rather than plain coloured text. Pagination sits bottom-right.
+- Summary tiles: the **filled** gradient variant is for a dashboard's headline row only, at most six across. A module's list screen uses the plain variant — a card surface with a coloured icon disc and a neutral figure — so the tiles do not compete with the table beneath. **Every figure on a tile is derived from data already on the screen or from the ledger (INV-10); a placeholder or illustrative number is never shipped.**
+- A module landing page follows: header → filters/tabs → summary tiles → primary table/chart card at roughly two-thirds width → secondary summary/progress card at one-third. Forms and detail screens still follow UI-22 rather than forcing this dashboard layout.
 - The summary/progress card uses one horizontal stacked bar, then a legend with dot, label, percentage and right-aligned value, followed by a full-width `Show all` action when applicable.
-- Reuse the shared shell, card, table, badge, button, filter and state components. A new card style, navigation layout, accent colour or page composition requires an explicit edit to this section before implementation.
+- **Where this lives:** `apps/web/src/design/tokens.css` (all values, both themes), `design/components.css` (button, field, table, badge, notice, dialog, toolbar, skeleton shapes), `design/theme.ts` (the light/dark choice), `design/preset.ts` (PrimeVue), and the shared components `AppShell`, `AppSidebar`, `AppTopBar`, `AppCard`, `StatCard`, `EmptyState`, `ErrorNotice`. Reuse them. A new card style, navigation layout, accent colour, tone meaning or page composition requires an explicit edit to this section before implementation.
 
 **Approved natural Bangla terms:** `Login` → `লগইন করুন` · `Customer name` → `কাস্টমারের নাম` · `Phone` → `ফোন নম্বর` · `Cash counter` → `ক্যাশ কাউন্টার` · `More customer information` → `কাস্টমারের আরও তথ্য` · `Guardian/Father's name` → `অভিভাবক/বাবার নাম` · `Address` → `ঠিকানা` · `Search invoices by phone` → `ফোন নম্বর দিয়ে আগের ইনভয়েস খুঁজুন` · `Save as customer` → `কাস্টমার হিসেবে সংরক্ষণ করুন`. These phrases are i18n values, not hardcoded component text.
 
@@ -499,7 +519,7 @@ All final. Not discussion points.
 | **D-02** | **Customer phone and guest sale identity — REVISED 2026-08-17.** A registered customer's phone is mandatory and unique per `(tenant_id, phone)` **within the CUSTOMER role only**. Other roles may share a number. The walk-in customer is one real, `system_reserved` party exempt from the constraint. A fully paid new buyer does not create an individual party: the sale uses the walk-in party and stores immutable invoice snapshots of required customer name + phone and optional guardian/father name + address. Snapshot phones are searchable but not unique. If the sale leaves due, customer creation is mandatory and atomic with the sale. A later return continues using the walk-in party when it leaves no due, advance or store credit; an individual customer is created only when a balance must survive, or when the shopkeeper confirms creation for later use. |
 | **D-03** | **Invoice deletion.** Posted invoices are reversed/voided with history retained; all related effects (stock, due, cash, expense) reverse. Draft invoices may be hard-deleted. |
 | **D-04** | **Party system.** One internal `parties` table with role flags (CUSTOMER, SUPPLIER, VENDOR, EXPENSE, EMPLOYEE). UI shows separate Customer / Supplier / Vendor / Expense ledgers as **views over the same journal**. Selling to a supplier requires explicitly choosing the transaction type; the party then appears in both histories with full purchase and sale history. |
-| **D-05** | **Costing method — REVISED 2026-08-16.** **One costing method per tenant: `FIFO` or `AVERAGE`.** It drives **both** the COGS posted to the journal **and** the valuation report, so the two can never disagree. **LIFO is removed from V1.** Physical issue order is always FIFO/FEFO (DR13.2) and is **not** configurable — the earlier "two independent settings" wording described a setting that had only one legal value and produced a valuation that drifted permanently from the INVENTORY account. See §3.11 INV-05 for the method-aware invariant. |
+| **D-05** | **Inventory issue and accounting costing — REVISED 2026-08-18.** `LIFO` is removed. SherERP exposes **two separate tenant settings**, each limited to `FIFO` or `AVERAGE`: (1) `inventory_issue_method`, controlling the operational stock-issue/lot-allocation policy, and (2) `sale_costing_method`, controlling POS/sales COGS and inventory valuation. Under `FIFO`, eligible lots are depleted by expiry/FIFO sequence and cost comes from those lots. Under `AVERAGE`, accounting uses moving weighted-average cost; because there is no physical “average lot”, traceability still links issued quantity to deterministic eligible lots using the rule in DR13.2A while the cost recorded on the issue comes from the average cost state. **The valuation report must always use the same accounting costing method as journal COGS so INV-05 remains true.** The two settings may differ operationally, but they may never create a second accounting valuation basis. |
 | **D-06** | **Profit reliability.** Profit is provisional while any unresolved provisional cost or open negative-stock lot exists in the range. Profit display is blocked/marked until costing is finalized. |
 | **D-07** | **Authentication — REVISED 2026-08-16.** **OTP is for first-time verification and password recovery only, never for daily login.** Signup: one field accepting **mobile or email** → 6-digit OTP → verify → set username, password and PIN in the same flow. Daily login: **email + password**, **phone + password**, **PIN**, or **Google OAuth**. Forgot password: OTP to the registered email or phone → set a new password. OTP channel follows the identifier — email identifier sends email OTP, phone identifier sends SMS. Sensitive actions require step-up authentication. |
 | **D-08** | **Backup restore.** Restore all compatible business data. Subscription and permissions always follow the current tenant/account. Data belonging to unavailable features is preserved but read-only until the required plan is activated. |
@@ -514,7 +534,7 @@ All final. Not discussion points.
 | **D-17** | **Inventory by location.** Quantity, lots, cost and valuation tracked by **Product + Location** from day one. V1 may expose a single auto-created default location; a single-warehouse business never creates one manually. Multiple warehouses each maintain their own stock. Inter-warehouse stock transfer is supported once multiple locations exist. |
 | **D-18** | **Serial uniqueness.** The same **active** serial cannot be used for the same product within a tenant. After retirement it may be reused with a warning. |
 | **D-19** | **Negative stock costing.** Negative-stock sales are allowed. Cost uses the product's last known cost as **provisional**; when actual cost arrives, affected COGS and profit are recalculated per the configured method. |
-| **D-20** | **Tauri — REJECTED 2026-08-16.** No desktop shell, no local NestJS/Node sidecar, no Rust. Offline runs inside the PWA on SQLite WASM + OPFS (D-23). Reasons: a sidecar means packaging, signing, auto-update and a second runtime to support on shop PCs; the browser path reuses the same domain/application code with one deployment artefact. **Consequence to accept knowingly:** no OS-level integration (native printer drivers, filesystem paths, background service), and offline capacity is bounded by the browser storage quota — hence D-22 for printing and D-24 for eviction. |
+| **D-20** | **Tauri — DEFERRED TO A FUTURE PHASE, REVISED 2026-08-18.** PWA + SQLite WASM + OPFS remains the primary offline architecture and is implemented before any desktop shell. After the Mobile phase, Tauri may be evaluated for native printer/filesystem/background integration. If added, it is packaging/integration only: it must reuse the same domain/application contracts, cannot introduce a parallel business-rule implementation, cannot become required for normal offline operation, and cannot weaken the single-writer/sync rules. |
 
 ## 4.2 Client platform, printing and offline storage (D-21 … D-24) — confirmed 2026-08-16
 
@@ -583,6 +603,25 @@ Every module supports, where applicable: search · filter · sort · add · edit
 Financial and inventory integrity rules override generic CRUD freedom. Not every action applies to every entity.
 
 **Opening balances** are required throughout: customers, suppliers, vendors, products/stock, cash, bank. Editable, with audit.
+
+## 5.0A Binding module specification contract for AI/code generation
+
+Every module implementation task must resolve the following before code is accepted. If a detail is absent here or in the referenced cross-module rules, the coding agent must stop/report rather than invent it:
+
+1. **Purpose and scope** — the business outcome and explicit out-of-scope items.
+2. **Fields/data model** — required, optional, defaulted and feature-dependent fields.
+3. **UI behaviour** — visible controls, default state, search/filter behaviour, touch/keyboard behaviour and permission-hidden controls.
+4. **Workflow/state transitions** — entry point, actions, validation, post-success state and failure state.
+5. **Business rules/invariants** — including exact precedence when multiple rules can apply.
+6. **Permissions/entitlements/settings** — all gates on reads, writes and sensitive fields.
+7. **Accounting effects** — journal/posting impact or explicit “none”.
+8. **Inventory effects** — stock/lot/serial impact or explicit “none”.
+9. **Correction/return/void behaviour** — what may change and how history is preserved.
+10. **Search/filter/report requirements** — exact user-facing discovery paths needed for daily work.
+11. **Edge cases and concurrency** — zero/negative stock, duplicate submission, closed period, offline replay, race conditions and feature-disabled history.
+12. **Acceptance tests** — observable Given/When/Then or numeric scenarios proving the above.
+
+A domain capability mentioned only abstractly is **not enough** when the owner confirmed a concrete UI action. Example: “payments are supported” does not satisfy the requirement for an invoice-detail **Receive Payment** action with allocation history.
 
 ## 5.1 Module table
 
@@ -686,15 +725,72 @@ Indicative tiers (exact matrix is open item O-1): **Basic** — core POS, produc
 **On expiry:** restricted new actions are blocked per policy, **historical data is retained**, and upgrading restores access. Entitlement is enforced server-side. Expiry never destroys or hides data (consistent with D-36).
 
 ## 5.5 M04 Product & Catalog
-Product, brand, category/group, SKU/code, barcode, unit, selling price, reorder level, status, description, image, expiry config, warranty config, serial tracking.
 
-- **Brand and Product Name are separate fields.** Display name = `Brand + Product Name` when a brand exists.
-- **Different purchase prices create inventory lots, not duplicate products.**
-- Operations: add/edit/update/delete-where-permitted, search, filter, brand filter, category filter, barcode search, barcode scan, barcode generation.
-- Unit conversion per D-10 with `pack_size`.
+### Purpose
+Maintain one canonical product identity while allowing price, stock, lot, expiry, warranty, serial, barcode and feature-controlled behaviour to evolve independently.
+
+### Mandatory product creation fields
+A new product requires exactly these business fields unless an enabled feature dependency requires more:
+
+- **Product Name***
+- **Base Unit***
+- **Purchase Price***
+- **Selling Price***
+- **Minimum Stock / Reorder Level***
+- **Opening / Current Stock** defaults to `0`; the UI shows `0` and may allow an authorized opening-stock entry through the normal stock-opening service.
+
+Category, brand, SKU, barcode, image, description, expiry, warranty and serial configuration are optional unless their feature is enabled and specifically requires them. The UI must not make optional catalog fields mandatory merely because the database supports them.
+
+### Product identity and display
+- Brand and Product Name are separate fields.
+- Display name = `Brand + Product Name` when brand exists; otherwise Product Name.
+- Different purchase prices, suppliers, expiry dates or receipts create inventory lots, **not duplicate products**.
+- Product status is `ACTIVE` or `INACTIVE`. Inactive products remain in history but are excluded from new POS selection and new purchasing unless explicitly reactivated.
+
+### Pricing, discount and product offers
+Products support normal selling price plus optional default discount/promotional offer data:
+
+- `default_discount_type`: `FIXED_AMOUNT | PERCENTAGE | null`
+- `default_discount_value`
+- `offer_price_minor` or promotional discount
+- `offer_start_at`
+- `offer_end_at`
+- active/inactive state
+
+Promotions **never overwrite** the normal selling price. The invoice line stores the final applied price/discount snapshot.
+
+When more than one price source applies, the proposal precedence is binding:
+
+1. normal retail selling price;
+2. customer-group/dealer price when that feature is enabled and a matching registered customer is selected;
+3. active product promotion/default offer;
+4. permitted manual line price/discount override by the user.
+
+The UI must show the original/base price and the applied discount/offer when an offer changed the proposal. Manual overrides are audited. No generic campaign/rules engine is required.
+
+### Catalog capabilities
+SKU/code, barcode, category/group/subcategory, image, status, description, expiry config, warranty config, serial tracking, reorder/minimum stock, unit conversion per D-10, product barcode generation and product/serialized-unit barcode support.
+
+### Operations and search
+Add, edit, update, deactivate/reactivate, delete only where permitted, search, filter, brand filter, category filter, product-group/subcategory filter, stock-status filter, barcode search and scan. Posted historical documents never change when product master data changes.
+
+### Acceptance requirements
+- Product can be created with only the mandatory fields above and opening stock `0`.
+- Changing a product name/brand does not rewrite posted invoice snapshots.
+- Same product purchased at two costs stays one product and creates separate lots.
+- Active promotion affects only eligible new sales; normal selling price remains intact.
+- Inactive product is not selectable for a new POS sale.
 
 ## 5.6 M05 / M06 / M07 Parties (unified — D-04)
-One `parties` table + `party_roles`. Customer: phone mandatory, unique within the CUSTOMER role (D-02), group, loyalty/premium classification, notes, status, history, ledger, credit limit (warning-only). Supplier: contact info, purchase history, payable, payments, purchase returns, statement, ledger. Vendor/consignment (entitlement-gated): vendor-owned stock, vendor cost, vendor payable, vendor payment, vendor return, source transaction history.
+One `parties` table + `party_roles`. Customer phone is mandatory and unique within the CUSTOMER role (D-02). Supplier and Vendor are other roles over the same party identity.
+
+**Customer fields:** Name, Phone, Address, Father/Guardian Name, NID, Email, Notes, Customer Group, Credit Limit, Status. Address, Father/Guardian Name, NID, Email and Notes are optional. Settings may hide/disable optional fields such as NID and Father/Guardian Name from normal forms while preserving stored historical data. **Loyalty/Premium customer functionality is dropped for now and is out of scope until explicitly reopened.**
+
+**Customer profile:** summary, current receivable/due, advance/store-credit where applicable, sales history, invoice history, payment history, return history, statement and ledger drill-down.
+
+**Supplier:** contact info, purchase history, payable, supplier credits, payments, purchase returns, statement and ledger. **Vendor/consignment** (entitlement-gated): vendor-owned stock, vendor cost, vendor payable, vendor payment, vendor return and source-transaction history.
+
+**Opening-data import (required for onboarding):** one guided CSV import flow covers products/barcodes, customers, suppliers, opening stock with location and unit cost, opening customer receivables, opening supplier payables, and opening cash/bank balances. Each import has a downloadable template, preview, per-row validation and a final summary before posting. Posting is all-or-nothing per file, idempotent on the supplied import operation ID, tenant-scoped and audited. Opening balances use the normal journal/stock-opening services; an import must never write balances or stock directly. A failed row posts nothing. This is a migration/onboarding path, not a generic configurable import engine.
 
 **Guest versus registered customer:** the system-reserved walk-in party represents fully paid buyers who have not been saved as individual customers. Their invoice still captures required name and phone plus optional guardian/father name and address as immutable snapshots. These snapshots make the invoice searchable and printable but do not create an individual party or individual ledger. Repeated snapshot phones are allowed; uniqueness begins only when a CUSTOMER party is created.
 
@@ -705,7 +801,33 @@ Creating a registered customer from a guest snapshot copies the details only aft
 **Party selection defaults:** Sales/POS shows customers by default; Purchase screens show suppliers by default. Selling to a supplier is possible but must be an explicit user choice — never show every party type by default.
 
 ## 5.7 M08 Sales & POS
-Fast product search, grid/list, barcode scan, brand/category filters, customer selection, walk-in customer, quantity editing, permission-gated price editing, discount, grand total, multiple payment methods, cash paid, due, invoice generation, printing, reprint, cancellation/correction, permission-controlled transaction editing.
+Fast product search, grid/list, barcode scan, brand/category/product-group filters, stock-status filters, customer selection, walk-in customer, quantity editing, permission-gated price editing, fixed/percentage discount, grand total, multiple payment methods, cash paid, due, invoice generation, printing, reprint, cancellation/correction and permission-controlled transaction editing.
+
+### POS product visibility and stock state
+- New POS selection includes **ACTIVE products only**.
+- An ACTIVE product remains searchable/selectable when current stock is `0` or negative.
+- An INACTIVE product is excluded even if stock remains.
+- Stock status filters include at minimum `IN_STOCK`, `LOW_STOCK`, `ZERO_STOCK`, `NEGATIVE_STOCK`.
+- Whether a zero/negative-stock sale may be posted is governed separately by the Negative Stock policy. Visibility must not be used as a substitute for that policy.
+
+### Barcode behaviour
+**Normal product barcode:** first scan adds the product to cart; scanning the same barcode again increments the existing cart line quantity rather than creating a duplicate line unless product configuration requires separate serialized lines.
+
+**Serialized SherERP unit barcode:** scan resolves the unique inventory-unit ID, identifies product/lot/serial/warranty/expiry, adds the product to cart and automatically selects that exact inventory unit/serial. If the unit is not in a sellable state, POS blocks selection and explains why.
+
+### POS cart and discount
+Each line supports quantity, unit, selling price, discount and final line total. Discount supports both `FIXED_AMOUNT` and `PERCENTAGE`. Invoice-level discount may also support the same two types when enabled. The posting service validates discount boundaries and performs money rounding centrally. Price/discount changes require the relevant permission and are audited.
+
+### Search filters
+At minimum: free-text/product name, SKU/code, barcode, Brand, Category, Product Group/Subcategory and Stock Status. Search is keyboard- and touch-friendly.
+
+### Vendor/consignment workflow
+Source selection: `OWN_STOCK | VENDOR_CONSIGNMENT`. Vendor/consignment requires vendor, sourced quantity and vendor cost. Where the user has permission, POS offers **Create Vendor** without leaving the sale; the minimum vendor record is created through the normal Party service and immediately selected. Vendor/consignment remains entitlement/feature gated and follows the deemed-purchase posting rule DR13.10.
+
+## 5.7 M08 Sales & POS
+**Lean wholesale controls (disabled and hidden unless the tenant enables wholesale sales):** quotation → sales order → invoice, using the same products, parties, prices and document lines as the POS/sales path. Quotations reserve no stock and create no journal entry. Sales orders may show availability but reserve no stock in V1 and create no journal entry. Conversion copies the accepted quantities and current approved price into the next document, records the source link and prevents converting more than the remaining quantity. This is not a CRM, pipeline, delivery-routing or contract-management feature.
+
+**Customer-group pricing (disabled and hidden unless dealer pricing is enabled):** a product may have one selling price per active customer group. Selecting a registered customer proposes that group's price; walk-in uses the normal retail price. The applied price is copied to the document line, remains permission-editable under the existing price-edit rule, and never changes a posted document when the group price later changes. No rule builder, date campaign, quantity-break or promotion engine is included in V1.
 
 **Customer control:** a searchable customer combobox defaults to the walk-in/new-buyer flow. Selecting a registered customer immediately shows current due and advance derived from journal lines, never recomputed from invoices. Directly below it is `Search invoices by phone` (`ফোন নম্বর দিয়ে আগের ইনভয়েস খুঁজুন`). Searching a phone returns both registered-customer invoices and guest invoices matched through `customer_phone_snapshot`, newest first.
 
@@ -720,6 +842,27 @@ Source selection: Own Stock · Vendor/Consignment. Vendor/consignment requires v
 ## 5.8 M09 Sales Invoice & Payments
 Invoice creation, numbering, payment allocation, multiple payment methods, cash, bank, due, customer balance, invoice search (by phone), reprint, cancellation/correction, payment history.
 
+### Invoice detail actions
+An authorized invoice detail screen must expose: Receive Payment, Partial Return, Full Return, Payment History, Return History, Print/Reprint, Export/Share, Correct/Edit through versioning rules, and Void/Cancel where permitted. These controls invoke application services; they never mutate ledger projections directly.
+
+### Transaction correction vs cosmetic invoice presentation
+Financial/stock facts such as customer party, products, quantity, price, discount, payment and business date are **transaction changes** and follow §2.5 reversal/versioning rules.
+
+The system may also support **invoice-specific cosmetic presentation overrides** that do not change accounting, stock, product master or customer master data, including: customer display name, product display label, additional note, delivery instruction, warranty note and custom message. Cosmetic overrides are stored as invoice-presentation data with audit history. They must never change quantity, unit price, discount, tax, payment, due, party allocation, stock movement or journal values.
+
+### Invoice output and sharing
+Invoices support Bangla/English document rendering, multiple templates, A4, 80mm thermal and Business Pad printing, PDF export, JPG/PNG image export, and a **Share** action for WhatsApp. The WhatsApp share path uses the authorized already-generated document/link and never exposes cost/margin fields or cross-tenant data.
+
+### Invoice design settings
+Configurable per tenant/template: language, template, paper size, logo, business information, customer-field visibility, SKU/barcode visibility, discount visibility, payment breakdown, due visibility, footer, terms & conditions, notes/messages and supported section ordering/visibility. A preview is recommended and must use the same renderer as final output.
+
+### Business Pad mode
+Supports configurable top/header spacing, page margins/content start position, hiding SherERP-generated logo/header/business block when the physical pad already contains them, and selecting which invoice sections are printed. Transaction facts remain unchanged.
+
+Every credit sale has an explicit due date. Customer balances and invoices expose ageing buckets `Not due`, `1–30`, `31–60`, `61–90`, and `90+` days as of the requested business date. Ageing is derived from journal allocations and reconciles exactly to the customer receivable control account; a document's unpaid field is never treated as an independent balance.
+
+Posted invoices have A4/80mm PDF output plus a share action suitable for WhatsApp. Sharing sends or downloads a link/PDF for the already-authorized invoice; it does not change posting state, expose other tenant data, or require a customer portal. The shared copy shows the same immutable invoice snapshot and carries no cost or internal-margin fields.
+
 Every sales invoice stores the customer identity as it appeared at posting time: `customer_name_snapshot` and `customer_phone_snapshot` required; `customer_guardian_name_snapshot` and `customer_address_snapshot` nullable; `party_id` links either the selected/created registered customer or the system walk-in party. Snapshot fields are document facts and never change when party master data changes. Posted corrections create the normal new document version rather than rewriting historical snapshots.
 
 **Guest accounting:** a fully paid guest invoice posts using the system walk-in party and creates no individual customer ledger. If the transaction leaves due, advance or store credit, an individual customer must exist and every related journal line uses that party. A later fully settled return/refund remains linked to the original invoice and continues using the system walk-in party when it leaves no remaining due or credit.
@@ -733,7 +876,18 @@ A sale transaction is atomic across: sale → customer snapshot/party creation w
 ## 5.9 M10 / M11 Purchase and Purchase Orders
 Purchase: supplier, date, reference/invoice, product, quantity, purchase price, discount, additional costs, payment, due, lot creation, inventory increase, supplier ledger, cash/bank movement, purchase return. Different purchase prices create separate lots.
 
-Purchase orders: create, supplier, products, quantities, expected cost, status, approval where enabled, conversion to purchase, search/filter, edit, cancel, audit. **A purchase order must not increase physical stock.**
+Purchase orders: create, supplier, products, quantities, expected cost, status, approval where enabled, partial receiving, conversion to one or more purchases, search/filter, edit, cancel, audit. Each receipt records ordered, previously received, received now and remaining quantities. Only the received quantity creates lots, stock movements and a supplier liability; duplicate receipt submission is idempotent and over-receipt is blocked unless an authorized user explicitly accepts it. **A purchase order itself must not increase physical stock.**
+
+Every credit purchase has an explicit due date. Supplier balances and purchases expose ageing buckets `Not due`, `1–30`, `31–60`, `61–90`, and `90+` days as of the requested business date, derived from journal allocations and reconciling exactly to the payable control account. Supplier payments and purchase returns create supplier credits when over-applied; the user may explicitly apply an available credit to selected open purchases. Application changes allocation only—it must not post cash twice or rewrite the original return/payment.
+
+
+### Purchase fields and correction workflow
+Purchase captures supplier, transaction/business date, items, quantity, UOM, purchase price, item discount where supported, landed/additional costs, payment breakdown, due, due date and **Notes**. Each received stock line creates/updates the appropriate lot through the normal inventory service.
+
+Authorized correction of a posted purchase may change supplier, transaction date, products, quantities, purchase price, landed costs and payment only through the normal version/reverse-and-repost path. Purchase return and cancellation/reversal are separate explicit actions. No correction may directly rewrite stock balances, supplier balance or journal rows.
+
+### Expiry, warranty and manufacturer serials at purchase
+Expiry is captured per lot when expiry tracking is enabled. Warranty configuration is snapshotted as required. For serial-tracked products, **manufacturer serial numbers are entered or scanned from the physical goods; SherERP does not invent manufacturer serials.** The number of accepted serials must equal the serialized quantity received, and duplicate active serials for the same product/tenant are rejected per D-18.
 
 ## 5.10 M12 Inventory & Stock
 Current stock, search, filters, low stock, out of stock, stock movement, adjustment, reconciliation, history, source transaction, concurrency protection, inter-location transfer (once multiple locations exist).
@@ -744,6 +898,13 @@ Every stock movement identifies: product, lot where applicable, quantity, source
 stock_movements(id, tenant_id, product_id, location_id, lot_id,
                 qty, direction, business_date, source_doc_id, unit_cost, ...)
 ```
+
+
+### Active/inactive inventory behaviour
+Inventory views may show both active and inactive products with explicit status filtering. POS uses only ACTIVE products, but an active product remains available in POS at zero or negative stock. Deactivation changes availability for new operational selection; it never removes historical stock movements or documents.
+
+### Expiry management
+Where expiry tracking is enabled, expiry is stored per lot. Inventory must provide expired-stock, near-expiry and stock-by-lot/expiry views. Selling an expired lot follows a configurable `BLOCK | WARN | ALLOW` policy with permission where required. Near-expiry threshold is configurable. FEFO may take precedence within FIFO issue selection when expiry tracking is enabled.
 
 ## 5.11 M13 Inventory Lots & Costing — highest-risk module
 
@@ -761,11 +922,12 @@ stock_movements(id, tenant_id, product_id, location_id, lot_id,
 | ID | Rule |
 |---|---|
 | DR13.1 | `qty_remaining` = `qty_received` − Σ consumptions + Σ restorations. The cached column must always equal the computed value (INV-02) |
-| DR13.2 | **Physical issue order** = expiry ASC (if tracked), then `business_date` ASC, `created_at` ASC, `id` ASC — FIFO/FEFO always. **This is not configurable** (D-05) |
-| DR13.3 | The tenant's **costing method** (`FIFO` or `AVERAGE`, D-05) determines the unit cost recorded on the consumption. The same figure is posted to COGS **and** used by the valuation report — there is never a second costing basis |
-| DR13.4 | `FIFO`: unit cost = the consumed lot's `actual_unit_cost`. `AVERAGE`: `product_cost_state.avg_unit_cost` at the moment of the movement. **Under `AVERAGE`, `lot.actual_unit_cost` is retained for traceability and landed-cost attribution but is never used for valuation or COGS** — otherwise INV-05 breaks |
+| DR13.2 | `inventory_issue_method=FIFO`: physical lot depletion = expiry ASC when expiry is tracked (FEFO), then `business_date` ASC, `created_at` ASC, `id` ASC. |
+| DR13.2A | `inventory_issue_method=AVERAGE`: accounting does **not** create an “average lot”. For traceability, quantity is linked to eligible positive lots using deterministic expiry/date/id order; operational screens label the issue method Average, while the cost attached to the issue is derived from the moving-average cost state. This preserves serial/expiry/lot traceability and prevents impossible synthetic lots. |
+| DR13.3 | `sale_costing_method` (`FIFO` or `AVERAGE`, D-05) determines COGS for POS/sales and the accounting inventory valuation basis. The same accounting basis must drive the `INVENTORY` account reconciliation — there is never a second valuation basis. `inventory_issue_method` controls operational quantity/lot allocation and may differ without changing the accounting invariant. |
+| DR13.4 | `sale_costing_method=FIFO`: accounting unit cost is resolved from the FIFO/FEFO cost layers required to price the sold quantity, independent of which traceability links were needed for serial/expiry handling. `sale_costing_method=AVERAGE`: accounting unit cost = `product_cost_state.avg_unit_cost` at the movement. Under Average, lot actual cost remains for traceability/landed-cost attribution, not as a second valuation method. |
 | DR13.5 | AVG on receipt: `new_avg = (qty_on_hand×avg + qty_in×unit_cost) / (qty_on_hand + qty_in)`, integer minor units, half-up at scale 4, remainder to `ROUNDING` |
-| DR13.6 | Changing the costing method requires `settings.manage` and is only allowed from the start of an open period. **Existing history is never retroactively revalued** |
+| DR13.6 | Changing either `inventory_issue_method` or `sale_costing_method` requires `settings.manage`, audit reason and an open-period boundary. Existing posted history is never silently rewritten. A costing-method change applies prospectively unless an explicit authorized recompute process is invoked under the defined accounting policy. |
 | DR13.7 | Negative stock: consumption uses a provisional cost (last known → product default → 0) and creates a `NEGATIVE_STOCK_TRUE_UP` obligation. When a real lot arrives, the difference posts as a cost adjustment (D-19) |
 | DR13.8 | Landed cost changes `actual_unit_cost`; already-consumed quantities get a `LANDED_COST` adjustment posted to COGS on the landed-cost document's date — never a silent rewrite of past COGS |
 | DR13.9 | **Re-costing policy.** A backdated or edited stock-in document triggers **recompute-forward** for the affected `(product, location)` from the changed date to today, **within open periods only**. Differences post as `cost_adjustments`; original consumption rows are preserved with `superseded_by` links |
@@ -795,7 +957,7 @@ stock_movements(id, tenant_id, product_id, location_id, lot_id,
 **MCP:** read-only `stock_valuation` and `explain_cost(product, date)` returning the lot/consumption chain. **No AI write access to costs, ever.**
 
 ## 5.12 M14 Landed Cost
-Allocation methods: Purchase Value, Quantity, Manual (largest-remainder allocation per §3.3). Categories: transport, loading/unloading, labour, other configurable. `actual_cost = purchase_cost + allocated_landed_cost`. **Original purchase cost remains traceable.**
+Allocation methods: Purchase Value, Quantity, Manual (largest-remainder allocation per §3.3). Seeded categories: Transport, Labor, Loading/Unloading, Delivery, Customs and Other; tenants may add configurable categories. `actual_cost = purchase_cost + allocated_landed_cost`. **Original purchase cost remains traceable.**
 
 ## 5.13 M15 Stock Reconciliation
 Physical count, system quantity, physical quantity, difference, adjustment reason, authorization, audit, stock movement. **No direct silent quantity manipulation.**
@@ -806,7 +968,19 @@ Sales and purchase returns with original transaction reference, product, quantit
 For a return against a fully paid guest invoice, preserve the original invoice identity snapshot and continue using the system walk-in party when the return is fully settled and leaves no due, advance or store credit. Do not create a customer merely because goods were returned. If the return creates a balance that must survive the transaction, require confirmation, create or match the registered customer by the snapshot phone, and attach that balance to the resulting party inside the return transaction.
 
 ## 5.15 M17 / M18 Ledgers
-Projections of journal lines — no independent writers. Statement columns: Date · Reference · Description · Debit · Credit · Running Balance. Default reporting uses `business_date`; `created_at` remains available for audit. Terminology configurable (Debit/Credit · Cash In/Cash Out · পাবো/দিব) **without changing accounting semantics**.
+Ledgers are projections of journal lines — **no independent writers**. Customer, supplier and vendor ledger screens may provide action buttons, but every action invokes the corresponding sale/payment/return/correction application service.
+
+### Statement and ledger requirements
+Columns: Date · Reference · Description · Debit · Credit · Running Balance. Date range output includes Opening Balance and Closing Balance. Default reporting uses `business_date`; users with permission may switch/view `created_at` for audit. Terminology is configurable (Debit/Credit · Cash In/Cash Out · পাবো/দিব) without changing accounting semantics.
+
+### Customer ledger actions
+Authorized actions from a customer ledger/profile include: Receive Payment, open sale/invoice, correct/edit transaction through the original module, update through approved versioning, Sales Return, and Void/Cancel/Reversal. The ledger itself remains read-only projection data.
+
+### Supplier/vendor ledger actions
+Equivalent drill-down to purchase, payment, purchase return, vendor/consignment source transaction and authorized correction/reversal.
+
+### Reconciliation invariant
+Opening + debits − credits (according to the account's signed convention) must reconcile exactly to closing balance and the relevant control account. No UI-maintained “due balance” may diverge from journal allocations.
 
 ## 5.16 M19 Cash Drawer & Business Day Session
 
@@ -982,12 +1156,27 @@ Net warranty cost per period is therefore readable directly off `WARRANTY_EXPENS
 
 **Integration:** all stock effects go through existing Inventory operations; all financial effects through the posting kernel and the Party/Supplier ledger. Warranty implements no accounting of its own. Serial linkage follows D-18. History must always make clear where the product is and what has happened.
 
+
+### Serialized inventory unit model
+Every physical serialized unit has its own durable record linked to Product, Manufacturer Serial, Lot, Supplier, Purchase/Receipt, Purchase Date, acquisition cost reference, Expiry where applicable, Warranty configuration/reference, current location and Current Status. Status changes are explicit and audited.
+
+**Manufacturer serials are never generated by SherERP.** They are entered/scanned from the physical item. Duplicate active serials are rejected and received serial count must match serialized quantity.
+
+### SherERP unit barcode
+SherERP may generate its own barcode/QR identifier for a physical inventory unit. The encoded value identifies a stable **inventory unit ID**, not mutable business data. Product, serial, lot, warranty, expiry and status are looked up from current authorized data after scan. Do not embed current warranty status, price, customer or other mutable details in the barcode payload.
+
+### Barcode label printing
+Configurable label fields may include Product Display Name, Manufacturer Serial, Warranty reference/period, Expiry and SherERP barcode/QR. Label templates must support common thermal label printers through the document/print layer.
+
+### POS selection and search
+Serialized sale selection supports scan plus manual search by Serial Number, Warranty Number/Reference and Barcode. Only valid, available, sellable inventory units may be selected. Scanning a serialized unit barcode automatically adds/selects its product and exact unit/serial.
+
 ## 5.20 M24 / M25 Reports & Dashboard
 
 **Sales:** summary by date, product, customer, cashier, brand, category, payment method.
 **Purchasing:** summary by supplier, product, date.
 **Inventory:** current stock, low stock, out of stock, movement, lot, valuation, lot ageing/near expiry, cost adjustments, COGS by period, provisional-cost exposure, margin per product/sale.
-**Finance:** customer due, vendor payable, vendor receivable, cash, bank, expenses, profit when reliable (D-06).
+**Finance:** customer due ageing, supplier payable ageing, vendor payable, vendor receivable, cash, bank, expenses, profit when reliable (D-06). Ageing totals reconcile exactly to their journal control accounts as of the same business date.
 **Reconciliation:** unmatched, reconciled, late entries, corrections, cost adjustments after sync.
 
 **Reports read from journal lines and stock movements only — never computed from documents directly (INV-10).**
@@ -1007,8 +1196,14 @@ Bank Difference: ৳11,500 [Why?]
 
 This is a product requirement, not a nice-to-have. It is also the practical test of INV-10: if a figure cannot be traced to journal lines or stock movements, it was computed the wrong way.
 
+
+### Dashboard profit rule
+Profit **may appear** on the main Dashboard only when all three conditions are true: (1) the Profit dashboard feature/card is enabled, (2) the user has `report.profit.view`, and (3) costing for the displayed range is reliable/finalized under D-06. If costing is provisional, the card is hidden or clearly marked provisional according to the configured policy; it must never present provisional profit as final.
+
+Dashboard cards and lists are configurable by allowed feature/permission. Common cards include Today Sales, Stock Value, Purchase Order status/count, Low Stock count, Recent Sales, Due Collection/Receivables and Payables. No user may enable a card whose entitlement/permission denies its underlying data.
+
 ## 5.21 M26 Settings & Feature Controls
-Product settings (**costing method — `FIFO` or `AVERAGE`, D-05**; stock behaviour; product behaviour) · party settings · permission settings · module feature on/off per entitlement · terminology · tenant timezone · numbering prefixes · period lock configuration · negative stock policy (`BLOCK`/`WARN`/`ALLOW`) · backdating policy · cash session on/off.
+Product settings (**costing method — `FIFO` or `AVERAGE`, D-05**; stock behaviour; product behaviour) · party settings · permission settings · module feature on/off per entitlement · terminology · tenant timezone · numbering prefixes · period lock configuration · negative stock policy (`BLOCK`/`WARN`/`ALLOW`) · backdating policy · cash session on/off · wholesale sales on/off · dealer pricing on/off.
 
 There is no "lot consumption method" setting — physical issue is always FIFO/FEFO (DR13.2).
 
@@ -1020,9 +1215,16 @@ There is no "lot consumption method" setting — physical issue is always FIFO/F
 Vendor/Consignment  →  requires Vendor Management + Vendor Ledger
 Warranty            →  requires Serial Tracking where the product is serial-tracked
 Bank Reconciliation →  requires Bank Accounts
+Dealer Pricing      →  requires Wholesale Sales + Customer Groups
 ```
 
 Turning off a parent feature must either cascade or be refused with an explanation — never leave a dependent feature enabled and broken.
+
+
+### Required feature/settings controls from the confirmed product behaviour
+At minimum settings cover: product offers/default discounts; optional customer fields such as NID and Father/Guardian Name; dealer/customer-group pricing; Vendor/Consignment; serial/warranty; expiry; negative-stock sale policy; expired-stock sale policy; invoice template/visibility controls; dashboard card visibility; `inventory_issue_method` (`FIFO|AVERAGE`); `sale_costing_method` (`FIFO|AVERAGE`).
+
+Feature access remains `Plan → Feature → Setting → Permission → Access`. Turning a feature off hides new-use UI but preserves historical data.
 
 ## 5.22 M27 Audit
 Every audit event records: user, action, entity, entity ID, old value, new value, timestamp, reason where required, source transaction, and `source` (e.g. `DAYBOOK`, `SYNC`, `API`).
@@ -1033,7 +1235,7 @@ Permission **denials** on mutating actions are audit-logged with user, code, rec
 
 ## 5.23 M28 Offline & Sync — future phase
 
-Offline runs **inside the PWA** on SQLite WASM + OPFS (D-23), under the single-writer rule bound to a registered browser profile (D-01). There is no Tauri shell and no local Node process (D-20). Everything below is the reason for the ULID, integer-money, outbox and idempotency decisions taken in V1.
+Offline runs **inside the PWA** on SQLite WASM + OPFS (D-23), under the single-writer rule bound to a registered browser profile (D-01). Tauri is **not used for this phase**; it is a possible later packaging/integration phase after Mobile (D-20). Everything below is the reason for the ULID, integer-money, outbox and idempotency decisions taken in V1.
 
 **Preconditions before any offline write is accepted (D-24), enforced in this order:**
 
@@ -1107,6 +1309,12 @@ Invoice printing (thermal, A4, business pad), PDF, image, Bangla/English invoice
 They share a transport and nothing else. Building the wallet to unblock login would drag bKash verification and credit metering into the auth phase.
 
 **Wallet (Phase 10):** tenant purchases credits (e.g. 100 SMS = 70 BDT). Select package → pay via bKash/Nagad personal → enter number → enter transaction ID → admin verification → credits added. **No credit before verification**; transaction IDs unique; audited; rate-limited.
+
+
+### Binding document/printing behaviour
+The centralized document service must render invoice/statement documents consistently for screen preview, A4, 80mm thermal, Business Pad, PDF and JPG/PNG output. WhatsApp sharing is an explicit action for invoices and may use a generated authorized link or exported file. The share action must be available from invoice detail where platform capabilities allow it, with a download/copy fallback on desktop browsers.
+
+Business Pad rendering must honor configurable header/top offset, margins/content start, optional suppression of software logo/business header and per-section visibility so a pre-printed pad can supply those elements physically.
 
 ## 5.25 M30 SaaS, Multi-tenancy & Backup
 Tenant isolation and lifecycle, subscription, entitlements, trial, upgrade, renewal, expiry, account closure, data export, data deletion (with a defined purge job and retention window), restore.
@@ -1276,6 +1484,44 @@ S-DB-04  Print 15 Aug · add a backdated 15 Aug entry · reprint → new entry p
 
 ---
 
+# PART 5A — 2026-08-18 CONFIRMED RECONCILIATION
+
+This matrix is binding and exists to prevent older prompts from reintroducing superseded behaviour.
+
+| Topic | Canonical decision |
+|---|---|
+| Product offers/default discounts | Included; normal price retained; promotion dates/types explicit |
+| Minimum product fields | Product Name, Base Unit, Purchase Price, Selling Price, Minimum/Reorder Stock; Opening/Current Stock defaults 0 |
+| Customer optional fields | Address, Father/Guardian Name, NID, Email, Notes; configurable visibility |
+| Loyalty/Premium | **Dropped for now** |
+| POS discounts | Fixed amount and percentage |
+| Barcode scan | First scan adds; repeat normal scan increments qty; serialized scan auto-selects exact unit/serial |
+| POS filters | Brand, Category, Product Group/Subcategory, Stock Status plus search/barcode |
+| Zero/negative stock visibility | ACTIVE products remain visible/selectable; INACTIVE products excluded |
+| Vendor creation from POS | Included when permission/feature allows |
+| Cosmetic invoice editing | Included, presentation-only and audited; cannot change accounting/stock facts |
+| Invoice design settings | Included |
+| Image export | PDF + JPG/PNG |
+| WhatsApp share | Included |
+| Business Pad controls | Included |
+| Manufacturer serial | Enter/scan physical serial; SherERP does not generate it |
+| Serialized unit model | Included |
+| SherERP unit barcode | Stable unit ID; mutable data looked up, not encoded |
+| Barcode labels | Included |
+| Serial/warranty/barcode search | Included; only valid available units selectable |
+| Expiry management | Lot expiry + expired/near-expiry views + configurable sale policy |
+| Landed cost seeded categories | Transport, Labor, Loading/Unloading, Delivery, Customs, Other |
+| Ledger actions/statements | Explicit UI actions plus opening/running/closing balance and dual dates |
+| Invoice payment/return history | Explicit detail-screen actions |
+| Purchase corrections | Explicit supplier/date/items/qty/price/landed-cost/payment correction via versioning |
+| Purchase notes | Included |
+| Dashboard profit | Only feature enabled + permission granted + costing reliable |
+| Roadmap | Online-first → Sync infrastructure → PWA Offline → Mobile → Tauri future → MCP |
+| Costing options | FIFO and AVERAGE only; LIFO excluded |
+| Settings | Separate `inventory_issue_method` and `sale_costing_method`, each FIFO/AVERAGE; accounting valuation follows sale costing |
+| Offline authority | One offline writer per tenant, registered browser profile; others read-only offline |
+| Merge policy | New architecture/security/accounting kernel retained; missing confirmed business/UI behaviour merged into it |
+
 # PART 6 — BUILD PLAN
 
 ## 6.0 Module-scale vertical development
@@ -1337,30 +1583,31 @@ The roadmap phases group requirements and dependencies. For the one-month V1 bui
 |---|---|---|---|
 | **0** | Foundation kernel *(no UI — the only exception)* | 0.1 monorepo + CI boundary checks · 0.2 Money/Qty/UnitCost/Ulid/Clock · 0.3 TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + one reference use case | `/health` returns 200; all CI gates green; boundary checker proven to catch a violation; cross-tenant, RLS, idempotency, period-lock and concurrent-numbering tests pass |
 | **1** | Business platform | Existing registration/login/credential/user work plus roles and permissions, settings, audit viewer, and deployment-mode boot validation | Owner registers, signs in, creates a user, assigns a role, changes a setting and sees the audit trail. Both deployment smoke modes pass |
-| **2** | Catalog and parties | Product create/edit/list/search, brands, categories, barcode, units/conversion; party create/edit/list/search, role flags, customer-phone uniqueness and walk-in customer | Products and parties fully usable in the consistent UI with permissions enforced |
-| **3** | Inventory core *(Gate G2)* | Opening stock, movement + journal + lot, stock and lot views, FIFO/AVERAGE setting, valuation, negative-stock policy and movement drill-down | **INV-01…INV-05 green under both costing methods**; valuation equals `INVENTORY` exactly |
-| **4** | Money accounts | Cash accounts, Start Day, End Day, bank account, statements and owner injection/withdrawal | §5.16.6 reproduces exactly; cash/bank prove from journal; INV-07 a/b/c green |
-| **5** | Purchasing *(first real milestone)* | Purchase create/list/detail, lot + stock + payable posting, supplier payment, supplier ledger, edit and void/reversal | Purchase → stock → payable → payment → ledger → cash works as one UI scenario with exact numbers |
-| **6** | Sales and POS *(Gate G3)* | POS sale, customer/walk-in, multi-method payment and due, invoice detail/print, customer ledger, receipt allocation/advance, templates and void/reversal | Full buy–stock–sell cycle passes manually and POS performance budget is met |
+| **2** | Catalog and parties | Product create/edit/list/search, brands, categories, barcode, units/conversion; party create/edit/list/search, role flags, customer-phone uniqueness and walk-in customer; guided CSV import for product/party master data | Products and parties fully usable in the consistent UI with permissions enforced; valid master data imports once and any invalid file posts nothing |
+| **3** | Inventory core *(Gate G2)* | Opening stock including its CSV step, movement + journal + lot, stock and lot views, FIFO/AVERAGE setting, valuation, negative-stock policy and movement drill-down | **INV-01…INV-05 green under both costing methods**; valuation equals `INVENTORY` exactly |
+| **4** | Money accounts | Cash accounts, Start Day, End Day, bank account, statements, owner injection/withdrawal and the CSV steps for opening AR/AP/cash/bank | §5.16.6 reproduces exactly; imported openings post once through normal services; cash/bank prove from journal; INV-07 a/b/c green |
+| **5** | Purchasing *(first real milestone)* | Purchase create/list/detail, lot + stock + payable posting, purchase due date/ageing, supplier payment/credit application, supplier ledger, edit and void/reversal | Purchase → stock → payable → payment/credit → ledger → cash works as one UI scenario with exact numbers; payable ageing equals its journal control account |
+| **6** | Sales and POS *(Gate G3)* | POS sale, customer/walk-in, multi-method payment and due, invoice due date/ageing, invoice detail/print/share, customer ledger, receipt allocation/advance, templates and void/reversal; hidden wholesale quotation/order and dealer-pricing paths | Full buy–stock–sell cycle passes manually; receivable ageing equals its journal control account; shared invoice matches the posted document; POS performance budget is met |
 | **7** | Corrections and adjustments | Sales/purchase returns, stock reconciliation, expense, backdating, period close and controlled unlock | Correction scenarios pass; locked writes return `PERIOD_LOCKED`; every correction is auditable |
-| **8** | Purchasing extras | Purchase orders, landed cost, consignment, serial capture and warranty lifecycle | All scenarios pass with correct journals |
+| **8** | Purchasing extras | Purchase orders with partial receiving, landed cost, consignment, serial capture and warranty lifecycle | Partial receipts create only received stock/payable and cannot be duplicated; all scenarios pass with correct journals |
 | **9** | Reporting and Daybook *(Gate G4)* | Sales, purchase, inventory and finance reports; Why drill-down; dashboard; Daybook and day-end print | INV-10; Daybook totals equal Reports; A4 and 80mm output verified |
 | **10** | SaaS operations | Plans/entitlements, tenant lifecycle, export/import/restore, SMS wallet and bKash top-up | Entitlements work; backup → wipe → restore matches exactly |
 | **11** | Bank reconciliation | Import, matching, missing transaction creation, reconcile and later-edit review | Reconciliation scenarios pass |
-| **12** | Offline *(Gate G5)* | Sliced at the start of the phase: **persistence gate (D-24) first** · profile registration + device authority · SQLite WASM/OPFS adapter · outbox push · pull · conflict quarantine · local backup export/import | SY-01…SY-16 pass; an offline day equals the online result exactly; no write is ever accepted without granted persistent storage |
-| **13** | PWA polish | Sliced at the start of the phase | Core POS and reports usable on a tablet |
-| **14** | AI/MCP + on-prem packaging | Sliced at the start of the phase; read tools before any write tool | AI actions audited, permission-bound, explainable; on-prem install and upgrade verified on a clean VM |
-| **15** | Reusable core extraction | Package hardening | Core packages published internally, one sample reuse |
+| **12** | Sync infrastructure + PWA Offline *(Gate G5)* | Complete the sync infrastructure designed from Phase 0: **persistence gate (D-24) first** · profile registration + single-writer authority · SQLite WASM/OPFS adapter · outbox push · pull · conflict quarantine · local backup export/import | SY-01…SY-16 pass; an offline day equals the online result exactly; no write is ever accepted without granted persistent storage |
+| **13** | Mobile / PWA polish | Responsive/touch optimisation, installability, camera barcode, mobile navigation and offline UX using the same PWA; evaluate native wrapper only if a proven gap remains | Core POS, inventory lookup and reports usable on supported phones/tablets without a second business-rule implementation |
+| **14** | Future Tauri desktop packaging *(optional)* | Only if owner approves after Mobile: package the same application for desktop/native integrations; no forked domain logic or alternate sync rules | Desktop-specific integration benefit proven; same acceptance tests and sync invariants pass as PWA |
+| **15** | MCP / AI + on-prem packaging | Read tools before write tools; same application-service path; on-prem install/upgrade hardening | AI actions audited, permission-bound and explainable; on-prem install/upgrade verified on a clean VM |
+| **16** | Reusable core extraction | Package hardening | Core packages published internally, one sample reuse |
 
 ### One-month online V1 delivery target
 
-The owner-selected one-month target is the complete **online V1 scope through Phase 11**. Offline, PWA polish, MCP/on-prem packaging and reusable-core extraction (Phases 12–15) remain post-V1. The four module gates are intentionally large:
+The owner-selected one-month target is the complete **online V1 scope through Phase 11**. Sync/PWA offline, Mobile, optional Tauri, MCP/on-prem packaging and reusable-core extraction (Phases 12–16) remain post-V1. The four module gates are intentionally large:
 
 | Week | Module gate | Required outcome |
 |---|---|---|
-| 1 | **Business setup** — finish Phase 1 + Phase 2 | Owner/staff authentication, roles, settings and audit; products, units, customers and suppliers fully usable |
-| 2 | **Stock, money and purchasing** — Phases 3–5 | Inventory/costing, cash/bank sessions and statements, complete purchase/payable/payment/void workflow |
-| 3 | **Sales and corrections** — Phases 6–8 | POS/sales/payments/printing/void plus returns, expenses, reconciliation, periods, purchase orders, landed cost, consignment, serial and warranty |
+| 1 | **Business setup** — finish Phase 1 + Phase 2 | Owner/staff authentication, roles, settings and audit; products, units, customers and suppliers fully usable; product/party CSV import verified |
+| 2 | **Stock, money and purchasing** — Phases 3–5 | Inventory/costing, cash/bank sessions and statements, remaining opening-balance CSV steps, complete purchase/payable/ageing/payment/credit/void workflow |
+| 3 | **Sales and corrections** — Phases 6–8 | POS/sales/payments/ageing/printing/sharing/void plus optional wholesale quotation/order and dealer pricing, returns, expenses, reconciliation, periods, partially received purchase orders, landed cost, consignment, serial and warranty |
 | 4 | **Control and operations** — Phases 9–11 | Reports, Why drill-down, dashboard, Daybook/print, SaaS lifecycle/backup/SMS wallet, and bank reconciliation; clean-database full regression |
 
 This schedule is exceptionally aggressive. The date does not change the meaning of `DONE`: unfinished paths remain unfinished rather than being hidden, mocked or accepted without tests. Never remove tenant isolation, journal/stock invariants, idempotency, reversal, cash correctness, backup-restore proof or owner acceptance to protect the date.
@@ -1382,23 +1629,23 @@ Rules:
 | Slice | Name | Status | Commit | Owner accepted | Note |
 |---|---|---|---|---|---|
 | 0.1 | Monorepo skeleton + CI boundary checks | DONE | ef3482f | 2026-08-16 | No UI (Phase 0 foundation exception, §6.0). Owner accepted on the four green commands; no UI check applicable. |
-| 0.2 | Money / Qty / UnitCost / Ulid / Clock | CODE COMPLETE | 75b498e | — | No UI (Phase 0 foundation exception, §6.0). 100% branch coverage on money.ts and qty.ts enforced as a build gate. |
-| 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | CODE COMPLETE | d019014 | — | No UI (Phase 0 foundation exception, §6.0). CreateNoteService is the R-D template. |
-| 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | CODE COMPLETE | 5a53bc7 | — | First UI slice. `apps/web` created (Vue 3 + Vite + PrimeVue 4, D-37) with the shared design tokens every later screen inherits. Adds `otp_codes` and the non-RLS `user_identifiers` pre-auth index; `audit_events.tenant_id` is now nullable for pre-tenant OTP auditing (§5.3). OTP delivery is the development transport only — real SMS/email is D-33, slice 1.7, and boot refuses the dev transport in production. |
-| 1.2 | Log in / log out (password, PIN, Google) | CODE COMPLETE | 0284d3e | — | **Split from the original 1.2** (§6.1.1 permits splitting within a phase): logging in is one demonstrable feature, and forgot-password and change-password are two more. Adds `refresh_tokens` (server-stored, rotating, revocable) and `UnitOfWork.runWithoutTenant`'s `adoptTenant`, since a login resolves its tenant mid-transaction. Google uses the OIDC redirect flow, not Google's script (UI-06, §6.5 COOP/COEP), verified against Google's JWKS with Node's own crypto. |
-| 1.2b | Forgot password via OTP + change password/PIN in Settings | CODE COMPLETE | ffa2567 | — | The remainder of the original 1.2. `otp_codes.purpose` now admits `PASSWORD_RESET` and **every** OTP lookup is scoped by purpose, so a signup code can never be spent to reset a password. A recovery reset revokes every session (nobody is trusted through a forgotten password); a Settings password change revokes all *others* and spares the device presenting its own refresh token (§5.3). Neither operation checks a permission code (it acts only on the caller's own row, and no role holds any permission until slice 1.4) nor writes an idempotency key (`idempotency_keys` stores a request fingerprint, and a fingerprint of a credential change would put a plaintext password in a row — security outranks write-path uniformity in the principle priority). Both departures are argued in the use-case headers. First screen under `/settings`. Also fixes a defect found during acceptance: `AppErrorFilter` mapped **every** framework exception to `INTERNAL_ERROR`, so a request to a route a stale build did not have returned 500 instead of 404 — indistinguishable from a broken server, and the cause was discarded rather than logged. Framework refusals now keep their own status and unexpected errors are written to stderr (never to the response). |
-| 1.2c | Google sign-in completes signup for an unknown email | CODE COMPLETE | 3fa6684 | — | Implements the 2026-08-17 D-07 revision (see the change log). Not in the original phase plan — added because Google OAuth went live and the owner chose to let it create the tenant. No migration: the credential columns have been nullable since 0002, which is exactly the case they were made nullable for.  Credential-setting for Google accounts landed with it (same commit): Settings offers Set when none exists, Change when one does. |
-| 1.3 | Create and edit users | CODE COMPLETE | b8fc46a | — | Ships all six §5.26 seed roles with every tenant — otherwise the first hire could only be made an Owner. No migration: disable is the existing soft delete (§3.6), and `roles`/`role_permissions` already existed. Step-up (§5.3) is the caller's own password, re-entered; a PIN never satisfies it. A new user gets no password and sets one through forgot-password, so the person who added them never sees it. |
-| 1.4 | Create roles and assign permissions | CODE COMPLETE | d95bdb2 | — | No migration: `roles` and `role_permissions` existed from Phase 0, and a revoked permission is soft-deleted rather than removed, so `grant` revives the row instead of colliding with it. Owner is frozen at every permission — `§5.26` says it cannot be de-privileged, and freezing it at the full set also stops a later slice's new code from quietly locking the owner out. Adding a permission code means running `pnpm db:backfill` so existing tenants receive it. |
-| 1.5 | Change a setting and see it take effect | TODO | — | — | |
-| 1.6 | Audit trail of everything above | TODO | — | — | |
-| 1.7 | Deployment-mode providers (D-33…D-36) + boot validation + license states | TODO | — | — | |
+| 0.2 | Money / Qty / UnitCost / Ulid / Clock | CODE COMPLETE | 75b498e |DONE | No UI (Phase 0 foundation exception, §6.0). 100% branch coverage on money.ts and qty.ts enforced as a build gate. |
+| 0.3 | TenantContext, AccessControl, PeriodGuard, AuditWriter, IdempotencyStore, UnitOfWork, NumberingService, Outbox + reference use case | CODE COMPLETE | d019014 | DONE | No UI (Phase 0 foundation exception, §6.0). CreateNoteService is the R-D template. |
+| 1.1 | Register tenant via OTP → username/password/PIN → empty dashboard | CODE COMPLETE | 5a53bc7 | DONE | First UI slice. `apps/web` created (Vue 3 + Vite + PrimeVue 4, D-37) with the shared design tokens every later screen inherits. Adds `otp_codes` and the non-RLS `user_identifiers` pre-auth index; `audit_events.tenant_id` is now nullable for pre-tenant OTP auditing (§5.3). OTP delivery is the development transport only — real SMS/email is D-33, slice 1.7, and boot refuses the dev transport in production. |
+| 1.2 | Log in / log out (password, PIN, Google) | CODE COMPLETE | 0284d3e | DONE | **Split from the original 1.2** (§6.1.1 permits splitting within a phase): logging in is one demonstrable feature, and forgot-password and change-password are two more. Adds `refresh_tokens` (server-stored, rotating, revocable) and `UnitOfWork.runWithoutTenant`'s `adoptTenant`, since a login resolves its tenant mid-transaction. Google uses the OIDC redirect flow, not Google's script (UI-06, §6.5 COOP/COEP), verified against Google's JWKS with Node's own crypto. |
+| 1.2b | Forgot password via OTP + change password/PIN in Settings | CODE COMPLETE | ffa2567 | DONE | The remainder of the original 1.2. `otp_codes.purpose` now admits `PASSWORD_RESET` and **every** OTP lookup is scoped by purpose, so a signup code can never be spent to reset a password. A recovery reset revokes every session (nobody is trusted through a forgotten password); a Settings password change revokes all *others* and spares the device presenting its own refresh token (§5.3). Neither operation checks a permission code (it acts only on the caller's own row, and no role holds any permission until slice 1.4) nor writes an idempotency key (`idempotency_keys` stores a request fingerprint, and a fingerprint of a credential change would put a plaintext password in a row — security outranks write-path uniformity in the principle priority). Both departures are argued in the use-case headers. First screen under `/settings`. Also fixes a defect found during acceptance: `AppErrorFilter` mapped **every** framework exception to `INTERNAL_ERROR`, so a request to a route a stale build did not have returned 500 instead of 404 — indistinguishable from a broken server, and the cause was discarded rather than logged. Framework refusals now keep their own status and unexpected errors are written to stderr (never to the response). |
+| 1.2c | Google sign-in completes signup for an unknown email | CODE COMPLETE | 3fa6684 | DONE | Implements the 2026-08-17 D-07 revision (see the change log). Not in the original phase plan — added because Google OAuth went live and the owner chose to let it create the tenant. No migration: the credential columns have been nullable since 0002, which is exactly the case they were made nullable for.  Credential-setting for Google accounts landed with it (same commit): Settings offers Set when none exists, Change when one does. |
+| 1.3 | Create and edit users | CODE COMPLETE | b8fc46a | DONE | Ships all six §5.26 seed roles with every tenant — otherwise the first hire could only be made an Owner. No migration: disable is the existing soft delete (§3.6), and `roles`/`role_permissions` already existed. Step-up (§5.3) is the caller's own password, re-entered; a PIN never satisfies it. A new user gets no password and sets one through forgot-password, so the person who added them never sees it. |
+| 1.4 | Create roles and assign permissions | CODE COMPLETE | d95bdb2 | DONE | No migration: `roles` and `role_permissions` existed from Phase 0, and a revoked permission is soft-deleted rather than removed, so `grant` revives the row instead of colliding with it. Owner is frozen at every permission — `§5.26` says it cannot be de-privileged, and freezing it at the full set also stops a later slice's new code from quietly locking the owner out. Adding a permission code means running `pnpm db:backfill` so existing tenants receive it. |
+| 1.5 | Change a setting and see it take effect | CODE COMPLETE | — | — | Adds `settings` (migration 0005), a key/value row per setting a tenant has **changed** — an absent row is the shipped default, so a default is never confused with an unset value. Not a column per setting (a migration every time §5.21 grows) and not one JSONB blob (two unrelated settings would collide on one optimistic lock, and every audit row would record the whole blob). §5.21's feature dependencies are enforced in both directions and asymmetrically: turning a parent **off** cascades transitively and names what fell with it, turning a child **on** is refused naming the parent — enabling parents on the owner's behalf would switch on features nobody chose to watch. Costing method is step-up (§5.3). **Owner decision 2026-08-18: seed the full §5.21 key list now.** 22 keys are seeded; the settings §5.21 names but never gives values for — terminology, numbering prefixes, backdating policy, period-lock configuration, invoice/dashboard visibility — are deliberately absent, because inventing their values would put a fabricated business rule in the database under an SRS-shaped name (R-A5). Each arrives with the module that defines it. A seeded key whose module does not exist yet renders with a "takes effect with …" marker rather than as a live control. |
+| 1.6 | Audit trail of everything above | CODE COMPLETE | — | — | Read-only screen over the rows slices 1.1–1.5 have been writing all along; no new write path. Keyset paging (§3.9, `OFFSET` banned) on the ULID id, which is both sort key and cursor. Date filters convert tenant-local days to instants in the use case, never in SQL — asking for the 18th in Dhaka must not return six hours of the 17th (§3.5). Adds §5.22's **denial** auditing for refused *mutations* only (read denials are aggregate-only), written in its own transaction because the refused operation's transaction has already rolled back — an audit row inside it would roll back with it and leave no evidence. Adds per-request trace ids: §5.26's error envelope has carried a `traceId` field since Phase 0 and nothing ever set it, so every response carried an empty string. Migration 0006 widens `audit_events.entity_id` from `CHAR(26)` to `TEXT` — a defect found by this slice's tests: `CHAR` blank-pads, and an audited entity is not always a ULID (a setting is identified by its key, a denial by its permission code). |
+| 1.7 | Deployment-mode providers (D-33…D-36) + boot validation + license states | CODE COMPLETE | — | — | All six §4.4 flags, and the three mandatory boot refusals — each is a combination that would otherwise run, look healthy and be wrong. Verifier and entitlement source are now chosen by configuration rather than by `NODE_ENV`. `NoOpIdentityVerifier` throws rather than succeeding quietly: an on-premise install has no signup flow, so reaching it is a misconfiguration and the loud failure is the useful outcome. D-35's licence is verified **offline** (Ed25519 over `base64url(payload).base64url(sig)`), re-read per call so a renewal takes effect without a restart, and nothing in that path throws — missing, forged or truncated all resolve to `READ_ONLY`. D-36's ladder is pure domain logic with the boundaries tested exactly; `GRACE` still writes, because the 30 days after expiry exist so a late renewal does not stop a shop trading. The read-only guard refuses **writes only** — reads, sign-in and (in Phase 10) backup export must keep working, since there is no state in which data is hidden or un-exportable. **Not implemented, blocked on the owner:** `IDENTITY_VERIFIER=otp` needs a chosen SMS provider and credentials (§5.24, D-33), so it throws rather than silently falling back to the dev transport; and no licence signing keypair exists, so `LICENSE_PUBLIC_KEY` is empty and boot refuses `ENTITLEMENT_SOURCE=license` until one is supplied. |
 
 Rows for Phase 2 onward are added as each delivery module begins, from the scope in §6.1 and the one-month grouping above.
 
 **Online V1 critical path:** `0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11`. Phase 4 is mandatory before purchase/sales payments because those operations require real cash accounts. Offline 12 follows only after online V1 is stable; 13/14 come after 12.
 
-**Module scope for phases 0–11 is fixed above.** Phases 12–15 are detailed at the start of their phase because decisions remain open. Splitting a module is allowed only at a real workflow boundary when it cannot fit the five-day timebox; manual acceptance remains mandatory at the resulting module gate.
+**Module scope for phases 0–11 is fixed above.** Phases 12–16 are detailed at the start of their phase because post-V1 integration decisions may still require implementation-level refinement. Splitting a module is allowed only at a real workflow boundary when it cannot fit the five-day timebox; manual acceptance remains mandatory at the resulting module gate.
 
 ## 6.2 Why this order differs from the module numbering
 
@@ -1421,7 +1668,7 @@ Rows for Phase 2 onward are added as each delivery module begins, from the scope
 | **Internal path** | Connected through domain, application, database, API and UI; its focused risk-based tests pass. This is a checkpoint, not an accepted release |
 | **Module/Phase** | All internal paths work together · all four gates in `AI_CODING_INSTRUCTIONS.md` pass once · full regression is green · owner accepts the pre-written UI scenario |
 | **Gate** | Owner has personally run the gate's scenarios and signed off (§6.3) |
-| **V1** | Phases 0–11 complete; offline (12) and MCP (14) are post-V1 |
+| **V1** | Phases 0–11 complete; sync/PWA offline (12), Mobile (13), optional Tauri (14) and MCP (15) are post-V1 |
 
 ## 6.3 Gate reviews (owner sign-off required)
 
@@ -1460,7 +1707,7 @@ Four containers via Docker Compose: `nginx`, `api`, `db`, `backup`. PostgreSQL b
 
 **License key:** signed JWT (Ed25519), validated offline against an embedded public key. Private signing key lives only on the release machine. `term.expires` and `support_until` are separate fields. `limits.users` warns first, then blocks. Sell license term separately from annual maintenance (~18–22% of license value).
 
-**Diagnostic bundle export** (Phase 14): one-click zip with 7 days of logs, app/schema versions, license state, configuration with secrets redacted, row counts, DB size, slow-query summary, health-check results. Without it every support ticket becomes a phone call with a non-technical shopkeeper.
+**Diagnostic bundle export** (Phase 15): one-click zip with 7 days of logs, app/schema versions, license state, configuration with secrets redacted, row counts, DB size, slow-query summary, health-check results. Without it every support ticket becomes a phone call with a non-technical shopkeeper.
 
 **Sales constraint: cap on-premise customers at 2–3 until V1 is stable.** Each install multiplies support surface with no remote visibility. Take the first customers close to home.
 
@@ -1491,7 +1738,7 @@ Before each phase: read the phase row · confirm the previous phase's exit crite
 
 ## 6.7 Honest expectations
 
-- The owner-selected one-month target is online V1 through Phase 11. It is an exceptionally aggressive target, not permission to mark incomplete work done. Phases 12–15 remain outside the month.
+- The owner-selected one-month target is online V1 through Phase 11. It is an exceptionally aggressive target, not permission to mark incomplete work done. Phases 12–16 remain outside the month.
 - Foundation work already completed remains valuable; do not restart it to fit the new cadence.
 - **Phase 5 is the first real milestone.** Buy stock, see it in inventory, pay the supplier, watch the ledger and cash agree — the architecture is proven and everything after is repetition of a working pattern.
 - Something will be wrong in the money math at least once. The invariants and manual scenarios will catch it — if you actually run them.
@@ -1565,13 +1812,17 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 
 | Date | Change |
 |---|---|
+| 2026-08-18 | **§5.21 settings seeded up front by owner decision.** The full §5.21 key list is created with every tenant at slice 1.5 rather than each module adding its own key when it lands. Settings whose module does not exist yet are stored, audited and marked "takes effect with …" in the UI rather than rendered as live controls. **Excluded, and still open:** terminology, numbering prefixes, backdating policy, period-lock configuration, and invoice/dashboard visibility — §5.21 names these but nowhere states their permitted values, and seeding invented values would record a fabricated business rule under an SRS-shaped name (R-A5). Each needs its value set defined before it can be built; see open items |
+| 2026-08-18 | **§2.7.I visual system revised from the owner-approved prototype set** (`design-system/prototypes`, `design-system/references`). The slate-only palette is replaced by a blue primary (`#2563eb`) with a white sidebar and cool-grey page; a **dark theme ships alongside light** as a per-device user choice, never `prefers-color-scheme`. Gradients are permitted **only** on summary-tile fills, the brand mark and the avatar. Six summary-tile tones are fixed by meaning (money in blue · cost slate · profit green · attention amber · receivable violet · payable rose). Geometry set to 12px cards, 8px/40px controls, 20px card padding; UI-08 updated for the sidebar toggle, theme toggle and the shell-owned page header. Shared implementation named: `design/tokens.css`, `design/components.css`, `design/theme.ts`, `design/preset.ts`, `AppShell`/`AppSidebar`/`AppTopBar`/`AppCard`/`StatCard`/`EmptyState`/`ErrorNotice`. No business rule, permission or number changed. Reason: the owner approved a concrete prototype after §2.7.I was first written, and §2.7.I itself requires an explicit edit before any accent-colour, card, navigation or composition change. |
+| 2026-08-18 | **Master SRS v4.0 merged reconciliation.** Restored owner-confirmed product offers, mandatory product fields, customer NID/configurable optional fields, fixed/percentage POS discounts, barcode repeat-scan/serialized-unit behaviour, POS stock/filter rules, in-POS vendor creation, cosmetic invoice presentation edits, document design/JPG/WhatsApp/Business-Pad controls, manufacturer serial rules, serialized-unit/barcode labels/search, expiry policies, landed-cost categories, ledger/invoice/purchase UI actions and purchase notes. Loyalty/Premium dropped. Dashboard profit allowed only under feature+permission+reliable-costing gates. Roadmap set to Online-first → Sync → PWA Offline → Mobile → future Tauri → MCP. D-05 revised to separate inventory issue and sale accounting costing settings, FIFO/AVERAGE only. |
+| 2026-08-18 | **Lean medium-business omissions added by owner approval without adding new modules.** Required onboarding CSV import, receivable/payable due dates and ageing, partial purchase-order receiving, supplier-credit application and invoice PDF/WhatsApp sharing extend the existing module paths. Quotation → sales order → invoice and customer-group pricing are included only as disabled-by-default, hidden wholesale/dealer controls; generic CRM, a generic promotion/rule engine, portals and configurable import machinery remain out of scope; the simple product offer/default-discount feature defined in M04 remains in scope. §5.6–§5.9, §5.20–§5.21 and §6.1 updated. |
 | 2026-08-17 | **D-02 and POS guest-customer workflow revised by owner approval.** Fully paid new buyers use the system walk-in party while sales invoices retain immutable required name/phone and optional guardian/address snapshots searchable by phone. Due creates and links a registered customer atomically. A fully settled guest return continues using walk-in and does not create a party; a surviving due/advance/store credit requires a confirmed customer. §3.9, §5.6–§5.8 and §5.14 updated with UI behaviour, index and exact tests. POS cost-eye semantics now use the posting costing service: selected-quantity FIFO/FEFO estimated COGS or AVERAGE cost, permission-gated and provisional-labelled where applicable. |
 | 2026-08-17 | **Natural Bangla UI wording clarified.** UI-15/UI-16 and §2.7.I now permit familiar shop phrases on high-frequency POS controls (`লগইন করুন`, `কাস্টমারের নাম`, `ক্যাশ কাউন্টার`) while retaining English primary labels and centralized i18n keys. |
 | 2026-08-17 | **Development cadence revised for the one-month online-V1 target.** One-screen micro-slices are replaced by four large weekly module-scale vertical increments covering Phases 0–11. Focused risk-based tests run during implementation; full regression and owner UI acceptance run once at each module gate. Phases 12–15 remain post-V1. Critical accounting, inventory, tenant, security, idempotency, reversal and backup/restore coverage remains mandatory. §6 and `AI_CODING_INSTRUCTIONS.md` revised by owner request. |
 | 2026-08-17 | **Binding visual system added to §2.7.I.** Fixed slate/white palette, 256px shared shell, typography, card/table/button/badge shapes and module page composition apply from the first screen. The supplied Tailwind/`lucide-react` wording was adapted to the existing Vue + PrimeVue stack without adding a second UI framework or React dependency. |
 | 2026-08-17 | **Write path classified by mutation type.** The ten-step path remains mandatory for transactional money/stock/document writes; security/identity and master/configuration writes use explicit smaller paths instead of fake period/journal/stock steps. `AI_CODING_INSTRUCTIONS.md` R-D revised. |
 | 2026-08-17 | **D-07 revised again — Google may now create a tenant**, reversing "Google alone never creates a tenant" in §5.3. An unknown verified Google email is offered a one-field signup (business name); `username` is derived from the email local-part and `password_hash`/`pin_hash` are left **NULL**, so the account can only be entered through Google until the user sets a password via forgot-password. Requested by the owner 2026-08-17 after Google OAuth went live; the owner chose "business name only, derive the rest" over collecting a password and PIN. Consequence accepted: a Google-created account has no password and no PIN, and PIN login is unavailable on it until slice 1.3 builds the set-a-first-credential flow. Slice 1.2c |
-| 2026-08-16 | **D-05 revised.** LIFO removed. One costing method per tenant (`FIFO`/`AVERAGE`) drives both journal COGS and valuation. The "lot consumption method" setting is removed — physical issue is always FIFO/FEFO. Reason: INV-05 was mathematically unsatisfiable under AVG and LIFO; valuation drifted permanently from the `INVENTORY` account |
+| 2026-08-16 | **D-05 historical revision, superseded in part by 2026-08-18.** LIFO remained removed; the later owner decision restored two separate FIFO/AVERAGE settings while preserving one accounting valuation basis. |
 | 2026-08-16 | **D-09 revised (owner override).** VAT/tax removed from V1; columns reserved and `NULL`. Accepted consequence: no VAT-compliant invoice until V2 |
 | 2026-08-16 | **DR13.10 defined.** Consignment sale posts as a deemed purchase at the moment of sale, reusing the standard path. Previously the balancing entry was undefined |
 | 2026-08-16 | **M23 accounting defined.** Warranty replacement from own stock posts `DR WARRANTY_EXPENSE / CR INVENTORY`; supplier recovery credits it back. No warranty receivable |
@@ -1590,7 +1841,7 @@ Only decisions that changed after first finalisation. Update the relevant sectio
 | 2026-08-16 | **D-22 (new) — receipt printing:** WebUSB ESC-POS primary with a **mandatory** browser print-dialog fallback. Posting a sale is never coupled to printing. New risk R-30, new open item O-9 |
 | 2026-08-16 | **D-23 (new) — offline storage engine: SQLite WASM + OPFS.** Replaces the IndexedDB wording in D-01 and §5.23. IndexedDB cannot express transactional multi-table writes or the ten-step write path, so it is rejected as the engine. Requires COOP/COEP headers — new risk R-31 |
 | 2026-08-16 | **D-24 (new) — eviction policy:** PWA install + granted `navigator.storage.persist()` before any offline write. R-17 repurposed from Tauri packaging to OPFS eviction and raised to score 20 — it is the only unrecoverable failure mode in the offline design |
-| 2026-08-16 | **D-20 revised — Tauri REJECTED.** No desktop shell, no local Node/NestJS sidecar, no Rust. Offline lives inside the PWA. §1.2 delivery sequence, §1.3 stack table, §2.1 layout (`apps/desktop` removed, `adapter-sqlite` → `adapter-sqlite-wasm`), §2.3 write path, §5.23, Phase 12 slices and §6.5 updated. Consequence accepted: no OS-level integration, offline capacity bounded by browser quota |
+| 2026-08-16 | **D-20 historical revision, superseded in part by 2026-08-18.** Tauri was rejected as the primary offline architecture; the 2026-08-18 roadmap permits an optional future Tauri packaging phase after Mobile while PWA remains the canonical offline runtime. |
 | 2026-08-16 | **D-07 revised.** OTP is for signup verification and password recovery only — **never daily login**. Signup takes one field (mobile or email), sends a 6-digit OTP to that channel, then sets username + password + PIN. Daily login is email/phone + password, PIN, or Google. Forgot password sends OTP to the registered email or phone. Full flows, OTP rules and identifier rules added to §5.3 M02; Phase 1 slices 1.1/1.2 updated. Reason: OTP-per-login makes SMS cost scale with daily usage |
 | 2026-08-16 | **§2.7 added — frontend conventions UI-01…UI-44; D-37 and D-38 added.** Familiar consumer-app navigation patterns without visual imitation, English UI with selective Bangla helper text explaining business meaning (implements D-12, unchanged), four screen patterns, four required states, mutation and POS rules, PrimeVue 4 as the component library. No business rule changed. Reason: the spec required every slice to ship a real UI and be accepted in the UI, but specified nothing about what a screen should look like or how it should behave — leaving each slice to invent its own, which is expensive to unwind at thirty screens |
 | 2026-08-16 | **D-01 revised.** Single writer per tenant now bound to a **registered browser profile**, not a device — a different browser or cleared profile on the same PC is a different writer. Authority bound to a profile keypair, so copying OPFS files does not carry write authority. Sync matrix extended with SY-13…SY-16 |

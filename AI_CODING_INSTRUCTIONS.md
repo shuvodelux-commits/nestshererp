@@ -2,7 +2,7 @@
 
 **Status: BINDING.** A change violating any rule below is rejected in full, regardless of how much of it works.
 
-Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`. This file is *how to build*, not *what to build*. It does not repeat requirements.
+Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.0 (Merged Canonical)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
 
 These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11) in one month. Work is therefore organised as four large weekly **module increments**, with focused tests while each module is built and full regression at its module gate.
 
@@ -38,6 +38,9 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 | A4 | Do not reorganise folders, rename packages, or "clean up" adjacent code. |
 | A5 | **Do not change any requirement or decision.** If a spec appears wrong or contradictory, STOP and report — do not improvise a fix. |
 | A6 | Do not build for imagined future needs. See YAGNI and Anti-Overengineering below. |
+| A7 | Before implementing any business module, read SRS `§5.0`, `§5.0A`, the **entire target module subsection**, its referenced decisions/invariants, and the task block sections. Do not implement from memory, an old prompt, an archived module document, or existing legacy code alone. |
+| A8 | Create a requirement trace **before writing code**: Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature/entitlement dependencies → Accounting effects → Inventory effects → correction/reversal rules → Search/filters → Edge cases → Acceptance tests. Every applicable item must have an implementation location and verification method. |
+| A9 | Existing code is evidence of current implementation, not authority over v4. If code, Google-Sheets-era behaviour, an archived document or an old test conflicts with v4, do not silently preserve it. Report the conflict and follow the finalized SRS after owner resolution. |
 
 **A5 matters most.** An agent that silently "corrects" a business rule produces software that passes its own tests and computes wrong money. This is the single most dangerous failure mode in this project.
 
@@ -69,7 +72,7 @@ Every module increment follows this order:
 | # | Rule |
 |---|---|
 | S1 | **Never** build all backend, then all database, then all frontend. Each internal path is connected domain → application → database → API → UI before the next path begins. |
-| S2 | A module is not complete because the backend compiles or endpoints return 200. It is complete when all listed module actions work **in the UI**, focused tests pass, full regression passes once at the module gate, and the owner confirms the pre-written numbers. |
+| S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, focused tests pass, full regression passes once at the module gate, and the owner confirms the pre-written numbers/workflow. |
 | S3 | If a module has no user-visible outcome, say so before starting — it is either Phase 0 foundation work or it is mis-scoped. |
 | S4 | Do not start a second module while the current module is incomplete. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
 | S4b | At module completion, update the status ledger (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Set `CODE COMPLETE`; **only the owner sets `DONE`** after manual acceptance. The owner may record the accepted code commit in a small follow-up ledger commit; a commit is not required to contain its own hash. |
@@ -374,6 +377,7 @@ Four gates. **A module is not done because the code runs.** Focused checks prote
 - [ ] New repository/query patterns have cross-tenant proof; exceptional endpoints have their own isolation test
 - [ ] Class T creations and duplicate-prone Class M creations have idempotency proof
 - [ ] Module permission matrix passes; cost-visibility is checked on the serialized body
+- [ ] v4 module trace checked: required fields, conditional fields, UI actions, search/filters, edge states, print/share behaviour (where applicable), accounting/stock effects, reversal/correction and acceptance tests are all implemented
 - [ ] Migration runs clean on an empty DB **and** on a seeded DB
 - [ ] OpenAPI regenerates with no manual edits
 - [ ] `saas-smoke` and `onprem-smoke` green — *from Phase 1 onward; these gates do not exist in Phase 0*
@@ -543,6 +547,10 @@ Check this diff against AI_CODING_INSTRUCTIONS.md.
 - Was any unnecessary abstraction added - Base*, Generic*, *Factory, a single-implementation
   interface, an event bus, a config flag nobody asked for?
 - Do migrations cover only this module?
+- Does the implementation satisfy every applicable v4 module-contract item: fields, conditional fields,
+  UI actions, filters/search, permissions, stock/accounting effects, correction/reversal, edge states,
+  print/share behaviour, and acceptance criteria?
+- Did any archived/legacy requirement (LIFO, Loyalty/Premium, Tauri-first) leak back into the code?
 
 Do not write code. List the problems only.
 ```
@@ -550,6 +558,22 @@ Do not write code. List the problems only.
 The agent that wrote the bug cannot catch it — its own tests will agree with its own mistake. A different model sees different things. This is the cheapest defence available.
 
 ---
+
+## R-G2 — v4 Requirement-Fidelity Guardrails
+
+These are implementation-process rules, not a duplicate SRS. The merged v4 restored detailed business/UI behaviour that an AI agent must not reduce to generic CRUD.
+
+| # | Rule |
+|---|---|
+| G2.1 | **Do not collapse explicit UI behaviour into a generic capability.** If the SRS specifies repeated barcode scan behaviour, serialized-unit selection, active zero/negative-stock visibility, invoice actions, filters, print modes or sharing controls, implement and verify that exact behaviour. |
+| G2.2 | **Conditional fields stay conditional.** Do not make optional master-data fields mandatory because a database column exists. Product creation requirements and feature-dependent fields follow the SRS exactly. |
+| G2.3 | **Active/inactive status and stock quantity are independent.** Never infer inactive status from zero or negative stock. |
+| G2.4 | **Serial/barcode identity stays reference-based.** Do not encode mutable business state in generated unit barcodes. Manufacturer serials are captured/scanned from the item; SherERP does not invent them. |
+| G2.5 | **Cosmetic invoice edits must not rewrite posted accounting facts.** Presentation overrides and transaction corrections/reversals are separate paths. |
+| G2.6 | **The two costing settings remain separate.** `inventory_issue_method` and `sale_costing_method` each allow only `FIFO` or `AVERAGE`; there is no LIFO. Follow the SRS invariants and never invent a physical “average lot”. |
+| G2.7 | **Loyalty/Premium is out of current scope.** Do not resurrect it from archived docs, legacy fields or old prompts. |
+| G2.8 | **Roadmap order is binding:** Online V1 → Sync/PWA Offline (12) → Mobile/PWA polish (13) → optional Tauri (14) → MCP (15). Do not scaffold later phases early. |
+| G2.9 | **Existing Google Sheets/Apps Script SherERP is a migration/reference source, not the architectural source of truth.** Preserve required business behaviour and migratable data, but do not copy spreadsheet storage patterns into the new PostgreSQL/domain design unless v4 explicitly requires them. |
 
 ## Phase 0 Task Blocks
 
@@ -580,14 +604,14 @@ packages/shared-utils       Money, Qty, UnitCost, Ulid, Clock
 packages/adapter-postgres   Drizzle implementations (empty for now)
 apps/api                    NestJS, /health only
 
-Do NOT create adapter-sqlite-wasm, apps/mcp or apps/web in this slice. There is no apps/desktop -
-Tauri is rejected (D-20); offline runs inside the PWA on SQLite WASM + OPFS (D-23).
+Do NOT create adapter-sqlite-wasm, apps/mcp, any Tauri/desktop shell, or apps/web in this slice.
+PWA Offline is Phase 12 on SQLite WASM + OPFS. Mobile/PWA polish is Phase 13. Optional Tauri desktop packaging is deferred to Phase 14 and may be created only if the owner explicitly approves that phase after Mobile. MCP is Phase 15.
 
 BOUNDARY CHECK (tools/boundaries)
 Write `pnpm test:boundaries` that FAILS the build if:
 - core-domain imports @nestjs/*, drizzle-orm, pg, better-sqlite3, express, or DOM libs
 - core-domain or core-application imports a Node built-in (fs, path, crypto, os, child_process)
-  - these packages are bundled for the browser in Phase 12 (D-20/D-23), so Node APIs are banned now
+  - these packages are bundled for the browser in Phase 12, so Node APIs are banned now; a later optional Tauri shell must adapt to the same browser-safe core rather than making the core desktop-specific
 - core-application imports drizzle-orm, pg, or @nestjs/*
 - adapter-postgres is imported by core-domain or core-application
 - any file outside shared-utils/clock uses Date.now() or new Date()
@@ -740,7 +764,7 @@ Do not start Phase 1 until every box is ticked.
 | Agent says | You say |
 |---|---|
 | "I need to install library X" | "No. How do you do it without a new dependency?" |
-| "I improved the business rule to…" | "Stop. Decisions are final in SRS_AND_BUILD_GUIDE.md. Revert it." |
+| "I improved the business rule to…" | "Stop. Decisions are final in the v4 canonical SRS_AND_BUILD_GUIDE.md. Revert it." |
 | "Tests should pass now" | "Paste the actual output." |
 | "I also refactored some other files" | "Revert everything outside the ALLOWED FILES list." |
 | "I'll add the UI after this module" | "Then the module isn't complete. Finish its real workflow." |

@@ -79,3 +79,31 @@ export type {
   RoleListResponse,
   UpdateRoleRequest,
 } from './roles';
+export {
+  SETTING_CATALOGUE,
+  SettingKey,
+  SUPPORTED_TIMEZONES,
+  TOGGLE_OFF,
+  TOGGLE_ON,
+  settingDescriptorSchema,
+  settingsResponseSchema,
+  updateBusinessProfileRequestSchema,
+  updateSettingRequestSchema,
+} from './settings';
+export type {
+  SettingDescriptor,
+  SettingDescriptorResponse,
+  SettingKind,
+  SettingsResponse,
+  UpdateBusinessProfileRequest,
+  UpdateSettingRequest,
+} from './settings';
+export {
+  AUDIT_PAGE_DEFAULT,
+  AUDIT_PAGE_MAX,
+  auditEventSchema,
+  auditListResponseSchema,
+  auditPageSchema,
+  auditQuerySchema,
+} from './audit';
+export type { AuditEventResponse, AuditListResponse, AuditQuery } from './audit';

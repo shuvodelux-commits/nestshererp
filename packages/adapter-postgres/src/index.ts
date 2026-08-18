@@ -20,3 +20,8 @@ export {
 } from './registration-repository';
 export * as schema from './schema';
 export { PostgresSessionRepository } from './session-repository';
+export {
+  PostgresBusinessProfileRepository,
+  PostgresSettingsRepository,
+} from './settings-repository';
+export { PostgresAuditQueryRepository } from './audit-query-repository';

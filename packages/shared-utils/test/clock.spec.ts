@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FixedClock, SystemClock } from '../src/clock';
+import { addSeconds, FixedClock, startOfBusinessDay, SystemClock } from '../src/clock';
 
 describe('businessDate (SRS 3.5)', () => {
   it('18:30 UTC is already the next day in Dhaka', () => {
@@ -57,5 +57,46 @@ describe('SystemClock', () => {
   it('advances', () => {
     const clock = new SystemClock();
     expect(clock.now().getTime()).toBeLessThanOrEqual(clock.now().getTime());
+  });
+});
+
+describe('startOfBusinessDay', () => {
+  /**
+   * §3.5's own example, inverted: "A sale at 00:30 Dhaka is 18:30 UTC the
+   * previous day." So the Dhaka day begins at 18:00 UTC the day before.
+   */
+  it('resolves a Dhaka day to the UTC instant it begins', () => {
+    expect(startOfBusinessDay('2026-08-18', 'Asia/Dhaka').toISOString()).toBe(
+      '2026-08-17T18:00:00.000Z',
+    );
+  });
+
+  it('round-trips with businessDate at the first moment of the day', () => {
+    const start = startOfBusinessDay('2026-08-18', 'Asia/Dhaka');
+    expect(new FixedClock(start.toISOString()).businessDate('Asia/Dhaka')).toBe('2026-08-18');
+  });
+
+  it('puts the moment before it in the previous day', () => {
+    const start = startOfBusinessDay('2026-08-18', 'Asia/Dhaka');
+    const justBefore = addSeconds(start, -1);
+    expect(new FixedClock(justBefore.toISOString()).businessDate('Asia/Dhaka')).toBe('2026-08-17');
+  });
+
+  it('is the identity for UTC itself', () => {
+    expect(startOfBusinessDay('2026-08-18', 'UTC').toISOString()).toBe('2026-08-18T00:00:00.000Z');
+  });
+
+  /** A zone that observes daylight saving, on a day inside its summer offset. */
+  it('uses the offset actually in force, not a fixed one', () => {
+    expect(startOfBusinessDay('2026-07-01', 'Europe/London').toISOString()).toBe(
+      '2026-06-30T23:00:00.000Z',
+    );
+    expect(startOfBusinessDay('2026-01-01', 'Europe/London').toISOString()).toBe(
+      '2026-01-01T00:00:00.000Z',
+    );
+  });
+
+  it('rejects a string that is not a business date', () => {
+    expect(() => startOfBusinessDay('18-08-2026', 'Asia/Dhaka')).toThrow(RangeError);
   });
 });

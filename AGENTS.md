@@ -1,12 +1,12 @@
 # AGENTS.md — SherERP
 
-Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith, online-first with a future offline path.
+Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith. Canonical delivery path: online-first → sync infrastructure → PWA Offline → Mobile → optional future Tauri packaging → MCP.
 
 ## Documentation — exactly three files
 
 | File | Contains | Read it for |
 |---|---|---|
-| `SRS_AND_BUILD_GUIDE.md` | Requirements, final decisions, architecture, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
+| `SRS_AND_BUILD_GUIDE.md` | **SherERP Master SRS & Build Guide v4.0 (Merged Canonical)**: requirements, final decisions, architecture, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
 | `AI_CODING_INSTRUCTIONS.md` | Module-scale vertical workflow, coding standards, anti-overengineering rules, layering, risk-based tests, Definition of Done, prompt kernel | **HOW** to build |
 | `AGENTS.md` | This file | Orientation |
 
@@ -15,7 +15,8 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 ## Token efficiency — binding
 
 - Read `AI_CODING_INSTRUCTIONS.md` in full before writing code.
-- From `SRS_AND_BUILD_GUIDE.md`, read **only** the sections named in the task block, plus direct dependencies.
+- Before coding, verify `SRS_AND_BUILD_GUIDE.md` begins with **“SherERP — Master SRS & Build Guide v4.0 (Merged Canonical)”**. If it does not, STOP: the repo has a stale SRS.
+- For every business module, read `§5.0` (cross-module consistency), `§5.0A` (binding AI module specification contract), the complete target module subsection, the task block sections, and direct dependencies. Do not rely on remembered requirements or old module documents.
 - Do not re-read large sections you already know and that have not changed.
 - **Do not create new `.md` files.** No task logs, decision logs, module docs, planning docs, READMEs or scratch notes. If information belongs somewhere, it belongs in one of the three files above — update the relevant section.
 - Decisions that change: edit the section **and** add one line to the change log at the end of `SRS_AND_BUILD_GUIDE.md`.
@@ -45,7 +46,7 @@ apps/api/                     NestJS — controllers ≤20 lines
 apps/web/                     Vue 3 + Vite (PWA)
 ```
 
-Dependencies flow one way: `api → application → domain → shared-utils`. CI enforces it. `adapter-sqlite-wasm` (Phase 12, browser SQLite WASM + OPFS) and `apps/mcp` (Phase 14) are created in their own later phases, not now. **There is no `apps/desktop` — Tauri is rejected (D-20)**; offline runs inside the PWA, so `core-domain` and `core-application` must also stay free of Node built-ins (`fs`, `path`, `crypto`) because they will be bundled for the browser.
+Dependencies flow one way: `api → application → domain → shared-utils`. CI enforces it. `adapter-sqlite-wasm` (Phase 12, browser SQLite WASM + OPFS), optional future desktop packaging (Phase 14), and `apps/mcp` (Phase 15) are created only in their own phases, not now. **PWA Offline is the canonical offline runtime. Tauri is deferred until after Mobile and is optional, not rejected.** If Phase 14 is approved, it may add only a packaging/native-integration shell and must reuse the same domain/application services, repository contracts, sync protocol and acceptance tests. `core-domain` and `core-application` therefore stay browser-safe and free of Node built-ins (`fs`, `path`, `crypto`).
 
 ## Commands
 
@@ -75,7 +76,9 @@ At a module gate, completion requires all four checks, pasted **real** output, a
 9. **Reports derive monetary figures from journal lines and stock movements**, never from document fields (INV-10).
 10. **Choose the simplest thing that works.** No `BaseRepository`, `GenericRepository`, `RepositoryFactory`, generic CRUD, manager classes, single-implementation interfaces, or unrequested config flags.
 11. **Risk-based tests ship with the module.** Never skip, weaken or delete an existing test. Keep exact-number, journal/stock/cash, tenant, security, idempotency, reversal and transaction tests; avoid repeating identical framework, permission and UI-state assertions.
-12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number — **STOP and report.**
+12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number, workflow, permission, stock state, invoice output, serial/barcode behaviour or user-visible action — **STOP and report.**
+13. **Implementation must be traceable to the v4 module contract.** Before coding a business module, map its Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature dependencies → Accounting effects → Inventory effects → Correction/reversal rules → Search/filters → Edge cases → Acceptance tests. A capability is not complete merely because its database field or endpoint exists.
+14. **Do not resurrect superseded requirements.** No LIFO. No current Loyalty/Premium feature. PWA Offline precedes Mobile; optional Tauri comes only later. Confirmed business/UI behaviours merged into v4 are binding even when older code or archived docs differ.
 
 Priority when rules conflict: SRS → security/tenant isolation → accounting/inventory correctness → architecture → transactions → tests → API compatibility → SOLID/KISS/YAGNI/DRY → preference. Never use a coding principle to override a business requirement.
 
@@ -87,6 +90,6 @@ Report as: Module increment · Acceptance criteria and numbers verified · Assum
 
 ## Recording a finished module
 
-The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
+The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Before marking `CODE COMPLETE`, verify every acceptance item in the target module against the real UI, including explicit filters, actions, print/share behaviour and edge states required by the v4 SRS. This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
 
 Set status to `CODE COMPLETE`. **Only the owner sets `DONE`**, after running the complete module workflow and confirming the numbers. The owner may fill the accepted code commit in a small follow-up ledger commit; a commit cannot contain its own final hash. Never delete or rewrite existing history.

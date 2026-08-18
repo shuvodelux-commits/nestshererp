@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Inject, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
 import type {
   CompleteRegistrationService,
   RegisterWithGoogleService,
@@ -15,6 +15,7 @@ import {
   verifySignupOtpRequestSchema,
 } from '@sher/core-contracts';
 
+import { SingleTenantRegistrationGuard } from '../deployment/single-tenant.guard';
 import {
   COMPLETE_REGISTRATION_SERVICE,
   REGISTER_WITH_GOOGLE_SERVICE,
@@ -32,6 +33,8 @@ import {
  * accounts lives in the domain and the use case, not here.
  */
 @Controller('api/v1/auth/registration')
+// D-34: absent, not forbidden, when the deployment holds a single seeded tenant.
+@UseGuards(SingleTenantRegistrationGuard)
 export class RegistrationController {
   constructor(
     @Inject(REQUEST_SIGNUP_OTP_SERVICE) private readonly requestOtp: RequestSignupOtpService,

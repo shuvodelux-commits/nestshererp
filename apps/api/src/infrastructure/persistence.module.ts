@@ -3,7 +3,9 @@ import {
   createDatabase,
   createPool,
   PostgresAccessControl,
+  PostgresAuditQueryRepository,
   PostgresAuditWriter,
+  PostgresBusinessProfileRepository,
   PostgresIdempotencyStore,
   PostgresNoteRepository,
   PostgresNumberingService,
@@ -12,17 +14,21 @@ import {
   PostgresPeriodGuard,
   PostgresRoleRepository,
   PostgresSessionRepository,
+  PostgresSettingsRepository,
   PostgresTenantRepository,
   PostgresUnitOfWork,
   PostgresUserIdentifierRepository,
   PostgresUserRepository,
 } from '@sher/adapter-postgres';
-import type { GoogleVerifier, IdentityVerifier } from '@sher/core-application';
+import type { EntitlementProvider, GoogleVerifier, IdentityVerifier } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { SystemClock } from '@sher/shared-utils';
 import type pg from 'pg';
 
 import { DevIdentityVerifier } from '../auth/dev-identity-verifier';
+import { NoOpIdentityVerifier } from '../auth/noop-identity-verifier';
+import { LicenseKeyEntitlementProvider } from '../deployment/license-entitlement-provider';
+import { SubscriptionEntitlementProvider } from '../deployment/subscription-entitlement-provider';
 import { GoogleIdTokenVerifier, UnconfiguredGoogleVerifier } from '../auth/google-verifier';
 import { CryptoOtpCodeGenerator } from '../auth/otp-code-generator';
 import { ScryptPasswordHasher } from '../auth/password-hasher';
@@ -32,7 +38,10 @@ import type { ApiConfig } from '../config';
 import {
   ACCESS_CONTROL,
   API_CONFIG,
+  AUDIT_QUERY_REPOSITORY,
+  ENTITLEMENT_PROVIDER,
   AUDIT_WRITER,
+  BUSINESS_PROFILE_REPOSITORY,
   CLOCK,
   DATABASE_POOL,
   IDEMPOTENCY_STORE,
@@ -49,24 +58,48 @@ import {
   TOKEN_ISSUER,
   GOOGLE_VERIFIER,
   SESSION_REPOSITORY,
+  SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
   USER_IDENTIFIER_REPOSITORY,
   USER_REPOSITORY,
 } from './tokens';
 
 /**
- * D-33 ships three verifiers; slice 1.1 ships only the development one. Picking
- * it in production would accept any code a caller invents, so boot fails loudly
- * instead — the real transports arrive in slice 1.7.
+ * D-33's verifier, chosen by `IDENTITY_VERIFIER` (§4.4) rather than by
+ * `NODE_ENV` — a deployment mode is configuration, not an environment guess.
+ *
+ * `otp` is the SaaS transport and is **not implemented**: it needs a chosen SMS
+ * provider, an account and a sender id (§5.24, D-33), none of which exist yet.
+ * It throws here rather than falling back to `dev`, because a silent fallback
+ * would accept any code the caller invents. Boot validation refuses the
+ * combination in production before this is ever reached.
  */
-function selectIdentityVerifier(): IdentityVerifier {
-  if (process.env['NODE_ENV'] === 'production') {
-    throw new Error(
-      'No production IdentityVerifier is implemented yet (D-33 / slice 1.7). ' +
-        'Refusing to start with the development OTP transport.',
-    );
+function selectIdentityVerifier(config: ApiConfig): IdentityVerifier {
+  switch (config.identityVerifier) {
+    case 'none':
+      return new NoOpIdentityVerifier();
+    case 'dev':
+      return new DevIdentityVerifier();
+    case 'otp':
+      throw new Error(
+        'IDENTITY_VERIFIER=otp is not implemented: no SMS/email transport has been chosen ' +
+          '(D-33, §5.24). Use IDENTITY_VERIFIER=none for on-premise, or dev outside production.',
+      );
   }
-  return new DevIdentityVerifier();
+}
+
+/**
+ * D-35's entitlement source. On-premise answers from a signed licence file
+ * validated offline; SaaS answers from the subscription, which is a permissive
+ * stub until Phase 10 (§5.4).
+ *
+ * On-premise does **not** skip entitlement checks — it answers them from the
+ * licence. That is why this is a provider choice and not an `if (isOnPrem)`.
+ */
+function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
+  return config.entitlementSource === 'license'
+    ? new LicenseKeyEntitlementProvider(config.licenseKeyPath, config.licensePublicKey)
+    : new SubscriptionEntitlementProvider();
 }
 
 /**
@@ -124,7 +157,12 @@ function selectIdentityVerifier(): IdentityVerifier {
       provide: OTP_CODE_GENERATOR,
       useFactory: (): CryptoOtpCodeGenerator => new CryptoOtpCodeGenerator(),
     },
-    { provide: IDENTITY_VERIFIER, useFactory: selectIdentityVerifier },
+    { provide: IDENTITY_VERIFIER, useFactory: selectIdentityVerifier, inject: [API_CONFIG] },
+    {
+      provide: ENTITLEMENT_PROVIDER,
+      useFactory: selectEntitlementProvider,
+      inject: [API_CONFIG],
+    },
     {
       provide: TOKEN_ISSUER,
       useFactory: (config: ApiConfig, clock: Clock): JwtTokenIssuer =>
@@ -170,6 +208,22 @@ function selectIdentityVerifier(): IdentityVerifier {
           : new GoogleIdTokenVerifier(config.googleClientId, clock),
       inject: [API_CONFIG, CLOCK],
     },
+    {
+      provide: SETTINGS_REPOSITORY,
+      useFactory: (clock: Clock): PostgresSettingsRepository =>
+        new PostgresSettingsRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: BUSINESS_PROFILE_REPOSITORY,
+      useFactory: (clock: Clock): PostgresBusinessProfileRepository =>
+        new PostgresBusinessProfileRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: AUDIT_QUERY_REPOSITORY,
+      useFactory: (): PostgresAuditQueryRepository => new PostgresAuditQueryRepository(),
+    },
   ],
   exports: [
     API_CONFIG,
@@ -194,6 +248,10 @@ function selectIdentityVerifier(): IdentityVerifier {
     USER_IDENTIFIER_REPOSITORY,
     SESSION_REPOSITORY,
     GOOGLE_VERIFIER,
+    SETTINGS_REPOSITORY,
+    BUSINESS_PROFILE_REPOSITORY,
+    AUDIT_QUERY_REPOSITORY,
+    ENTITLEMENT_PROVIDER,
   ],
 })
 export class PersistenceModule {}
