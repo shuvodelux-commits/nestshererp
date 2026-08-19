@@ -8,11 +8,13 @@ import type {
   TenantContext,
   Tx,
 } from '@sher/core-application';
+import type { ProductSort } from '@sher/core-contracts';
 import type { DiscountType, ProductStatus } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
 import { brands, categories, products, units } from './schema';
 import { txOf } from './unit-of-work';
 
@@ -28,6 +30,37 @@ import { txOf } from './unit-of-work';
 const parentCategories = alias(categories, 'parent_categories');
 /** The conversion unit is a second row in `units`, so it needs its own alias. */
 const conversionUnits = alias(units, 'conversion_units');
+
+/**
+ * What each tappable header on the Products list orders by (UI-46).
+ *
+ * This map **is** the allow-list at the database boundary: `ProductSort` is a
+ * closed enum in `core-contracts`, and a value that reached here without passing
+ * that enum could not index into this object. No column name is ever
+ * concatenated from a request.
+ *
+ * The two joined names are scalar subqueries rather than the left-joined columns
+ * a few lines below, because the cursor's anchor lookup selects from `products`
+ * alone and has no joins — expressing them the same way on both sides is what
+ * keeps the ordering and the cursor in agreement. Every nullable column is
+ * coalesced, or the row-value comparison would go NULL and the row would vanish
+ * from every page after the first.
+ */
+const PRODUCT_SORTS: Record<ProductSort, SortableColumn> = {
+  name: ownColumn(sql`${products.name}`, sql`anchor.name`),
+  barcode: ownColumn(sql`${products.barcode}`, sql`anchor.barcode`, sql`''`),
+  categoryName: joinedName(
+    'categories',
+    'name',
+    sql`${products.categoryId}`,
+    sql`anchor.category_id`,
+  ),
+  unitName: joinedName('units', 'name', sql`${products.baseUnitId}`, sql`anchor.base_unit_id`),
+  sellingPrice: ownColumn(sql`${products.sellingPriceMinor}`, sql`anchor.selling_price_minor`),
+  purchasePrice: ownColumn(sql`${products.purchasePriceMinor}`, sql`anchor.purchase_price_minor`),
+  minStockQty: ownColumn(sql`${products.minStockQty}`, sql`anchor.min_stock_qty`),
+  status: ownColumn(sql`${products.status}`, sql`anchor.status`),
+};
 
 /** The columns every read returns, so no query drifts from another. */
 const PRODUCT_COLUMNS = {
@@ -96,11 +129,13 @@ export class PostgresProductRepository implements ProductRepository {
   constructor(private readonly clock: Clock) {}
 
   async list(tx: Tx, ctx: TenantContext, filter: ProductFilter): Promise<readonly ProductRow[]> {
+    const column = PRODUCT_SORTS[filter.sort];
+
     const rows = await this.selectProducts(tx, ctx)
       .where(and(this.liveInTenant(ctx), ...this.filters(ctx, filter), ...this.after(ctx, filter)))
-      // The fixed order the cursor walks: name, then id as the tiebreak for two
-      // products with the same name (§3.9 — keyset only, `OFFSET` is banned).
-      .orderBy(asc(products.name), asc(products.id))
+      // Whichever header was tapped, then id in the same direction as the
+      // tiebreak (§3.9, UI-46 — keyset only, `OFFSET` is banned).
+      .orderBy(orderBy(column, filter.direction, sql`${products.id}`))
       .limit(filter.limit);
 
     return rows.map(toRow);
@@ -349,10 +384,14 @@ export class PostgresProductRepository implements ProductRepository {
     if (filter.cursor === null) return [];
 
     return [
-      sql`(${products.name}, ${products.id}) > (
-        SELECT anchor.name, anchor.id FROM products anchor
-         WHERE anchor.id = ${filter.cursor} AND anchor.tenant_id = ${ctx.tenantId}
-      )`,
+      afterCursor(
+        PRODUCT_SORTS[filter.sort],
+        filter.direction,
+        sql`${products.id}`,
+        sql`anchor.id`,
+        sql`products anchor`,
+        sql`anchor.id = ${filter.cursor} AND anchor.tenant_id = ${ctx.tenantId}`,
+      ),
     ];
   }
 }

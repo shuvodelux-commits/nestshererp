@@ -6,8 +6,8 @@ import {
   rejectParty,
 } from '@sher/core-domain';
 import type { PartyRejection, PartyRole, PartyStatus } from '@sher/core-domain';
-import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
-import type { PartyListResponse, PartyResponse } from '@sher/core-contracts';
+import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
+import type { PartyListResponse, PartyResponse, PartySort, SortDirection } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 
@@ -50,6 +50,9 @@ export interface ListPartiesCommand {
   readonly status?: PartyStatus | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
+  /** Which header was tapped, and which way (UI-46). */
+  readonly sort?: PartySort | undefined;
+  readonly direction?: SortDirection | undefined;
 }
 
 export interface PartyIdCommand {
@@ -158,6 +161,8 @@ export class ManagePartiesService {
         groupId: command.groupId ?? null,
         status: command.status ?? null,
         cursor: command.cursor ?? null,
+        sort: command.sort ?? 'name',
+        direction: command.direction ?? defaultDirectionFor(command.sort ?? 'name'),
         // One more than asked for, so "is there another page" is answered by the
         // same query rather than by a second count (§3.9 keyset paging).
         limit: limit + 1,

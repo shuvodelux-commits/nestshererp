@@ -669,3 +669,100 @@ describe('who may see what', () => {
     expect(read.body.error.code).toBe('NOT_FOUND');
   });
 });
+
+/**
+ * UI-46 — every column header sorts on tap.
+ *
+ * The risk being tested is not "does ORDER BY work". It is that sorting by a
+ * **non-unique** column while paging with a keyset cursor silently loses rows:
+ * without `id` as the final tiebreak, ties may come back in a different order on
+ * each page, so one product appears twice and another never appears at all. A
+ * shopkeeper paging through low stock would act on a list that is quietly wrong.
+ */
+describe('sorting a list by tapping a header (UI-46)', () => {
+  /** Three reorder levels, two of them equal — the tie is the whole point. */
+  async function seedForSorting(): Promise<void> {
+    await createProduct(minimalProduct({ name: 'Cha patti', minStockQty: 5000, sellingPriceMinor: 30000 }));
+    await createProduct(minimalProduct({ name: 'Attar', minStockQty: 12000, sellingPriceMinor: 10000 }));
+    await createProduct(minimalProduct({ name: 'Biscuit', minStockQty: 5000, sellingPriceMinor: 20000 }));
+  }
+
+  function namesOf(body: { data: { name: string }[] }): string[] {
+    return body.data.map((row) => row.name);
+  }
+
+  it('sorts by name when a header is tapped, and reverses on the second tap', async () => {
+    await seedForSorting();
+
+    const up = await listProducts('?sort=name&direction=ASC');
+    expect(namesOf(up.body)).toEqual(['Attar', 'Biscuit', 'Cha patti']);
+
+    const down = await listProducts('?sort=name&direction=DESC');
+    expect(namesOf(down.body)).toEqual(['Cha patti', 'Biscuit', 'Attar']);
+  });
+
+  it('sorts a number the big end first by default — that is what "show me" means', async () => {
+    await seedForSorting();
+
+    // Tapping `Reorder at` asks "what needs attention", which is the top of the
+    // list. Defaulting a number to ascending makes every user tap twice forever.
+    const tapped = await listProducts('?sort=minStockQty');
+    expect(namesOf(tapped.body)[0]).toBe('Attar');
+  });
+
+  it('does not lose or repeat a row when paging through tied values', async () => {
+    await seedForSorting();
+
+    const first = await listProducts('?sort=minStockQty&direction=ASC&limit=2');
+    expect(first.body.page.hasMore).toBe(true);
+
+    const second = await listProducts(
+      `?sort=minStockQty&direction=ASC&limit=2&cursor=${first.body.page.nextCursor}`,
+    );
+
+    const seen = [...namesOf(first.body), ...namesOf(second.body)];
+    // Every product exactly once: two pages, three products, no duplicate.
+    expect([...seen].sort()).toEqual(['Attar', 'Biscuit', 'Cha patti']);
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  it('sorts by a nullable column without dropping the rows that are null', async () => {
+    // The row-value comparison goes NULL against a NULL column, the row fails the
+    // WHERE, and it vanishes from every page after the first. Coalescing is what
+    // stops a product with no barcode ceasing to exist once someone pages.
+    await createProduct(minimalProduct({ name: 'Has code', barcode: '8901234567890' }));
+    await createProduct(minimalProduct({ name: 'No code' }));
+
+    const page = await listProducts('?sort=barcode&direction=ASC&limit=1');
+    const next = await listProducts(
+      `?sort=barcode&direction=ASC&limit=1&cursor=${page.body.page.nextCursor}`,
+    );
+
+    expect([...namesOf(page.body), ...namesOf(next.body)].sort()).toEqual(['Has code', 'No code']);
+  });
+
+  it('refuses a column that is not on the allow-list', async () => {
+    // The sort column is never a string taken from the request — it is a closed
+    // enum, so an unknown one is a validation failure rather than SQL.
+    const refused = await listProducts('?sort=deleted_at');
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('refuses sorting by purchase price without inventory.cost.view', async () => {
+    // Ordering by a figure you may not read hands you the figure: it ranks every
+    // product by cost, which is exactly what UI-40 keeps out of the response.
+    const cashier = await seedTenant(pool, {
+      name: 'Cost blind shop',
+      permissions: [Permission.PRODUCT_VIEW],
+    });
+    const cashierToken = signToken(cashier, TEST_JWT_SECRET);
+
+    const refused = await listProducts('?sort=purchasePrice', cashierToken);
+    expect(refused.status).toBe(403);
+
+    // ...and the same caller may still sort by anything they can see.
+    const allowed = await listProducts('?sort=sellingPrice', cashierToken);
+    expect(allowed.status).toBe(200);
+  });
+});

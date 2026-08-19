@@ -1,4 +1,5 @@
 import type { PartyRole, PartyStatus } from '@sher/core-domain';
+import type { PartySort, SortDirection } from '@sher/core-contracts';
 
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx } from '../ports/unit-of-work';
@@ -61,6 +62,9 @@ export interface PartyFilter {
   /** Keyset cursor: the id of the last row of the previous page (§3.9). */
   readonly cursor: string | null;
   readonly limit: number;
+  /** Which header the shopkeeper tapped (UI-46), already allow-list checked. */
+  readonly sort: PartySort;
+  readonly direction: SortDirection;
 }
 
 export interface PartyCounts {

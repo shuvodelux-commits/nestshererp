@@ -190,3 +190,15 @@ export type {
   SetPartyStatusRequest,
   UpdatePartyRequest,
 } from './parties';
+
+/**
+ * Caller-selected list sorting (UI-46, §3.9). The allow-lists live in one place
+ * so the API and the Vue client cannot disagree about what a header may sort by.
+ */
+export {
+  defaultDirectionFor,
+  partySortSchema,
+  productSortSchema,
+  sortDirectionSchema,
+} from './sorting';
+export type { PartySort, ProductSort, SortDirection } from './sorting';

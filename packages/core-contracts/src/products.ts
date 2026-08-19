@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { productSortSchema, sortDirectionSchema } from './sorting';
+
 /**
  * Products (Phase 2, path 2.2, §5.5).
  *
@@ -151,6 +153,9 @@ export const productQuerySchema = z
     /** Keyset cursor: the id of the last row of the previous page (§3.9). */
     cursor: ULID.optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
+    /** Which header was tapped, from the closed allow-list (UI-46). */
+    sort: productSortSchema.optional(),
+    direction: sortDirectionSchema.optional(),
   })
   .strict();
 

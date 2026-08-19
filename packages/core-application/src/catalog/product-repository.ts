@@ -1,4 +1,5 @@
 import type { DiscountType, ProductStatus } from '@sher/core-domain';
+import type { ProductSort, SortDirection } from '@sher/core-contracts';
 
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx } from '../ports/unit-of-work';
@@ -86,6 +87,12 @@ export interface ProductFilter {
   /** Keyset cursor: the id of the last row of the previous page (§3.9). */
   readonly cursor: string | null;
   readonly limit: number;
+  /**
+   * Which header the shopkeeper tapped (UI-46), already checked against the
+   * allow-list and against `inventory.cost.view` before it reaches here.
+   */
+  readonly sort: ProductSort;
+  readonly direction: SortDirection;
 }
 
 /** Counts for the summary tiles, over the same filter as the rows. */

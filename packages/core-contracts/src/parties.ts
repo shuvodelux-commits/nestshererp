@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { partySortSchema, sortDirectionSchema } from './sorting';
+
 /**
  * Parties (Phase 2, path 2.3, §5.6, D-02, D-04).
  *
@@ -92,6 +94,9 @@ export const partyQuerySchema = z
     /** Keyset cursor: the id of the last row of the previous page (§3.9). */
     cursor: ULID.optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
+    /** Which header was tapped, from the closed allow-list (UI-46). */
+    sort: partySortSchema.optional(),
+    direction: sortDirectionSchema.optional(),
   })
   .strict();
 

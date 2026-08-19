@@ -8,7 +8,8 @@ import {
   rejectPricing,
 } from '@sher/core-domain';
 import type { ConversionRejection, PricingRejection, ProductStatus } from '@sher/core-domain';
-import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
+import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
+import type { ProductSort, SortDirection } from '@sher/core-contracts';
 import type {
   GeneratedBarcodeResponse,
   ProductListResponse,
@@ -61,6 +62,9 @@ export interface ListProductsCommand {
   readonly status?: ProductStatus | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
+  /** Which header was tapped, and which way (UI-46). */
+  readonly sort?: ProductSort | undefined;
+  readonly direction?: SortDirection | undefined;
 }
 
 export interface GetProductCommand {
@@ -170,6 +174,20 @@ export class ManageProductsService {
       await this.accessControl.require(tx, ctx, Permission.PRODUCT_VIEW);
       const showCost = await this.maySeeCost(tx, ctx);
 
+      const sort = command.sort ?? 'name';
+
+      // Sorting by a figure the caller may not read hands them the figure.
+      // Ordering by purchase price without `inventory.cost.view` ranks every
+      // product by cost, which is the very thing UI-40 keeps out of the response
+      // body. Refused rather than silently re-sorted: a list that came back in a
+      // different order than asked is worse than being told no.
+      if (sort === 'purchasePrice' && !showCost) {
+        throw new AppError(
+          'PERMISSION_DENIED',
+          'You cannot sort by purchase price without permission to see cost',
+        );
+      }
+
       const limit = command.limit ?? DEFAULT_LIMIT;
       const filter: ProductFilter = {
         search: command.search ?? null,
@@ -177,6 +195,8 @@ export class ManageProductsService {
         categoryId: command.categoryId ?? null,
         status: command.status ?? null,
         cursor: command.cursor ?? null,
+        sort,
+        direction: command.direction ?? defaultDirectionFor(sort),
         // One more than asked for, so "is there another page" is answered by the
         // same query rather than by a second count (§3.9 keyset paging).
         limit: limit + 1,

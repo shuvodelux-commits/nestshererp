@@ -9,6 +9,7 @@ import type {
   TenantContext,
   Tx,
 } from '@sher/core-application';
+import type { PartySort } from '@sher/core-contracts';
 import type { PartyRole, PartyStatus } from '@sher/core-domain';
 import { customerPhoneKey } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
@@ -16,6 +17,7 @@ import { Ulid } from '@sher/shared-utils';
 import type { SQL } from 'drizzle-orm';
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
 import { customerGroups, parties, partyRoles } from './schema';
 import { txOf } from './unit-of-work';
 
@@ -31,6 +33,33 @@ import { txOf } from './unit-of-work';
  * refusal a person reads is raised in the use case.
  */
 const ROLE_ORDER: readonly PartyRole[] = ['CUSTOMER', 'SUPPLIER', 'VENDOR'];
+
+/**
+ * What each tappable header on the Customers / Suppliers / Vendors list orders
+ * by (UI-46). This map is the allow-list at the database boundary: `PartySort` is
+ * a closed enum, so no column name is ever built from a request.
+ *
+ * The group name is a scalar subquery, matching how the cursor's anchor lookup
+ * sees it — the anchor selects from `parties` alone and has no join. Nullable
+ * columns are coalesced, or the row-value comparison would go NULL and the row
+ * would disappear from every page after the first: a customer with no phone
+ * would stop existing the moment someone sorted by phone and paged.
+ */
+const PARTY_SORTS: Record<PartySort, SortableColumn> = {
+  name: ownColumn(sql`${parties.name}`, sql`anchor.name`),
+  phone: ownColumn(sql`${parties.phone}`, sql`anchor.phone`, sql`''`),
+  groupName: joinedName(
+    'customer_groups',
+    'name',
+    sql`${parties.customerGroupId}`,
+    sql`anchor.customer_group_id`,
+  ),
+  // No limit is not a limit of zero, but it has to sort somewhere: -1 puts
+  // 'unlimited' below every real limit ascending, and dropping the row is the
+  // one option that is always wrong.
+  creditLimit: ownColumn(sql`${parties.creditLimitMinor}`, sql`anchor.credit_limit_minor`, sql`-1`),
+  status: ownColumn(sql`${parties.status}`, sql`anchor.status`),
+};
 
 const PARTY_COLUMNS = {
   id: parties.id,
@@ -72,9 +101,9 @@ export class PostgresPartyRepository implements PartyRepository {
   async list(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<readonly PartyRow[]> {
     const rows = await this.selectParties(tx)
       .where(and(this.liveInTenant(ctx), ...this.filters(ctx, filter), ...this.after(ctx, filter)))
-      // The fixed order the cursor walks: name, then id as the tiebreak for two
-      // parties with the same name (§3.9 — keyset only, `OFFSET` is banned).
-      .orderBy(asc(parties.name), asc(parties.id))
+      // Whichever header was tapped, then id in the same direction as the
+      // tiebreak (§3.9, UI-46 — keyset only, `OFFSET` is banned).
+      .orderBy(orderBy(PARTY_SORTS[filter.sort], filter.direction, sql`${parties.id}`))
       .limit(filter.limit);
 
     return this.withRoles(tx, ctx, rows);
@@ -353,10 +382,14 @@ export class PostgresPartyRepository implements PartyRepository {
     if (filter.cursor === null) return [];
 
     return [
-      sql`(${parties.name}, ${parties.id}) > (
-        SELECT anchor.name, anchor.id FROM parties anchor
-         WHERE anchor.id = ${filter.cursor} AND anchor.tenant_id = ${ctx.tenantId}
-      )`,
+      afterCursor(
+        PARTY_SORTS[filter.sort],
+        filter.direction,
+        sql`${parties.id}`,
+        sql`anchor.id`,
+        sql`parties anchor`,
+        sql`anchor.id = ${filter.cursor} AND anchor.tenant_id = ${ctx.tenantId}`,
+      ),
     ];
   }
 
