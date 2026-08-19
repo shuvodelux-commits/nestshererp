@@ -1,0 +1,104 @@
+import { flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, it, vi } from 'vitest';
+
+import ManageListDialog from '../src/components/ManageListDialog.vue';
+
+/**
+ * UI-51's Manage panel. Tested once here, so no picker repeats it (R-E11).
+ *
+ * The case that matters most is the last: §3.6 says a name products already use
+ * is **archived**, not deleted, and the caller has to be told which happened. A
+ * panel that always said "deleted" would be lying about the one thing a
+ * shopkeeper needs to know before they tap it.
+ */
+function panel(overrides: Record<string, unknown> = {}) {
+  const rename = vi.fn().mockResolvedValue(undefined);
+  const remove = vi.fn().mockResolvedValue('Removed. Nothing was using it.');
+
+  const wrapper = mount(ManageListDialog, {
+    props: {
+      title: 'categories',
+      titleBn: 'পণ্যের ধরন',
+      entries: [
+        { id: '01CATAAAAAAAAAAAAAAAAAAAAA', name: 'Drinks' },
+        { id: '01CATBBBBBBBBBBBBBBBBBBBBB', name: 'Fittings' },
+      ],
+      canEdit: true,
+      rename,
+      remove,
+      ...overrides,
+    },
+  });
+
+  return { wrapper, rename, remove };
+}
+
+/** Opens the `⋯` menu on the first row. */
+async function openRowMenu(wrapper: ReturnType<typeof panel>['wrapper']) {
+  await wrapper.findAll('.manage-actions .icon-btn')[0]!.trigger('click');
+}
+
+describe('managing a picker’s list in place', () => {
+  it('lists every entry with its own actions', async () => {
+    const { wrapper } = panel();
+
+    expect(wrapper.text()).toContain('Drinks');
+    expect(wrapper.text()).toContain('Fittings');
+    expect(wrapper.findAll('.manage-actions').length).toBe(2);
+
+    await openRowMenu(wrapper);
+    expect(wrapper.find('.manage-menu').text()).toContain('Edit');
+    expect(wrapper.find('.manage-menu').text()).toContain('Delete');
+  });
+
+  it('renames through the same use case the settings screen calls', async () => {
+    const { wrapper, rename } = panel();
+
+    await openRowMenu(wrapper);
+    await wrapper.find('.manage-menu button').trigger('click');
+    await wrapper.find('.manage-input').setValue('Cold drinks');
+    await wrapper.find('.btn-primary').trigger('click');
+    await flushPromises();
+
+    expect(rename).toHaveBeenCalledWith('01CATAAAAAAAAAAAAAAAAAAAAA', 'Cold drinks');
+  });
+
+  it('asks before removing, and names the record (UI-26)', async () => {
+    const { wrapper, remove } = panel();
+
+    await openRowMenu(wrapper);
+    await wrapper.findAll('.manage-menu button')[1]!.trigger('click');
+
+    // Not removed yet — the confirmation is a real step, not a formality.
+    expect(remove).not.toHaveBeenCalled();
+    expect(wrapper.find('.manage-confirm').text()).toContain('Drinks');
+  });
+
+  it('says archived when the server archived, not deleted', async () => {
+    // §3.6: a category products already use is archived so those products keep
+    // showing it. Claiming "deleted" here would be a lie about their data.
+    const { wrapper, remove } = panel();
+    remove.mockResolvedValue('It is still used by some products, so it was archived.');
+
+    await openRowMenu(wrapper);
+    await wrapper.findAll('.manage-menu button')[1]!.trigger('click');
+    await wrapper.find('.manage-confirm .btn-danger').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.manage-outcome').text()).toContain('archived');
+  });
+
+  it('offers no row actions at all without the permission (UI-09)', () => {
+    // A menu whose every item 403s is worse than no menu.
+    const { wrapper } = panel({ canEdit: false });
+
+    expect(wrapper.findAll('.manage-actions').length).toBe(0);
+    expect(wrapper.text()).toContain('Drinks');
+  });
+
+  it('says what an empty list means and where the add button is', () => {
+    const { wrapper } = panel({ entries: [] });
+
+    expect(wrapper.find('.manage-empty').text()).toContain('Nothing here yet');
+  });
+});

@@ -48,13 +48,23 @@ const props = defineProps<{
   /** A longer explanation of the field itself, behind an `i` beside it (UI-49). */
   help?: string | undefined;
   helpBn?: string | undefined;
+  /**
+   * Offers `Manage` beside the picker (UI-51), so an existing entry is renamed
+   * or removed from the point of use rather than on a settings screen. Absent,
+   * not disabled, without the permission (UI-09).
+   */
+  manage?: boolean | undefined;
   disabled?: boolean;
   required?: boolean;
   /** Creates the record and resolves with its id. Owned by the parent. */
   create: (name: string) => Promise<string>;
 }>();
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: string];
+  /** UI-51: the caller opens its own Manage panel for this kind of record. */
+  manage: [];
+}>();
 
 const adding = ref(false);
 const draft = ref('');
@@ -132,6 +142,21 @@ async function submit(): Promise<void> {
       >
         <i class="pi pi-plus" aria-hidden="true" />
         {{ addLabel }}
+      </button>
+
+      <!--
+        UI-51: fixing or removing an existing entry belongs here too, not only on
+        a settings screen. The caller owns the panel, because it knows which kind
+        of record this picker holds.
+      -->
+      <button
+        v-if="manage === true && !adding"
+        type="button"
+        class="btn btn-ghost add"
+        :disabled="disabled === true"
+        @click="emit('manage')"
+      >
+        Manage
       </button>
     </div>
 

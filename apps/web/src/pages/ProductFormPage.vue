@@ -10,7 +10,14 @@ import { Money, parseMoney, parseQty, Qty, Ulid, SystemClock } from '@sher/share
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { createCatalogEntry, EMPTY_CATALOG, fetchCatalog } from '../api/catalog';
+import {
+  createCatalogEntry,
+  EMPTY_CATALOG,
+  fetchCatalog,
+  removeCatalogEntry,
+  renameCatalogEntry,
+  type CatalogKind,
+} from '../api/catalog';
 import { ApiError } from '../api/client';
 import {
   createProduct,
@@ -23,6 +30,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import HelpTip from '../components/HelpTip.vue';
+import ManageListDialog from '../components/ManageListDialog.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import QuickAddSelect from '../components/QuickAddSelect.vue';
 
@@ -275,6 +283,70 @@ function addSubcategory(name: string): Promise<string> {
     { name, parentId: categoryId.value },
     catalog.value.categories,
   );
+}
+
+/* ------------------------------------------------------- manage (UI-51) */
+
+/**
+ * `Manage` beside each picker opens that list with per-row Edit and Delete.
+ *
+ * It calls the same rename/remove endpoints the Catalog screen calls — one
+ * write path, one set of validations, one audit trail (R-D, DRY). The catalog is
+ * replaced with whatever the server returns rather than patched locally, so a
+ * name the server normalised is the name shown.
+ */
+const managing = ref<CatalogKind | null>(null);
+
+const MANAGE_TITLES: Record<CatalogKind, { title: string; titleBn: string }> = {
+  categories: { title: 'categories', titleBn: 'পণ্যের ধরন' },
+  brands: { title: 'brands', titleBn: 'ব্র্যান্ড' },
+  units: { title: 'units', titleBn: 'একক' },
+};
+
+const manageEntries = computed(() => {
+  if (managing.value === 'brands') return catalog.value.brands;
+  if (managing.value === 'units') return catalog.value.units;
+  // Only the top level: a subcategory is managed from its own picker, and
+  // mixing both here would show two "Drinks" rows meaning different things.
+  return parentCategories.value;
+});
+
+const canManageCurrent = computed(() => {
+  if (managing.value === 'brands') return canManageBrands.value;
+  if (managing.value === 'units') return canManageUnits.value;
+  return canManageCategories.value;
+});
+
+function manageCategories(): void {
+  managing.value = 'categories';
+}
+function manageBrands(): void {
+  managing.value = 'brands';
+}
+function manageUnits(): void {
+  managing.value = 'units';
+}
+
+async function renameEntry(id: string, name: string): Promise<void> {
+  const kind = managing.value;
+  if (kind === null) return;
+  catalog.value = await renameCatalogEntry(session.accessToken.value ?? '', kind, id, name);
+}
+
+/**
+ * §3.6's delete-or-archive. The server decides which, and its answer is what the
+ * caller is told — this never claims "deleted" when the answer was "archived".
+ */
+async function removeEntry(id: string): Promise<string> {
+  const kind = managing.value;
+  if (kind === null) return '';
+
+  const result = await removeCatalogEntry(session.accessToken.value ?? '', kind, id);
+  catalog.value = await fetchCatalog(session.accessToken.value ?? '');
+
+  return result.outcome === 'ARCHIVED'
+    ? 'It is still used by some products, so it was archived rather than deleted. Nothing those products record has changed.'
+    : 'Removed. Nothing was using it.';
 }
 
 function describe(cause: unknown): { code: string; message: string } {
@@ -590,29 +662,55 @@ const baseUnitName = computed(
       <p v-if="notice !== null" class="notice is-ok" role="status">{{ notice }}</p>
       <ErrorNotice v-if="formError !== null" :code="formError.code" :message="formError.message" />
 
+      <!--
+        The order here is the order a shopkeeper thinks in, set by the owner
+        2026-08-19: what it is → how it is classified and counted → what it
+        costs and sells for → how much there is. Everything a product can exist
+        without is folded away below (UI-50).
+      -->
       <AppCard
         icon="pi-shopping-bag"
         title="What it is"
-        subtitle="Basic information about your product."
-        subtitle-bn="পণ্যটির নাম আর কী ধরনের জিনিস, সেটি লিখুন"
+        subtitle="The few things every product needs."
+        subtitle-bn="পণ্যের নাম, ধরন, একক আর দাম — এইটুকু হলেই চলবে"
       >
         <div class="field">
           <label for="product-name">
             Product name
             <span class="label-bn">পণ্যের নাম</span>
           </label>
-          <input id="product-name" v-model="name" type="text" required :disabled="!canSave" />
-          <p class="help">
-            Kept separate from the brand, so a product reads as Brand + Name and renaming the
-            brand renames it everywhere.
-          </p>
+          <input
+            id="product-name"
+            v-model="name"
+            type="text"
+            placeholder="e.g. PVC Pipe 1&quot;"
+            required
+            :disabled="!canSave"
+          />
         </div>
 
         <!--
-          D-39 / UI-45: each of these can create what it is picking, inline,
-          without leaving the half-filled product behind.
+          D-39 / UI-45: each of these creates what it is picking, inline, without
+          losing the half-filled product. UI-51 adds Manage beside them, so a
+          wrong category is fixed here rather than on a settings screen.
         -->
         <div class="row">
+          <QuickAddSelect
+            v-model="categoryId"
+            field-id="product-category"
+            label="Category"
+            label-bn="ধরন"
+            empty-label="Select category..."
+            :options="parentCategories"
+            :can-add="canManageCategories"
+            add-label="New category"
+            add-placeholder="Drinks"
+            :manage="canManageCategories"
+            :disabled="!canSave"
+            :create="addCategory"
+            @manage="manageCategories"
+          />
+
           <QuickAddSelect
             v-model="brandId"
             field-id="product-brand"
@@ -623,66 +721,32 @@ const baseUnitName = computed(
             :can-add="canManageBrands"
             add-label="New brand"
             add-placeholder="Pran"
+            :manage="canManageBrands"
             :disabled="!canSave"
             :create="addBrand"
+            @manage="manageBrands"
           />
 
           <QuickAddSelect
             v-model="baseUnitId"
             field-id="product-unit"
-            label="Stock unit"
-            label-bn="স্টক যে এককে হিসাব হবে"
-            help="What you count this product in — piece, carton, kilo, foot. Everything is stored in this unit, and any second unit you add is measured against it."
-            help-bn="এই পণ্যটি আপনি কীসে গোনেন — পিস, কার্টন, কেজি, ফুট। সব হিসাব এই এককেই রাখা হয়।"
+            label="Unit"
+            label-bn="একক"
+            empty-label="Select unit..."
             :options="catalog.units"
             :can-add="canManageUnits"
             add-label="New unit"
             add-placeholder="Gaz"
-            add-hint="What the goods are counted in. Every conversion rule is measured against it."
+            help="What you count this product in — piece, carton, kilo, foot. Everything is stored in this unit, and any second unit you add is measured against it."
+            help-bn="এই পণ্যটি আপনি কীসে গোনেন — পিস, কার্টন, কেজি, ফুট। সব হিসাব এই এককেই রাখা হয়।"
+            :manage="canManageUnits"
             :disabled="!canSave"
             required
             :create="addUnit"
+            @manage="manageUnits"
           />
         </div>
 
-        <div class="row">
-          <QuickAddSelect
-            v-model="categoryId"
-            field-id="product-category"
-            label="Category"
-            label-bn="ক্যাটাগরি"
-            empty-label="No category"
-            :options="parentCategories"
-            :can-add="canManageCategories"
-            add-label="New category"
-            add-placeholder="Drinks"
-            :disabled="!canSave"
-            :create="addCategory"
-          />
-
-          <QuickAddSelect
-            v-if="categoryId !== ''"
-            v-model="subcategoryId"
-            field-id="product-subcategory"
-            label="Subcategory"
-            label-bn="সাবক্যাটাগরি"
-            empty-label="None"
-            :options="subcategories"
-            :can-add="canManageCategories"
-            add-label="New subcategory"
-            add-placeholder="Soft drinks"
-            :disabled="!canSave"
-            :create="addSubcategory"
-          />
-        </div>
-      </AppCard>
-
-      <AppCard
-        icon="pi-tag"
-        title="Prices and stock level"
-        subtitle="Set your prices, and when to be told that stock is running low."
-        subtitle-bn="কত টাকায় কিনছেন, কত টাকায় বেচবেন, আর কত কমে গেলে খবর দেবে"
-      >
         <!--
           D-41: prices are **stored per base unit**, always. This only changes
           which unit they are typed and read in, and the conversion is the
@@ -713,7 +777,7 @@ const baseUnitName = computed(
           <div class="field">
             <label for="purchase-price">
               Purchase price (৳ per {{ priceUnitName }})
-              <span class="label-bn">যে দামে আপনি কিনেছেন</span>
+              <span class="label-bn">কেনা দাম</span>
               <HelpTip
                 label="Purchase price"
                 text="What the goods cost you. Staff without permission to see cost never see this figure anywhere — not on the list, not in an export."
@@ -725,6 +789,7 @@ const baseUnitName = computed(
               v-model="purchasePrice"
               type="text"
               inputmode="decimal"
+              placeholder="0"
               required
               :disabled="!canSave"
             />
@@ -733,29 +798,27 @@ const baseUnitName = computed(
           <div class="field">
             <label for="selling-price">
               Selling price (৳ per {{ priceUnitName }})
-              <span class="label-bn">যে দামে আপনি বেচবেন</span>
+              <span class="label-bn">বিক্রির দাম</span>
             </label>
             <input
               id="selling-price"
               v-model="sellingPrice"
               type="text"
               inputmode="decimal"
+              placeholder="0"
               required
               :disabled="!canSave"
             />
           </div>
+        </div>
 
+        <div class="row">
           <div class="field">
-            <!--
-              UI-19: one helper string per concept. This is the same wording the
-              Products list header uses — two different Bangla explanations of
-              one idea is a defect, not a variation.
-            -->
             <label for="min-stock">
-              Reorder at
+              Minimum stock
               <span class="label-bn">যত কমে গেলে আবার আনতে হবে</span>
               <HelpTip
-                label="Reorder at"
+                label="Minimum stock"
                 text="A warning line, not an order. Nothing is bought automatically — SherERP only tells you when stock has fallen this low, so you can decide."
                 text-bn="এটি শুধু সতর্ক করে, নিজে থেকে কিছু কেনে না। স্টক এতটা কমে গেলে আপনাকে জানানো হবে, সিদ্ধান্ত আপনার।"
               />
@@ -765,24 +828,14 @@ const baseUnitName = computed(
               v-model="minStock"
               type="text"
               inputmode="decimal"
+              placeholder="5"
               :disabled="!canSave"
             />
-            <p class="help">Warn me when stock falls to this many {{ baseUnitName }}.</p>
             <p v-if="minStockMixed !== null" class="help mixed-read-back">
               That is {{ minStockMixed }}.
             </p>
           </div>
         </div>
-
-        <p v-if="priceUnit === 'CONVERSION'" class="fine">
-          Saved as a price per {{ baseUnitName }}. If it does not divide evenly it is rounded to
-          the nearest poisha, and the form will show you what was stored.
-        </p>
-
-        <p class="fine">
-          Opening stock starts at zero for every product. Entering what you actually have comes
-          with the inventory module, so that it is recorded as a real stock movement.
-        </p>
       </AppCard>
 
       <!--
@@ -924,28 +977,20 @@ const baseUnitName = computed(
         D-41 — one optional conversion unit. Most products never leave the left
         half of this card; the ones that do buy in one unit and sell in another.
       -->
+      <!--
+        The base unit is asked once, above. A second control bound to the same
+        value is two places to change one thing -- and two chances for them to
+        disagree in the reader's head.
+      -->
       <AppCard
+        collapsible
+        :force-open="formError !== null"
         icon="pi-box"
-        title="Units"
-        subtitle="How this product is counted, and whether it is also bought or sold another way."
-        subtitle-bn="কোন এককে স্টক হবে, আর কোন এককে কেনা বা বিক্রি হয় — সেটি ঠিক করুন"
+        title="Second unit"
+        subtitle="Only if this product is also bought or sold another way."
+        subtitle-bn="এই পণ্যটি অন্য এককেও কেনা বা বেচা হলে এখানে ঠিক করুন"
       >
         <div class="unit-panels">
-          <div class="unit-panel">
-            <div class="field">
-              <label for="stock-unit">
-                I keep stock in
-                <span class="label-bn">আমি স্টক রাখি</span>
-              </label>
-              <select id="stock-unit" v-model="baseUnitId" :disabled="!canSave" required>
-                <option v-for="unit in catalog.units" :key="unit.id" :value="unit.id">
-                  {{ unit.name }}
-                </option>
-              </select>
-              <p class="sher-bn">পণ্যটি কীসে গোনা হয় — পিস, কার্টন, কেজি</p>
-            </div>
-          </div>
-
           <div class="unit-panel" :class="{ 'is-on': hasSecondUnit }">
             <label class="check">
               <input
@@ -1045,7 +1090,14 @@ const baseUnitName = computed(
         </p>
       </AppCard>
 
-      <AppCard v-if="expiryOn || serialOn" icon="pi-tags" title="How each item is followed">
+      <AppCard
+        v-if="expiryOn || serialOn"
+        collapsible
+        :force-open="formError !== null"
+        icon="pi-tags"
+        title="How each item is followed"
+        subtitle-bn="মেয়াদ বা সিরিয়াল নম্বর ধরে রাখতে চাইলে"
+      >
         <label v-if="expiryOn" class="check">
           <input v-model="tracksExpiry" type="checkbox" :disabled="!canSave" />
           <span>Record an expiry date for each batch of this product</span>
@@ -1103,6 +1155,18 @@ const baseUnitName = computed(
         </div>
       </div>
     </div>
+
+    <!-- UI-51: the picker asks, the page owns the panel and the write path. -->
+    <ManageListDialog
+      v-if="managing !== null"
+      :title="MANAGE_TITLES[managing].title"
+      :title-bn="MANAGE_TITLES[managing].titleBn"
+      :entries="manageEntries"
+      :can-edit="canManageCurrent"
+      :rename="renameEntry"
+      :remove="removeEntry"
+      @close="managing = null"
+    />
   </AppShell>
 </template>
 

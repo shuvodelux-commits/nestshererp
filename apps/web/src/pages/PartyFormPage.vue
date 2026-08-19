@@ -315,26 +315,11 @@ async function remove(): Promise<void> {
         />
 
         <form class="form" @submit.prevent="save">
-          <fieldset class="roles" :disabled="isSystemReserved">
-            <legend>
-              This record is a
-              <span class="label-bn">এই মানুষটি কী হিসেবে থাকবেন</span>
-            </legend>
-            <label v-for="role in offerableRoles" :key="role" class="check">
-              <input
-                type="checkbox"
-                :checked="roles.includes(role)"
-                :aria-label="role"
-                @change="toggleRole(role)"
-              />
-              {{ role === 'CUSTOMER' ? 'Customer' : role === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
-            </label>
-            <p class="fine">
-              One person can be more than one. A supplier you also sell to is one record with
-              both ticked — not two records with two balances.
-            </p>
-          </fieldset>
-
+          <!--
+            The order a shopkeeper thinks in, set by the owner 2026-08-19:
+            who they are, how to reach them, where they are. Everything a
+            record can exist without is folded below (UI-50).
+          -->
           <div class="field">
             <label for="party-name">
               Name
@@ -350,25 +335,43 @@ async function remove(): Promise<void> {
             />
           </div>
 
-          <div class="field">
-            <label for="party-phone">
-              Phone
-              <span v-if="isCustomer" class="req">required</span>
-              <span v-else class="fine">optional</span>
-              <span class="label-bn">মোবাইল নম্বর</span>
-            </label>
-            <input
-              id="party-phone"
-              v-model="phone"
-              type="tel"
-              :required="isCustomer"
-              :disabled="isSystemReserved"
-              placeholder="01712345678"
-            />
-            <p v-if="isCustomer" class="fine">
-              A customer is found by their phone number at the counter, so every customer needs
-              one and no two customers may share it.
-            </p>
+
+          <div class="row">
+            <div v-if="setup.fields.guardianName" class="field">
+              <label for="party-guardian">
+                Father&apos;s or guardian&apos;s name
+                <span class="label-bn">বাবার বা অভিভাবকের নাম</span>
+              </label>
+              <input
+                id="party-guardian"
+                v-model="guardianName"
+                type="text"
+                :disabled="isSystemReserved"
+              />
+            </div>
+  
+
+            <div class="field">
+              <label for="party-phone">
+                Phone
+                <span v-if="isCustomer" class="req">required</span>
+                <span v-else class="fine">optional</span>
+                <span class="label-bn">মোবাইল নম্বর</span>
+              </label>
+              <input
+                id="party-phone"
+                v-model="phone"
+                type="tel"
+                :required="isCustomer"
+                :disabled="isSystemReserved"
+                placeholder="01712345678"
+              />
+              <p v-if="isCustomer" class="fine">
+                A customer is found by their phone number at the counter, so every customer needs
+                one and no two customers may share it.
+              </p>
+            </div>
+  
           </div>
 
           <div v-if="setup.fields.address" class="field">
@@ -384,110 +387,127 @@ async function remove(): Promise<void> {
             />
           </div>
 
-          <div v-if="setup.fields.guardianName" class="field">
-            <label for="party-guardian">
-              Father&apos;s or guardian&apos;s name
-              <span class="label-bn">বাবার বা অভিভাবকের নাম</span>
-            </label>
-            <input
-              id="party-guardian"
-              v-model="guardianName"
-              type="text"
-              :disabled="isSystemReserved"
-            />
-          </div>
 
-          <div v-if="setup.fields.nid" class="field">
-            <label for="party-nid">
-              NID number
-              <span class="label-bn">জাতীয় পরিচয়পত্র নম্বর</span>
-              <HelpTip
-                label="NID number"
-                text="Optional. If your shop stops asking for this in Settings later, whatever you have already saved stays — hiding a field never erases what is stored."
-                text-bn="না দিলেও চলবে। পরে সেটিংসে এই ঘরটি বন্ধ করলেও আগে যা সেভ করা আছে তা মুছে যাবে না।"
-              />
-            </label>
-            <input id="party-nid" v-model="nid" type="text" :disabled="isSystemReserved" />
-          </div>
+          <AppCard
+            collapsible
+            :force-open="formError !== null"
+            title="More details"
+            subtitle="Only if you need them."
+            subtitle-bn="দরকার হলেই কেবল এগুলো লাগবে"
+          >
+            <fieldset class="roles" :disabled="isSystemReserved">
+              <legend>
+                This record is a
+                <span class="label-bn">এই মানুষটি কী হিসেবে থাকবেন</span>
+              </legend>
+              <label v-for="role in offerableRoles" :key="role" class="check">
+                <input
+                  type="checkbox"
+                  :checked="roles.includes(role)"
+                  :aria-label="role"
+                  @change="toggleRole(role)"
+                />
+                {{ role === 'CUSTOMER' ? 'Customer' : role === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
+              </label>
+              <p class="fine">
+                One person can be more than one. A supplier you also sell to is one record with
+                both ticked — not two records with two balances.
+              </p>
+            </fieldset>
+  
 
-          <div v-if="setup.fields.email" class="field">
-            <label for="party-email">
-              Email
-              <span class="label-bn">ইমেইল</span>
-            </label>
-            <input id="party-email" v-model="email" type="email" :disabled="isSystemReserved" />
-          </div>
-
-          <template v-if="isCustomer">
-            <!-- D-39 / UI-45: file them into a new group without leaving the form. -->
-            <QuickAddSelect
-              v-if="setup.features.customerGroups"
-              v-model="customerGroupId"
-              field-id="party-group"
-              label="Customer group"
-              empty-label="No group"
-              :options="setup.groups"
-              :can-add="canManageGroups"
-              add-label="New group"
-              add-placeholder="Dealer"
-              :disabled="isSystemReserved"
-              :create="addGroup"
-            />
-
-            <div class="field">
-              <label for="party-credit">
-                Credit limit
-                <span class="label-bn">সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে</span>
+            <div v-if="setup.fields.nid" class="field">
+              <label for="party-nid">
+                NID number
+                <span class="label-bn">জাতীয় পরিচয়পত্র নম্বর</span>
                 <HelpTip
-                  label="Credit limit"
-                  text="The most this customer may owe you at once. It is a limit you set, not money they owe — their actual due is worked out from their sales and payments."
-                  text-bn="এই কাস্টমার সর্বোচ্চ কত টাকা বাকি রাখতে পারবেন, সেই সীমা। এটি তাঁর বকেয়া নয় — বকেয়া হিসাব হয় বেচাকেনা আর জমা থেকে।"
+                  label="NID number"
+                  text="Optional. If your shop stops asking for this in Settings later, whatever you have already saved stays — hiding a field never erases what is stored."
+                  text-bn="না দিলেও চলবে। পরে সেটিংসে এই ঘরটি বন্ধ করলেও আগে যা সেভ করা আছে তা মুছে যাবে না।"
                 />
               </label>
-              <input
-                id="party-credit"
-                v-model="creditLimit"
-                type="text"
-                inputmode="decimal"
-                :disabled="isSystemReserved"
-                placeholder="Leave empty for no limit"
-              />
-              <p class="fine">
-                How much this customer may owe at once. Empty means no limit; 0 means no credit at
-                all. It starts being checked when selling arrives.
-              </p>
+              <input id="party-nid" v-model="nid" type="text" :disabled="isSystemReserved" />
             </div>
-          </template>
-
-          <div v-if="setup.fields.notes" class="field">
-            <label for="party-notes">
-              Notes
-              <span class="label-bn">নিজের জন্য কোনো মন্তব্য</span>
-            </label>
-            <textarea id="party-notes" v-model="notes" rows="3" :disabled="isSystemReserved" />
-          </div>
-
-          <div class="form-actions">
-            <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
-              Cancel
-            </button>
-            <button
-              v-if="canDelete && !isSystemReserved"
-              type="button"
-              class="btn btn-ghost danger"
-              @click="confirmingDelete = true"
-            >
-              Delete
-            </button>
-            <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
-              {{ busy ? 'Saving…' : isNew ? 'Save' : 'Save changes' }}
-            </button>
-          </div>
-
-          <p v-if="!canSave" class="fine">
-            Your role cannot save this record. Ask the owner if you need to.
-          </p>
-        </form>
+  
+            <div v-if="setup.fields.email" class="field">
+              <label for="party-email">
+                Email
+                <span class="label-bn">ইমেইল</span>
+              </label>
+              <input id="party-email" v-model="email" type="email" :disabled="isSystemReserved" />
+            </div>
+  
+            <template v-if="isCustomer">
+              <!-- D-39 / UI-45: file them into a new group without leaving the form. -->
+              <QuickAddSelect
+                v-if="setup.features.customerGroups"
+                v-model="customerGroupId"
+                field-id="party-group"
+                label="Customer group"
+                empty-label="No group"
+                :options="setup.groups"
+                :can-add="canManageGroups"
+                add-label="New group"
+                add-placeholder="Dealer"
+                :disabled="isSystemReserved"
+                :create="addGroup"
+              />
+  
+              <div class="field">
+                <label for="party-credit">
+                  Credit limit
+                  <span class="label-bn">সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে</span>
+                  <HelpTip
+                    label="Credit limit"
+                    text="The most this customer may owe you at once. It is a limit you set, not money they owe — their actual due is worked out from their sales and payments."
+                    text-bn="এই কাস্টমার সর্বোচ্চ কত টাকা বাকি রাখতে পারবেন, সেই সীমা। এটি তাঁর বকেয়া নয় — বকেয়া হিসাব হয় বেচাকেনা আর জমা থেকে।"
+                  />
+                </label>
+                <input
+                  id="party-credit"
+                  v-model="creditLimit"
+                  type="text"
+                  inputmode="decimal"
+                  :disabled="isSystemReserved"
+                  placeholder="Leave empty for no limit"
+                />
+                <p class="fine">
+                  How much this customer may owe at once. Empty means no limit; 0 means no credit at
+                  all. It starts being checked when selling arrives.
+                </p>
+              </div>
+            </template>
+  
+            <div v-if="setup.fields.notes" class="field">
+              <label for="party-notes">
+                Notes
+                <span class="label-bn">নিজের জন্য কোনো মন্তব্য</span>
+              </label>
+              <textarea id="party-notes" v-model="notes" rows="3" :disabled="isSystemReserved" />
+            </div>
+  
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
+                Cancel
+              </button>
+              <button
+                v-if="canDelete && !isSystemReserved"
+                type="button"
+                class="btn btn-ghost danger"
+                @click="confirmingDelete = true"
+              >
+                Delete
+              </button>
+              <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
+                {{ busy ? 'Saving…' : isNew ? 'Save' : 'Save changes' }}
+              </button>
+            </div>
+  
+            <p v-if="!canSave" class="fine">
+              Your role cannot save this record. Ask the owner if you need to.
+            </p>
+          </form>
+          </AppCard>
       </AppCard>
 
       <AppCard
