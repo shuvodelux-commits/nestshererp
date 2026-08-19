@@ -90,6 +90,12 @@ importers:
       '@sher/core-contracts':
         specifier: workspace:*
         version: link:../../packages/core-contracts
+      '@sher/core-domain':
+        specifier: workspace:*
+        version: link:../../packages/core-domain
+      '@sher/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       primeicons:
         specifier: 7.0.0
         version: 7.0.0

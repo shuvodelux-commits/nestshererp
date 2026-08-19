@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vitest/config';
 
@@ -7,6 +9,14 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   plugins: [vue()],
+  // The same source-not-dist resolution as `vite.config.ts` and `tsconfig.json`.
+  resolve: {
+    alias: {
+      '@sher/core-contracts': resolve(__dirname, '../../packages/core-contracts/src/index.ts'),
+      '@sher/core-domain': resolve(__dirname, '../../packages/core-domain/src/index.ts'),
+      '@sher/shared-utils': resolve(__dirname, '../../packages/shared-utils/src/index.ts'),
+    },
+  },
   test: {
     environment: 'jsdom',
     include: ['test/**/*.spec.ts'],

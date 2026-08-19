@@ -13,6 +13,7 @@ export default defineConfig({
     alias: {
       '@sher/shared-utils': resolve(__dirname, '../../packages/shared-utils/src/index.ts'),
       '@sher/core-contracts': resolve(__dirname, '../../packages/core-contracts/src/index.ts'),
+      '@sher/core-domain': resolve(__dirname, '../../packages/core-domain/src/index.ts'),
       '@sher/core-application': resolve(__dirname, '../../packages/core-application/src/index.ts'),
       '@sher/adapter-postgres': resolve(__dirname, '../../packages/adapter-postgres/src/index.ts'),
     },

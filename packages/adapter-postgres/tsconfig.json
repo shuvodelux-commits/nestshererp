@@ -4,7 +4,6 @@
     "types": [
       "node"
     ],
-    "baseUrl": ".",
     "paths": {
       "@sher/shared-utils": [
         "../shared-utils/src/index.ts"
@@ -14,6 +13,9 @@
       ],
       "@sher/core-application": [
         "../core-application/src/index.ts"
+      ],
+      "@sher/core-domain": [
+        "../core-domain/src/index.ts"
       ]
     }
   },

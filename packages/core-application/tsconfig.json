@@ -1,13 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@sher/shared-utils": [
         "../shared-utils/src/index.ts"
       ],
       "@sher/core-contracts": [
         "../core-contracts/src/index.ts"
+      ],
+      "@sher/core-domain": [
+        "../core-domain/src/index.ts"
       ]
     }
   },
