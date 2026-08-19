@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import type { CatalogResponse, ProductResponse, ProductSummary } from '@sher/core-contracts';
+import type {
+  CatalogResponse,
+  ProductResponse,
+  ProductSort,
+  ProductSummary,
+  SortDirection,
+} from '@sher/core-contracts';
+import { defaultDirectionFor } from '@sher/core-contracts';
 import { Money, Qty } from '@sher/shared-utils';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -11,6 +18,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import StatCard from '../components/StatCard.vue';
 
@@ -105,7 +113,34 @@ function currentQuery(cursor: string | null = null) {
         : { categoryId: categoryId.value }),
     ...(status.value === '' ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
     ...(cursor === null ? {} : { cursor }),
+    sort: sort.value,
+    direction: direction.value,
   };
+}
+
+/**
+ * Which header is tapped, and which way (UI-46).
+ *
+ * Tapping the column already sorted reverses it; tapping a different one starts
+ * that column at its own natural direction — text A-first, numbers biggest-first
+ * — because "show me the reorder levels" means the ones needing attention.
+ */
+const sort = ref<ProductSort>('name');
+const direction = ref<SortDirection>('ASC');
+
+function sortBy(column: string): void {
+  const next = column as ProductSort;
+
+  if (sort.value === next) {
+    direction.value = direction.value === 'ASC' ? 'DESC' : 'ASC';
+  } else {
+    sort.value = next;
+    direction.value = defaultDirectionFor(next);
+  }
+
+  // A new order is a new list, so paging starts again from the top rather than
+  // appending the second page of the old order underneath the first of the new.
+  void load();
 }
 
 async function load(): Promise<void> {
@@ -348,15 +383,79 @@ function openProduct(product: ProductResponse): void {
         <div class="table-wrap">
           <table>
             <thead>
+              <!--
+                UI-46: every one of these sorts on tap. `Actions` does not, and
+                is a plain `th` — it holds buttons, not a value to order by.
+              -->
               <tr>
-                <th>Product</th>
-                <th>Code / barcode</th>
-                <th>Category</th>
-                <th>Unit</th>
-                <th class="num">Selling</th>
-                <th v-if="canSeeCost" class="num">Purchase</th>
-                <th class="num">Reorder at</th>
-                <th>Status</th>
+                <SortableHeader
+                  column="name"
+                  label="Product"
+                  label-bn="পণ্যের নাম"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="barcode"
+                  label="Code / barcode"
+                  label-bn="বারকোড"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="categoryName"
+                  label="Category"
+                  label-bn="ধরন"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="unitName"
+                  label="Unit"
+                  label-bn="একক"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="sellingPrice"
+                  label="Selling"
+                  label-bn="বিক্রয় দর"
+                  numeric
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  v-if="canSeeCost"
+                  column="purchasePrice"
+                  label="Purchase"
+                  label-bn="কেনা দর"
+                  numeric
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="minStockQty"
+                  label="Reorder at"
+                  label-bn="যত কমে গেলে আবার আনতে হবে"
+                  numeric
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="status"
+                  label="Status"
+                  label-bn="চালু আছে কি না"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
                 <th class="actions-col">Actions</th>
               </tr>
             </thead>

@@ -176,7 +176,7 @@ describe('ProductsPage', () => {
     await wrapper.find('#filter-status').setValue('INACTIVE');
     await flushPromises();
 
-    expect(load).toHaveBeenCalledWith('test-access', { status: 'INACTIVE' });
+    expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ status: 'INACTIVE' }));
   });
 });
 
@@ -199,8 +199,10 @@ describe('ProductsPage without inventory.cost.view', () => {
     const wrapper = await mountLoaded();
 
     const headers = wrapper.findAll('thead th').map((cell) => cell.text());
-    expect(headers).toContain('Selling');
-    expect(headers).not.toContain('Purchase');
+    // Headers now carry Bangla helper text beneath the English label (UI-16),
+    // so the cell text is 'Selling বিক্রয় দর' rather than 'Selling'.
+    expect(headers.some((text) => text.startsWith('Selling'))).toBe(true);
+    expect(headers.some((text) => text.startsWith('Purchase'))).toBe(false);
     expect(wrapper.text()).toContain('not sent to this screen at all');
   });
 

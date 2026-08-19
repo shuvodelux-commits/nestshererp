@@ -24,6 +24,9 @@ export function fetchProducts(token: string, query: ProductQuery): Promise<Produ
   if (query.status !== undefined) params.set('status', query.status);
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
+  // UI-46: which header the shopkeeper tapped, and which way.
+  if (query.sort !== undefined) params.set('sort', query.sort);
+  if (query.direction !== undefined) params.set('direction', query.direction);
 
   const suffix = params.toString();
   return request(`/api/v1/products${suffix === '' ? '' : `?${suffix}`}`, {

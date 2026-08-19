@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import type { PartyResponse, PartyRoleValue, PartySetupResponse, PartySummary } from '@sher/core-contracts';
+import type {
+  PartyResponse,
+  PartyRoleValue,
+  PartySetupResponse,
+  PartySort,
+  PartySummary,
+  SortDirection,
+} from '@sher/core-contracts';
+import { defaultDirectionFor } from '@sher/core-contracts';
 import { Money } from '@sher/shared-utils';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -18,6 +26,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import StatCard from '../components/StatCard.vue';
 
@@ -123,7 +132,29 @@ function currentQuery(cursor: string | null = null) {
     ...(groupId.value === '' ? {} : { groupId: groupId.value }),
     ...(status.value === '' ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
     ...(cursor === null ? {} : { cursor }),
+    sort: sort.value,
+    direction: direction.value,
   };
+}
+
+/**
+ * Which header is tapped, and which way (UI-46) — identical behaviour to the
+ * Products list, because a shopkeeper should only have to learn it once.
+ */
+const sort = ref<PartySort>('name');
+const direction = ref<SortDirection>('ASC');
+
+function sortBy(column: string): void {
+  const next = column as PartySort;
+
+  if (sort.value === next) {
+    direction.value = direction.value === 'ASC' ? 'DESC' : 'ASC';
+  } else {
+    sort.value = next;
+    direction.value = defaultDirectionFor(next);
+  }
+
+  void load();
 }
 
 async function load(): Promise<void> {
@@ -416,12 +447,56 @@ async function removeGroup(id: string, name: string): Promise<void> {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th v-if="showsGroups">Group</th>
+                <SortableHeader
+                  column="name"
+                  label="Name"
+                  label-bn="নাম"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="phone"
+                  label="Phone"
+                  label-bn="মোবাইল নম্বর"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  v-if="showsGroups"
+                  column="groupName"
+                  label="Group"
+                  label-bn="কোন দলে রাখা আছে"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <!--
+                  `Also` is the other roles this party holds — badges built from
+                  `party_roles` rows, not a column the database can order by. UI-46
+                  says such a column is left unsortable rather than sorted in the
+                  client, which would only order the page you can see.
+                -->
                 <th>Also</th>
-                <th v-if="role === 'CUSTOMER'" class="num">Credit limit</th>
-                <th>Status</th>
+                <SortableHeader
+                  v-if="role === 'CUSTOMER'"
+                  column="creditLimit"
+                  label="Credit limit"
+                  label-bn="সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে"
+                  numeric
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
+                <SortableHeader
+                  column="status"
+                  label="Status"
+                  label-bn="চালু আছে কি না"
+                  :active="sort"
+                  :direction="direction"
+                  @sort="sortBy"
+                />
                 <th class="actions-col">Actions</th>
               </tr>
             </thead>

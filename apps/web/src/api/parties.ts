@@ -33,6 +33,9 @@ export function fetchParties(token: string, query: PartyQuery): Promise<PartyLis
   if (query.status !== undefined) params.set('status', query.status);
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
+  // UI-46: which header the shopkeeper tapped, and which way.
+  if (query.sort !== undefined) params.set('sort', query.sort);
+  if (query.direction !== undefined) params.set('direction', query.direction);
 
   return request(`/api/v1/parties?${params.toString()}`, { token, envelope: true });
 }

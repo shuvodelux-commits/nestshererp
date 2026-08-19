@@ -118,7 +118,7 @@ describe('PartiesPage', () => {
   it('asks for customers first and formats the credit limit as money (UI-32)', async () => {
     const wrapper = await mountLoaded();
 
-    expect(load).toHaveBeenCalledWith('test-access', { role: 'CUSTOMER' });
+    expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ role: 'CUSTOMER' }));
     expect(wrapper.text()).toContain('Karim Uddin');
     expect(wrapper.text()).toContain('01712345678');
     // ৳5,000.00 — formatted by shared-utils, never divided in the component.
@@ -142,7 +142,7 @@ describe('PartiesPage', () => {
     await wrapper.findAll('.tab')[1]!.trigger('click');
     await flushPromises();
 
-    expect(load).toHaveBeenCalledWith('test-access', { role: 'SUPPLIER' });
+    expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ role: 'SUPPLIER' }));
   });
 
   it('deactivates through a confirmation that names the consequence (UI-26)', async () => {
