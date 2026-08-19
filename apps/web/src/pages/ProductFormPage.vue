@@ -659,13 +659,14 @@ const baseUnitName = computed(
         2026-08-19: what it is → how it is classified and counted → what it
         costs and sells for → how much there is. Everything a product can exist
         without is folded away below (UI-50).
+
+        **This first card carries no heading.** It is not a section of the form,
+        it is the form — every other card is the optional part folded under it —
+        and a title above the very first field said only that a product form is
+        about products. Removed by owner decision 2026-08-19; `AppCard` already
+        drops its header when no title is given, so nothing else changes.
       -->
-      <AppCard
-        icon="pi-shopping-bag"
-        title="What it is"
-        subtitle="The few things every product needs."
-        subtitle-bn="পণ্যের নাম, ধরন, একক আর দাম — এইটুকু হলেই চলবে"
-      >
+      <AppCard>
         <div class="field">
           <label for="product-name">
             Product name
@@ -688,22 +689,6 @@ const baseUnitName = computed(
         -->
         <div class="row">
           <QuickAddSelect
-            v-model="categoryId"
-            field-id="product-category"
-            label="Category"
-            label-bn="ধরন"
-            empty-label="Select category..."
-            :options="parentCategories"
-            :can-add="canManageCategories"
-            add-placeholder="e.g. Fittings"
-            :can-manage="canManageCategories"
-            :disabled="!canSave"
-            :create="addCategory"
-            :rename="renameCategory"
-            :remove="removeCategory"
-          />
-
-          <QuickAddSelect
             v-model="brandId"
             field-id="product-brand"
             label="Brand"
@@ -717,6 +702,22 @@ const baseUnitName = computed(
             :create="addBrand"
             :rename="renameBrand"
             :remove="removeBrand"
+          />
+
+          <QuickAddSelect
+            v-model="categoryId"
+            field-id="product-category"
+            label="Category"
+            label-bn="ধরন"
+            empty-label="Select category..."
+            :options="parentCategories"
+            :can-add="canManageCategories"
+            add-placeholder="e.g. Fittings"
+            :can-manage="canManageCategories"
+            :disabled="!canSave"
+            :create="addCategory"
+            :rename="renameCategory"
+            :remove="removeCategory"
           />
 
           <QuickAddSelect
@@ -828,6 +829,27 @@ const baseUnitName = computed(
             </p>
           </div>
         </div>
+
+        <!--
+          Moved up out of the folded "Codes" card by owner decision 2026-08-19.
+          It is what a shopkeeper writes about the goods — the size, the colour,
+          what it fits — and filing that behind a section named after barcodes
+          meant nobody found it. It stays optional; nothing refuses a save
+          without it.
+        -->
+        <div class="field">
+          <label for="product-description">
+            Description
+            <span class="label-bn">বর্ণনা</span>
+          </label>
+          <textarea
+            id="product-description"
+            v-model="description"
+            rows="2"
+            placeholder="Size, colour, what it fits — anything worth remembering."
+            :disabled="!canSave"
+          />
+        </div>
       </AppCard>
 
       <!--
@@ -870,19 +892,6 @@ const baseUnitName = computed(
               Generate a barcode
             </button>
           </div>
-        </div>
-
-        <div class="field">
-          <label for="product-description">
-            Description
-            <span class="label-bn">বর্ণনা</span>
-          </label>
-          <textarea
-            id="product-description"
-            v-model="description"
-            rows="2"
-            :disabled="!canSave"
-          />
         </div>
       </AppCard>
 
@@ -1149,7 +1158,6 @@ const baseUnitName = computed(
         </div>
       </div>
     </div>
-    />
   </AppShell>
 </template>
 

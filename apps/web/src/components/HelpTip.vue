@@ -150,9 +150,15 @@ onBeforeUnmount(() => {
   width: max-content;
   max-width: min(18rem, 70vw);
   padding: var(--sher-space-2) var(--sher-space-3);
+  border: 1px solid var(--sher-tip-line);
   border-radius: var(--sher-radius);
-  background: var(--sher-text, #0f172a);
-  color: #fff;
+  /*
+   * Its own tokens, not `--sher-text`. That variable is near-black in light mode
+   * and near-white in dark, so a bubble painted with it and written on in white
+   * disappeared completely the moment the shop switched to dark.
+   */
+  background: var(--sher-tip-bg);
+  color: var(--sher-tip-fg);
   font-size: var(--sher-text-sm);
   font-weight: 400;
   line-height: 1.5;

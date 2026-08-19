@@ -93,3 +93,64 @@ describe('a control tooltip', () => {
     expect(wrapper.find('button').attributes('aria-label')).toBe('Add or manage Unit');
   });
 });
+
+/**
+ * Reported from the running app: a tip on a control near an edge of the window
+ * was drawn partly outside it, and one on a control near the top was drawn off
+ * the screen entirely. The bubble is `position: fixed`, so nothing else clamps
+ * it — the placement has to.
+ */
+describe('staying inside the window', () => {
+  /** Puts the anchor wherever the test needs it, since jsdom lays nothing out. */
+  function anchorAt(wrapper: ReturnType<typeof tip>, box: Partial<DOMRect>): void {
+    const el = wrapper.find('.tip-wrap').element as HTMLElement;
+    el.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 40,
+        left: 0,
+        right: 40,
+        width: 40,
+        height: 40,
+        x: 0,
+        y: 0,
+        ...box,
+      }) as DOMRect;
+  }
+
+  it('pulls a tip on a control at the right-hand edge back inside', async () => {
+    const wrapper = tip();
+    anchorAt(wrapper, { top: 300, bottom: 340, left: 1010, right: 1050, width: 40 });
+
+    await wrapper.find('.tip-wrap').trigger('pointerenter', { pointerType: 'mouse' });
+
+    // Centred on the control would be 1030; the window is 1024 wide, so the
+    // bubble's own half-width has to come off that or it hangs outside.
+    const left = Number.parseFloat((bubble() as HTMLElement).style.left);
+    expect(left).toBeLessThanOrEqual(window.innerWidth - 8);
+    expect(left).toBeLessThan(1030);
+  });
+
+  it('flips below a control that has no room above it', async () => {
+    const wrapper = tip();
+    anchorAt(wrapper, { top: 10, bottom: 50, left: 400, right: 440, width: 40 });
+
+    await wrapper.find('.tip-wrap').trigger('pointerenter', { pointerType: 'mouse' });
+
+    const el = bubble() as HTMLElement;
+    expect(el.classList.contains('is-below')).toBe(true);
+    // Anchored to the bottom of the control, not its top.
+    expect(el.style.top).toBe('50px');
+  });
+
+  it('stays above a control with room, which is where it belongs', async () => {
+    const wrapper = tip();
+    anchorAt(wrapper, { top: 400, bottom: 440, left: 400, right: 440, width: 40 });
+
+    await wrapper.find('.tip-wrap').trigger('pointerenter', { pointerType: 'mouse' });
+
+    const el = bubble() as HTMLElement;
+    expect(el.classList.contains('is-below')).toBe(false);
+    expect(el.style.top).toBe('400px');
+  });
+});

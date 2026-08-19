@@ -36,13 +36,38 @@ const shown = ref(false);
 const anchor = ref<HTMLElement | null>(null);
 /** Viewport coordinates, so the bubble needs no positioned ancestor. */
 const at = ref({ top: 0, left: 0 });
+/**
+ * Which side of the control the bubble sits on. Above by default — below is
+ * where the field being labelled usually is — but a control near the top of the
+ * window has nothing above it, and a bubble placed there is drawn off-screen.
+ */
+const below = ref(false);
+
+/** Roughly how much room a two-line bubble needs, including its 8px offset. */
+const CLEARANCE = 64;
+/** Never let an edge of the bubble touch the edge of the window. */
+const MARGIN = 8;
+/** Matches `max-width` on `.tip-bubble`, so the clamp knows its half-width. */
+const MAX_HALF_WIDTH = 112;
 
 function place(): void {
   const el = anchor.value;
   if (el === null) return;
 
   const box = el.getBoundingClientRect();
-  at.value = { top: box.top, left: box.left + box.width / 2 };
+  below.value = box.top < CLEARANCE;
+
+  /*
+   * Centred on the control, then pulled back inside the window. Without the
+   * clamp a tip on a control near either edge — and every one of these sits at
+   * the right-hand end of its field — is drawn half outside it.
+   */
+  const centre = box.left + box.width / 2;
+  const lowest = MARGIN + MAX_HALF_WIDTH;
+  const highest = window.innerWidth - MARGIN - MAX_HALF_WIDTH;
+  const left = highest < lowest ? window.innerWidth / 2 : Math.min(Math.max(centre, lowest), highest);
+
+  at.value = { top: below.value ? box.bottom : box.top, left };
 }
 
 function show(): void {
@@ -75,6 +100,7 @@ function onEnter(event: PointerEvent): void {
     <span
       v-if="shown"
       class="tip-bubble"
+      :class="{ 'is-below': below }"
       role="tooltip"
       :style="{ top: `${at.top}px`, left: `${at.left}px` }"
     >
@@ -106,9 +132,15 @@ function onEnter(event: PointerEvent): void {
   width: max-content;
   max-width: 14rem;
   padding: 5px 9px;
+  border: 1px solid var(--sher-tip-line);
   border-radius: 8px;
-  background: #0f172a;
-  color: #fff;
+  /*
+   * The same tokens `HelpTip` uses, so the two kinds of tip are one thing to the
+   * eye, and so the dark theme gets a bubble that is visible against a near-black
+   * page rather than sunk into it.
+   */
+  background: var(--sher-tip-bg);
+  color: var(--sher-tip-fg);
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.4;
@@ -117,6 +149,11 @@ function onEnter(event: PointerEvent): void {
   /* Never intercepts the click meant for the control it describes. */
   pointer-events: none;
   box-shadow: 0 4px 12px rgb(15 23 42 / 25%);
+}
+
+/* Flipped under the control, for one sitting too near the top of the window. */
+.tip-bubble.is-below {
+  transform: translate(-50%, 8px);
 }
 
 .tip-bubble .tip-bn {

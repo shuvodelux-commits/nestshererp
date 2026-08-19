@@ -204,9 +204,10 @@ async function confirmRemove(): Promise<void> {
                 <button
                   type="button"
                   class="icon-btn"
+                  :class="{ 'is-open': menuFor === entry.id }"
                   :aria-label="`Actions for ${entry.name}`"
                   :aria-expanded="menuFor === entry.id"
-                  @click="menuFor = menuFor === entry.id ? null : entry.id"
+                  @click.stop="menuFor = menuFor === entry.id ? null : entry.id"
                 >
                   <i class="pi pi-ellipsis-h" aria-hidden="true" />
                 </button>
@@ -358,13 +359,26 @@ async function confirmRemove(): Promise<void> {
   position: relative;
 }
 
+/* Open reads as open. Two borderless words appearing under a row were easy to
+   miss entirely — reported from the running app as "nothing happened after
+   clicking the three dots" — so the trigger holds a pressed state while its
+   menu is showing, and the menu itself is a panel rather than bare text. */
+.icon-btn.is-open {
+  background: var(--sher-primary-soft);
+  color: var(--sher-primary);
+}
+
 .manage-menu {
   /* In the flow, not floating: a panel with `overflow-y: auto` clips an
      absolutely positioned menu, which is what forced scrolling to reach Edit. */
   display: flex;
   gap: var(--sher-space-2);
   width: 100%;
-  padding: var(--sher-space-1) 0 var(--sher-space-2);
+  margin-bottom: var(--sher-space-1);
+  padding: var(--sher-space-2);
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-sunken, #f8fafc);
 }
 
 .manage-menu button {
@@ -373,24 +387,31 @@ async function confirmRemove(): Promise<void> {
   justify-content: center;
   gap: var(--sher-space-2);
   flex: 1;
-  border: 1px solid var(--sher-line);
   min-height: 44px;
   padding: 0 var(--sher-space-2);
-  background: none;
-  border: 0;
+  border: 1px solid var(--sher-line-strong);
   border-radius: var(--sher-radius);
+  background: var(--sher-raised);
   font: inherit;
-  color: inherit;
-  text-align: left;
+  font-weight: 600;
+  color: var(--sher-text);
   cursor: pointer;
 }
 
 .manage-menu button:hover {
+  border-color: var(--sher-primary);
   background: var(--sher-primary-soft);
+  color: var(--sher-primary);
 }
 
 .manage-menu .is-danger {
-  color: var(--sher-danger, #b91c1c);
+  color: var(--sher-bad, #b91c1c);
+}
+
+.manage-menu .is-danger:hover {
+  border-color: var(--sher-bad, #b91c1c);
+  background: var(--sher-bad-bg, #fef2f2);
+  color: var(--sher-bad, #b91c1c);
 }
 
 .manage-input {

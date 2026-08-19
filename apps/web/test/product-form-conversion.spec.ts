@@ -213,3 +213,47 @@ describe('a product with a second unit (D-41)', () => {
     expect(wrapper.text()).toContain('Enter how many Feet one Pipe contains');
   });
 });
+
+/**
+ * The shape of the first block, set by the owner from the running app
+ * 2026-08-19. Cheap assertions, but each one is a thing that was wrong on
+ * screen: a stray `/>` printed as text, a heading over the only block that is
+ * not optional, Brand filed after the classification fields, and Description
+ * buried in the folded "Codes" card where nobody found it.
+ */
+describe('the first block of the product form', () => {
+  it('prints no stray markup under the save bar', async () => {
+    const wrapper = await mountForm();
+
+    expect(wrapper.text()).not.toContain('/>');
+  });
+
+  it('gives the mandatory block no heading of its own', async () => {
+    // It is not a section of the form, it is the form — everything else folds
+    // away under it — so a title there said only that this page is about
+    // products.
+    const wrapper = await mountForm();
+
+    expect(wrapper.text()).not.toContain('What it is');
+  });
+
+  it('puts Brand next to the product name, ahead of Category', async () => {
+    // A shopkeeper says "RFL one-inch pipe": the brand is part of naming the
+    // thing, not part of filing it.
+    const wrapper = await mountForm();
+
+    const ids = wrapper.findAll('select').map((select) => select.attributes('id'));
+    expect(ids.indexOf('product-brand')).toBeLessThan(ids.indexOf('product-category'));
+  });
+
+  it('asks for Description on the open block, not behind the barcode fold', async () => {
+    const wrapper = await mountForm();
+
+    const description = wrapper.find('#product-description');
+    expect(description.exists()).toBe(true);
+    // Same card as the product name, which is the one card that is never folded.
+    expect(description.element.closest('section')).toBe(
+      wrapper.find('#product-name').element.closest('section'),
+    );
+  });
+});

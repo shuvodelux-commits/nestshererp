@@ -194,14 +194,29 @@ async function noopRemove(): Promise<string> {
   padding: 0 40px 0 var(--sher-space-3);
   min-height: 44px;
   border: 0;
-  background: transparent;
+  /*
+   * The wrapper's own colour rather than `transparent`: the browser draws the
+   * open list from the select's colours, and a transparent one is read as white
+   * — which is how the dark theme ended up with a white list under a dark field.
+   * Identical to `.picker`'s background, so the three zones still look like one.
+   */
+  background: var(--sher-raised);
   font: inherit;
-  color: inherit;
+  color: var(--sher-text);
   cursor: pointer;
 }
 
 .picker-select:focus {
   outline: none;
+}
+
+/* The select paints its own background now, so it has to follow the wrapper
+   into the disabled state rather than sitting on top of it as a live-looking
+   white panel. */
+.picker.is-disabled .picker-select {
+  background: var(--sher-sunken, #f8fafc);
+  color: var(--sher-text-muted);
+  cursor: not-allowed;
 }
 
 .picker.has-manage .picker-chevron {

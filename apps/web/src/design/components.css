@@ -191,6 +191,20 @@
   color: var(--sher-text-muted);
 }
 
+/*
+ * The open list of a native `<select>` is drawn by the browser, and it paints it
+ * from the colours on the element and its options — not from the page. A select
+ * whose background is `transparent` (which the picker's is, so the wrapper can
+ * own the border) therefore got a **white** list with the dark theme's pale text
+ * on it: legible in light mode, invisible in dark. Stating both colours on the
+ * option itself is what fixes it, and it has to be on `option`, because the list
+ * does not inherit from the select.
+ */
+select option {
+  background-color: var(--sher-raised);
+  color: var(--sher-text);
+}
+
 /* A textarea grows with what is typed into it, so it takes the shared border,
    focus ring and disabled state above, but none of the fixed control height. */
 .field textarea {

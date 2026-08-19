@@ -49,6 +49,16 @@
   --sher-text-muted: #64748b;
   --sher-text-faint: #94a3b8;
 
+  /* --- tooltip / popover ------------------------------------------------ */
+  /* A tip is a small dark card in BOTH themes — it has to read as something laid
+     *over* the page, not as a patch of it. It used to resolve its background
+     from `--sher-text`, which is near-black in light mode and near-white in
+     dark: the one rule that made it readable on one theme put white text on a
+     white bubble on the other. So it gets tokens of its own. */
+  --sher-tip-bg: #0f172a;
+  --sher-tip-fg: #f8fafc;
+  --sher-tip-line: rgba(255, 255, 255, 0.08);
+
   /* --- status ----------------------------------------------------------- */
   /* Meaning is never part of a theme choice: green is good in both themes. The
      values shift only far enough to hold UI-42's 4.5:1 against each surface. */
@@ -176,6 +186,12 @@
   --sher-text: #e8edf6;
   --sher-text-muted: #94a3b8;
   --sher-text-faint: #64748b;
+
+  /* Lifted off the near-black page rather than sunk into it, with a hairline so
+     its edge is findable — a #0f172a bubble on a #080c14 page has none. */
+  --sher-tip-bg: #223049;
+  --sher-tip-fg: #f1f5f9;
+  --sher-tip-line: #35486a;
 
   --sher-ok: #4ade80;
   --sher-ok-bg: rgba(34, 197, 94, 0.14);
