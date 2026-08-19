@@ -54,3 +54,32 @@ export {
   rejectParty,
 } from './parties/party';
 export type { PartyDraft, PartyRejection, PartyRole, PartyStatus } from './parties/party';
+
+/**
+ * The posting kernel (§2.4). Every module that moves value posts through these
+ * — there is no second way, which is what makes INV-01 and INV-10 provable.
+ */
+export {
+  FIXED_ACCOUNTS,
+  fixedAccount,
+  isAccountCode,
+  PARAMETERISED_ACCOUNTS,
+  parameterisedAccount,
+  parseAccountCode,
+} from './accounting/account';
+export type {
+  AccountCode,
+  FixedAccount,
+  ParameterisedAccount,
+  ParsedAccount,
+} from './accounting/account';
+export {
+  entryTotalMinor,
+  rejectEntry,
+  reverseEntry,
+} from './accounting/journal-entry';
+export type {
+  JournalEntryDraft,
+  JournalLineDraft,
+  JournalRejection,
+} from './accounting/journal-entry';
