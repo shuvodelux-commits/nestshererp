@@ -22,6 +22,7 @@ import {
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import HelpTip from '../components/HelpTip.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import QuickAddSelect from '../components/QuickAddSelect.vue';
 
@@ -631,6 +632,8 @@ const baseUnitName = computed(
             field-id="product-unit"
             label="Stock unit"
             label-bn="স্টক যে এককে হিসাব হবে"
+            help="What you count this product in — piece, carton, kilo, foot. Everything is stored in this unit, and any second unit you add is measured against it."
+            help-bn="এই পণ্যটি আপনি কীসে গোনেন — পিস, কার্টন, কেজি, ফুট। সব হিসাব এই এককেই রাখা হয়।"
             :options="catalog.units"
             :can-add="canManageUnits"
             add-label="New unit"
@@ -710,7 +713,12 @@ const baseUnitName = computed(
           <div class="field">
             <label for="purchase-price">
               Purchase price (৳ per {{ priceUnitName }})
-              <span class="label-bn">ক্রয় মূল্য</span>
+              <span class="label-bn">যে দামে আপনি কিনেছেন</span>
+              <HelpTip
+                label="Purchase price"
+                text="What the goods cost you. Staff without permission to see cost never see this figure anywhere — not on the list, not in an export."
+                text-bn="আপনার কেনা দাম। যাদের দাম দেখার অনুমতি নেই, তারা এটি কোথাও দেখতে পাবে না।"
+              />
             </label>
             <input
               id="purchase-price"
@@ -720,13 +728,12 @@ const baseUnitName = computed(
               required
               :disabled="!canSave"
             />
-            <p class="sher-bn">আপনি কত দিয়ে কেনেন</p>
           </div>
 
           <div class="field">
             <label for="selling-price">
               Selling price (৳ per {{ priceUnitName }})
-              <span class="label-bn">বিক্রয় মূল্য</span>
+              <span class="label-bn">যে দামে আপনি বেচবেন</span>
             </label>
             <input
               id="selling-price"
@@ -736,13 +743,22 @@ const baseUnitName = computed(
               required
               :disabled="!canSave"
             />
-            <p class="sher-bn">আপনি কত দামে বিক্রি করেন</p>
           </div>
 
           <div class="field">
+            <!--
+              UI-19: one helper string per concept. This is the same wording the
+              Products list header uses — two different Bangla explanations of
+              one idea is a defect, not a variation.
+            -->
             <label for="min-stock">
-              Reorder level
-              <span class="label-bn">পুনরায় অর্ডার করার স্তর</span>
+              Reorder at
+              <span class="label-bn">যত কমে গেলে আবার আনতে হবে</span>
+              <HelpTip
+                label="Reorder at"
+                text="A warning line, not an order. Nothing is bought automatically — SherERP only tells you when stock has fallen this low, so you can decide."
+                text-bn="এটি শুধু সতর্ক করে, নিজে থেকে কিছু কেনে না। স্টক এতটা কমে গেলে আপনাকে জানানো হবে, সিদ্ধান্ত আপনার।"
+              />
             </label>
             <input
               id="min-stock"

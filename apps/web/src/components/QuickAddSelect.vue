@@ -3,6 +3,7 @@ import { nextTick, ref } from 'vue';
 
 import { ApiError } from '../api/client';
 import ErrorNotice from './ErrorNotice.vue';
+import HelpTip from './HelpTip.vue';
 
 /**
  * A picker that can also create what it is picking (D-39, UI-45).
@@ -44,6 +45,9 @@ const props = defineProps<{
   addPlaceholder?: string | undefined;
   /** Explains what the shopkeeper is creating, when the name alone is not enough. */
   addHint?: string | undefined;
+  /** A longer explanation of the field itself, behind an `i` beside it (UI-49). */
+  help?: string | undefined;
+  helpBn?: string | undefined;
   disabled?: boolean;
   required?: boolean;
   /** Creates the record and resolves with its id. Owned by the parent. */
@@ -102,6 +106,7 @@ async function submit(): Promise<void> {
     <label :for="fieldId">
       {{ label }}
       <span v-if="labelBn !== undefined" class="label-bn">{{ labelBn }}</span>
+      <HelpTip v-if="help !== undefined" :label="label" :text="help" :text-bn="helpBn" />
     </label>
 
     <div class="row">

@@ -17,6 +17,7 @@ import {
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import HelpTip from '../components/HelpTip.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import QuickAddSelect from '../components/QuickAddSelect.vue';
 
@@ -400,6 +401,11 @@ async function remove(): Promise<void> {
             <label for="party-nid">
               NID number
               <span class="label-bn">জাতীয় পরিচয়পত্র নম্বর</span>
+              <HelpTip
+                label="NID number"
+                text="Optional. If your shop stops asking for this in Settings later, whatever you have already saved stays — hiding a field never erases what is stored."
+                text-bn="না দিলেও চলবে। পরে সেটিংসে এই ঘরটি বন্ধ করলেও আগে যা সেভ করা আছে তা মুছে যাবে না।"
+              />
             </label>
             <input id="party-nid" v-model="nid" type="text" :disabled="isSystemReserved" />
           </div>
@@ -432,6 +438,11 @@ async function remove(): Promise<void> {
               <label for="party-credit">
                 Credit limit
                 <span class="label-bn">সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে</span>
+                <HelpTip
+                  label="Credit limit"
+                  text="The most this customer may owe you at once. It is a limit you set, not money they owe — their actual due is worked out from their sales and payments."
+                  text-bn="এই কাস্টমার সর্বোচ্চ কত টাকা বাকি রাখতে পারবেন, সেই সীমা। এটি তাঁর বকেয়া নয় — বকেয়া হিসাব হয় বেচাকেনা আর জমা থেকে।"
+                />
               </label>
               <input
                 id="party-credit"
