@@ -106,3 +106,35 @@ describe('managing a picker’s list in place', () => {
     expect(wrapper.find('.manage-empty').text()).toContain('Nothing here yet');
   });
 });
+
+/**
+ * The row actions used to open as a floating menu positioned over a panel with
+ * `overflow-y: auto`, so the panel clipped them: Edit and Delete landed below
+ * its edge and choosing one meant scrolling. Reported from the running app.
+ */
+describe('reaching Edit and Delete without scrolling', () => {
+  it('opens the actions inside the row, not as a floating menu', async () => {
+    const { wrapper } = panel();
+
+    await openRowMenu(wrapper);
+    const menu = wrapper.find('.manage-menu');
+
+    expect(menu.exists()).toBe(true);
+    // Inside the row itself — a positioned menu is what a scrollable ancestor
+    // clips, so being a child of the `li` is the property that matters.
+    expect(menu.element.closest('li')).not.toBeNull();
+    expect(menu.text()).toContain('Edit');
+    expect(menu.text()).toContain('Delete');
+  });
+
+  it('labels the ⋯ button for anyone who has not met that icon', async () => {
+    const { wrapper } = panel();
+    const trigger = wrapper.findAll('.manage-actions .icon-btn')[0]!;
+
+    expect(trigger.attributes('aria-label')).toBe('Actions for Drinks');
+
+    // A tooltip on hover as well, since the icon alone says nothing.
+    await wrapper.findAll('.tip-wrap')[0]!.trigger('pointerenter', { pointerType: 'mouse' });
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Edit or delete');
+  });
+});

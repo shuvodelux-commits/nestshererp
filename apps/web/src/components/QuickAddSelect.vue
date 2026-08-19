@@ -3,6 +3,7 @@ import { ref } from 'vue';
 
 import HelpTip from './HelpTip.vue';
 import ManageListDialog from './ManageListDialog.vue';
+import Tooltip from './Tooltip.vue';
 
 /**
  * A picker that also owns the list it picks from (D-39, UI-45, UI-51).
@@ -115,16 +116,17 @@ async function noopRemove(): Promise<string> {
         <i class="pi pi-chevron-down" />
       </span>
 
-      <button
-        v-if="canOpenPanel()"
-        type="button"
-        class="picker-manage"
-        :aria-label="`Add or edit ${label}`"
-        :disabled="disabled === true"
-        @click="managing = true"
-      >
-        <i class="pi pi-th-large" aria-hidden="true" />
-      </button>
+      <Tooltip v-if="canOpenPanel()" text="Add and manage" text-bn="নতুন যোগ করুন বা ঠিক করুন">
+        <button
+          type="button"
+          class="picker-manage"
+          :aria-label="`Add or manage ${label}`"
+          :disabled="disabled === true"
+          @click="managing = true"
+        >
+          <i class="pi pi-th-large" aria-hidden="true" />
+        </button>
+      </Tooltip>
     </div>
 
     <ManageListDialog
@@ -199,7 +201,11 @@ async function noopRemove(): Promise<string> {
   font-size: 12px;
   /* The select underneath is the control; this is only a marker. */
   pointer-events: none;
-  border-left: 1px solid var(--sher-line);
+  /*
+   * No divider here. The value and its arrow are one thing to tap, and a line
+   * between them made the arrow look like a separate control. The grid button
+   * keeps its divider, because it genuinely is a different action.
+   */
 }
 
 /*

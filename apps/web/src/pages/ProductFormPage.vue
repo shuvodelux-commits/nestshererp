@@ -1177,7 +1177,9 @@ const baseUnitName = computed(
   display: flex;
   align-items: center;
   gap: var(--sher-space-2);
-  margin-bottom: var(--sher-space-4);
+  /* It was sitting hard against the picker row above, reading as part of it
+     rather than as a choice about the prices below. */
+  margin: var(--sher-space-4) 0;
 }
 
 .price-unit-label {

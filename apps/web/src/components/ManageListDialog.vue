@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 
 import { ApiError } from '../api/client';
+import Tooltip from './Tooltip.vue';
 
 /**
  * The `Manage` panel behind every master-data picker (UI-51).
@@ -199,28 +200,38 @@ async function confirmRemove(): Promise<void> {
               item 403s is worse than no menu.
             -->
             <div v-if="canEdit" class="manage-actions">
-              <button
-                type="button"
-                class="icon-btn"
-                :aria-label="`Actions for ${entry.name}`"
-                :aria-expanded="menuFor === entry.id"
-                @click="menuFor = menuFor === entry.id ? null : entry.id"
-              >
-                <i class="pi pi-ellipsis-h" aria-hidden="true" />
-              </button>
-
-              <div v-if="menuFor === entry.id" class="manage-menu">
-                <button type="button" @click="startEdit(entry)">
-                  <i class="pi pi-pencil" aria-hidden="true" /> Edit
-                </button>
+              <Tooltip text="Edit or delete" text-bn="নাম বদলান বা মুছুন">
                 <button
                   type="button"
-                  class="is-danger"
-                  @click="((confirming = entry), (menuFor = null))"
+                  class="icon-btn"
+                  :aria-label="`Actions for ${entry.name}`"
+                  :aria-expanded="menuFor === entry.id"
+                  @click="menuFor = menuFor === entry.id ? null : entry.id"
                 >
-                  <i class="pi pi-trash" aria-hidden="true" /> Delete
+                  <i class="pi pi-ellipsis-h" aria-hidden="true" />
                 </button>
-              </div>
+              </Tooltip>
+            </div>
+
+            <!--
+              The actions open **in the row**, not in a floating menu. A menu
+              positioned over a scrollable panel is clipped by it: the first
+              version put Edit and Delete below the panel's edge, so choosing one
+              meant scrolling to reach it. A row that expands cannot be clipped,
+              needs no scrolling, and pushes the rest of the list down where it
+              stays readable.
+            -->
+            <div v-if="menuFor === entry.id" class="manage-menu">
+              <button type="button" @click="startEdit(entry)">
+                <i class="pi pi-pencil" aria-hidden="true" /> Edit
+              </button>
+              <button
+                type="button"
+                class="is-danger"
+                @click="((confirming = entry), (menuFor = null))"
+              >
+                <i class="pi pi-trash" aria-hidden="true" /> Delete
+              </button>
             </div>
           </template>
         </li>
@@ -330,6 +341,8 @@ async function confirmRemove(): Promise<void> {
 .manage-list li {
   display: flex;
   align-items: center;
+  /* Wraps so the expanded actions take a line of their own inside the row. */
+  flex-wrap: wrap;
   gap: var(--sher-space-2);
   min-height: 52px;
   padding: var(--sher-space-1) 0;
@@ -346,23 +359,21 @@ async function confirmRemove(): Promise<void> {
 }
 
 .manage-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 2px);
-  z-index: 5;
-  min-width: 9rem;
-  padding: var(--sher-space-1);
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  background: var(--sher-raised);
-  box-shadow: var(--sher-shadow-card);
+  /* In the flow, not floating: a panel with `overflow-y: auto` clips an
+     absolutely positioned menu, which is what forced scrolling to reach Edit. */
+  display: flex;
+  gap: var(--sher-space-2);
+  width: 100%;
+  padding: var(--sher-space-1) 0 var(--sher-space-2);
 }
 
 .manage-menu button {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--sher-space-2);
-  width: 100%;
+  flex: 1;
+  border: 1px solid var(--sher-line);
   min-height: 44px;
   padding: 0 var(--sher-space-2);
   background: none;
