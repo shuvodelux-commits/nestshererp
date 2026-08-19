@@ -50,3 +50,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:boundaries
       - run: pnpm test
+
+      # The four gates above cannot see a Vue template that fails to parse:
+      # `vue-tsc --noEmit` checks the script block, and a page with no test is
+      # never mounted. A `PartyFormPage.vue` with an unclosed tag once passed all
+      # four and was a blank screen in the browser. Only compiling the templates
+      # catches that, so the build runs here as well.
+      - run: pnpm --filter @sher/web run build

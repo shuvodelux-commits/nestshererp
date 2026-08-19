@@ -229,6 +229,24 @@ function toRequest(): SavePartyRequest | null {
 
 async function save(): Promise<void> {
   formError.value = null;
+
+  /*
+   * The submit button being disabled is not the guard — pressing Enter in a text
+   * field submits the form without going near it. Without this check a customer
+   * with no phone reaches the server, which refuses it correctly (D-02) but as a
+   * round trip and a server error code, where the shopkeeper deserves to be told
+   * on the spot which field is missing.
+   */
+  if (!canSubmit.value) {
+    formError.value = {
+      code: 'VALIDATION_FAILED',
+      message: isCustomer.value && phone.value.trim() === ''
+        ? 'A customer needs a phone number — it is how the same person is recognised next time'
+        : 'Fill in the name before saving',
+    };
+    return;
+  }
+
   const payload = toRequest();
   if (payload === null) return;
 
@@ -486,28 +504,30 @@ async function remove(): Promise<void> {
               <textarea id="party-notes" v-model="notes" rows="3" :disabled="isSystemReserved" />
             </div>
   
-            <div class="form-actions">
-              <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
-                Cancel
-              </button>
-              <button
-                v-if="canDelete && !isSystemReserved"
-                type="button"
-                class="btn btn-ghost danger"
-                @click="confirmingDelete = true"
-              >
-                Delete
-              </button>
-              <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
-                {{ busy ? 'Saving…' : isNew ? 'Save' : 'Save changes' }}
-              </button>
-            </div>
-  
-            <p v-if="!canSave" class="fine">
-              Your role cannot save this record. Ask the owner if you need to.
-            </p>
-          </form>
           </AppCard>
+
+          <!-- Saving is never folded away: it is the point of the screen. -->
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
+              Cancel
+            </button>
+            <button
+              v-if="canDelete && !isSystemReserved"
+              type="button"
+              class="btn btn-ghost danger"
+              @click="confirmingDelete = true"
+            >
+              Delete
+            </button>
+            <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
+              {{ busy ? 'Saving…' : isNew ? 'Save' : 'Save changes' }}
+            </button>
+          </div>
+
+          <p v-if="!canSave" class="fine">
+            Your role cannot save this record. Ask the owner if you need to.
+          </p>
+        </form>
       </AppCard>
 
       <AppCard

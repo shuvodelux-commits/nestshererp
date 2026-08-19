@@ -543,6 +543,21 @@ function toRequest(): SaveProductRequest | null {
 
 async function save(): Promise<void> {
   formError.value = null;
+
+  /*
+   * The disabled submit button is not the guard — pressing Enter in a text field
+   * submits the form without going near it. The server refuses an incomplete
+   * product correctly, but as a round trip and an error code, where the
+   * shopkeeper deserves to be told on the spot what is still missing.
+   */
+  if (!canSubmit.value) {
+    formError.value = {
+      code: 'VALIDATION_FAILED',
+      message: 'Fill in the name, unit and both prices before saving',
+    };
+    return;
+  }
+
   const payload = toRequest();
   if (payload === null) return;
 
