@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 
 import { loadMyAccess } from '../../auth/access';
+import AppBottomNav from './AppBottomNav.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopBar from './AppTopBar.vue';
 
@@ -25,6 +26,15 @@ defineProps<{
 }>();
 
 const collapsed = ref(false);
+const navigationOpen = ref(false);
+
+function toggleNavigation(): void {
+  if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches) {
+    collapsed.value = !collapsed.value;
+    return;
+  }
+  navigationOpen.value = true;
+}
 
 // UI-09: the sidebar cannot be permission-filtered until it knows the
 // permissions. Loaded here, once, because every signed-in screen sits inside it.
@@ -33,10 +43,10 @@ onMounted(() => void loadMyAccess());
 
 <template>
   <div class="shell">
-    <AppSidebar :collapsed="collapsed" />
+    <AppSidebar v-model:drawer-visible="navigationOpen" :collapsed="collapsed" />
 
     <div class="main">
-      <AppTopBar :collapsed="collapsed" @toggle-sidebar="collapsed = !collapsed" />
+      <AppTopBar :collapsed="collapsed" @toggle-sidebar="toggleNavigation" />
 
       <div class="scroll">
         <div class="content">
@@ -64,6 +74,8 @@ onMounted(() => void loadMyAccess());
         </footer>
       </div>
     </div>
+
+    <AppBottomNav @open-navigation="navigationOpen = true" />
   </div>
 </template>
 
@@ -169,6 +181,28 @@ onMounted(() => void loadMyAccess());
 
   .foot {
     padding: 14px 16px 18px;
+  }
+}
+
+@media (max-width: 767px) {
+  .content {
+    padding: 16px 12px 88px;
+    gap: var(--sher-space-4);
+  }
+
+  .page-head {
+    flex-direction: column;
+  }
+
+  .page-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .foot {
+    padding: 14px 12px calc(82px + env(safe-area-inset-bottom));
+    flex-direction: column;
+    gap: 2px;
   }
 }
 </style>

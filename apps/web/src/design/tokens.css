@@ -114,8 +114,12 @@
   --sher-radius-lg: 12px;
   --sher-radius-xl: 16px;
   --sher-radius-pill: 999px;
+  /* §2.7.I: standard controls are 40px, compact controls are 32px and cards
+     have 20px internal padding. `--sher-tap` is also the minimum shared touch
+     target so mouse and touch layouts resolve to the same approved geometry. */
   --sher-control-h: 40px;
   --sher-control-h-sm: 32px;
+  --sher-tap: 40px;
   --sher-card-pad: 20px;
   --sher-row-pad: 12px 16px;
   --sher-border-w: 1px;

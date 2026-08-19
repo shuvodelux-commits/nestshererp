@@ -1,64 +1,27 @@
 <script setup lang="ts">
+import Drawer from 'primevue/drawer';
 import { computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { useSession } from '../../auth/session';
+import { SHER_NAVIGATION } from './navigation';
 
-/**
- * UI-08: the 256px left sidebar — brand → navigation → spacer → business
- * identity. UI-10: one level deep.
- *
- * A **white** sidebar (§2.7.I). The accent is spent on the selected row and
- * nothing else, so the eye finds "where am I" without the rail competing with
- * the content beside it.
- *
- * UI-09: navigation is generated from the permission-filtered feature list —
- * never render a control that will 403. Modules that do not exist yet are
- * therefore **absent**, not greyed out: a disabled item is still a rendered
- * control. The list grows as each slice ships it.
- */
-defineProps<{ collapsed: boolean }>();
+const props = defineProps<{ collapsed: boolean; drawerVisible: boolean }>();
+const emit = defineEmits<{ 'update:drawerVisible': [visible: boolean] }>();
 
 const route = useRoute();
 const session = useSession();
 const { businessName } = session;
 
-/**
- * `needs` is the permission that makes a destination reachable. An entry with
- * none is reachable by anyone signed in — the dashboard shows only your own
- * business name, and Security only ever edits your own credentials.
- *
- * Icons are primeicons (UI-04): one self-hosted set, familiar meanings only.
- */
-const items = [
-  { label: 'Dashboard', icon: 'pi-home', to: '/dashboard', needs: null },
-  { label: 'Products', icon: 'pi-box', to: '/products', needs: 'catalog.product.view' },
-  { label: 'Catalog setup', icon: 'pi-sitemap', to: '/catalog', needs: 'catalog.product.view' },
-  {
-    label: 'Customers & Suppliers',
-    icon: 'pi-id-card',
-    to: '/parties',
-    needs: 'party.customer.view',
-  },
-  { label: 'Users', icon: 'pi-users', to: '/users', needs: 'user.account.view' },
-  { label: 'Roles & Permissions', icon: 'pi-shield', to: '/roles', needs: 'user.role.view' },
-  { label: 'Settings', icon: 'pi-cog', to: '/settings', needs: 'settings.setting.view' },
-  { label: 'Audit trail', icon: 'pi-history', to: '/audit', needs: 'audit.event.view' },
-  // Security is separate from Settings and needs no permission: it only ever
-  // edits the caller's own credentials, so everyone reaches their own.
-  { label: 'Security', icon: 'pi-lock', to: '/settings/security', needs: null },
-] as const;
+const drawerOpen = computed({
+  get: () => props.drawerVisible,
+  set: (visible: boolean) => emit('update:drawerVisible', visible),
+});
 
-/**
- * UI-09: "Never render a control that will 403." A destination the caller cannot
- * open is **absent**, not greyed — a disabled item is still a rendered control,
- * and it advertises a feature they cannot use.
- */
 const visible = computed(() =>
-  items.filter((item) => item.needs === null || session.can(item.needs)),
+  SHER_NAVIGATION.filter((item) => item.needs === null || session.can(item.needs)),
 );
 
-/** The initials shown when the sidebar is collapsed to icons. */
 const businessInitials = computed(() => {
   const words = (businessName.value ?? '').trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '—';
@@ -66,10 +29,14 @@ const businessInitials = computed(() => {
   const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
   return (first + last).toUpperCase();
 });
+
+function closeDrawer(): void {
+  drawerOpen.value = false;
+}
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ 'is-collapsed': collapsed }">
+  <aside class="sidebar desktop-sidebar" :class="{ 'is-collapsed': collapsed }">
     <RouterLink to="/dashboard" class="brand" aria-label="SherERP home">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-text">
@@ -94,16 +61,7 @@ const businessInitials = computed(() => {
     </nav>
 
     <div class="sidebar-foot">
-      <p class="absent-note">
-        Products, sales, POS, inventory and reports appear here as each module is
-        built.
-      </p>
-
-      <!--
-        The business this session belongs to. Not a switcher: one account holds
-        one business today, and a control that opens nothing is exactly what
-        UI-05 forbids.
-      -->
+      <p class="absent-note">More modules appear here as each approved phase is built.</p>
       <div class="biz" :title="businessName ?? ''">
         <span class="biz-mark" aria-hidden="true">{{ businessInitials }}</span>
         <span class="biz-text">
@@ -113,6 +71,39 @@ const businessInitials = computed(() => {
       </div>
     </div>
   </aside>
+
+  <Drawer v-model:visible="drawerOpen" class="navigation-drawer" header="Modules" position="left">
+    <RouterLink to="/dashboard" class="brand drawer-brand" aria-label="SherERP home" @click="closeDrawer">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-text">
+        <span class="brand-name">SHER<strong>ERP</strong></span>
+        <span class="brand-tag">Bangladesh's Smart ERP</span>
+      </span>
+    </RouterLink>
+
+    <nav class="nav drawer-nav" aria-label="All modules">
+      <RouterLink
+        v-for="item in visible"
+        :key="item.to"
+        :to="item.to"
+        class="nav-item"
+        :class="{ 'is-current': route.path === item.to }"
+        :aria-current="route.path === item.to ? 'page' : undefined"
+        @click="closeDrawer"
+      >
+        <i class="pi" :class="item.icon" aria-hidden="true" />
+        <span class="nav-label">{{ item.label }}</span>
+      </RouterLink>
+    </nav>
+
+    <div class="drawer-business biz" :title="businessName ?? ''">
+      <span class="biz-mark" aria-hidden="true">{{ businessInitials }}</span>
+      <span class="biz-text">
+        <strong>{{ businessName ?? '—' }}</strong>
+        <span>Head office</span>
+      </span>
+    </div>
+  </Drawer>
 </template>
 
 <style scoped>
@@ -127,7 +118,6 @@ const businessInitials = computed(() => {
   transition: width var(--sher-transition);
 }
 
-/* --------------------------------------------------------------- brand */
 .brand {
   display: flex;
   align-items: center;
@@ -152,17 +142,16 @@ const businessInitials = computed(() => {
   box-shadow: var(--sher-shadow-tone);
 }
 
-.brand-text {
+.brand-text,
+.biz-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
   min-width: 0;
 }
 
 .brand-name {
   font-size: var(--sher-text-lg);
-  font-weight: 400;
-  letter-spacing: 0.02em;
   color: var(--sher-text-muted);
 }
 
@@ -171,13 +160,13 @@ const businessInitials = computed(() => {
   color: var(--sher-text);
 }
 
-.brand-tag {
+.brand-tag,
+.biz-text span {
   font-size: var(--sher-text-2xs);
   color: var(--sher-text-muted);
   white-space: nowrap;
 }
 
-/* ---------------------------------------------------------------- nav */
 .nav {
   display: flex;
   flex-direction: column;
@@ -190,23 +179,20 @@ const businessInitials = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  height: 42px;
+  min-height: 42px;
   border-radius: var(--sher-radius);
   color: var(--sher-text-muted);
   text-decoration: none;
-  font-size: var(--sher-text-base);
   font-weight: 500;
   white-space: nowrap;
-  transition:
-    background var(--sher-transition),
-    color var(--sher-transition);
+  transition: background var(--sher-transition), color var(--sher-transition);
 }
 
 .nav-item .pi {
-  font-size: 17px;
   width: 20px;
   flex-shrink: 0;
   text-align: center;
+  font-size: 17px;
 }
 
 .nav-item:hover {
@@ -224,21 +210,16 @@ const businessInitials = computed(() => {
   color: var(--sher-nav-active-icon);
 }
 
-/* ---------------------------------------------------------------- foot */
 .sidebar-foot {
   margin-top: auto;
   padding: var(--sher-space-4) var(--sher-space-3) 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-3);
 }
 
 .absent-note {
-  margin: 0;
-  padding: 0 4px var(--sher-space-3);
+  margin: 0 4px var(--sher-space-3);
+  padding-bottom: var(--sher-space-3);
   border-bottom: 1px solid var(--sher-line);
   font-size: var(--sher-text-2xs);
-  line-height: 1.55;
   color: var(--sher-text-muted);
 }
 
@@ -266,31 +247,13 @@ const businessInitials = computed(() => {
   font-weight: 700;
 }
 
-.biz-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  min-width: 0;
-}
-
 .biz-text strong {
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--sher-text-sm);
 }
 
-.biz-text span {
-  font-size: var(--sher-text-2xs);
-  color: var(--sher-text-muted);
-}
-
-/*
- * UI-11: the same destinations, in the same order, collapsed to icons. Driven
- * by the top bar's toggle on desktop and by the viewport on tablet, because at
- * 1024px the content needs the 190px back more than the labels earn it.
- */
 .sidebar.is-collapsed {
   width: var(--sher-sidebar-width-collapsed);
 }
@@ -311,25 +274,27 @@ const businessInitials = computed(() => {
   gap: 0;
 }
 
-@media (max-width: 1023px) {
-  .sidebar {
-    width: var(--sher-sidebar-width-collapsed);
-  }
+.drawer-brand {
+  padding: 0 12px 16px;
+}
 
-  .brand-text,
-  .nav-label,
-  .absent-note,
-  .biz-text {
+.drawer-nav {
+  padding: 0;
+}
+
+.drawer-business {
+  margin: var(--sher-space-4) var(--sher-space-3);
+}
+
+@media (max-width: 1279px) {
+  .desktop-sidebar {
     display: none;
   }
+}
 
-  .brand,
-  .nav-item,
-  .biz {
-    justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
-    gap: 0;
+@media (min-width: 1280px) {
+  :deep(.navigation-drawer) {
+    display: none;
   }
 }
 </style>

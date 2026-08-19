@@ -147,12 +147,12 @@ describe('ProductsPage', () => {
     expect(wrapper.text()).not.toContain('Something went wrong');
   });
 
-  it('counts the tiles from the same figures the server sent', async () => {
+  it('uses the page for the product list instead of redundant summary cards', async () => {
     const wrapper = await mountLoaded();
 
-    const tiles = wrapper.findAll('.tiles article');
-    expect(tiles).toHaveLength(4);
-    expect(tiles[0]!.text()).toContain('1');
+    expect(wrapper.find('.tiles').exists()).toBe(false);
+    expect(wrapper.find('.table-wrap').exists()).toBe(true);
+    expect(wrapper.find('.paging').text()).toContain('Showing 1 of 1');
   });
 
   it('deactivates through a confirmation that names the consequence (UI-26)', async () => {
@@ -173,10 +173,23 @@ describe('ProductsPage', () => {
     const wrapper = await mountLoaded();
     load.mockClear();
 
-    await wrapper.find('#filter-status').setValue('INACTIVE');
+    await wrapper.find('#filter-status').trigger('click');
+    const inactive = wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text() === 'Inactive only');
+    await inactive?.trigger('mousedown');
     await flushPromises();
 
     expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ status: 'INACTIVE' }));
+  });
+
+  it('renders the list filters with PrimeVue Select controls', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.find('#filter-brand').attributes('role')).toBe('combobox');
+    expect(wrapper.find('#filter-category').attributes('role')).toBe('combobox');
+    expect(wrapper.find('#filter-status').attributes('role')).toBe('combobox');
+    expect(wrapper.findAll('select')).toHaveLength(0);
   });
 });
 

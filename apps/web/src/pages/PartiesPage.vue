@@ -28,11 +28,10 @@ import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
-import StatCard from '../components/StatCard.vue';
 
 /**
  * The Parties screen (Phase 2, §5.6, D-04) — a List screen (UI-22): tabs →
- * filter bar → summary tiles → table → paging.
+ * filter bar → table → paging.
  *
  * **Tabs, not a "type" dropdown.** §5.6: "Sales/POS shows customers by default;
  * Purchase screens show suppliers by default … never show every party type by
@@ -370,7 +369,6 @@ async function removeGroup(id: string, name: string): Promise<void> {
     </form>
 
     <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading">
-      <div class="skeleton skeleton-tiles" />
       <div class="skeleton skeleton-table" />
     </div>
 
@@ -381,38 +379,6 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
     <template v-else>
       <p v-if="notice !== null" class="notice is-ok" role="status">{{ notice }}</p>
-
-      <div class="tiles">
-        <StatCard
-          :label="role === 'CUSTOMER' ? 'Customers' : role === 'SUPPLIER' ? 'Suppliers' : 'Vendors'"
-          :value="String(summary.total)"
-          detail="Matching these filters"
-          icon="pi-users"
-          tone="blue"
-        />
-        <StatCard
-          label="Active"
-          :value="String(summary.active)"
-          detail="Available in new transactions"
-          icon="pi-check-circle"
-          tone="green"
-        />
-        <StatCard
-          label="Inactive"
-          :value="String(summary.inactive)"
-          detail="Kept in history, not offered"
-          icon="pi-ban"
-          tone="slate"
-        />
-        <StatCard
-          v-if="showsGroups"
-          label="Not in a group"
-          :value="String(summary.ungrouped)"
-          detail="No group chosen yet"
-          icon="pi-tag"
-          tone="amber"
-        />
-      </div>
 
       <EmptyState
         v-if="parties.length === 0 && !filtersActive"
@@ -670,7 +636,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
  * `design/components.css`. What is left is the tab strip, the filter bar, the
- * tile row, the paging line and the group editor.
+ * paging line and the group editor.
  */
 .tabs {
   display: flex;
@@ -720,23 +686,12 @@ async function removeGroup(id: string, name: string): Promise<void> {
   gap: var(--sher-space-5);
 }
 
-.skeleton-tiles {
-  height: 118px;
-}
-
 .skeleton-table {
   height: 320px;
 }
 
 .retry {
   margin-top: var(--sher-space-4);
-}
-
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--sher-space-4);
-  margin-bottom: var(--sher-space-5);
 }
 
 /* UI-32: money right-aligned, with tabular figures. */

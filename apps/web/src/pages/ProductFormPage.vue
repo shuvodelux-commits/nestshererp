@@ -666,7 +666,7 @@ const baseUnitName = computed(
         about products. Removed by owner decision 2026-08-19; `AppCard` already
         drops its header when no title is given, so nothing else changes.
       -->
-      <AppCard>
+      <AppCard class="product-core-card">
         <div class="field">
           <label for="product-name">
             Product name
@@ -1168,6 +1168,17 @@ const baseUnitName = computed(
   flex-direction: column;
   gap: var(--sher-space-4);
   max-width: 900px;
+}
+
+/* The required product fields read as distinct steps instead of one dense block. */
+.product-core-card > :deep(div) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-5);
+}
+
+.product-core-card .price-unit {
+  margin: 0;
 }
 
 .row {

@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import HelpTip from '../src/components/HelpTip.vue';
 
@@ -10,8 +10,13 @@ import HelpTip from '../src/components/HelpTip.vue';
  * where hover does not exist. A tip that only opened on hover would be invisible
  * to every intended user while looking perfectly fine on the developer's laptop.
  */
+const mountedWrappers: { unmount: () => void }[] = [];
+
 function tip(props: Record<string, unknown> = {}) {
-  return mount(HelpTip, {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const wrapper = mount(HelpTip, {
+    attachTo: host,
     props: {
       label: 'Reorder at',
       text: 'A warning line, not an order.',
@@ -19,15 +24,27 @@ function tip(props: Record<string, unknown> = {}) {
       ...props,
     },
   });
+  mountedWrappers.push(wrapper);
+  return wrapper;
 }
+
+function visibleTip(): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>('[role="tooltip"]');
+}
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount();
+  document.body.replaceChildren();
+});
 
 describe('a help tip', () => {
   it('opens on tap, because the audience has no mouse', async () => {
     const wrapper = tip();
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false);
+    expect(visibleTip()).toBeNull();
 
     await wrapper.find('button').trigger('click');
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('A warning line');
+    expect(wrapper.find('.help [role="tooltip"]').exists()).toBe(false);
+    expect(visibleTip()?.textContent).toContain('A warning line');
   });
 
   it('closes on a second tap', async () => {
@@ -36,7 +53,7 @@ describe('a help tip', () => {
     await wrapper.find('button').trigger('click');
     await wrapper.find('button').trigger('click');
 
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false);
+    expect(visibleTip()).toBeNull();
   });
 
   it('opens on hover only for a real mouse', async () => {
@@ -45,24 +62,24 @@ describe('a help tip', () => {
     // Touch browsers synthesise hover on tap; without the pointerType guard that
     // synthetic event would fight the tap toggle.
     await wrapper.find('.help').trigger('pointerenter', { pointerType: 'touch' });
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false);
+    expect(visibleTip()).toBeNull();
 
     await wrapper.find('.help').trigger('pointerenter', { pointerType: 'mouse' });
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(true);
+    expect(visibleTip()).not.toBeNull();
   });
 
   it('opens on keyboard focus, so it is reachable without a pointer at all', async () => {
     const wrapper = tip();
 
     await wrapper.find('button').trigger('focus');
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(true);
+    expect(visibleTip()).not.toBeNull();
   });
 
   it('carries the Bangla explanation, which is the half most will read', async () => {
     const wrapper = tip();
 
     await wrapper.find('button').trigger('click');
-    expect(wrapper.find('.help-bn').text()).toBe('এটি শুধু সতর্ক করে');
+    expect(visibleTip()?.querySelector('.help-bn')?.textContent).toBe('এটি শুধু সতর্ক করে');
   });
 
   it('is a named button, not a title attribute', async () => {

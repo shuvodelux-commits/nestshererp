@@ -509,7 +509,7 @@ async function remove(): Promise<void> {
 }
 
 .skeleton-tabs {
-  height: 44px;
+  height: var(--sher-tap);
   max-width: 340px;
 }
 

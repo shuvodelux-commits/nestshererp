@@ -1,19 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import QuickAddSelect from '../src/components/QuickAddSelect.vue';
 
 /**
- * The unified picker (D-39, UI-45, UI-51) — one control, three zones: the value,
- * a chevron that opens the list, and a grid button that opens the panel where
- * the list is added to and tidied.
+ * The unified PrimeVue picker (D-39, UI-45, UI-51): a searchable Select and a
+ * separate gear action that opens the composed master-data workflow.
  *
  * Tested once here, so no page repeats it (R-E11). What matters:
- *
- *   The element under the value is a **real `<select>`**. On Android that opens
- *   the system picker, which is a better list than anything drawn here and the
- *   one this audience already knows. Replacing it with a styled div would look
- *   the same on a laptop and be worse on every phone.
  *
  *   Creating selects **the id the server returned** (UI-36), never a row matched
  *   by name — two names that normalise the same way would select the wrong one.
@@ -22,13 +16,17 @@ const UNITS = [
   { id: '01UNITFEETAAAAAAAAAAAAAAAA', name: 'Feet' },
   { id: '01UNITPIPEAAAAAAAAAAAAAAAA', name: 'Pipe' },
 ];
+const mountedWrappers: { unmount: () => void }[] = [];
 
 function picker(overrides: Record<string, unknown> = {}) {
   const create = vi.fn().mockResolvedValue('01UNITNEWAAAAAAAAAAAAAAAAA');
   const rename = vi.fn().mockResolvedValue(undefined);
   const remove = vi.fn().mockResolvedValue('Removed. Nothing was using it.');
 
+  const host = document.createElement('div');
+  document.body.append(host);
   const wrapper = mount(QuickAddSelect, {
+    attachTo: host,
     props: {
       modelValue: '',
       fieldId: 'product-unit',
@@ -44,38 +42,56 @@ function picker(overrides: Record<string, unknown> = {}) {
       ...overrides,
     },
   });
+  mountedWrappers.push(wrapper);
 
   return { wrapper, create, rename, remove };
 }
 
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount();
+  document.body.replaceChildren();
+});
+
 describe('the picker itself', () => {
-  it('is one control holding a real select', () => {
+  it('uses the PrimeVue Select combobox with the field label wired to it', async () => {
     const { wrapper } = picker();
 
     expect(wrapper.find('.picker').exists()).toBe(true);
-    // A real <select>, so Android opens its own full-screen picker.
-    expect(wrapper.find('select#product-unit').exists()).toBe(true);
-    expect(wrapper.findAll('option').map((o) => o.text())).toEqual([
-      'Select unit…',
+    const select = wrapper.find('[role="combobox"]');
+    expect(select.attributes('id')).toBe('product-unit');
+    expect(select.text()).toContain('Select unit…');
+
+    await select.trigger('click');
+    expect(wrapper.find('.picker [role="option"]').exists()).toBe(false);
+    expect(
+      [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].map(
+        (option) => option.textContent,
+      ),
+    ).toEqual([
       'Feet',
       'Pipe',
     ]);
   });
 
-  it('has no separate New or Manage buttons beside it', () => {
-    // Owner decision 2026-08-19: two extra buttons per field crushed the select
-    // to nothing, and two buttons for "change this list" was two places to look.
+  it('has one separate, labelled gear action and no duplicate New action', () => {
     const { wrapper } = picker();
 
     expect(wrapper.text()).not.toContain('New unit');
-    expect(wrapper.text()).not.toContain('Manage');
-    expect(wrapper.findAll('.picker button').length).toBe(1);
+    const manage = wrapper.find('.picker-manage');
+    expect(manage.attributes('aria-label')).toBe('Add or manage Unit');
+    expect(manage.find('.pi-cog').exists()).toBe(true);
+    expect(manage.text()).toBe('');
+    expect(wrapper.findAll('.picker-manage')).toHaveLength(1);
   });
 
   it('reports what was chosen', async () => {
     const { wrapper } = picker();
 
-    await wrapper.find('select').setValue('01UNITPIPEAAAAAAAAAAAAAAAA');
+    await wrapper.find('[role="combobox"]').trigger('click');
+    const pipe = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent === 'Pipe',
+    );
+    pipe?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['01UNITPIPEAAAAAAAAAAAAAAAA']]);
   });
@@ -113,7 +129,7 @@ describe('the panel behind the grid button', () => {
     const { wrapper } = picker({ canAdd: false, canManage: false });
 
     expect(wrapper.find('.picker-manage').exists()).toBe(false);
-    expect(wrapper.find('select').exists()).toBe(true);
+    expect(wrapper.find('[role="combobox"]').exists()).toBe(true);
   });
 
   it('still opens for a caller who may add but not manage', async () => {

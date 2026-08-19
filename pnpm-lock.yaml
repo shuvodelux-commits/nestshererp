@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@primeuix/styles': 1.0.3
+
 importers:
 
   .:
@@ -605,22 +608,14 @@ packages:
     resolution: {integrity: sha512-5Ftw/KSauDPClQ8F2qCyCUF7cIUEY4yLNikf0rKV7Vsb8zGYNK0dahQe7CChaR6M2Kn+NA2DSBSk76ZXqj6Uog==}
     engines: {node: '>=12.11.0'}
 
-  '@primeuix/styled@0.7.4':
-    resolution: {integrity: sha512-QSO/NpOQg8e9BONWRBx9y8VGMCMYz0J/uKfNJEya/RGEu7ARx0oYW0ugI1N3/KB1AAvyGxzKBzGImbwg0KUiOQ==}
-    engines: {node: '>=12.11.0'}
-
-  '@primeuix/styles@1.2.5':
-    resolution: {integrity: sha512-nypFRct/oaaBZqP4jinT0puW8ZIfs4u+l/vqUFmJEPU332fl5ePj6DoOpQgTLzo3OfmvSmz5a5/5b4OJJmmi7Q==}
+  '@primeuix/styles@1.0.3':
+    resolution: {integrity: sha512-yHj/Q+fosJ1736Ty5lRbpqhKa9piou+xZPPppNHUDshq0+XhrFwDGggvPGmDAJyUIM+ChM/Nj8lPY/AwTNXAkg==}
 
   '@primeuix/themes@1.0.3':
     resolution: {integrity: sha512-f/1qadrv5TFMHfvtVv4Y9zjrkeDP2BO/cuzbHBO9DYxKL6YBIPT9BjKec2K4Kg8PcfGm6CAvxAvICadJSWejRw==}
 
   '@primeuix/utils@0.5.4':
     resolution: {integrity: sha512-8LggV3Jz59pymHQD10e/u63z/GemQ22RBeu2Gb1eJgBYVwn1iOb82LR+daeAc/LxrXCC5pHnftnCmnZO6vInLA==}
-    engines: {node: '>=12.11.0'}
-
-  '@primeuix/utils@0.6.4':
-    resolution: {integrity: sha512-pZ5f+vj7wSzRhC7KoEQRU5fvYAe+RP9+m39CTscZ3UywCD1Y2o6Fe1rRgklMPSkzUcty2jzkA0zMYkiJBD1hgg==}
     engines: {node: '>=12.11.0'}
 
   '@primevue/core@4.3.3':
@@ -2736,21 +2731,15 @@ snapshots:
     dependencies:
       '@primeuix/utils': 0.5.4
 
-  '@primeuix/styled@0.7.4':
+  '@primeuix/styles@1.0.3':
     dependencies:
-      '@primeuix/utils': 0.6.4
-
-  '@primeuix/styles@1.2.5':
-    dependencies:
-      '@primeuix/styled': 0.7.4
+      '@primeuix/styled': 0.5.1
 
   '@primeuix/themes@1.0.3':
     dependencies:
       '@primeuix/styled': 0.5.1
 
   '@primeuix/utils@0.5.4': {}
-
-  '@primeuix/utils@0.6.4': {}
 
   '@primevue/core@4.3.3(vue@3.5.13(typescript@5.7.3))':
     dependencies:
@@ -4103,7 +4092,7 @@ snapshots:
   primevue@4.3.3(vue@3.5.13(typescript@5.7.3)):
     dependencies:
       '@primeuix/styled': 0.5.1
-      '@primeuix/styles': 1.2.5
+      '@primeuix/styles': 1.0.3
       '@primeuix/utils': 0.5.4
       '@primevue/core': 4.3.3(vue@3.5.13(typescript@5.7.3))
       '@primevue/icons': 4.3.3(vue@3.5.13(typescript@5.7.3))

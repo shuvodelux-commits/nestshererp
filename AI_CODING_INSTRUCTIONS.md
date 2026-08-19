@@ -367,6 +367,24 @@ Stopping is always correct. A half-correct accounting system is worse than an un
 
 Four gates. **A module is not done because the code runs.** Focused checks protect work in progress; these full gates run once when the complete module increment is ready for acceptance.
 
+### Browser handoff after every coding turn
+
+After any turn that writes source code, tests, schema or migrations, the agent must prepare the
+real application for owner testing **before handing control back**. This is automatic; the owner
+must never have to ask for the servers to be started.
+
+1. Start `sher-pg` if PostgreSQL is not already running.
+2. Start or restart the API through the canonical `pnpm dev` path with the local `sher_dev`
+   configuration, so current workspace packages are rebuilt rather than stale `dist` files used.
+3. Start or restart the Vite web application and leave both processes running.
+4. Verify `http://localhost:3000/health` succeeds and `http://localhost:5173/` returns HTTP 200.
+5. Give the owner the browser URL and report any sign-in/session reset that may be needed.
+
+If the environment prevents a server from starting, report the exact command and blocker instead
+of claiming the application is ready. Documentation-only and read-only turns do not require a
+restart. This browser handoff is required after focused increments as well as module gates; it does
+not replace the four automated gates or owner UI acceptance.
+
 ### Gate 1 — Automated (CI blocks the merge)
 
 - [ ] `pnpm lint` passes, zero warnings

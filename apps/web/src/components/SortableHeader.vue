@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SortDirection } from '@sher/core-contracts';
+import Button from 'primevue/button';
 import { computed } from 'vue';
 
 /**
@@ -56,7 +57,7 @@ const arrow = computed(() => (props.direction === 'ASC' ? 'pi-arrow-up' : 'pi-ar
 
 <template>
   <th :aria-sort="ariaSort" :class="{ num: numeric, 'is-sorted': isActive }">
-    <button type="button" class="sort-button" @click="emit('sort', column)">
+    <Button text class="sort-button" @click="emit('sort', column)">
       <span class="sort-label">
         {{ label }}
         <span v-if="labelBn" class="sher-bn header-bn">{{ labelBn }}</span>
@@ -66,7 +67,7 @@ const arrow = computed(() => (props.direction === 'ASC' ? 'pi-arrow-up' : 'pi-ar
         :class="[arrow, { 'is-hidden': !isActive }]"
         aria-hidden="true"
       />
-    </button>
+    </Button>
   </th>
 </template>
 
@@ -84,8 +85,6 @@ const arrow = computed(() => (props.direction === 'ASC' ? 'pi-arrow-up' : 'pi-ar
   width: 100%;
   min-height: 2.75rem;
   padding: 0.5rem 0;
-  background: none;
-  border: 0;
   font: inherit;
   color: inherit;
   text-align: inherit;

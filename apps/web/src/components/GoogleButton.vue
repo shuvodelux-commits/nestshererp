@@ -9,6 +9,7 @@
  * (UI-02 forbids *imitating* an identity, not naming the service you integrate).
  */
 import { computed } from 'vue';
+import Button from 'primevue/button';
 
 const props = withDefaults(defineProps<{ disabled?: boolean; label?: string }>(), {
   disabled: false,
@@ -22,7 +23,7 @@ const isDisabled = computed<boolean>(() => props.disabled);
 </script>
 
 <template>
-  <button type="button" class="google" :disabled="isDisabled" @click="$emit('click')">
+  <Button class="google" severity="secondary" outlined :disabled="isDisabled" @click="$emit('click')">
     <svg viewBox="0 0 18 18" aria-hidden="true">
       <path
         fill="#4285F4"
@@ -39,36 +40,14 @@ const isDisabled = computed<boolean>(() => props.disabled);
       />
     </svg>
     {{ label }}
-  </button>
+  </Button>
 </template>
 
 <style scoped>
 .google {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   width: 100%;
-  height: var(--sher-control-h);
-  padding: 0 16px;
-  border: 1px solid var(--sher-line-strong);
-  border-radius: var(--sher-radius);
   background: var(--sher-raised);
-  font: inherit;
-  font-size: var(--sher-text-base);
-  font-weight: 600;
   color: var(--sher-text);
-  cursor: pointer;
-  transition: background var(--sher-transition);
-}
-
-.google:hover:not(:disabled) {
-  background: var(--sher-hover);
-}
-
-.google:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 svg {

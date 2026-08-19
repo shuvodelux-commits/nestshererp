@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Message from 'primevue/message';
 /**
  * A failure, said in a way the person reading it can act on.
  *
@@ -14,33 +15,28 @@ defineProps<{ code: string; message: string; tone?: 'error' | 'warning' }>();
 </script>
 
 <template>
-  <p class="error-notice" :class="tone === 'warning' ? 'is-warning' : 'is-error'" role="alert">
-    <span class="message">{{ message }}</span>
-    <span class="reference">
-      Reference: <code>{{ code }}</code>
+  <Message
+    class="error-notice"
+    :severity="tone === 'warning' ? 'warn' : 'error'"
+    :closable="false"
+  >
+    <span class="notice-copy">
+      <span class="message">{{ message }}</span>
+      <span class="reference">Reference: <code>{{ code }}</code></span>
+      <slot />
     </span>
-  </p>
+  </Message>
 </template>
 
 <style scoped>
 .error-notice {
   margin: 0;
-  padding: 11px 14px;
-  border: 1px solid;
-  border-radius: var(--sher-radius);
+}
+
+.notice-copy {
   display: flex;
   flex-direction: column;
   gap: 3px;
-}
-
-.is-error {
-  border-color: var(--sher-bad-line);
-  background: var(--sher-bad-bg);
-}
-
-.is-warning {
-  border-color: var(--sher-warn-line);
-  background: var(--sher-warn-bg);
 }
 
 /* The sentence is the message. It reads at normal size, in normal text colour. */

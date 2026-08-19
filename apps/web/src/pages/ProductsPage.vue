@@ -8,6 +8,9 @@ import type {
 } from '@sher/core-contracts';
 import { defaultDirectionFor } from '@sher/core-contracts';
 import { Money, Qty } from '@sher/shared-utils';
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -20,11 +23,10 @@ import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
-import StatCard from '../components/StatCard.vue';
 
 /**
  * The Products screen (Phase 2, §5.5) — a List screen (UI-22): filter bar →
- * summary tiles → table → paging.
+ * table → paging.
  *
  * Filters are visible on the screen rather than behind a menu (UI-25), and cover
  * what §5.5 and §5.7 name: free text over name, code, barcode and brand, plus
@@ -71,6 +73,26 @@ const subcategories = computed(() =>
     ? []
     : catalog.value.categories.filter((row) => row.parentId === categoryId.value),
 );
+const brandOptions = computed(() => [
+  { id: '', name: 'All brands' },
+  ...catalog.value.brands,
+]);
+const categoryOptions = computed(() => [
+  { id: '', name: 'All categories' },
+  ...parentCategories.value,
+]);
+const subcategoryOptions = computed(() => [
+  {
+    id: '',
+    name: `All of ${parentCategories.value.find((row) => row.id === categoryId.value)?.name ?? 'category'}`,
+  },
+  ...subcategories.value,
+]);
+const statusOptions = [
+  { value: '', label: 'Active and inactive' },
+  { value: 'ACTIVE', label: 'Active only' },
+  { value: 'INACTIVE', label: 'Inactive only' },
+];
 
 const filtersActive = computed(
   () =>
@@ -237,76 +259,101 @@ function openProduct(product: ProductResponse): void {
     help-bn="আপনার দোকানের সব পণ্য — দাম, ইউনিট আর বারকোড এখানে"
   >
     <template #actions>
-      <button
+      <Button
         v-if="canCreate"
-        type="button"
-        class="btn btn-primary"
+        label="Add product"
+        icon="pi pi-plus"
         @click="router.push('/products/new')"
-      >
-        <i class="pi pi-plus" aria-hidden="true" />
-        Add product
-      </button>
+      />
     </template>
 
     <!-- UI-25: filters are visible, and what is filtered is readable at a glance -->
     <form class="filters" @submit.prevent="load">
       <div class="field grow">
         <label for="product-search">Search</label>
-        <input
+        <InputText
           id="product-search"
           v-model="search"
           type="search"
           placeholder="Name, code, barcode or brand"
+          fluid
         />
       </div>
 
       <div class="field">
         <label for="filter-brand">Brand</label>
-        <select id="filter-brand" v-model="brandId" @change="load">
-          <option value="">All brands</option>
-          <option v-for="brand in catalog.brands" :key="brand.id" :value="brand.id">
-            {{ brand.name }}
-          </option>
-        </select>
+        <Select
+          v-model="brandId"
+          input-id="filter-brand"
+          :options="brandOptions"
+          option-label="name"
+          option-value="id"
+          :filter="catalog.brands.length > 8"
+          filter-placeholder="Search brands"
+          append-to="self"
+          fluid
+          @change="load"
+        />
       </div>
 
       <div class="field">
         <label for="filter-category">Category</label>
-        <select id="filter-category" v-model="categoryId" @change="load">
-          <option value="">All categories</option>
-          <option v-for="category in parentCategories" :key="category.id" :value="category.id">
-            {{ category.name }}
-          </option>
-        </select>
+        <Select
+          v-model="categoryId"
+          input-id="filter-category"
+          :options="categoryOptions"
+          option-label="name"
+          option-value="id"
+          :filter="parentCategories.length > 8"
+          filter-placeholder="Search categories"
+          append-to="self"
+          fluid
+          @change="load"
+        />
       </div>
 
       <div v-if="subcategories.length > 0" class="field">
         <label for="filter-subcategory">Subcategory</label>
-        <select id="filter-subcategory" v-model="subcategoryId" @change="load">
-          <option value="">All of {{ parentCategories.find((row) => row.id === categoryId)?.name }}</option>
-          <option v-for="child in subcategories" :key="child.id" :value="child.id">
-            {{ child.name }}
-          </option>
-        </select>
+        <Select
+          v-model="subcategoryId"
+          input-id="filter-subcategory"
+          :options="subcategoryOptions"
+          option-label="name"
+          option-value="id"
+          :filter="subcategories.length > 8"
+          filter-placeholder="Search subcategories"
+          append-to="self"
+          fluid
+          @change="load"
+        />
       </div>
 
       <div class="field">
         <label for="filter-status">Status</label>
-        <select id="filter-status" v-model="status" @change="load">
-          <option value="">Active and inactive</option>
-          <option value="ACTIVE">Active only</option>
-          <option value="INACTIVE">Inactive only</option>
-        </select>
+        <Select
+          v-model="status"
+          input-id="filter-status"
+          :options="statusOptions"
+          option-label="label"
+          option-value="value"
+          append-to="self"
+          fluid
+          @change="load"
+        />
       </div>
 
-      <button type="submit" class="btn btn-ghost">Search</button>
-      <button v-if="filtersActive" type="button" class="btn btn-ghost" @click="clearFilters">
-        Clear
-      </button>
+      <Button type="submit" label="Search" severity="secondary" outlined />
+      <Button
+        v-if="filtersActive"
+        type="button"
+        label="Clear"
+        severity="secondary"
+        text
+        @click="clearFilters"
+      />
     </form>
 
     <div v-if="loading" class="skeletons" aria-busy="true" aria-label="Loading products">
-      <div class="skeleton skeleton-tiles" />
       <div class="skeleton skeleton-table" />
     </div>
 
@@ -317,41 +364,6 @@ function openProduct(product: ProductResponse): void {
 
     <template v-else>
       <p v-if="notice !== null" class="notice is-ok" role="status">{{ notice }}</p>
-
-      <!--
-        Counted by the same query as the rows, so a tile can never disagree with
-        the table beneath it (§2.7.I).
-      -->
-      <div class="tiles">
-        <StatCard
-          label="Products"
-          :value="String(summary.total)"
-          detail="Matching these filters"
-          icon="pi-box"
-          tone="blue"
-        />
-        <StatCard
-          label="Active"
-          :value="String(summary.active)"
-          detail="Can be sold and purchased"
-          icon="pi-check-circle"
-          tone="green"
-        />
-        <StatCard
-          label="Inactive"
-          :value="String(summary.inactive)"
-          detail="Kept in history, not offered"
-          icon="pi-ban"
-          tone="slate"
-        />
-        <StatCard
-          label="No barcode"
-          :value="String(summary.withoutBarcode)"
-          detail="Cannot be scanned at the counter"
-          icon="pi-qrcode"
-          tone="amber"
-        />
-      </div>
 
       <EmptyState
         v-if="products.length === 0 && !filtersActive"
@@ -574,8 +586,7 @@ function openProduct(product: ProductResponse): void {
 <style scoped>
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
- * `design/components.css`. What is left is the filter bar, the tile row and the
- * paging line.
+ * `design/components.css`. What is left is the filter bar and paging line.
  */
 .filters {
   display: flex;
@@ -600,23 +611,12 @@ function openProduct(product: ProductResponse): void {
   gap: var(--sher-space-5);
 }
 
-.skeleton-tiles {
-  height: 118px;
-}
-
 .skeleton-table {
   height: 320px;
 }
 
 .retry {
   margin-top: var(--sher-space-4);
-}
-
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--sher-space-4);
-  margin-bottom: var(--sher-space-5);
 }
 
 /* UI-32: money and quantity right-aligned, with tabular figures. */

@@ -3,6 +3,9 @@ import './design/tokens.css';
 import './design/components.css';
 
 import PrimeVue from 'primevue/config';
+import ConfirmationService from 'primevue/confirmationservice';
+import ToastService from 'primevue/toastservice';
+import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import App from './App.vue';
@@ -31,5 +34,8 @@ createApp(App)
       },
     },
   })
+  .use(ConfirmationService)
+  .use(ToastService)
+  .directive('tooltip', Tooltip)
   .use(router)
   .mount('#app');

@@ -1,21 +1,20 @@
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 
-/**
- * PrimeVue 4 in styled mode (D-37, UI-03), bent to the same palette as
- * `tokens.css`.
- *
- * This file exists so the components that arrive in later slices — DataTable,
- * Dialog, Select, DatePicker — land already matching the shell rather than
- * shipping Aura's default teal. Keeping the two in step by hand is the cost of
- * having a component library at all, and it is far cheaper than the alternative
- * D-37 rejected: hand-writing every table and form.
- *
- * Both colour schemes are declared because §2.7.I includes dark mode; the
- * switch itself is `design/theme.ts` toggling `.sher-dark`.
- */
+/** SherERP's single PrimeVue 4 styled-mode preset (D-37, UI-03, §2.7.I). */
 export const SherPreset = definePreset(Aura, {
+  primitive: {
+    borderRadius: {
+      none: '0',
+      xs: '4px',
+      sm: '6px',
+      md: '8px',
+      lg: '12px',
+      xl: '16px',
+    },
+  },
   semantic: {
+    transitionDuration: '150ms',
     primary: {
       50: '#eff6ff',
       100: '#dbeafe',
@@ -28,6 +27,13 @@ export const SherPreset = definePreset(Aura, {
       800: '#1e3a8a',
       900: '#172554',
       950: '#0f172a',
+    },
+    focusRing: {
+      width: '2px',
+      style: 'solid',
+      color: '{primary.500}',
+      offset: '2px',
+      shadow: 'none',
     },
     colorScheme: {
       light: {
@@ -45,21 +51,177 @@ export const SherPreset = definePreset(Aura, {
           900: '#0f172a',
           950: '#020617',
         },
+        formField: {
+          background: '#ffffff',
+          disabledBackground: '#f7f9fc',
+          filledBackground: '#f7f9fc',
+          filledHoverBackground: '#f4f6fa',
+          filledFocusBackground: '#ffffff',
+          borderColor: '#d5dbe5',
+          hoverBorderColor: '#94a3b8',
+          focusBorderColor: '#2563eb',
+          invalidBorderColor: '#be123c',
+          color: '#0f172a',
+          disabledColor: '#94a3b8',
+          placeholderColor: '#64748b',
+          invalidPlaceholderColor: '#be123c',
+          floatLabelColor: '#64748b',
+          floatLabelFocusColor: '#2563eb',
+          floatLabelActiveColor: '#64748b',
+          floatLabelInvalidColor: '#be123c',
+          iconColor: '#64748b',
+          shadow: 'none',
+        },
       },
       dark: {
         surface: {
-          0: '#0f1623',
-          50: '#141c2b',
-          100: '#0f1623',
-          200: '#0b111c',
-          300: '#1e293b',
-          400: '#2b3a50',
-          500: '#64748b',
-          600: '#94a3b8',
-          700: '#cbd5e1',
-          800: '#e2e8f0',
-          900: '#e8edf6',
-          950: '#f8fafc',
+          0: '#f8fafc',
+          50: '#e8edf6',
+          100: '#e2e8f0',
+          200: '#cbd5e1',
+          300: '#94a3b8',
+          400: '#64748b',
+          500: '#475569',
+          600: '#2b3a50',
+          700: '#1e293b',
+          800: '#141c2b',
+          900: '#0f1623',
+          950: '#080c14',
+        },
+        formField: {
+          background: '#0f1623',
+          disabledBackground: '#141c2b',
+          filledBackground: '#141c2b',
+          filledHoverBackground: '#16202f',
+          filledFocusBackground: '#0f1623',
+          borderColor: '#2b3a50',
+          hoverBorderColor: '#64748b',
+          focusBorderColor: '#3b82f6',
+          invalidBorderColor: '#fb7185',
+          color: '#e8edf6',
+          disabledColor: '#64748b',
+          placeholderColor: '#94a3b8',
+          invalidPlaceholderColor: '#fb7185',
+          floatLabelColor: '#94a3b8',
+          floatLabelFocusColor: '#93c5fd',
+          floatLabelActiveColor: '#94a3b8',
+          floatLabelInvalidColor: '#fb7185',
+          iconColor: '#94a3b8',
+          shadow: 'none',
+        },
+      },
+    },
+  },
+  components: {
+    button: {
+      root: {
+        borderRadius: '8px',
+        paddingX: '16px',
+        paddingY: '8px',
+        gap: '8px',
+        label: { fontWeight: '600' },
+        sm: { fontSize: '13px', paddingX: '12px', paddingY: '5px' },
+      },
+    },
+    inputtext: { root: { borderRadius: '8px', paddingX: '12px', paddingY: '8px' } },
+    inputnumber: { root: { transitionDuration: '150ms' } },
+    select: {
+      root: { borderRadius: '8px', paddingX: '12px', paddingY: '8px' },
+      dropdown: { width: '40px' },
+      overlay: { borderRadius: '8px', shadow: '0 12px 34px rgba(15, 23, 42, 0.16)' },
+      option: { borderRadius: '6px', padding: '9px 12px' },
+    },
+    multiselect: {
+      root: { borderRadius: '8px', paddingX: '12px', paddingY: '8px' },
+      dropdown: { width: '40px' },
+      overlay: { borderRadius: '8px', shadow: '0 12px 34px rgba(15, 23, 42, 0.16)' },
+      option: { borderRadius: '6px', padding: '9px 12px' },
+    },
+    datepicker: {
+      panel: { borderRadius: '12px', shadow: '0 12px 34px rgba(15, 23, 42, 0.16)' },
+    },
+    checkbox: { root: { borderRadius: '6px' } },
+    card: { root: { borderRadius: '12px', shadow: '0 1px 3px rgba(15, 23, 42, 0.06)' }, body: { padding: '20px' } },
+    datatable: {
+      headerCell: { background: '{surface.50}', padding: '12px 16px' },
+      bodyCell: { padding: '12px 16px' },
+      row: { hoverBackground: '{surface.50}', selectedBackground: '{primary.50}', selectedColor: '{primary.700}' },
+    },
+    dialog: {
+      root: { borderRadius: '12px', shadow: '0 18px 44px rgba(15, 23, 42, 0.20)' },
+      header: { padding: '20px 20px 12px' },
+      content: { padding: '0 20px 20px' },
+      footer: { padding: '0 20px 20px' },
+    },
+    drawer: {
+      root: { shadow: '0 18px 44px rgba(15, 23, 42, 0.20)' },
+      header: { padding: '16px' },
+      content: { padding: '0' },
+    },
+    menu: {
+      root: { borderRadius: '8px' },
+      list: { padding: '6px', gap: '2px' },
+      item: { borderRadius: '6px', padding: '9px 10px' },
+    },
+    popover: {
+      root: { borderRadius: '8px', shadow: '0 12px 34px rgba(15, 23, 42, 0.16)' },
+      content: { padding: '8px 12px' },
+    },
+    tooltip: { root: { maxWidth: '18rem', padding: '6px 10px', borderRadius: '8px' } },
+    toast: { root: { width: 'min(25rem, calc(100vw - 2rem))' }, content: { padding: '12px 14px' } },
+    confirmdialog: { content: { gap: '12px' } },
+    paginator: { root: { padding: '8px', gap: '4px' }, navButton: { borderRadius: '8px' } },
+    skeleton: { root: { borderRadius: '8px' } },
+    message: {
+      root: { borderRadius: '8px', borderWidth: '1px' },
+      content: { padding: '11px 14px', gap: '8px' },
+      text: { fontSize: '14px', fontWeight: '400' },
+      colorScheme: {
+        light: {
+          info: { background: 'var(--sher-info-bg)', borderColor: 'var(--sher-info-line)', color: 'var(--sher-info)' },
+          success: { background: 'var(--sher-ok-bg)', borderColor: 'var(--sher-ok-line)', color: 'var(--sher-ok)' },
+          warn: { background: 'var(--sher-warn-bg)', borderColor: 'var(--sher-warn-line)', color: 'var(--sher-warn)' },
+          error: { background: 'var(--sher-bad-bg)', borderColor: 'var(--sher-bad-line)', color: 'var(--sher-bad)' },
+        },
+        dark: {
+          info: { background: 'var(--sher-info-bg)', borderColor: 'var(--sher-info-line)', color: 'var(--sher-info)' },
+          success: { background: 'var(--sher-ok-bg)', borderColor: 'var(--sher-ok-line)', color: 'var(--sher-ok)' },
+          warn: { background: 'var(--sher-warn-bg)', borderColor: 'var(--sher-warn-line)', color: 'var(--sher-warn)' },
+          error: { background: 'var(--sher-bad-bg)', borderColor: 'var(--sher-bad-line)', color: 'var(--sher-bad)' },
+        },
+      },
+    },
+    tag: {
+      root: { borderRadius: '999px', padding: '3px 8px', fontSize: '12px', fontWeight: '600' },
+      colorScheme: {
+        light: {
+          success: { background: 'var(--sher-ok-bg)', color: 'var(--sher-ok)' },
+          info: { background: 'var(--sher-info-bg)', color: 'var(--sher-info)' },
+          warn: { background: 'var(--sher-warn-bg)', color: 'var(--sher-warn)' },
+          danger: { background: 'var(--sher-bad-bg)', color: 'var(--sher-bad)' },
+        },
+        dark: {
+          success: { background: 'var(--sher-ok-bg)', color: 'var(--sher-ok)' },
+          info: { background: 'var(--sher-info-bg)', color: 'var(--sher-info)' },
+          warn: { background: 'var(--sher-warn-bg)', color: 'var(--sher-warn)' },
+          danger: { background: 'var(--sher-bad-bg)', color: 'var(--sher-bad)' },
+        },
+      },
+    },
+    badge: {
+      root: { borderRadius: '999px', fontSize: '11px', fontWeight: '700' },
+      colorScheme: {
+        light: {
+          success: { background: 'var(--sher-ok-bg)', color: 'var(--sher-ok)' },
+          info: { background: 'var(--sher-info-bg)', color: 'var(--sher-info)' },
+          warn: { background: 'var(--sher-warn-bg)', color: 'var(--sher-warn)' },
+          danger: { background: 'var(--sher-bad-bg)', color: 'var(--sher-bad)' },
+        },
+        dark: {
+          success: { background: 'var(--sher-ok-bg)', color: 'var(--sher-ok)' },
+          info: { background: 'var(--sher-info-bg)', color: 'var(--sher-info)' },
+          warn: { background: 'var(--sher-warn-bg)', color: 'var(--sher-warn)' },
+          danger: { background: 'var(--sher-bad-bg)', color: 'var(--sher-bad)' },
         },
       },
     },

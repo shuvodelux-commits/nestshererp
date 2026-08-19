@@ -23,6 +23,7 @@ const push = vi.fn();
 
 const FEET = '01UNITFEETAAAAAAAAAAAAAAAA';
 const PIPE = '01UNITPIPEAAAAAAAAAAAAAAAA';
+const mountedWrappers: { unmount: () => void }[] = [];
 
 vi.mock('../src/api/products', () => ({
   createProduct: (token: string, payload: unknown, key: string) => create(token, payload, key),
@@ -76,19 +77,40 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount();
+  document.body.replaceChildren();
   useSession().clear();
 });
 
 async function mountForm() {
-  const wrapper = mount(ProductFormPage);
+  const host = document.createElement('div');
+  document.body.append(host);
+  const wrapper = mount(ProductFormPage, { attachTo: host });
+  mountedWrappers.push(wrapper);
   await flushPromises();
   return wrapper;
+}
+
+async function choose(
+  wrapper: Awaited<ReturnType<typeof mountForm>>,
+  fieldId: string,
+  label: string,
+): Promise<void> {
+  const field = wrapper.find(`#${fieldId}`);
+  await field.trigger('click');
+  const listId = field.attributes('aria-controls');
+  const list = listId === undefined ? null : document.getElementById(listId);
+  const option = [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].find(
+    (item) => item.textContent === label,
+  );
+  if (option === undefined) throw new Error(`Missing ${label} option for ${fieldId}`);
+  option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 }
 
 /** Fills in the mandatory §5.5 set with Feet as the base unit. */
 async function fillBasics(wrapper: Awaited<ReturnType<typeof mountForm>>) {
   await wrapper.find('#product-name').setValue('PVC pipe 1 inch');
-  await wrapper.find('#product-unit').setValue(FEET);
+  await choose(wrapper, 'product-unit', 'Feet');
   await wrapper.find('#purchase-price').setValue('4.00');
   await wrapper.find('#selling-price').setValue('5.25');
 }
@@ -97,7 +119,7 @@ async function enableConversion(wrapper: Awaited<ReturnType<typeof mountForm>>) 
   // The second unit is opt-in: the conversion controls do not exist until the
   // shopkeeper says the product is bought or sold another way.
   await wrapper.find('#has-second-unit').setValue(true);
-  await wrapper.find('#conversion-unit').setValue(PIPE);
+  await choose(wrapper, 'conversion-unit', 'Pipe');
   await wrapper.find('#conversion-factor').setValue('20');
   await flushPromises();
 }
@@ -203,7 +225,7 @@ describe('a product with a second unit (D-41)', () => {
     const wrapper = await mountForm();
     await fillBasics(wrapper);
     await wrapper.find('#has-second-unit').setValue(true);
-    await wrapper.find('#conversion-unit').setValue(PIPE);
+    await choose(wrapper, 'conversion-unit', 'Pipe');
     await flushPromises();
 
     await wrapper.find('form').trigger('submit');
@@ -242,7 +264,7 @@ describe('the first block of the product form', () => {
     // thing, not part of filing it.
     const wrapper = await mountForm();
 
-    const ids = wrapper.findAll('select').map((select) => select.attributes('id'));
+    const ids = wrapper.findAll('[role="combobox"]').map((select) => select.attributes('id'));
     expect(ids.indexOf('product-brand')).toBeLessThan(ids.indexOf('product-category'));
   });
 

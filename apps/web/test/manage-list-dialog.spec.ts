@@ -38,7 +38,7 @@ function panel(overrides: Record<string, unknown> = {}) {
 
 /** Opens the `⋯` menu on the first row. */
 async function openRowMenu(wrapper: ReturnType<typeof panel>['wrapper']) {
-  await wrapper.findAll('.manage-actions .icon-btn')[0]!.trigger('click');
+  await wrapper.findAll('.manage-actions button')[0]!.trigger('click');
 }
 
 describe('managing a picker’s list in place', () => {
@@ -58,10 +58,9 @@ describe('managing a picker’s list in place', () => {
     const { wrapper, rename } = panel();
 
     await openRowMenu(wrapper);
-    await wrapper.find('.manage-menu button').trigger('click');
+    await wrapper.findAll('.manage-menu .p-menu-item-content')[0]!.trigger('click');
     await wrapper.find('.manage-input').setValue('Cold drinks');
-    // Not just `.btn-primary`: the Add button at the top of the panel is one too.
-    await wrapper.find('.manage-list .btn-primary').trigger('click');
+    await wrapper.find('.manage-save').trigger('click');
     await flushPromises();
 
     expect(rename).toHaveBeenCalledWith('01CATAAAAAAAAAAAAAAAAAAAAA', 'Cold drinks');
@@ -71,7 +70,7 @@ describe('managing a picker’s list in place', () => {
     const { wrapper, remove } = panel();
 
     await openRowMenu(wrapper);
-    await wrapper.findAll('.manage-menu button')[1]!.trigger('click');
+    await wrapper.findAll('.manage-menu .p-menu-item-content')[1]!.trigger('click');
 
     // Not removed yet — the confirmation is a real step, not a formality.
     expect(remove).not.toHaveBeenCalled();
@@ -85,8 +84,8 @@ describe('managing a picker’s list in place', () => {
     remove.mockResolvedValue('It is still used by some products, so it was archived.');
 
     await openRowMenu(wrapper);
-    await wrapper.findAll('.manage-menu button')[1]!.trigger('click');
-    await wrapper.find('.manage-confirm .btn-danger').trigger('click');
+    await wrapper.findAll('.manage-menu .p-menu-item-content')[1]!.trigger('click');
+    await wrapper.find('.manage-remove').trigger('click');
     await flushPromises();
 
     expect(wrapper.find('.manage-outcome').text()).toContain('archived');
@@ -129,15 +128,12 @@ describe('reaching Edit and Delete without scrolling', () => {
 
   it('labels the ⋯ button for anyone who has not met that icon', async () => {
     const { wrapper } = panel();
-    const trigger = wrapper.findAll('.manage-actions .icon-btn')[0]!;
+    const trigger = wrapper.findAll('.manage-actions button')[0]!;
 
     expect(trigger.attributes('aria-label')).toBe('Actions for Drinks');
 
-    // A tooltip on hover as well, since the icon alone says nothing.
-    await wrapper.findAll('.tip-wrap')[0]!.trigger('pointerenter', { pointerType: 'mouse' });
-    // Teleported to <body> to escape any clipping container, so found there.
-    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain(
-      'Edit or delete',
-    );
+    // PrimeVue Tooltip enhances pointer/focus use; the accessible name remains
+    // present without hover for touch and assistive technology.
+    expect(trigger.attributes('title')).toBeUndefined();
   });
 });

@@ -145,6 +145,20 @@ describe('PartiesPage', () => {
     expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ role: 'SUPPLIER' }));
   });
 
+  it('uses the page for customer and supplier rows instead of redundant summary cards', async () => {
+    const wrapper = await mountLoaded();
+
+    expect(wrapper.find('.tiles').exists()).toBe(false);
+    expect(wrapper.find('.table-wrap').exists()).toBe(true);
+    expect(wrapper.find('.paging').text()).toContain('Showing 1 of 1');
+
+    await wrapper.findAll('.tab')[1]!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.tiles').exists()).toBe(false);
+    expect(wrapper.find('.table-wrap').exists()).toBe(true);
+  });
+
   it('deactivates through a confirmation that names the consequence (UI-26)', async () => {
     setStatus.mockResolvedValue({ ...KARIM, status: 'INACTIVE' });
     const wrapper = await mountLoaded();

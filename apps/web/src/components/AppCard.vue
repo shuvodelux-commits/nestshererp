@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from 'primevue/button';
 import { ref } from 'vue';
 
 /**
@@ -71,20 +72,17 @@ function toggle(): void {
           "More"/"Hide" says what will happen; an arrow alone assumes the reader
           already knows this pattern, which is the assumption this app cannot make.
         -->
-        <button
+        <Button
           v-if="collapsible"
-          type="button"
           class="fold"
+          :label="open || forceOpen === true ? 'Hide' : 'More'"
+          :icon="open || forceOpen === true ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+          icon-pos="right"
+          severity="secondary"
+          outlined
           :aria-expanded="open || forceOpen === true"
           @click="toggle"
-        >
-          <span>{{ open || forceOpen === true ? 'Hide' : 'More' }}</span>
-          <i
-            class="pi"
-            :class="open || forceOpen === true ? 'pi-chevron-up' : 'pi-chevron-down'"
-            aria-hidden="true"
-          />
-        </button>
+        />
       </div>
     </header>
     <div v-show="!collapsible || open || forceOpen === true">
@@ -177,27 +175,6 @@ h2 {
  * the top-right where a thumb reaches least comfortably.
  */
 .fold {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sher-space-1);
-  min-height: 44px;
-  padding: 0 var(--sher-space-3);
-  background: none;
-  border: 1px solid var(--sher-line);
-  border-radius: var(--sher-radius);
-  color: var(--sher-text-muted);
-  font-size: var(--sher-text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.fold:hover {
-  color: var(--sher-primary);
-  border-color: var(--sher-primary);
-}
-
-.fold:focus-visible {
-  outline: 2px solid var(--sher-primary);
-  outline-offset: 2px;
+  min-height: var(--sher-tap);
 }
 </style>
