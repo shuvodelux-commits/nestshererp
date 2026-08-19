@@ -337,14 +337,19 @@ describe('permissions (R-E8)', () => {
     expect(asOwner.body.data.businessName).toBe('Karim Traders');
     expect(asOwner.body.data.permissions).toContain('user.account.create');
 
-    // A cashier holds none of them, which is exactly what the sidebar needs to
-    // know in order not to offer Users at all.
+    // A cashier holds none of the user-administration permissions, which is
+    // exactly what the sidebar needs to know in order not to offer Users at
+    // all — but does hold the counter-work permissions (§5.6: finding a
+    // product and saving a customer at the till).
     const asCashier = await request(app.getHttpServer())
       .get('/api/v1/me')
       .set('Authorization', `Bearer ${cashierToken}`);
     expect(asCashier.status).toBe(200);
     expect(asCashier.body.data.user.roleName).toBe('Cashier');
-    expect(asCashier.body.data.permissions).toEqual([]);
+    expect(asCashier.body.data.permissions).not.toContain('user.account.create');
+    expect([...asCashier.body.data.permissions].sort()).toEqual(
+      ['catalog.product.view', 'party.customer.create', 'party.customer.edit', 'party.customer.view'].sort(),
+    );
   });
 
   it('refuses to describe a caller with no token', async () => {

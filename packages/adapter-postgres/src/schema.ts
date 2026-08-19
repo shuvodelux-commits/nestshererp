@@ -279,3 +279,178 @@ export const settings = pgTable(
     keyUnique: unique('settings_tenant_key_unique').on(table.tenantId, table.settingKey),
   }),
 );
+
+/**
+ * Class A — units of measure (D-10), migration 0007.
+ *
+ * Unique per tenant on `lower(name)`, which Drizzle cannot express; that
+ * constraint lives in the migration, and this mirror exists for queries. The
+ * same is true of `brands` and `categories` below.
+ */
+export const units = pgTable('units', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class A — brands (§5.5, migration 0007). */
+export const brands = pgTable('brands', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/**
+ * Class A — categories and their subcategories in one self-referencing table
+ * (§5.5, migration 0007). `parentId IS NULL` is a top-level category; exactly
+ * two levels exist, enforced in the use case where the refusal can be explained.
+ */
+/**
+ * Class A — products (§5.5, migration 0008).
+ *
+ * Master data, so no `business_date`, no `status` transitions in the Class B
+ * sense, and none of the R-C9 reserved transaction columns (§3.9). Money is
+ * `bigint` minor units at scale 2; `minStockQty` is a scale-3 quantity.
+ */
+export const products = pgTable('products', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  baseUnitId: char('base_unit_id', { length: 26 }).notNull(),
+  purchasePriceMinor: bigint('purchase_price_minor', { mode: 'number' }).notNull(),
+  sellingPriceMinor: bigint('selling_price_minor', { mode: 'number' }).notNull(),
+  minStockQty: bigint('min_stock_qty', { mode: 'number' }).notNull(),
+  brandId: char('brand_id', { length: 26 }),
+  categoryId: char('category_id', { length: 26 }),
+  sku: text('sku'),
+  barcode: text('barcode'),
+  description: text('description'),
+  status: text('status').notNull(),
+  defaultDiscountType: text('default_discount_type'),
+  defaultDiscountValue: bigint('default_discount_value', { mode: 'number' }),
+  offerEnabled: boolean('offer_enabled').notNull(),
+  offerPriceMinor: bigint('offer_price_minor', { mode: 'number' }),
+  offerStartAt: timestamp('offer_start_at', { withTimezone: true }),
+  offerEndAt: timestamp('offer_end_at', { withTimezone: true }),
+  tracksExpiry: boolean('tracks_expiry').notNull(),
+  tracksSerial: boolean('tracks_serial').notNull(),
+  // One optional conversion unit and its factor (D-41, migration 0010). Both or
+  // neither — the CHECK constraint in the migration enforces the pair.
+  conversionUnitId: char('conversion_unit_id', { length: 26 }),
+  conversionFactorQty: bigint('conversion_factor_qty', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/**
+ * Class A — per-product unit conversions (D-10, migration 0008). `factorQty` is
+ * how many base units one of `unitId` contains, as a scale-3 integer: 1 Carton =
+ * 24 Pieces is 24000.
+ */
+export const productUnitConversions = pgTable('product_unit_conversions', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  unitId: char('unit_id', { length: 26 }).notNull(),
+  factorQty: bigint('factor_qty', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const categories = pgTable('categories', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  parentId: char('parent_id', { length: 26 }),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class A — customer groups (§5.6, migration 0009). */
+export const customerGroups = pgTable('customer_groups', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/**
+ * Class A — parties (§5.6, D-02, D-04, migration 0009).
+ *
+ * `customerPhoneKey` is the column D-02's partial unique index is built on. It
+ * is derived from the roles and the phone in the same statement that writes
+ * them; nothing reads it to decide what a party is.
+ */
+export const parties = pgTable('parties', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  phone: text('phone'),
+  address: text('address'),
+  guardianName: text('guardian_name'),
+  nid: text('nid'),
+  email: text('email'),
+  notes: text('notes'),
+  customerGroupId: char('customer_group_id', { length: 26 }),
+  creditLimitMinor: bigint('credit_limit_minor', { mode: 'number' }),
+  status: text('status').notNull(),
+  isSystemReserved: boolean('is_system_reserved').notNull(),
+  customerPhoneKey: text('customer_phone_key'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class A — D-04's role flags as rows (§5.6, migration 0009). */
+export const partyRoles = pgTable('party_roles', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  partyId: char('party_id', { length: 26 }).notNull(),
+  role: text('role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});

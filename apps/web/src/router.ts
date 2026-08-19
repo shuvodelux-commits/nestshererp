@@ -3,7 +3,12 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useSession } from './auth/session';
 import { GOOGLE_REDIRECT_PATH } from './auth/google';
 import AuditPage from './pages/AuditPage.vue';
+import CatalogPage from './pages/CatalogPage.vue';
 import DashboardPage from './pages/DashboardPage.vue';
+import ProductFormPage from './pages/ProductFormPage.vue';
+import PartiesPage from './pages/PartiesPage.vue';
+import PartyFormPage from './pages/PartyFormPage.vue';
+import ProductsPage from './pages/ProductsPage.vue';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.vue';
 import GoogleCallbackPage from './pages/GoogleCallbackPage.vue';
 import LoginPage from './pages/LoginPage.vue';
@@ -37,6 +42,15 @@ const router = createRouter({
     { path: '/users', name: 'users', component: UsersPage },
     { path: '/roles', name: 'roles', component: RolesPage },
     { path: '/audit', name: 'audit', component: AuditPage },
+    { path: '/catalog', name: 'catalog', component: CatalogPage },
+    { path: '/products', name: 'products', component: ProductsPage },
+    // 'new' and an id share one component: adding and editing a product are the
+    // same form, and a second one would be the same fields written twice.
+    { path: '/products/:id', name: 'product', component: ProductFormPage },
+    { path: '/parties', name: 'parties', component: PartiesPage },
+    // 'new' and an id share one component: adding and editing a party are the
+    // same form, and a second one would be the same fields written twice.
+    { path: '/parties/:id', name: 'party', component: PartyFormPage },
     { path: '/settings', name: 'settings', component: SettingsPage },
     { path: '/settings/security', name: 'settings-security', component: SettingsSecurityPage },
   ],

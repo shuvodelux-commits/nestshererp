@@ -1,0 +1,201 @@
+import { z } from 'zod';
+
+/**
+ * Parties (Phase 2, path 2.3, §5.6, D-02, D-04).
+ *
+ * One identity with roles. A response says which roles a party holds rather than
+ * which table it came from, because there is one table — selling to a supplier
+ * has to be possible without inventing a second record for the same person.
+ *
+ * Money crosses the wire as **integer minor units** with a `Minor` suffix
+ * (§5.26). `creditLimitMinor` is poisha; `null` means no limit, which is not the
+ * same as a limit of zero.
+ */
+const ULID = z.string().length(26);
+
+export const partyRoleSchema = z.union([
+  z.literal('CUSTOMER'),
+  z.literal('SUPPLIER'),
+  z.literal('VENDOR'),
+]);
+export type PartyRoleValue = z.infer<typeof partyRoleSchema>;
+
+export const partyStatusSchema = z.union([z.literal('ACTIVE'), z.literal('INACTIVE')]);
+export type PartyStatusValue = z.infer<typeof partyStatusSchema>;
+
+export const partyResponseSchema = z
+  .object({
+    id: ULID,
+    name: z.string(),
+    /** D-04's role flags. At least one, and the order is fixed for the screen. */
+    roles: z.array(partyRoleSchema),
+    phone: z.string().nullable(),
+    address: z.string().nullable(),
+    guardianName: z.string().nullable(),
+    nid: z.string().nullable(),
+    email: z.string().nullable(),
+    notes: z.string().nullable(),
+    customerGroupId: ULID.nullable(),
+    customerGroupName: z.string().nullable(),
+    creditLimitMinor: z.number().int().nullable(),
+    status: partyStatusSchema,
+    /**
+     * D-02's walk-in party. The screen shows it as what it is and offers no
+     * edit, deactivate or delete — the server refuses all three regardless.
+     */
+    isSystemReserved: z.boolean(),
+    /** Optimistic lock (D-32). Sent back on edit; a stale one is a 409. */
+    version: z.number().int(),
+  })
+  .strict();
+
+export type PartyResponse = z.infer<typeof partyResponseSchema>;
+
+/**
+ * Counts for the summary tiles, from the same query as the rows, so a tile can
+ * never disagree with the table under it (§2.7.I).
+ */
+export const partySummarySchema = z
+  .object({
+    total: z.number().int(),
+    active: z.number().int(),
+    inactive: z.number().int(),
+    /** Customers with no group yet, while customer groups are switched on. */
+    ungrouped: z.number().int(),
+  })
+  .strict();
+
+export type PartySummary = z.infer<typeof partySummarySchema>;
+
+export const partyListResponseSchema = z
+  .object({
+    data: z.array(partyResponseSchema),
+    page: z.object({ nextCursor: z.string().nullable(), hasMore: z.boolean() }).strict(),
+    summary: partySummarySchema,
+  })
+  .strict();
+
+/**
+ * List filters (§5.6, §5.0's "search · filter · sort").
+ *
+ * `role` is the tab the shopkeeper is on — Customers, Suppliers or Vendors —
+ * and it is **required**, because §5.6 is explicit that party selection never
+ * shows every party type by default. `search` covers name and phone, which is
+ * what someone types at a counter.
+ */
+export const partyQuerySchema = z
+  .object({
+    role: partyRoleSchema,
+    search: z.string().trim().max(120).optional(),
+    groupId: ULID.optional(),
+    status: partyStatusSchema.optional(),
+    /** Keyset cursor: the id of the last row of the previous page (§3.9). */
+    cursor: ULID.optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+export type PartyQuery = z.infer<typeof partyQuerySchema>;
+
+/**
+ * §5.6's field set. Name and at least one role are always required; a phone is
+ * required only when CUSTOMER is among the roles (D-02). Everything else is
+ * optional, and G2.2 forbids making an optional field mandatory because a column
+ * exists.
+ *
+ * Opening receivable/payable is **not** here. §5.0 requires opening balances and
+ * §5.6 imports them, but a balance is the sum of journal lines (INV-06) — the
+ * opening entry goes through the posting service in Phase 4, exactly as opening
+ * stock goes through Phase 3's. A number typed here would be a balance with no
+ * journal behind it.
+ */
+export const savePartyRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    roles: z.array(partyRoleSchema).min(1).max(3),
+    phone: z.string().trim().max(30).nullable(),
+    address: z.string().trim().max(500).nullable(),
+    guardianName: z.string().trim().max(200).nullable(),
+    nid: z.string().trim().max(60).nullable(),
+    email: z.string().trim().max(200).nullable(),
+    notes: z.string().trim().max(2000).nullable(),
+    customerGroupId: ULID.nullable(),
+    creditLimitMinor: z.number().int().min(0).nullable(),
+  })
+  .strict();
+
+export type SavePartyRequest = z.infer<typeof savePartyRequestSchema>;
+
+export const updatePartyRequestSchema = savePartyRequestSchema
+  .extend({ version: z.number().int().positive() })
+  .strict();
+
+export type UpdatePartyRequest = z.infer<typeof updatePartyRequestSchema>;
+
+/**
+ * Activate/deactivate is its own action endpoint (§5.26), not a PATCH on a
+ * status field: it decides whether the party appears in every new sale or
+ * purchase from that moment.
+ */
+export const setPartyStatusRequestSchema = z.object({ status: partyStatusSchema }).strict();
+export type SetPartyStatusRequest = z.infer<typeof setPartyStatusRequestSchema>;
+
+/** One customer group (§5.6). */
+export const customerGroupResponseSchema = z.object({ id: ULID, name: z.string() }).strict();
+export type CustomerGroupResponse = z.infer<typeof customerGroupResponseSchema>;
+
+export const saveCustomerGroupRequestSchema = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict();
+
+export type SaveCustomerGroupRequest = z.infer<typeof saveCustomerGroupRequestSchema>;
+
+/**
+ * Which of §5.21's optional customer fields the shop asks for.
+ *
+ * §5.6: "Settings may hide/disable optional fields such as NID and
+ * Father/Guardian Name from normal forms while preserving stored historical
+ * data." The form reads this instead of `/settings`, because a cashier who may
+ * add a customer has no business holding `settings.setting.view` — and a form
+ * that 403s while loading is not a form (UI-09).
+ */
+export const partyFieldVisibilitySchema = z
+  .object({
+    address: z.boolean(),
+    guardianName: z.boolean(),
+    nid: z.boolean(),
+    email: z.boolean(),
+    notes: z.boolean(),
+  })
+  .strict();
+
+export type PartyFieldVisibility = z.infer<typeof partyFieldVisibilitySchema>;
+
+/**
+ * Everything the parties screens need before they can draw: the groups, whether
+ * groups and vendors exist at all for this shop, and which optional fields to
+ * ask for. One call, because a half-loaded form is three chances to get it wrong.
+ */
+export const partySetupResponseSchema = z
+  .object({
+    groups: z.array(customerGroupResponseSchema),
+    features: z
+      .object({ customerGroups: z.boolean(), vendors: z.boolean() })
+      .strict(),
+    fields: partyFieldVisibilitySchema,
+  })
+  .strict();
+
+export type PartySetupResponse = z.infer<typeof partySetupResponseSchema>;
+
+export type PartyListResponse = z.infer<typeof partyListResponseSchema>;
+
+/**
+ * D-02's walk-in customer, seeded with every business.
+ *
+ * "The walk-in customer is one real, `system_reserved` party exempt from the
+ * constraint." One row, created with the tenant, because a fully paid guest sale
+ * in Phase 6 has to point at a real party — and a shop whose first sale creates
+ * it on the fly would have every sale racing to create it.
+ */
+export const WALK_IN_PARTY_NAME = 'Walk-in Customer';

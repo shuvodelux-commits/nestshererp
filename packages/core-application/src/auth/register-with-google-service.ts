@@ -4,6 +4,8 @@ import type { RegistrationResponse } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 
+import type { CatalogRepository } from '../catalog/catalog-repository';
+import type { PartyRepository } from '../parties/party-repository';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { GoogleVerifier } from '../ports/google-verifier';
 import type { TenantContext } from '../ports/tenant-context';
@@ -59,6 +61,8 @@ export class RegisterWithGoogleService {
     private readonly roles: RoleRepository,
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
+    private readonly catalog: CatalogRepository,
+    private readonly parties: PartyRepository,
     private readonly tokens: TokenIssuer,
     private readonly audit: AuditWriter,
     private readonly clock: Clock,
@@ -101,6 +105,8 @@ export class RegisterWithGoogleService {
           users: this.users,
           identifiers: this.identifiers,
           sessions: this.sessions,
+          catalog: this.catalog,
+          parties: this.parties,
           tokens: this.tokens,
           audit: this.audit,
           clock: this.clock,

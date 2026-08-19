@@ -25,3 +25,6 @@ export {
   PostgresSettingsRepository,
 } from './settings-repository';
 export { PostgresAuditQueryRepository } from './audit-query-repository';
+export { PostgresCatalogRepository } from './catalog-repository';
+export { PostgresProductRepository } from './product-repository';
+export { PostgresPartyRepository } from './party-repository';

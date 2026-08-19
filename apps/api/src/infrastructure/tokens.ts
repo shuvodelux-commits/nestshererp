@@ -25,3 +25,6 @@ export const SETTINGS_REPOSITORY = Symbol('SettingsRepository');
 export const BUSINESS_PROFILE_REPOSITORY = Symbol('BusinessProfileRepository');
 export const AUDIT_QUERY_REPOSITORY = Symbol('AuditQueryRepository');
 export const ENTITLEMENT_PROVIDER = Symbol('EntitlementProvider');
+export const CATALOG_REPOSITORY = Symbol('CatalogRepository');
+export const PRODUCT_REPOSITORY = Symbol('ProductRepository');
+export const PARTY_REPOSITORY = Symbol('PartyRepository');

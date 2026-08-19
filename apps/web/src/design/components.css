@@ -137,8 +137,26 @@
   color: var(--sher-text);
 }
 
+/*
+ * The Bangla name of the field, **beside** the English label rather than under
+ * it (UI-15…UI-17).
+ *
+ * Under the control it reads as a second helper line, and a form built that way
+ * grows a Bangla column nobody scans. On the label line it is what it actually
+ * is: the same field, said the way the shopkeeper says it. Secondary weight and
+ * colour, because the English label is still the name of the field.
+ */
+.label-bn {
+  margin-left: 6px;
+  font-family: var(--sher-font-bn);
+  font-size: var(--sher-text-xs);
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
 .field input,
-.field select {
+.field select,
+.field textarea {
   height: var(--sher-control-h);
   padding: 0 12px;
   border: 1px solid var(--sher-line-strong);
@@ -153,21 +171,34 @@
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--sher-primary);
   box-shadow: 0 0 0 3px var(--sher-primary-soft);
 }
 
 .field input:disabled,
-.field select:disabled {
+.field select:disabled,
+.field textarea:disabled {
   background: var(--sher-sunken);
   color: var(--sher-text-muted);
   cursor: not-allowed;
 }
 
-.field input::placeholder {
+.field input::placeholder,
+.field textarea::placeholder {
   color: var(--sher-text-muted);
+}
+
+/* A textarea grows with what is typed into it, so it takes the shared border,
+   focus ring and disabled state above, but none of the fixed control height. */
+.field textarea {
+  height: auto;
+  min-height: 68px;
+  padding: 10px 12px;
+  line-height: 1.55;
+  resize: vertical;
 }
 
 /* The one-line explanation under a control. English; the Bangla sibling is
@@ -323,6 +354,69 @@
   font-size: var(--sher-text-2xs);
   letter-spacing: 0.04em;
   color: var(--sher-bad);
+}
+
+/* ---------------------------------------------------------------- callouts */
+
+/*
+ * A worked example, or a reassurance, sitting inside a card beneath the fields
+ * it explains.
+ *
+ * Not a `.notice`: that one reports the result of an action and is one line by
+ * design. This is part of what the form teaches — "5 Pipe + 5 Feet = 105 Feet"
+ * — so it keeps an icon column and wraps to as many lines as the explanation
+ * needs, in both languages (UI-15).
+ */
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sher-space-3);
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: var(--sher-radius);
+  font-size: var(--sher-text-sm);
+  line-height: 1.6;
+}
+
+.callout-icon {
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.callout-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.callout-title {
+  font-weight: 600;
+}
+
+.callout p {
+  margin: 0;
+}
+
+.callout.is-warn {
+  background: var(--sher-warn-bg);
+  border-color: var(--sher-warn-line);
+  color: var(--sher-text);
+}
+
+.callout.is-warn .callout-icon {
+  color: var(--sher-warn);
+}
+
+.callout.is-info {
+  background: var(--sher-info-bg);
+  border-color: var(--sher-info-line);
+  color: var(--sher-text);
+}
+
+.callout.is-info .callout-icon {
+  color: var(--sher-info);
 }
 
 /* Small print: a consequence, a caveat, or what a caller may not do. */

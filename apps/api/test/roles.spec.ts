@@ -185,7 +185,8 @@ describe('changing what a role may do', () => {
     const owner = await registerOwner();
     const roles = await rolesByCode(owner.accessToken);
     const manager = roles['MANAGER']!;
-    expect(manager.permissions).toEqual(['user.account.view']);
+    // Whatever the seed grants this role, it starts with the one under test.
+    expect(manager.permissions).toContain('user.account.view');
 
     const saved = await editRole(owner.accessToken, manager.id, {
       name: 'Manager',
@@ -219,7 +220,8 @@ describe('changing what a role may do', () => {
     // Unique on (tenant, role, code): the revoked row was revived, not doubled.
     const rows = await inTenant(
       owner.tenantId,
-      `SELECT permission_code FROM role_permissions WHERE role_id = '${manager.id}'`,
+      `SELECT permission_code FROM role_permissions
+        WHERE role_id = '${manager.id}' AND permission_code = 'user.account.view'`,
     );
     expect(rows.rowCount).toBe(1);
   });
@@ -270,7 +272,7 @@ describe('changing what a role may do', () => {
     expect(wrong.status).toBe(401);
 
     const unchanged = await rolesByCode(owner.accessToken);
-    expect(unchanged['CASHIER']?.permissions).toEqual([]);
+    expect(unchanged['CASHIER']?.permissions).toEqual(cashier.permissions);
   });
 
   it('records it as a re-privilege, naming what changed', async () => {

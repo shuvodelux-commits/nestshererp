@@ -13,3 +13,44 @@ export { isExpired, OTP_LENGTH, OTP_MAX_ATTEMPTS, OTP_TTL_SECONDS, rejectionFor 
 export type { OtpPurpose, OtpRejection, OtpState } from './auth/otp';
 export { licenseAllowsWrites, licenseStateAt } from './licensing/license-state';
 export type { LicenseState, LicenseTerm } from './licensing/license-state';
+export {
+  CATALOG_NAME_MAX_LENGTH,
+  catalogNameKey,
+  isValidCatalogName,
+  normalizeCatalogName,
+} from './catalog/catalog-name';
+export {
+  CONVERSION_FACTOR_SCALE,
+  isValidConversionFactor,
+  pricePerBaseUnit,
+  pricePerConversionUnit,
+  rejectConversion,
+  splitToMixed,
+  toBaseQty,
+} from './catalog/unit-conversion';
+export type { ConversionRejection, MixedQty, UnitConversion } from './catalog/unit-conversion';
+export {
+  blankToNull,
+  displayNameOf,
+  offerAppliesAt,
+  ONE_HUNDRED_PERCENT,
+  PERCENT_SCALE,
+  rejectPricing,
+} from './catalog/product';
+export type {
+  DiscountType,
+  PricingRejection,
+  ProductPricing,
+  ProductStatus,
+} from './catalog/product';
+export {
+  customerPhoneKey,
+  isPhoneShaped,
+  normalizePartyName,
+  normalizePhone,
+  PARTY_NAME_MAX_LENGTH,
+  PARTY_PHONE_MAX_LENGTH,
+  PARTY_ROLES,
+  rejectParty,
+} from './parties/party';
+export type { PartyDraft, PartyRejection, PartyRole, PartyStatus } from './parties/party';

@@ -1,8 +1,15 @@
-import { OWNER_ROLE_CODE, SEED_ROLES } from '@sher/core-contracts';
+import {
+  OWNER_ROLE_CODE,
+  SEED_ROLES,
+  SEED_UNITS,
+  WALK_IN_PARTY_NAME,
+} from '@sher/core-contracts';
 import type { IdentifierChannel } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { addSeconds, Ulid } from '@sher/shared-utils';
 
+import type { CatalogRepository } from '../catalog/catalog-repository';
+import type { PartyRepository } from '../parties/party-repository';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { TenantContext } from '../ports/tenant-context';
 import type { TokenIssuer } from '../ports/token-issuer';
@@ -39,6 +46,8 @@ export interface ProvisionTenantDeps {
   readonly users: UserRepository;
   readonly identifiers: UserIdentifierRepository;
   readonly sessions: SessionRepository;
+  readonly catalog: CatalogRepository;
+  readonly parties: PartyRepository;
   readonly tokens: TokenIssuer;
   readonly audit: AuditWriter;
   readonly clock: Clock;
@@ -116,6 +125,38 @@ export async function provisionTenant(
     channel: command.channel,
     tenantId: ctx.tenantId,
     userId: ctx.userId,
+  });
+
+  // D-10's units of measure. A product's base unit is mandatory (§5.5), so a
+  // business created with an empty unit list is a business that cannot add its
+  // first product. They are ordinary rows from here on — renameable and
+  // removable like any other.
+  for (const name of SEED_UNITS) {
+    await deps.catalog.insertUnit(tx, ctx, { id: Ulid.generate(deps.clock), name });
+  }
+
+  /*
+   * D-02's walk-in customer: "one real, `system_reserved` party exempt from the
+   * constraint". Created with the business, because a fully paid guest sale in
+   * Phase 6 must point at a real party — and a shop whose first sale created it
+   * on the fly would have two tills racing to create it.
+   *
+   * No phone, which is exactly the exemption D-02 grants it, and no customer
+   * phone key, so it never occupies a number a real customer might use.
+   */
+  await deps.parties.insert(tx, ctx, {
+    id: Ulid.generate(deps.clock),
+    name: WALK_IN_PARTY_NAME,
+    roles: ['CUSTOMER'],
+    phone: null,
+    address: null,
+    guardianName: null,
+    nid: null,
+    email: null,
+    notes: null,
+    customerGroupId: null,
+    creditLimitMinor: null,
+    isSystemReserved: true,
   });
 
   await deps.audit.append(tx, ctx, {

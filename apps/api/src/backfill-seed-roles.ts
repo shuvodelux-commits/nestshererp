@@ -1,12 +1,18 @@
 import { createPool } from '@sher/adapter-postgres';
-import { SEED_ROLES } from '@sher/core-contracts';
+import { SEED_ROLES, SEED_UNITS, WALK_IN_PARTY_NAME } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 
 import { loadConfig } from './config';
 
 /**
- * `pnpm db:backfill`. Gives tenants created before slice 1.3 the seed roles and
- * permissions that slice now ships with every new one (§5.26).
+ * `pnpm db:backfill`. Gives every existing tenant whatever `provisionTenant` now
+ * ships with a new one but did not ship when they were created:
+ *
+ *   - the seed roles and their permissions (slice 1.3, §5.26) — including any
+ *     permission code a later module adds to a seed role, which is why this is
+ *     re-run after every module that defines one;
+ *   - the D-10 units of measure (Phase 2) — a tenant with no units cannot add a
+ *     product at all, because a base unit is mandatory (§5.5).
  *
  * **Why this is a script and not a migration.** The role set and its permissions
  * live in `SEED_ROLES`, and restating them in SQL would leave two definitions to
@@ -35,6 +41,8 @@ interface Backfilled {
   readonly tenants: number;
   readonly roles: number;
   readonly permissions: number;
+  readonly units: number;
+  readonly walkIns: number;
 }
 
 async function main(): Promise<void> {
@@ -42,8 +50,10 @@ async function main(): Promise<void> {
   try {
     const result = await backfill(pool);
     process.stdout.write(
-      `Backfilled ${String(result.roles)} role(s) and ${String(result.permissions)} ` +
-        `permission(s) across ${String(result.tenants)} tenant(s).\n`,
+      `Backfilled ${String(result.roles)} role(s), ${String(result.permissions)} ` +
+        `permission(s), ${String(result.units)} unit(s) and ` +
+        `${String(result.walkIns)} walk-in customer(s) across ` +
+        `${String(result.tenants)} tenant(s).\n`,
     );
   } finally {
     await pool.end();
@@ -54,6 +64,8 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
   const client = await pool.connect();
   let roles = 0;
   let permissions = 0;
+  let units = 0;
+  let walkIns = 0;
   let tenants = 0;
 
   try {
@@ -96,6 +108,17 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
           }
         }
       }
+      for (const unitName of SEED_UNITS) {
+        const added = await ensureUnit(client, tenantId, tenant.created_by.trim(), unitName);
+        if (added) {
+          units += 1;
+          touched = true;
+        }
+      }
+      if (await ensureWalkInParty(client, tenantId, tenant.created_by.trim())) {
+        walkIns += 1;
+        touched = true;
+      }
       if (touched) tenants += 1;
     }
 
@@ -107,7 +130,35 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
     client.release();
   }
 
-  return { tenants, roles, permissions };
+  return { tenants, roles, permissions, units, walkIns };
+}
+
+/**
+ * Adds a unit only if the tenant has none by that name, live or archived.
+ *
+ * `lower(name)` matches the unique index in migration 0007, and archived rows are
+ * included deliberately: a shop that removed "Pipe" on purpose should not have it
+ * put back by a repair script.
+ */
+async function ensureUnit(
+  client: { query: QueryFn },
+  tenantId: string,
+  actorId: string,
+  name: string,
+): Promise<boolean> {
+  const existing = await client.query<{ id: string }>(
+    'SELECT id FROM units WHERE tenant_id = $1 AND lower(name) = lower($2)',
+    [tenantId, name],
+  );
+  if (existing.rows[0] !== undefined) return false;
+
+  const now = clock.now();
+  await client.query(
+    `INSERT INTO units (id, tenant_id, name, created_at, updated_at, created_by, updated_by, version)
+     VALUES ($1, $2, $3, $4, $4, $5, $5, 1)`,
+    [Ulid.generate(clock), tenantId, name, now, actorId],
+  );
+  return true;
 }
 
 async function ensureRole(
@@ -162,3 +213,38 @@ type QueryFn = <T>(
 ) => Promise<{ rows: T[] }>;
 
 void main();
+
+/**
+ * D-02's walk-in customer, for a tenant created before path 2.3 existed.
+ *
+ * Matched on `is_system_reserved` rather than on the name: every fully paid
+ * counter sale from Phase 6 onward points at one of these, and a second one
+ * would split those sales in two.
+ */
+async function ensureWalkInParty(
+  client: { query: QueryFn },
+  tenantId: string,
+  actorId: string,
+): Promise<boolean> {
+  const existing = await client.query<{ id: string }>(
+    'SELECT id FROM parties WHERE tenant_id = $1 AND is_system_reserved = TRUE',
+    [tenantId],
+  );
+  if (existing.rows[0] !== undefined) return false;
+
+  const id = Ulid.generate(clock);
+  const now = clock.now();
+  await client.query(
+    `INSERT INTO parties (id, tenant_id, name, status, is_system_reserved,
+                          created_at, updated_at, created_by, updated_by, version)
+     VALUES ($1, $2, $3, 'ACTIVE', TRUE, $4, $4, $5, $5, 1)`,
+    [id, tenantId, WALK_IN_PARTY_NAME, now, actorId],
+  );
+  await client.query(
+    `INSERT INTO party_roles (id, tenant_id, party_id, role,
+                              created_at, updated_at, created_by, updated_by, version)
+     VALUES ($1, $2, $3, 'CUSTOMER', $4, $4, $5, $5, 1)`,
+    [Ulid.generate(clock), tenantId, id, now, actorId],
+  );
+  return true;
+}

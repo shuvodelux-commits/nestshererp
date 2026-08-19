@@ -6,7 +6,16 @@ import { sql } from 'drizzle-orm';
 import { txOf } from './unit-of-work';
 
 const SEQUENCE_WIDTH = 6;
-const DEFAULT_PREFIXES: Readonly<Record<string, string>> = { NOTE: 'NOTE' };
+/**
+ * The prefix a document type starts with when the tenant has not configured one
+ * (§3.7: "Prefixes configurable per tenant"). A type with no entry uses its own
+ * name, which is fine for a document number and wrong for a barcode label — hence
+ * `P` for a generated product barcode.
+ */
+const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
+  NOTE: 'NOTE',
+  PRODUCT_BARCODE: 'P',
+};
 
 /**
  * `{PREFIX}-{YYYY}-{NNNNNN}` (D-30, SRS 3.7).

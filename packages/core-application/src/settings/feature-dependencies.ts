@@ -128,6 +128,25 @@ export function effectiveValue(
   return values.get(descriptor.key) ?? descriptor.defaultValue;
 }
 
+/**
+ * Whether a feature toggle is on, defaults included.
+ *
+ * The one place any module asks "is this switched on for this shop", so the
+ * answer for an absent row is the shipped default everywhere and not just where
+ * someone remembered (§5.21).
+ */
+export function isFeatureOn(values: ReadonlyMap<string, string>, key: string): boolean {
+  const descriptor = BY_KEY.get(key);
+  return descriptor !== undefined && effectiveValue(descriptor, values) === TOGGLE_ON;
+}
+
+/** The stored rows as a lookup, for `isFeatureOn` and `effectiveValue`. */
+export function settingValuesOf(
+  stored: readonly { readonly key: string; readonly value: string }[],
+): Map<string, string> {
+  return new Map(stored.map((row) => [row.key, row.value]));
+}
+
 /** Every setting's value in force, defaults filled in. */
 export function effectiveSettings(values: ReadonlyMap<string, string>): Map<string, string> {
   const resolved = new Map<string, string>();

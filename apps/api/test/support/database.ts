@@ -9,6 +9,18 @@ const clock = new SystemClock();
 const TENANT_SCOPED_TABLES = [
   'notes',
   'settings',
+  // Phase 2 parties (path 2.3). Before `tenants`, and party_roles before
+  // parties, which it references.
+  'party_roles',
+  'parties',
+  'customer_groups',
+  // Phase 2 catalog. Listed before `tenants` like everything else here; the
+  // TRUNCATE is CASCADE, so the self-reference on `categories` is fine.
+  'product_unit_conversions',
+  'products',
+  'categories',
+  'brands',
+  'units',
   // Signup tables. Neither is RLS-scoped — an OTP is verified and an identifier
   // is resolved before a tenant exists — but both must still be truncated
   // between tests, and user_identifiers references users.

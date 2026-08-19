@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AuditModule } from './audit/audit.module';
+import { CatalogModule } from './catalog/catalog.module';
+import { PartiesModule } from './parties/parties.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
 import { ReadOnlyLicenseGuard } from './deployment/read-only.guard';
 import { TraceIdMiddleware } from './common/trace-id.middleware';
@@ -26,6 +28,8 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     SettingsModule,
     AuditModule,
+    CatalogModule,
+    PartiesModule,
   ],
   controllers: [HealthController],
   providers: [

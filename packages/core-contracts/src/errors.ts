@@ -37,6 +37,16 @@ export const ErrorCode = {
    * is destroyed, hidden or made un-exportable — but new business writes stop.
    */
   LICENSE_READ_ONLY: 'LICENSE_READ_ONLY',
+  /**
+   * §5.26's 403 for the **feature** step of `Plan → Feature → Setting →
+   * Permission → Access`: the caller may well hold the permission, but the shop
+   * has this feature switched off in Settings (§5.21).
+   *
+   * Distinguished from `PERMISSION_DENIED` because the two have different fixes —
+   * one is a role change, the other is a setting — and because the UI must not
+   * offer a control that would raise either (UI-09).
+   */
+  FEATURE_DISABLED: 'FEATURE_DISABLED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -60,6 +70,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   // 423 Locked (§5.26). Not 403: the caller has every permission they need,
   // and nothing about their account is wrong — the deployment is out of term.
   LICENSE_READ_ONLY: 423,
+  FEATURE_DISABLED: 403,
 };
 
 export function httpStatusFor(code: ErrorCode): number {

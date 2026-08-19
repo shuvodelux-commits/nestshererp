@@ -32,6 +32,14 @@ const { businessName } = session;
  */
 const items = [
   { label: 'Dashboard', icon: 'pi-home', to: '/dashboard', needs: null },
+  { label: 'Products', icon: 'pi-box', to: '/products', needs: 'catalog.product.view' },
+  { label: 'Catalog setup', icon: 'pi-sitemap', to: '/catalog', needs: 'catalog.product.view' },
+  {
+    label: 'Customers & Suppliers',
+    icon: 'pi-id-card',
+    to: '/parties',
+    needs: 'party.customer.view',
+  },
   { label: 'Users', icon: 'pi-users', to: '/users', needs: 'user.account.view' },
   { label: 'Roles & Permissions', icon: 'pi-shield', to: '/roles', needs: 'user.role.view' },
   { label: 'Settings', icon: 'pi-cog', to: '/settings', needs: 'settings.setting.view' },

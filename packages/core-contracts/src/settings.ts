@@ -208,7 +208,7 @@ export const SETTING_CATALOGUE: readonly SettingDescriptor[] = [
     requires: [],
     stepUp: false,
     consumedBy: 'Catalog',
-    inEffect: false,
+    inEffect: true,
   },
   {
     key: SettingKey.CUSTOMER_GROUPS_ENABLED,

@@ -2,7 +2,14 @@
 // no Node built-ins — enforced by `pnpm test:boundaries`.
 // Re-exported so apps/api reaches the domain through this layer rather than
 // importing core-domain directly (§2.1: api → application → domain).
-export { licenseAllowsWrites, licenseStateAt, OTP_LENGTH } from '@sher/core-domain';
+export {
+  catalogNameKey,
+  isValidCatalogName,
+  licenseAllowsWrites,
+  licenseStateAt,
+  normalizeCatalogName,
+  OTP_LENGTH,
+} from '@sher/core-domain';
 export type { IdentifierChannel, LicenseState, LicenseTerm, OtpPurpose } from '@sher/core-domain';
 
 export type { TenantContext } from './ports/tenant-context';
@@ -92,6 +99,8 @@ export type {
 export { GetMyAccessService } from './auth/get-my-access-service';
 export {
   cascadeOff,
+  isFeatureOn,
+  settingValuesOf,
   effectiveSettings,
   effectiveValue,
   isAllowedValue,
@@ -122,3 +131,59 @@ export type { ListAuditEventsCommand } from './audit/list-audit-events-service';
 export { RecordPermissionDenialService } from './audit/record-permission-denial-service';
 export type { RecordPermissionDenialCommand } from './audit/record-permission-denial-service';
 export type { Entitlement, EntitlementProvider } from './ports/entitlement-provider';
+export type {
+  CatalogEntry,
+  CatalogRepository,
+  CategoryEntry,
+} from './catalog/catalog-repository';
+export { ManageCatalogService } from './catalog/manage-catalog-service';
+export type {
+  CreateCategoryCommand,
+  EditCatalogNameCommand,
+  ListCatalogCommand,
+  RemoveCatalogEntryCommand,
+  SaveCatalogNameCommand,
+} from './catalog/manage-catalog-service';
+export type {
+  NewProduct,
+  ProductCounts,
+  ProductEdit,
+  ProductFilter,
+  ProductRepository,
+  ProductRow,
+} from './catalog/product-repository';
+export { ManageProductsService } from './catalog/manage-products-service';
+export type {
+  CreateProductCommand,
+  GetProductCommand,
+  ListProductsCommand,
+  ProductIdCommand,
+  ProductInput,
+  SetProductStatusCommand,
+  UpdateProductCommand,
+} from './catalog/manage-products-service';
+export type {
+  CustomerGroupEntry,
+  NewParty,
+  PartyCounts,
+  PartyEdit,
+  PartyFilter,
+  PartyRepository,
+  PartyRow,
+} from './parties/party-repository';
+export { ManagePartiesService } from './parties/manage-parties-service';
+export type {
+  CreatePartyCommand,
+  ListPartiesCommand,
+  PartyIdCommand,
+  PartyInput,
+  SetPartyStatusCommand,
+  UpdatePartyCommand,
+} from './parties/manage-parties-service';
+export { ManagePartyGroupsService } from './parties/manage-party-groups-service';
+export type {
+  CreateCustomerGroupCommand,
+  PartySetupCommand,
+  RemoveCustomerGroupCommand,
+  RenameCustomerGroupCommand,
+} from './parties/manage-party-groups-service';
