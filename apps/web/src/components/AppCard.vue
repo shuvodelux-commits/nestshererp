@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue';
+
 /**
  * The standard panel: a white surface, a hairline border, a 12px radius and one
  * soft shadow (§2.7.I).
@@ -18,12 +20,41 @@
  *
  * The `actions` slot is where a card's own control goes — "View all", a period
  * selector — sitting on the title line rather than floating in the body.
+ *
+ * **`collapsible` folds a card away until it is wanted (§2.7 audience rule).**
+ * A shop owner adding their first product should see the six fields a product
+ * cannot exist without, not twenty-five fields of which nineteen are optional —
+ * a long form reads as a demand for information they may not have, and that is
+ * where people abandon and go back to the notebook. Collapsed sections state
+ * plainly that they are optional and open on a tap.
+ *
+ * It is **collapsed, never hidden**: every field stays reachable in one tap and
+ * nothing is moved behind a menu. A collapsed card is also still in the DOM, so
+ * a validation error inside one is not a message about a field nobody can find —
+ * `forceOpen` exists for exactly that, and the form sets it when a save fails.
  */
-defineProps<{ title?: string; subtitle?: string; subtitleBn?: string; icon?: string }>();
+const props = defineProps<{
+  title?: string;
+  subtitle?: string;
+  subtitleBn?: string;
+  icon?: string;
+  /** Folds the body away behind the header until it is tapped. */
+  collapsible?: boolean;
+  /** Starts open — for a collapsible card whose content is usually wanted. */
+  defaultOpen?: boolean;
+  /** Overrides the fold, e.g. when a save failed on a field inside it. */
+  forceOpen?: boolean;
+}>();
+
+const open = ref(props.defaultOpen === true);
+
+function toggle(): void {
+  open.value = !open.value;
+}
 </script>
 
 <template>
-  <section class="card">
+  <section class="card" :class="{ 'is-collapsed': collapsible && !open && forceOpen !== true }">
     <header v-if="title !== undefined" class="head">
       <span v-if="icon !== undefined" class="head-icon" aria-hidden="true">
         <i class="pi" :class="icon" />
@@ -35,12 +66,32 @@ defineProps<{ title?: string; subtitle?: string; subtitleBn?: string; icon?: str
       </div>
       <div class="head-actions">
         <slot name="actions" />
+        <!--
+          The whole control is a button with a word on it, not a bare chevron.
+          "More"/"Hide" says what will happen; an arrow alone assumes the reader
+          already knows this pattern, which is the assumption this app cannot make.
+        -->
+        <button
+          v-if="collapsible"
+          type="button"
+          class="fold"
+          :aria-expanded="open || forceOpen === true"
+          @click="toggle"
+        >
+          <span>{{ open || forceOpen === true ? 'Hide' : 'More' }}</span>
+          <i
+            class="pi"
+            :class="open || forceOpen === true ? 'pi-chevron-up' : 'pi-chevron-down'"
+            aria-hidden="true"
+          />
+        </button>
       </div>
     </header>
-    <slot />
+    <div v-show="!collapsible || open || forceOpen === true">
+      <slot />
+    </div>
   </section>
 </template>
-
 <style scoped>
 .card {
   background: var(--sher-raised);
@@ -104,5 +155,49 @@ h2 {
   margin-top: 2px;
   font-family: var(--sher-font-bn);
   font-size: var(--sher-text-xs);
+}
+</style>
+
+<style scoped>
+/*
+ * A collapsed card is a header and nothing else, so its bottom padding would
+ * otherwise leave a band of empty white that reads as a section that failed to
+ * load rather than one that is folded.
+ */
+.card.is-collapsed {
+  padding-bottom: calc(var(--sher-card-pad) - var(--sher-space-4));
+}
+
+.card.is-collapsed .head {
+  margin-bottom: 0;
+}
+
+/*
+ * A 44px target: this is the control that reveals half the form, and it sits at
+ * the top-right where a thumb reaches least comfortably.
+ */
+.fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sher-space-1);
+  min-height: 44px;
+  padding: 0 var(--sher-space-3);
+  background: none;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold:hover {
+  color: var(--sher-primary);
+  border-color: var(--sher-primary);
+}
+
+.fold:focus-visible {
+  outline: 2px solid var(--sher-primary);
+  outline-offset: 2px;
 }
 </style>

@@ -593,6 +593,7 @@ const baseUnitName = computed(
         icon="pi-shopping-bag"
         title="What it is"
         subtitle="Basic information about your product."
+        subtitle-bn="পণ্যটির নাম আর কী ধরনের জিনিস, সেটি লিখুন"
       >
         <div class="field">
           <label for="product-name">
@@ -677,6 +678,7 @@ const baseUnitName = computed(
         icon="pi-tag"
         title="Prices and stock level"
         subtitle="Set your prices, and when to be told that stock is running low."
+        subtitle-bn="কত টাকায় কিনছেন, কত টাকায় বেচবেন, আর কত কমে গেলে খবর দেবে"
       >
         <!--
           D-41: prices are **stored per base unit**, always. This only changes
@@ -767,10 +769,20 @@ const baseUnitName = computed(
         </p>
       </AppCard>
 
+      <!--
+        Optional from here down, so these fold away (§2.7 audience rule). A first
+        product needs a name, a unit, two prices and a reorder level — showing
+        twenty-five fields instead of six reads as a demand for information the
+        shopkeeper may not have, which is where people give up and go back to the
+        notebook. Collapsed, never hidden: one tap opens each.
+      -->
       <AppCard
+        collapsible
+        :force-open="formError !== null"
         icon="pi-barcode"
         title="Codes"
         subtitle="Optional. A barcode is what lets the counter scan it."
+        subtitle-bn="বারকোড থাকলে কাউন্টারে স্ক্যান করে বিক্রি করা যায়"
       >
         <div class="row">
           <div class="field">
@@ -820,9 +832,12 @@ const baseUnitName = computed(
       -->
       <AppCard
         v-if="offersOn"
+        collapsible
+        :force-open="formError !== null"
         icon="pi-percentage"
         title="Offer and standing discount"
         subtitle="A discount that applies every time, or an offer that runs for a few days."
+        subtitle-bn="সব সময়ের ছাড়, বা কয়েক দিনের জন্য বিশেষ দাম"
       >
         <div class="row">
           <div class="field">

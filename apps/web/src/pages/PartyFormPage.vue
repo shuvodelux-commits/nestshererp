@@ -301,7 +301,12 @@ async function remove(): Promise<void> {
         cannot be renamed, deactivated or removed.
       </p>
 
-      <AppCard title="Who this is">
+      <AppCard
+        icon="pi-user"
+        title="Who this is"
+        subtitle="Their name and how to reach them."
+        subtitle-bn="মানুষটির নাম আর মোবাইল নম্বর লিখুন"
+      >
         <ErrorNotice
           v-if="formError !== null"
           :code="formError.code"
@@ -310,7 +315,10 @@ async function remove(): Promise<void> {
 
         <form class="form" @submit.prevent="save">
           <fieldset class="roles" :disabled="isSystemReserved">
-            <legend>This record is a</legend>
+            <legend>
+              This record is a
+              <span class="label-bn">এই মানুষটি কী হিসেবে থাকবেন</span>
+            </legend>
             <label v-for="role in offerableRoles" :key="role" class="check">
               <input
                 type="checkbox"
@@ -327,7 +335,10 @@ async function remove(): Promise<void> {
           </fieldset>
 
           <div class="field">
-            <label for="party-name">Name</label>
+            <label for="party-name">
+              Name
+              <span class="label-bn">নাম</span>
+            </label>
             <input
               id="party-name"
               v-model="name"
@@ -343,6 +354,7 @@ async function remove(): Promise<void> {
               Phone
               <span v-if="isCustomer" class="req">required</span>
               <span v-else class="fine">optional</span>
+              <span class="label-bn">মোবাইল নম্বর</span>
             </label>
             <input
               id="party-phone"
@@ -359,7 +371,10 @@ async function remove(): Promise<void> {
           </div>
 
           <div v-if="setup.fields.address" class="field">
-            <label for="party-address">Address</label>
+            <label for="party-address">
+              Address
+              <span class="label-bn">ঠিকানা</span>
+            </label>
             <textarea
               id="party-address"
               v-model="address"
@@ -369,7 +384,10 @@ async function remove(): Promise<void> {
           </div>
 
           <div v-if="setup.fields.guardianName" class="field">
-            <label for="party-guardian">Father's or guardian's name</label>
+            <label for="party-guardian">
+              Father&apos;s or guardian&apos;s name
+              <span class="label-bn">বাবার বা অভিভাবকের নাম</span>
+            </label>
             <input
               id="party-guardian"
               v-model="guardianName"
@@ -379,12 +397,18 @@ async function remove(): Promise<void> {
           </div>
 
           <div v-if="setup.fields.nid" class="field">
-            <label for="party-nid">NID number</label>
+            <label for="party-nid">
+              NID number
+              <span class="label-bn">জাতীয় পরিচয়পত্র নম্বর</span>
+            </label>
             <input id="party-nid" v-model="nid" type="text" :disabled="isSystemReserved" />
           </div>
 
           <div v-if="setup.fields.email" class="field">
-            <label for="party-email">Email</label>
+            <label for="party-email">
+              Email
+              <span class="label-bn">ইমেইল</span>
+            </label>
             <input id="party-email" v-model="email" type="email" :disabled="isSystemReserved" />
           </div>
 
@@ -405,7 +429,10 @@ async function remove(): Promise<void> {
             />
 
             <div class="field">
-              <label for="party-credit">Credit limit</label>
+              <label for="party-credit">
+                Credit limit
+                <span class="label-bn">সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে</span>
+              </label>
               <input
                 id="party-credit"
                 v-model="creditLimit"
@@ -422,7 +449,10 @@ async function remove(): Promise<void> {
           </template>
 
           <div v-if="setup.fields.notes" class="field">
-            <label for="party-notes">Notes</label>
+            <label for="party-notes">
+              Notes
+              <span class="label-bn">নিজের জন্য কোনো মন্তব্য</span>
+            </label>
             <textarea id="party-notes" v-model="notes" rows="3" :disabled="isSystemReserved" />
           </div>
 
@@ -449,7 +479,12 @@ async function remove(): Promise<void> {
         </form>
       </AppCard>
 
-      <AppCard v-if="!isNew" title="History and balance">
+      <AppCard
+        v-if="!isNew"
+        icon="pi-book"
+        title="History and balance"
+        subtitle-bn="কেনাবেচা আর হিসাবের খতিয়ান"
+      >
         <p class="lede">
           Sales, purchases, payments, returns and the running balance appear here once those
           modules exist. They are read from the ledger every time, never stored on this record —
