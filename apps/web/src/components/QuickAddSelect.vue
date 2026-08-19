@@ -96,7 +96,10 @@ async function noopRemove(): Promise<string> {
       the three zones read as one control rather than a field with buttons stuck
       to its side.
     -->
-    <div class="picker" :class="{ 'is-disabled': disabled === true }">
+    <div
+      class="picker"
+      :class="{ 'is-disabled': disabled === true, 'has-manage': canOpenPanel() }"
+    >
       <select
         :id="fieldId"
         class="picker-select"
@@ -111,7 +114,13 @@ async function noopRemove(): Promise<string> {
         </option>
       </select>
 
-      <!-- Decoration: the select underneath is what actually opens. -->
+      <!--
+        Decoration, laid **over** the select rather than beside it. As a sibling
+        it took layout width, so the select was narrower than the field looked
+        and the browser drew the open list only as wide as the select — stopping
+        short of the arrow. Overlaying it lets the select span the whole value
+        area, so the list matches the control that opened it.
+      -->
       <span class="picker-chevron" aria-hidden="true">
         <i class="pi pi-chevron-down" />
       </span>
@@ -153,6 +162,7 @@ async function noopRemove(): Promise<string> {
  * the whole control — otherwise the ring appears around an invisible element.
  */
 .picker {
+  position: relative;
   display: flex;
   align-items: stretch;
   border: 1px solid var(--sher-line);
@@ -180,7 +190,8 @@ async function noopRemove(): Promise<string> {
   flex: 1;
   min-width: 0;
   appearance: none;
-  padding: 0 var(--sher-space-3);
+  /* Room on the right for the overlaid chevron, which no longer takes width. */
+  padding: 0 40px 0 var(--sher-space-3);
   min-height: 44px;
   border: 0;
   background: transparent;
@@ -193,7 +204,23 @@ async function noopRemove(): Promise<string> {
   outline: none;
 }
 
+.picker.has-manage .picker-chevron {
+  right: 44px;
+}
+
 .picker-chevron {
+  /*
+   * Overlaid on the select's right edge rather than sitting beside it, so the
+   * select spans the whole value area and the browser draws its open list that
+   * wide — the list used to stop short of the arrow.
+   *
+   * `right` clears the grid button, which is still a real flex item.
+   */
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* No grid button on this picker, so the arrow sits at the edge. */
+  right: 0;
   display: grid;
   place-items: center;
   width: 40px;

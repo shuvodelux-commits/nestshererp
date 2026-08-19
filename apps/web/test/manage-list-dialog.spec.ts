@@ -135,6 +135,9 @@ describe('reaching Edit and Delete without scrolling', () => {
 
     // A tooltip on hover as well, since the icon alone says nothing.
     await wrapper.findAll('.tip-wrap')[0]!.trigger('pointerenter', { pointerType: 'mouse' });
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Edit or delete');
+    // Teleported to <body> to escape any clipping container, so found there.
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain(
+      'Edit or delete',
+    );
   });
 });

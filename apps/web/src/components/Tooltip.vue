@@ -15,7 +15,13 @@ import { ref } from 'vue';
  * something else — tapping the grid button must open the panel, not explain
  * itself — so it shows on hover and keyboard focus only. On a touch screen the
  * label is still reachable: it is the button's `aria-label`, which is what a
- * screen reader announces, and the panel it opens says what it is at the top.
+ * screen reader announces.
+ *
+ * **The bubble is teleported to `<body>` and positioned fixed.** An absolutely
+ * positioned bubble is clipped by any ancestor with `overflow: hidden` — and the
+ * picker this labels has exactly that, to keep its rounded corners — so the
+ * label appeared sliced off inside the field. Teleporting escapes every such
+ * ancestor at once, rather than each container having to remember not to clip.
  *
  * Not a `title` attribute: `title` cannot be styled, cannot carry the Bangla
  * line, and is announced inconsistently.
@@ -24,84 +30,96 @@ defineProps<{
   /** The English label — what this control does, in two or three words. */
   text: string;
   textBn?: string | undefined;
-  /** Where the bubble sits relative to the control. */
-  placement?: 'top' | 'bottom' | undefined;
 }>();
 
 const shown = ref(false);
+const anchor = ref<HTMLElement | null>(null);
+/** Viewport coordinates, so the bubble needs no positioned ancestor. */
+const at = ref({ top: 0, left: 0 });
+
+function place(): void {
+  const el = anchor.value;
+  if (el === null) return;
+
+  const box = el.getBoundingClientRect();
+  at.value = { top: box.top, left: box.left + box.width / 2 };
+}
+
+function show(): void {
+  place();
+  shown.value = true;
+}
 
 /**
  * Hover, but only from a real mouse. Touch browsers synthesise `mouseenter` on
  * tap, which would flash the label over the panel the tap just opened.
  */
 function onEnter(event: PointerEvent): void {
-  if (event.pointerType === 'mouse') shown.value = true;
-}
-
-function onLeave(): void {
-  shown.value = false;
+  if (event.pointerType === 'mouse') show();
 }
 </script>
 
 <template>
   <span
+    ref="anchor"
     class="tip-wrap"
     @pointerenter="onEnter"
-    @pointerleave="onLeave"
-    @focusin="shown = true"
+    @pointerleave="shown = false"
+    @focusin="show"
     @focusout="shown = false"
   >
     <slot />
+  </span>
+
+  <Teleport to="body">
     <span
       v-if="shown"
       class="tip-bubble"
-      :class="placement === 'bottom' ? 'is-bottom' : 'is-top'"
       role="tooltip"
+      :style="{ top: `${at.top}px`, left: `${at.left}px` }"
     >
       {{ text }}
       <span v-if="textBn" class="sher-bn tip-bn">{{ textBn }}</span>
     </span>
-  </span>
+  </Teleport>
 </template>
 
 <style scoped>
 .tip-wrap {
-  position: relative;
   display: inline-flex;
 }
+</style>
 
+<style>
+/*
+ * Unscoped: the bubble lives on `<body>` after the teleport, so a scoped rule
+ * would not reach it.
+ */
 .tip-bubble {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
+  position: fixed;
+  z-index: 80;
+  /* Sits above the control, centred on it — hence the half-width shift. */
+  transform: translate(-50%, calc(-100% - 8px));
   display: flex;
   flex-direction: column;
   gap: 1px;
   width: max-content;
   max-width: 14rem;
   padding: 5px 9px;
-  border-radius: var(--sher-radius);
-  background: var(--sher-text, #0f172a);
+  border-radius: 8px;
+  background: #0f172a;
   color: #fff;
-  font-size: var(--sher-text-xs);
+  font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.4;
   text-align: center;
   white-space: normal;
+  /* Never intercepts the click meant for the control it describes. */
   pointer-events: none;
-  box-shadow: var(--sher-shadow-card);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 25%);
 }
 
-.tip-bubble.is-top {
-  bottom: calc(100% + 6px);
-}
-
-.tip-bubble.is-bottom {
-  top: calc(100% + 6px);
-}
-
-.tip-bn {
+.tip-bubble .tip-bn {
   font-family: var(--sher-font-bn);
   opacity: 0.85;
 }
