@@ -1,5 +1,11 @@
 import type { Qty } from './qty';
-import { allocateLargestRemainder, assertSafeInteger, formatScaled, multiplyScaled } from './scaled';
+import {
+  allocateLargestRemainder,
+  assertSafeInteger,
+  formatScaled,
+  multiplyScaled,
+  parseScaled,
+} from './scaled';
 
 /** Money is BDT in integer poisha (scale 2). ৳1,250.75 is Money(125075). */
 export const MONEY_SCALE = 2;
@@ -73,4 +79,15 @@ class MoneyValue implements Money {
 export function Money(minor: number): Money {
   assertSafeInteger(minor, 'Money minor units');
   return new MoneyValue(minor);
+}
+
+/**
+ * What someone typed, as integer poisha — `"150.75"` is `15075`. `null` when the
+ * text is not an amount with at most two decimal places (see `parseScaled`).
+ *
+ * Every money input in the application goes through here (UI-31): a component
+ * formats and parses through `shared-utils` and never does arithmetic itself.
+ */
+export function parseMoney(text: string): number | null {
+  return parseScaled(text, MONEY_SCALE);
 }

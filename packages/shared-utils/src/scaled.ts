@@ -136,3 +136,38 @@ export function formatScaled(value: number, scale: number): string {
 
   return negative ? `-${body}` : body;
 }
+
+/**
+ * A typed decimal string as a scaled integer — `"150.75"` at scale 2 is `15075`.
+ *
+ * The inverse of `formatScaled`, and the only sanctioned way to turn what someone
+ * typed into money or a quantity. Entirely integer string arithmetic: no
+ * `parseFloat`, no `Number()` on the decimal part, because both are how a price
+ * becomes 15074.999999 (R-C3).
+ *
+ * Returns `null` rather than throwing or rounding when the text is not a number
+ * this scale can hold. **More decimal places than the scale is a refusal, not a
+ * rounding**: someone typing three decimals into a money field has misunderstood
+ * something, and silently dropping the third digit is how a poisha goes missing
+ * without anybody being told.
+ *
+ * Thousands separators are accepted, because a pasted `1,250.75` is a number a
+ * person meant.
+ */
+export function parseScaled(text: string, scale: number): number | null {
+  const cleaned = text.trim().replace(/,/g, '');
+  if (cleaned === '') return null;
+
+  const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(cleaned);
+  if (match === null) return null;
+
+  const [, sign = '', whole = '', fraction = ''] = match;
+  if (whole === '' && fraction === '') return null;
+  if (fraction.length > scale) return null;
+
+  const minor = `${whole === '' ? '0' : whole}${fraction.padEnd(scale, '0')}`;
+  const value = Number(minor);
+  if (!Number.isSafeInteger(value)) return null;
+
+  return sign === '-' ? -value : value;
+}

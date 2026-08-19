@@ -1,4 +1,10 @@
-import { allocateLargestRemainder, assertSafeInteger, formatScaled, multiplyScaled } from './scaled';
+import {
+  allocateLargestRemainder,
+  assertSafeInteger,
+  formatScaled,
+  multiplyScaled,
+  parseScaled,
+} from './scaled';
 
 /** Quantity is a scaled integer with 3 decimals. 2.5 pcs is Qty(2500). */
 export const QTY_SCALE = 3;
@@ -69,4 +75,12 @@ class QtyValue implements Qty {
 export function Qty(raw: number): Qty {
   assertSafeInteger(raw, 'Qty raw units');
   return new QtyValue(raw);
+}
+
+/**
+ * What someone typed, as a scaled quantity — `"2.5"` is `2500`. `null` when the
+ * text is not a quantity with at most three decimal places.
+ */
+export function parseQty(text: string): number | null {
+  return parseScaled(text, QTY_SCALE);
 }

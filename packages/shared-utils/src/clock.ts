@@ -112,6 +112,37 @@ function zoneOffsetMs(instant: Date, tz: string): number {
   return asUtc - instant.getTime();
 }
 
+/**
+ * The tenant-local calendar day an instant falls on, as `YYYY-MM-DD`.
+ *
+ * The read direction of `startOfBusinessDay`, and the one a screen needs: a
+ * stored `TIMESTAMPTZ` must be shown as the day the shop would call it (UI-33 —
+ * "no screen renders a raw UTC instant"), and an instant 18:30 UTC is already
+ * tomorrow in Dhaka.
+ *
+ * Distinct from `Clock.businessDate(tz)`, which is *today* and therefore reads
+ * the machine clock. This one is pure: it converts an instant it is given.
+ */
+export function businessDateAt(instant: Date, tz: string): string {
+  return businessDateOf(instant, tz);
+}
+
+/**
+ * The last instant of a tenant-local day, as UTC — 23:59:59.999 local.
+ *
+ * For an inclusive upper bound stored as a timestamp: "this offer runs until the
+ * 7th" means through the whole of the 7th in the shop's own timezone. Derived
+ * from the start of the following day rather than by adding 24 hours, so a zone
+ * with daylight saving cannot shift it by an hour.
+ */
+export function endOfBusinessDay(date: string, tz: string): Date {
+  const start = startOfBusinessDay(date, tz);
+  // Midday of the following local day is safely inside it whatever the offset
+  // does, so the day it names is the right one to take the start of.
+  const nextDay = businessDateOf(new Date(start.getTime() + 36 * 60 * 60 * 1000), tz);
+  return new Date(startOfBusinessDay(nextDay, tz).getTime() - 1);
+}
+
 function businessDateOf(instant: Date, tz: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
