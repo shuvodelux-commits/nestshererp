@@ -1,33 +1,33 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { ref } from 'vue';
 
-import { ApiError } from '../api/client';
-import ErrorNotice from './ErrorNotice.vue';
 import HelpTip from './HelpTip.vue';
+import ManageListDialog from './ManageListDialog.vue';
 
 /**
- * A picker that can also create what it is picking (D-39, UI-45).
+ * A picker that also owns the list it picks from (D-39, UI-45, UI-51).
  *
- * **Why this exists.** A shopkeeper entering a delivery has the goods in front
- * of them and the supplier is new. Sending them to another screen to create it —
- * losing the half-typed purchase — is how entry stops happening at all. The same
- * is true of the unit a new product comes in, the brand nobody has filed yet,
- * and the customer standing at the counter.
+ * **One control, three zones** — the value, a chevron that opens the list, and a
+ * grid button that opens the panel where the list is added to, renamed and
+ * tidied. Set by the owner 2026-08-19 after the previous layout put a `+ New`
+ * button and a `Manage` button beside every picker: three controls per field,
+ * across three fields, crushed the selects to nothing and made a simple row look
+ * like a toolbar. Two buttons for "change this list" were also two places to
+ * look for one job.
  *
- * **What it is not.** It creates a real record through the same use case the
- * full form uses, so there is one write path, one set of rules and one audit
- * trail (D-39, R-D). It never invents a placeholder or a draft. It asks only for
- * what the record cannot exist without; everything else is filled in later on
- * that record's own screen.
+ * **Why a native `<select>` underneath.** On Android it opens the system picker
+ * — a full-screen list with large rows and the phone's own scrolling — which is
+ * better than anything drawn here, and is the control this audience already
+ * knows. Its appearance is stripped so the chevron can sit in its own zone, but
+ * the element is still a real select, so the keyboard, the screen reader and the
+ * form all behave normally.
  *
- * **No business rule lives here** (B8). The parent supplies `create`, which
- * calls the API and returns the new id; this component only handles the
- * interaction — open the field, submit once, show the server's own refusal
- * (UI-28), select what was created.
+ * **No business rule lives here** (B8). The parent supplies `create`, `rename`
+ * and `remove`, each calling the same use case the full screen calls, so there
+ * is one write path, one set of validations and one audit trail (R-D, DRY).
  *
- * `canAdd` is the caller's create permission for that record. When it is false
- * the control is **absent**, not disabled (UI-09) — a disabled button still
- * advertises something the person cannot do.
+ * Permissions decide what the panel offers, never whether it lies: without the
+ * manage permission the grid button is **absent**, not disabled (UI-09).
  */
 const props = defineProps<{
   modelValue: string;
@@ -37,77 +37,48 @@ const props = defineProps<{
   /** The Bangla name of the field, beside the label (UI-15…UI-17). */
   labelBn?: string | undefined;
   options: readonly { readonly id: string; readonly name: string }[];
-  /** The "nothing chosen" option, e.g. "No brand". Omit to require a choice. */
+  /** The "nothing chosen" option, e.g. "Select category…". */
   emptyLabel?: string | undefined;
+  /** The caller's create permission for this record. */
   canAdd: boolean;
-  /** The button's words, e.g. "New unit". Said in full — UI-05 bans icon-only actions. */
-  addLabel: string;
+  /** The caller's manage permission — rename and remove. */
+  canManage?: boolean | undefined;
   addPlaceholder?: string | undefined;
-  /** Explains what the shopkeeper is creating, when the name alone is not enough. */
-  addHint?: string | undefined;
   /** A longer explanation of the field itself, behind an `i` beside it (UI-49). */
   help?: string | undefined;
   helpBn?: string | undefined;
-  /**
-   * Offers `Manage` beside the picker (UI-51), so an existing entry is renamed
-   * or removed from the point of use rather than on a settings screen. Absent,
-   * not disabled, without the permission (UI-09).
-   */
-  manage?: boolean | undefined;
   disabled?: boolean;
   required?: boolean;
-  /** Creates the record and resolves with its id. Owned by the parent. */
+  /** All three are the parent's; each calls the same use case the full screen does. */
   create: (name: string) => Promise<string>;
+  rename?: ((id: string, name: string) => Promise<void>) | undefined;
+  remove?: ((id: string) => Promise<string>) | undefined;
 }>();
 
-const emit = defineEmits<{
-  "update:modelValue": [value: string];
-  /** UI-51: the caller opens its own Manage panel for this kind of record. */
-  manage: [];
-}>();
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 
-const adding = ref(false);
-const draft = ref('');
-const busy = ref(false);
-const error = ref<{ code: string; message: string } | null>(null);
-const input = ref<HTMLInputElement | null>(null);
+const managing = ref(false);
 
-async function open(): Promise<void> {
-  adding.value = true;
-  error.value = null;
-  draft.value = '';
-  // The point of quick add is not having to reach for the mouse again.
-  await nextTick();
-  input.value?.focus();
+/**
+ * Whether the panel is worth offering at all.
+ *
+ * A caller who can neither add nor manage would open an empty read-only list,
+ * so the button is absent rather than opening something with nothing in it.
+ */
+const canOpenPanel = () => props.canAdd || props.canManage === true;
+
+/** UI-36: select what the server actually created, by the id it returned. */
+function onCreated(id: string): void {
+  emit('update:modelValue', id);
 }
 
-function cancel(): void {
-  adding.value = false;
-  draft.value = '';
-  error.value = null;
+async function noopRename(): Promise<void> {
+  // Never reached: the panel hides row actions unless `canManage` is true, and
+  // a caller passing that also passes the handlers.
 }
 
-async function submit(): Promise<void> {
-  const name = draft.value.trim();
-  if (name === '' || busy.value) return;
-
-  busy.value = true;
-  error.value = null;
-  try {
-    // UI-36: what gets selected is what the server actually stored, never an
-    // optimistic row this component made up.
-    const id = await props.create(name);
-    emit('update:modelValue', id);
-    adding.value = false;
-    draft.value = '';
-  } catch (cause) {
-    error.value =
-      cause instanceof ApiError
-        ? { code: cause.code, message: cause.message }
-        : { code: 'UNEXPECTED', message: cause instanceof Error ? cause.message : String(cause) };
-  } finally {
-    busy.value = false;
-  }
+async function noopRemove(): Promise<string> {
+  return '';
 }
 </script>
 
@@ -119,9 +90,15 @@ async function submit(): Promise<void> {
       <HelpTip v-if="help !== undefined" :label="label" :text="help" :text-bn="helpBn" />
     </label>
 
-    <div class="row">
+    <!--
+      The border belongs to this wrapper, not to the select — that is what makes
+      the three zones read as one control rather than a field with buttons stuck
+      to its side.
+    -->
+    <div class="picker" :class="{ 'is-disabled': disabled === true }">
       <select
         :id="fieldId"
+        class="picker-select"
         :value="modelValue"
         :disabled="disabled === true"
         :required="required === true"
@@ -133,87 +110,123 @@ async function submit(): Promise<void> {
         </option>
       </select>
 
-      <button
-        v-if="canAdd && !adding"
-        type="button"
-        class="btn btn-ghost add"
-        :disabled="disabled === true"
-        @click="open"
-      >
-        <i class="pi pi-plus" aria-hidden="true" />
-        {{ addLabel }}
-      </button>
+      <!-- Decoration: the select underneath is what actually opens. -->
+      <span class="picker-chevron" aria-hidden="true">
+        <i class="pi pi-chevron-down" />
+      </span>
 
-      <!--
-        UI-51: fixing or removing an existing entry belongs here too, not only on
-        a settings screen. The caller owns the panel, because it knows which kind
-        of record this picker holds.
-      -->
       <button
-        v-if="manage === true && !adding"
+        v-if="canOpenPanel()"
         type="button"
-        class="btn btn-ghost add"
+        class="picker-manage"
+        :aria-label="`Add or edit ${label}`"
         :disabled="disabled === true"
-        @click="emit('manage')"
+        @click="managing = true"
       >
-        Manage
+        <i class="pi pi-th-large" aria-hidden="true" />
       </button>
     </div>
 
-    <!--
-      An inline row rather than a dialog: the form behind it stays visible and
-      nothing typed into it is at risk, which is the whole point (D-39).
-    -->
-    <div v-if="adding" class="adder">
-      <input
-        ref="input"
-        v-model="draft"
-        type="text"
-        :placeholder="addPlaceholder ?? addLabel"
-        :aria-label="addLabel"
-        :disabled="busy"
-        @keydown.enter.prevent="submit"
-        @keydown.esc.prevent="cancel"
-      />
-      <button type="button" class="btn btn-primary" :disabled="busy || draft.trim() === ''" @click="submit">
-        {{ busy ? 'Saving…' : 'Add' }}
-      </button>
-      <button type="button" class="btn btn-ghost" :disabled="busy" @click="cancel">Cancel</button>
-    </div>
-
-    <p v-if="adding && addHint !== undefined" class="fine">{{ addHint }}</p>
-
-    <ErrorNotice v-if="error !== null" :code="error.code" :message="error.message" />
+    <ManageListDialog
+      v-if="managing"
+      :title="label.toLowerCase()"
+      :title-bn="labelBn"
+      :entries="options"
+      :can-add="canAdd"
+      :can-edit="canManage === true && rename !== undefined && remove !== undefined"
+      :add-placeholder="addPlaceholder"
+      :create="create"
+      :rename="rename ?? noopRename"
+      :remove="remove ?? noopRemove"
+      @created="onCreated"
+      @close="managing = false"
+    />
   </div>
 </template>
 
 <style scoped>
-/* Fields, buttons and the error notice come from `design/components.css`. */
-.row {
+/*
+ * One rounded box holding all three zones. The focus ring is drawn here via
+ * `:focus-within` rather than on the select, so tabbing to the field highlights
+ * the whole control — otherwise the ring appears around an invisible element.
+ */
+.picker {
   display: flex;
-  align-items: center;
-  gap: var(--sher-space-2);
+  align-items: stretch;
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius);
+  background: var(--sher-raised);
+  overflow: hidden;
 }
 
-.row select {
+.picker:focus-within {
+  border-color: var(--sher-primary);
+  box-shadow: 0 0 0 3px var(--sher-primary-soft);
+}
+
+.picker.is-disabled {
+  background: var(--sher-sunken, #f8fafc);
+  opacity: 0.7;
+}
+
+/*
+ * `appearance: none` removes the browser's own arrow so the chevron can have its
+ * own zone. The element stays a real `<select>`: on Android it still opens the
+ * system picker, which is a better list than anything drawn here.
+ */
+.picker-select {
   flex: 1;
   min-width: 0;
+  appearance: none;
+  padding: 0 var(--sher-space-3);
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 
-.add {
-  flex-shrink: 0;
-  white-space: nowrap;
+.picker-select:focus {
+  outline: none;
 }
 
-.adder {
-  display: flex;
-  align-items: center;
-  gap: var(--sher-space-2);
-  margin-top: var(--sher-space-2);
+.picker-chevron {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  color: var(--sher-primary);
+  font-size: 12px;
+  /* The select underneath is the control; this is only a marker. */
+  pointer-events: none;
+  border-left: 1px solid var(--sher-line);
 }
 
-.adder input {
-  flex: 1;
-  min-width: 0;
+/*
+ * 44px of tap target, separated by its own divider so it is visibly a different
+ * action from opening the list — not a second arrow.
+ */
+.picker-manage {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--sher-line);
+  background: transparent;
+  color: var(--sher-text-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.picker-manage:hover:not(:disabled) {
+  background: var(--sher-primary-soft);
+  color: var(--sher-primary);
+}
+
+.picker-manage:focus-visible {
+  outline: 2px solid var(--sher-primary);
+  outline-offset: -2px;
 }
 </style>

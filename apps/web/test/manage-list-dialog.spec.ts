@@ -12,6 +12,7 @@ import ManageListDialog from '../src/components/ManageListDialog.vue';
  * shopkeeper needs to know before they tap it.
  */
 function panel(overrides: Record<string, unknown> = {}) {
+  const create = vi.fn().mockResolvedValue('01CATNEWAAAAAAAAAAAAAAAAAA');
   const rename = vi.fn().mockResolvedValue(undefined);
   const remove = vi.fn().mockResolvedValue('Removed. Nothing was using it.');
 
@@ -24,13 +25,15 @@ function panel(overrides: Record<string, unknown> = {}) {
         { id: '01CATBBBBBBBBBBBBBBBBBBBBB', name: 'Fittings' },
       ],
       canEdit: true,
+      canAdd: true,
+      create,
       rename,
       remove,
       ...overrides,
     },
   });
 
-  return { wrapper, rename, remove };
+  return { wrapper, create, rename, remove };
 }
 
 /** Opens the `⋯` menu on the first row. */
@@ -57,7 +60,8 @@ describe('managing a picker’s list in place', () => {
     await openRowMenu(wrapper);
     await wrapper.find('.manage-menu button').trigger('click');
     await wrapper.find('.manage-input').setValue('Cold drinks');
-    await wrapper.find('.btn-primary').trigger('click');
+    // Not just `.btn-primary`: the Add button at the top of the panel is one too.
+    await wrapper.find('.manage-list .btn-primary').trigger('click');
     await flushPromises();
 
     expect(rename).toHaveBeenCalledWith('01CATAAAAAAAAAAAAAAAAAAAAA', 'Cold drinks');

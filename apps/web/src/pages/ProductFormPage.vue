@@ -30,7 +30,6 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import HelpTip from '../components/HelpTip.vue';
-import ManageListDialog from '../components/ManageListDialog.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import QuickAddSelect from '../components/QuickAddSelect.vue';
 
@@ -284,70 +283,48 @@ function addSubcategory(name: string): Promise<string> {
     catalog.value.categories,
   );
 }
-
-/* ------------------------------------------------------- manage (UI-51) */
+/* ------------------------------------------------- manage a list (UI-51) */
 
 /**
- * `Manage` beside each picker opens that list with per-row Edit and Delete.
+ * The grid button on each picker opens that list, where it is added to, renamed
+ * and tidied.
  *
- * It calls the same rename/remove endpoints the Catalog screen calls — one
- * write path, one set of validations, one audit trail (R-D, DRY). The catalog is
- * replaced with whatever the server returns rather than patched locally, so a
- * name the server normalised is the name shown.
+ * These call the same endpoints the Catalog screen calls — one write path, one
+ * set of validations, one audit trail (R-D, DRY). The catalog is replaced with
+ * whatever the server returns rather than patched locally, so a name the server
+ * normalised is the name shown.
+ *
+ * Curried per kind so each picker is handed its own pair, instead of the page
+ * holding a "which list is open" variable that the handlers then read — that
+ * indirection is how a rename ends up applied to the wrong list.
  */
-const managing = ref<CatalogKind | null>(null);
-
-const MANAGE_TITLES: Record<CatalogKind, { title: string; titleBn: string }> = {
-  categories: { title: 'categories', titleBn: 'পণ্যের ধরন' },
-  brands: { title: 'brands', titleBn: 'ব্র্যান্ড' },
-  units: { title: 'units', titleBn: 'একক' },
-};
-
-const manageEntries = computed(() => {
-  if (managing.value === 'brands') return catalog.value.brands;
-  if (managing.value === 'units') return catalog.value.units;
-  // Only the top level: a subcategory is managed from its own picker, and
-  // mixing both here would show two "Drinks" rows meaning different things.
-  return parentCategories.value;
-});
-
-const canManageCurrent = computed(() => {
-  if (managing.value === 'brands') return canManageBrands.value;
-  if (managing.value === 'units') return canManageUnits.value;
-  return canManageCategories.value;
-});
-
-function manageCategories(): void {
-  managing.value = 'categories';
-}
-function manageBrands(): void {
-  managing.value = 'brands';
-}
-function manageUnits(): void {
-  managing.value = 'units';
-}
-
-async function renameEntry(id: string, name: string): Promise<void> {
-  const kind = managing.value;
-  if (kind === null) return;
-  catalog.value = await renameCatalogEntry(session.accessToken.value ?? '', kind, id, name);
+function renameIn(kind: CatalogKind) {
+  return async (id: string, name: string): Promise<void> => {
+    catalog.value = await renameCatalogEntry(session.accessToken.value ?? '', kind, id, name);
+  };
 }
 
 /**
  * §3.6's delete-or-archive. The server decides which, and its answer is what the
  * caller is told — this never claims "deleted" when the answer was "archived".
  */
-async function removeEntry(id: string): Promise<string> {
-  const kind = managing.value;
-  if (kind === null) return '';
+function removeIn(kind: CatalogKind) {
+  return async (id: string): Promise<string> => {
+    const result = await removeCatalogEntry(session.accessToken.value ?? '', kind, id);
+    catalog.value = await fetchCatalog(session.accessToken.value ?? '');
 
-  const result = await removeCatalogEntry(session.accessToken.value ?? '', kind, id);
-  catalog.value = await fetchCatalog(session.accessToken.value ?? '');
-
-  return result.outcome === 'ARCHIVED'
-    ? 'It is still used by some products, so it was archived rather than deleted. Nothing those products record has changed.'
-    : 'Removed. Nothing was using it.';
+    return result.outcome === 'ARCHIVED'
+      ? 'It is still used by some products, so it was archived rather than deleted. Nothing those products record has changed.'
+      : 'Removed. Nothing was using it.';
+  };
 }
+
+const renameCategory = renameIn('categories');
+const removeCategory = removeIn('categories');
+const renameBrand = renameIn('brands');
+const removeBrand = removeIn('brands');
+const renameUnit = renameIn('units');
+const removeUnit = removeIn('units');
 
 function describe(cause: unknown): { code: string; message: string } {
   return cause instanceof ApiError
@@ -718,12 +695,12 @@ const baseUnitName = computed(
             empty-label="Select category..."
             :options="parentCategories"
             :can-add="canManageCategories"
-            add-label="New category"
-            add-placeholder="Drinks"
-            :manage="canManageCategories"
+            add-placeholder="e.g. Fittings"
+            :can-manage="canManageCategories"
             :disabled="!canSave"
             :create="addCategory"
-            @manage="manageCategories"
+            :rename="renameCategory"
+            :remove="removeCategory"
           />
 
           <QuickAddSelect
@@ -734,12 +711,12 @@ const baseUnitName = computed(
             empty-label="No brand"
             :options="catalog.brands"
             :can-add="canManageBrands"
-            add-label="New brand"
-            add-placeholder="Pran"
-            :manage="canManageBrands"
+            add-placeholder="e.g. RFL"
+            :can-manage="canManageBrands"
             :disabled="!canSave"
             :create="addBrand"
-            @manage="manageBrands"
+            :rename="renameBrand"
+            :remove="removeBrand"
           />
 
           <QuickAddSelect
@@ -750,15 +727,15 @@ const baseUnitName = computed(
             empty-label="Select unit..."
             :options="catalog.units"
             :can-add="canManageUnits"
-            add-label="New unit"
-            add-placeholder="Gaz"
+            add-placeholder="e.g. Gaz"
             help="What you count this product in — piece, carton, kilo, foot. Everything is stored in this unit, and any second unit you add is measured against it."
             help-bn="এই পণ্যটি আপনি কীসে গোনেন — পিস, কার্টন, কেজি, ফুট। সব হিসাব এই এককেই রাখা হয়।"
-            :manage="canManageUnits"
+            :can-manage="canManageUnits"
             :disabled="!canSave"
             required
             :create="addUnit"
-            @manage="manageUnits"
+            :rename="renameUnit"
+            :remove="removeUnit"
           />
         </div>
 
@@ -1030,10 +1007,12 @@ const baseUnitName = computed(
               empty-label="Choose a unit"
               :options="spareUnits"
               :can-add="canManageUnits"
-              add-label="New unit"
-              add-placeholder="Pipe"
+              add-placeholder="e.g. Pipe"
+              :can-manage="canManageUnits"
               :disabled="!canSave"
               :create="addUnit"
+              :rename="renameUnit"
+              :remove="removeUnit"
             />
           </div>
         </div>
@@ -1170,17 +1149,6 @@ const baseUnitName = computed(
         </div>
       </div>
     </div>
-
-    <!-- UI-51: the picker asks, the page owns the panel and the write path. -->
-    <ManageListDialog
-      v-if="managing !== null"
-      :title="MANAGE_TITLES[managing].title"
-      :title-bn="MANAGE_TITLES[managing].titleBn"
-      :entries="manageEntries"
-      :can-edit="canManageCurrent"
-      :rename="renameEntry"
-      :remove="removeEntry"
-      @close="managing = null"
     />
   </AppShell>
 </template>

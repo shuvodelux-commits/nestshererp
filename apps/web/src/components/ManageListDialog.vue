@@ -29,12 +29,48 @@ const props = defineProps<{
   titleBn?: string | undefined;
   entries: readonly { readonly id: string; readonly name: string }[];
   canEdit: boolean;
-  /** Both go through the same use case the settings screen calls. */
+  /**
+   * Adding lives here too, so one control answers the whole question — "what
+   * are my categories, and let me fix them". A separate `+ New` button beside
+   * the picker was a second place to look for the same job.
+   */
+  canAdd: boolean;
+  addPlaceholder?: string | undefined;
+  /** All three go through the same use cases the settings screen calls. */
+  create: (name: string) => Promise<string>;
   rename: (id: string, name: string) => Promise<void>;
   remove: (id: string) => Promise<string>;
 }>();
 
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{
+  close: [];
+  /** The id the server gave the new entry, so the picker can select it (UI-36). */
+  created: [id: string];
+}>();
+
+const newName = ref('');
+
+/**
+ * Creating selects the new entry in the picker behind, because a shopkeeper who
+ * has just typed "Fittings" means to use it. The id comes from the server's
+ * response — never matched by name, which would pick the wrong row the moment
+ * two names normalise the same way.
+ */
+async function addEntry(): Promise<void> {
+  if (newName.value.trim() === '' || busy.value) return;
+  busy.value = true;
+  error.value = null;
+  try {
+    const id = await props.create(newName.value.trim());
+    emit('created', id);
+    newName.value = '';
+    outcome.value = null;
+  } catch (cause) {
+    error.value = describe(cause);
+  } finally {
+    busy.value = false;
+  }
+}
 
 /** Which row's `⋯` menu is open. One at a time — two would be two menus to close. */
 const menuFor = ref<string | null>(null);
@@ -118,9 +154,24 @@ async function confirmRemove(): Promise<void> {
       </p>
       <p v-if="outcome !== null" class="manage-outcome">{{ outcome }}</p>
 
-      <p v-if="entries.length === 0" class="manage-empty">
-        Nothing here yet. Use the <strong>New</strong> button beside the list to add the first one.
-      </p>
+      <!--
+        Adding sits at the top, because opening this panel is most often the
+        moment someone realised the thing they wanted is not in the list.
+      -->
+      <div v-if="canAdd" class="manage-add">
+        <input
+          v-model="newName"
+          type="text"
+          :placeholder="addPlaceholder ?? 'New name'"
+          :aria-label="`New ${title}`"
+          @keyup.enter="addEntry"
+        />
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="addEntry">
+          Add
+        </button>
+      </div>
+
+      <p v-if="entries.length === 0" class="manage-empty">Nothing here yet — add the first one above.</p>
 
       <ul v-else class="manage-list">
         <li v-for="entry in entries" :key="entry.id">
@@ -255,6 +306,19 @@ async function confirmRemove(): Promise<void> {
 .icon-btn:hover {
   background: var(--sher-primary-soft);
   color: var(--sher-primary);
+}
+
+.manage-add {
+  display: flex;
+  gap: var(--sher-space-2);
+  margin-bottom: var(--sher-space-3);
+  padding-bottom: var(--sher-space-3);
+  border-bottom: 1px solid var(--sher-line);
+}
+
+.manage-add input {
+  flex: 1;
+  min-width: 0;
 }
 
 .manage-list {

@@ -462,11 +462,11 @@ async function remove(): Promise<void> {
                 v-model="customerGroupId"
                 field-id="party-group"
                 label="Customer group"
+                label-bn="কোন দলে রাখবেন"
                 empty-label="No group"
                 :options="setup.groups"
                 :can-add="canManageGroups"
-                add-label="New group"
-                add-placeholder="Dealer"
+                add-placeholder="e.g. Dealer"
                 :disabled="isSystemReserved"
                 :create="addGroup"
               />

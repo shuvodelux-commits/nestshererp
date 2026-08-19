@@ -1,127 +1,142 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from '../src/api/client';
 import QuickAddSelect from '../src/components/QuickAddSelect.vue';
 
 /**
- * D-39 / UI-45 — quick add from the point of use. A shared state component, so
- * R-E11 asks for its own test rather than repeating these assertions on every
- * page that uses it.
+ * The unified picker (D-39, UI-45, UI-51) — one control, three zones: the value,
+ * a chevron that opens the list, and a grid button that opens the panel where
+ * the list is added to and tidied.
  *
- * What matters here:
+ * Tested once here, so no page repeats it (R-E11). What matters:
  *
- *   The new record is selected only after the **server** returns its id — no
- *   optimistic row this component invented (UI-36).
+ *   The element under the value is a **real `<select>`**. On Android that opens
+ *   the system picker, which is a better list than anything drawn here and the
+ *   one this audience already knows. Replacing it with a styled div would look
+ *   the same on a laptop and be worse on every phone.
  *
- *   A refusal shows the server's own code and message and leaves the field open
- *   so the name can be corrected, rather than throwing the typing away (UI-28).
- *
- *   Without the create permission the button is **absent**, not disabled
- *   (UI-09).
+ *   Creating selects **the id the server returned** (UI-36), never a row matched
+ *   by name — two names that normalise the same way would select the wrong one.
  */
-const OPTIONS = [
-  { id: '01UNITPIECEAAAAAAAAAAAAAAA', name: 'Piece' },
-  { id: '01UNITCARTONAAAAAAAAAAAAAA', name: 'Carton' },
+const UNITS = [
+  { id: '01UNITFEETAAAAAAAAAAAAAAAA', name: 'Feet' },
+  { id: '01UNITPIPEAAAAAAAAAAAAAAAA', name: 'Pipe' },
 ];
 
-function mountSelect(overrides: Record<string, unknown> = {}) {
-  return mount(QuickAddSelect, {
+function picker(overrides: Record<string, unknown> = {}) {
+  const create = vi.fn().mockResolvedValue('01UNITNEWAAAAAAAAAAAAAAAAA');
+  const rename = vi.fn().mockResolvedValue(undefined);
+  const remove = vi.fn().mockResolvedValue('Removed. Nothing was using it.');
+
+  const wrapper = mount(QuickAddSelect, {
     props: {
-      modelValue: OPTIONS[0]!.id,
+      modelValue: '',
       fieldId: 'product-unit',
-      label: 'Base unit',
-      options: OPTIONS,
+      label: 'Unit',
+      labelBn: 'একক',
+      emptyLabel: 'Select unit…',
+      options: UNITS,
       canAdd: true,
-      addLabel: 'New unit',
-      create: vi.fn(),
+      canManage: true,
+      create,
+      rename,
+      remove,
       ...overrides,
     },
   });
+
+  return { wrapper, create, rename, remove };
 }
 
-describe('QuickAddSelect', () => {
-  it('shows the options and the labelled select (UI-42)', () => {
-    const wrapper = mountSelect();
+describe('the picker itself', () => {
+  it('is one control holding a real select', () => {
+    const { wrapper } = picker();
 
-    expect(wrapper.find('label').attributes('for')).toBe('product-unit');
-    expect(wrapper.findAll('option').map((option) => option.text())).toEqual(['Piece', 'Carton']);
+    expect(wrapper.find('.picker').exists()).toBe(true);
+    // A real <select>, so Android opens its own full-screen picker.
+    expect(wrapper.find('select#product-unit').exists()).toBe(true);
+    expect(wrapper.findAll('option').map((o) => o.text())).toEqual([
+      'Select unit…',
+      'Feet',
+      'Pipe',
+    ]);
   });
 
-  it('selects what the server created, not a row it invented (UI-36)', async () => {
-    const create = vi.fn().mockResolvedValue('01UNITGAZAAAAAAAAAAAAAAAAA');
-    const wrapper = mountSelect({ create });
+  it('has no separate New or Manage buttons beside it', () => {
+    // Owner decision 2026-08-19: two extra buttons per field crushed the select
+    // to nothing, and two buttons for "change this list" was two places to look.
+    const { wrapper } = picker();
 
-    await wrapper.find('.add').trigger('click');
-    await wrapper.find('.adder input').setValue('Gaz');
-    await wrapper.find('.adder .btn-primary').trigger('click');
+    expect(wrapper.text()).not.toContain('New unit');
+    expect(wrapper.text()).not.toContain('Manage');
+    expect(wrapper.findAll('.picker button').length).toBe(1);
+  });
+
+  it('reports what was chosen', async () => {
+    const { wrapper } = picker();
+
+    await wrapper.find('select').setValue('01UNITPIPEAAAAAAAAAAAAAAAA');
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['01UNITPIPEAAAAAAAAAAAAAAAA']]);
+  });
+});
+
+describe('the panel behind the grid button', () => {
+  it('opens on the grid button and lists what is there', async () => {
+    const { wrapper } = picker();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+
+    await wrapper.find('.picker-manage').trigger('click');
+
+    const dialog = wrapper.find('[role="dialog"]');
+    expect(dialog.exists()).toBe(true);
+    expect(dialog.text()).toContain('Feet');
+    expect(dialog.text()).toContain('Pipe');
+  });
+
+  it('creates through the parent’s use case and selects what came back (UI-36)', async () => {
+    const { wrapper, create } = picker();
+
+    await wrapper.find('.picker-manage').trigger('click');
+    await wrapper.find('.manage-add input').setValue('  Gaz  ');
+    await wrapper.find('.manage-add button').trigger('click');
     await flushPromises();
 
+    // Trimmed before sending — a trailing space is a typo, not a name.
     expect(create).toHaveBeenCalledWith('Gaz');
-    expect(wrapper.emitted('update:modelValue')).toEqual([['01UNITGAZAAAAAAAAAAAAAAAAA']]);
-    // The inline field closes once it has done its job.
-    expect(wrapper.find('.adder').exists()).toBe(false);
+    // The server's id, not a row matched by name.
+    expect(wrapper.emitted('update:modelValue')).toEqual([['01UNITNEWAAAAAAAAAAAAAAAAA']]);
   });
 
-  it('trims the name before sending it', async () => {
-    const create = vi.fn().mockResolvedValue('01UNITGAZAAAAAAAAAAAAAAAAA');
-    const wrapper = mountSelect({ create });
+  it('offers no grid button when the caller can neither add nor manage (UI-09)', () => {
+    // It would open a read-only list of things they cannot change.
+    const { wrapper } = picker({ canAdd: false, canManage: false });
 
-    await wrapper.find('.add').trigger('click');
-    await wrapper.find('.adder input').setValue('  Gaz  ');
-    await wrapper.find('.adder .btn-primary').trigger('click');
+    expect(wrapper.find('.picker-manage').exists()).toBe(false);
+    expect(wrapper.find('select').exists()).toBe(true);
+  });
+
+  it('still opens for a caller who may add but not manage', async () => {
+    const { wrapper } = picker({ canManage: false });
+
+    await wrapper.find('.picker-manage').trigger('click');
+
+    expect(wrapper.find('.manage-add').exists()).toBe(true);
+    // No row actions: they may add, not rename or delete.
+    expect(wrapper.find('.manage-actions').exists()).toBe(false);
+  });
+
+  it('shows the server’s own refusal and keeps what was typed (UI-28)', async () => {
+    const { wrapper, create } = picker();
+    create.mockRejectedValue(new Error('That unit already exists'));
+
+    await wrapper.find('.picker-manage').trigger('click');
+    await wrapper.find('.manage-add input').setValue('Feet');
+    await wrapper.find('.manage-add button').trigger('click');
     await flushPromises();
 
-    expect(create).toHaveBeenCalledWith('Gaz');
-  });
-
-  it("keeps the typing and shows the server's refusal (UI-28)", async () => {
-    const create = vi
-      .fn()
-      .mockRejectedValue(new ApiError('VALIDATION_FAILED', 'There is already a unit called Gaz', 400));
-    const wrapper = mountSelect({ create });
-
-    await wrapper.find('.add').trigger('click');
-    await wrapper.find('.adder input').setValue('Gaz');
-    await wrapper.find('.adder .btn-primary').trigger('click');
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('There is already a unit called Gaz');
-    expect(wrapper.text()).toContain('VALIDATION_FAILED');
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
-    // Still open, still holding what was typed — the name only needs correcting.
-    expect((wrapper.find('.adder input').element as HTMLInputElement).value).toBe('Gaz');
-  });
-
-  it('cannot be submitted twice while in flight (UI-35)', async () => {
-    const create = vi.fn().mockReturnValue(new Promise(() => undefined));
-    const wrapper = mountSelect({ create });
-
-    await wrapper.find('.add').trigger('click');
-    await wrapper.find('.adder input').setValue('Gaz');
-    await wrapper.find('.adder .btn-primary').trigger('click');
-    await flushPromises();
-
-    expect(wrapper.find('.adder .btn-primary').attributes('disabled')).toBeDefined();
-    await wrapper.find('.adder .btn-primary').trigger('click');
-    expect(create).toHaveBeenCalledTimes(1);
-  });
-
-  it('is absent, not disabled, without the create permission (UI-09)', () => {
-    const wrapper = mountSelect({ canAdd: false });
-
-    expect(wrapper.find('.add').exists()).toBe(false);
-  });
-
-  it('abandons the inline field on cancel without creating anything', async () => {
-    const create = vi.fn();
-    const wrapper = mountSelect({ create });
-
-    await wrapper.find('.add').trigger('click');
-    await wrapper.find('.adder input').setValue('Gaz');
-    await wrapper.findAll('.adder .btn-ghost')[0]!.trigger('click');
-
-    expect(wrapper.find('.adder').exists()).toBe(false);
-    expect(create).not.toHaveBeenCalled();
+    expect(wrapper.find('.manage-error').text()).toContain('That unit already exists');
+    // Not cleared — retyping a refused name is pure punishment.
+    expect((wrapper.find('.manage-add input').element as HTMLInputElement).value).toBe('Feet');
   });
 });
