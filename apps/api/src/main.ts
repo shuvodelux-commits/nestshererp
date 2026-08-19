@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
 import { AppErrorFilter } from './common/app-error.filter';
+import { corsOptions } from './common/cors';
 import { loadConfig } from './config';
 import { validateBootConfig } from './deployment/boot-validation';
 
@@ -17,8 +18,9 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.useGlobalFilters(new AppErrorFilter());
   // The Vue app is served from its own origin (the Vite dev server locally,
-  // nginx in §6.5), so the browser preflights every mutating call.
-  app.enableCors({ origin: config.webOrigin, allowedHeaders: ['content-type', 'authorization'] });
+  // nginx in §6.5), so the browser preflights every mutating call. The allowed
+  // header list lives in one place — see `corsOptions`.
+  app.enableCors(corsOptions(config.webOrigin));
   await app.listen(config.port);
 }
 
