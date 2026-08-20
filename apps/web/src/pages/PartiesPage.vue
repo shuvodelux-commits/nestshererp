@@ -8,13 +8,18 @@ import type {
   SortDirection,
 } from '@sher/core-contracts';
 import { defaultDirectionFor } from '@sher/core-contracts';
-import { Money } from '@sher/shared-utils';
+import { parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
+import Dialog from 'primevue/dialog';
+import Menu from 'primevue/menu';
+import type { MenuItem } from 'primevue/menuitem';
+import Select from 'primevue/select';
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
 import {
   createCustomerGroup,
+  createParty,
   EMPTY_PARTY_SETUP,
   fetchParties,
   fetchPartySetup,
@@ -30,21 +35,26 @@ import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
 
 /**
- * The Parties screen (Phase 2, §5.6, D-04) — a List screen (UI-22): tabs →
- * filter bar → table → paging.
+ * The Parties screen (Phase 2, §5.6, D-04) — a List screen (UI-22): role
+ * context → filter bar → table → paging.
  *
- * **Tabs, not a "type" dropdown.** §5.6: "Sales/POS shows customers by default;
- * Purchase screens show suppliers by default … never show every party type by
- * default." The tab is part of every query, so there is no state in which this
- * screen is showing a mixture nobody asked for. A party that is both shows up
- * under both, because it is one record with two roles.
+ * The sidebar/route supplies the role context. §5.6 says Sales/POS shows
+ * customers by default and Purchase screens show suppliers by default; the
+ * role remains part of every query, so the screen never shows an accidental
+ * mixture. A party with two roles appears in either role-specific entry.
  *
  * Paging is keyset (§3.9, `OFFSET` banned).
  */
 const session = useSession();
 const router = useRouter();
+const route = useRoute();
+const clock = new SystemClock();
 
-const role = ref<PartyRoleValue>('CUSTOMER');
+function roleFromQuery(value: unknown): PartyRoleValue | null {
+  return value === 'CUSTOMER' || value === 'SUPPLIER' || value === 'VENDOR' ? value : null;
+}
+
+const role = ref<PartyRoleValue>(roleFromQuery(route.query.role) ?? 'CUSTOMER');
 
 const RIGHTS: Record<PartyRoleValue, { view: string; create: string; edit: string; deactivate: string }> = {
   CUSTOMER: {
@@ -74,7 +84,7 @@ const setup = ref<PartySetupResponse>(EMPTY_PARTY_SETUP);
  * off. The Vendors tab is absent, not disabled, while vendors are off in
  * Settings, because a disabled control still advertises a feature nobody chose.
  */
-const tabs = computed(() =>
+const accessibleRoles = computed(() =>
   (['CUSTOMER', 'SUPPLIER', 'VENDOR'] as PartyRoleValue[]).filter((value) => {
     if (value === 'VENDOR' && !setup.value.features.vendors) return false;
     return session.can(RIGHTS[value].view);
@@ -95,9 +105,111 @@ const nextCursor = ref<string | null>(null);
 const search = ref('');
 const groupId = ref('');
 const status = ref('');
+const statusOptions = [
+  { label: 'Active and inactive', value: '' },
+  { label: 'Active only', value: 'ACTIVE' },
+  { label: 'Inactive only', value: 'INACTIVE' },
+];
+const groupOptions = computed(() => [
+  { id: '', name: 'All groups' },
+  ...setup.value.groups,
+]);
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
+
+/* ----------------------------------------------- add party dialog (UI-50) */
+
+const createVisible = ref(false);
+const createName = ref('');
+const createPhone = ref('');
+const createAddress = ref('');
+const createGuardianName = ref('');
+const createNid = ref('');
+const createEmail = ref('');
+const createNotes = ref('');
+const createGroupId = ref('');
+const createCreditLimit = ref('');
+const createError = ref<{ code: string; message: string } | null>(null);
+const createOperationId = ref(Ulid.generate(clock));
+
+function openCreateDialog(): void {
+  createName.value = '';
+  createPhone.value = '';
+  createAddress.value = '';
+  createGuardianName.value = '';
+  createNid.value = '';
+  createEmail.value = '';
+  createNotes.value = '';
+  createGroupId.value = '';
+  createCreditLimit.value = '';
+  createError.value = null;
+  createOperationId.value = Ulid.generate(clock);
+  createVisible.value = true;
+}
+
+async function saveCreatedParty(): Promise<void> {
+  const isCustomer = role.value === 'CUSTOMER';
+  const limitMinor = createCreditLimit.value.trim() === '' ? null : parseMoney(createCreditLimit.value);
+  if (createName.value.trim() === '' || (isCustomer && createPhone.value.trim() === '')) {
+    createError.value = { code: 'VALIDATION_FAILED', message: isCustomer ? 'Enter the customer name and phone number' : 'Enter the name' };
+    return;
+  }
+  if (createCreditLimit.value.trim() !== '' && limitMinor === null) {
+    createError.value = { code: 'VALIDATION_FAILED', message: 'Enter the credit limit with at most two decimal places' };
+    return;
+  }
+  const blank = (value: string): string | null => value.trim() === '' ? null : value.trim();
+  busy.value = true;
+  createError.value = null;
+  try {
+    const created = await createParty(session.accessToken.value ?? '', {
+      name: createName.value.trim(),
+      roles: [role.value],
+      phone: blank(createPhone.value),
+      address: blank(createAddress.value),
+      guardianName: blank(createGuardianName.value),
+      nid: blank(createNid.value),
+      email: blank(createEmail.value),
+      notes: blank(createNotes.value),
+      customerGroupId: isCustomer && createGroupId.value !== '' ? createGroupId.value : null,
+      creditLimitMinor: isCustomer ? limitMinor : null,
+    }, createOperationId.value);
+    createVisible.value = false;
+    notice.value = `${created.name} was added.`;
+    await load();
+  } catch (cause) {
+    createError.value = describe(cause);
+  } finally {
+    busy.value = false;
+  }
+}
+
+/* --------------------------------------------------------- row action menu */
+
+const rowMenu = ref<InstanceType<typeof Menu> | null>(null);
+const actionParty = ref<PartyResponse | null>(null);
+const rowMenuItems = computed<MenuItem[]>(() => {
+  const party = actionParty.value;
+  if (party === null || party.isSystemReserved) return [];
+  return [
+    ...(canEdit.value ? [{
+      label: 'Edit customer details',
+      icon: 'pi pi-pencil',
+      command: () => void router.push(`/parties/${party.id}?role=${role.value}&mode=edit`),
+    }] : []),
+    ...(canDeactivate.value ? [{
+      label: party.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
+      icon: party.status === 'ACTIVE' ? 'pi pi-ban' : 'pi pi-check-circle',
+      command: () => { confirming.value = party; },
+    }] : []),
+  ];
+});
+
+function openRowMenu(event: Event, party: PartyResponse): void {
+  actionParty.value = party;
+  rowMenu.value?.toggle(event);
+}
 
 const showsGroups = computed(
   () => role.value === 'CUSTOMER' && setup.value.features.customerGroups,
@@ -113,15 +225,16 @@ const NOUN: Record<PartyRoleValue, string> = {
   VENDOR: 'vendor',
 };
 
+const PAGE_COPY: Record<PartyRoleValue, { title: string; helpBn: string }> = {
+  CUSTOMER: { title: 'Customers', helpBn: 'আপনার ক্রেতাদের তালিকা' },
+  SUPPLIER: { title: 'Suppliers', helpBn: 'আপনার সরবরাহকারীদের তালিকা' },
+  VENDOR: { title: 'Vendors', helpBn: 'আপনার ভেন্ডরদের তালিকা' },
+};
+
 function describe(cause: unknown): { code: string; message: string } {
   return cause instanceof ApiError
     ? { code: cause.code, message: cause.message }
     : { code: 'UNEXPECTED', message: cause instanceof Error ? cause.message : String(cause) };
-}
-
-/** UI-31/UI-32: formatted by shared-utils, right-aligned, two decimals, ৳. */
-function money(minor: number | null): string {
-  return minor === null ? '—' : `৳${Money(minor).format()}`;
 }
 
 function currentQuery(cursor: string | null = null) {
@@ -193,14 +306,19 @@ onMounted(async () => {
     // The groups and the Vendors tab are a convenience; the list itself still
     // works, and its own failure is what the error card is for.
   }
-  const first = tabs.value[0];
-  if (first !== undefined && !tabs.value.includes(role.value)) role.value = first;
+  const first = accessibleRoles.value[0];
+  if (first !== undefined && !accessibleRoles.value.includes(role.value)) role.value = first;
   await load();
 });
 
 watch(role, () => {
   groupId.value = '';
   void load();
+});
+
+watch(() => route.query.role, (value) => {
+  const requested = roleFromQuery(value);
+  if (requested !== null && accessibleRoles.value.includes(requested)) role.value = requested;
 });
 
 function clearFilters(): void {
@@ -296,9 +414,9 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
 <template>
   <AppShell
-    title="Customers & Suppliers"
-    :breadcrumb="['Dashboard', 'Customers & Suppliers']"
-    help-bn="আপনার ক্রেতা, সরবরাহকারী আর ভেন্ডরের তালিকা"
+    :title="PAGE_COPY[role].title"
+    :breadcrumb="['Dashboard', PAGE_COPY[role].title]"
+    :help-bn="PAGE_COPY[role].helpBn"
   >
     <template #actions>
       <button
@@ -314,28 +432,12 @@ async function removeGroup(id: string, name: string): Promise<void> {
         v-if="canCreate"
         type="button"
         class="btn btn-primary"
-        @click="router.push(`/parties/new?role=${role}`)"
+        @click="openCreateDialog"
       >
         <i class="pi pi-plus" aria-hidden="true" />
         Add {{ NOUN[role] }}
       </button>
     </template>
-
-    <!-- §5.6: one type at a time, never a mixture nobody asked for -->
-    <div class="tabs" role="tablist" aria-label="Party type">
-      <button
-        v-for="tab in tabs"
-        :key="tab"
-        type="button"
-        role="tab"
-        class="tab"
-        :class="{ 'is-current': role === tab }"
-        :aria-selected="role === tab"
-        @click="role = tab"
-      >
-        {{ tab === 'CUSTOMER' ? 'Customers' : tab === 'SUPPLIER' ? 'Suppliers' : 'Vendors' }}
-      </button>
-    </div>
 
     <form class="filters" @submit.prevent="load">
       <div class="field grow">
@@ -345,21 +447,12 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
       <div v-if="showsGroups" class="field">
         <label for="filter-group">Group</label>
-        <select id="filter-group" v-model="groupId" @change="load">
-          <option value="">All groups</option>
-          <option v-for="group in setup.groups" :key="group.id" :value="group.id">
-            {{ group.name }}
-          </option>
-        </select>
+        <Select input-id="filter-group" v-model="groupId" :options="groupOptions" option-label="name" option-value="id" fluid @change="load" />
       </div>
 
       <div class="field">
         <label for="filter-status">Status</label>
-        <select id="filter-status" v-model="status" @change="load">
-          <option value="">Active and inactive</option>
-          <option value="ACTIVE">Active only</option>
-          <option value="INACTIVE">Inactive only</option>
-        </select>
+        <Select input-id="filter-status" v-model="status" :options="statusOptions" option-label="label" option-value="value" fluid @change="load" />
       </div>
 
       <button type="submit" class="btn btn-ghost">Search</button>
@@ -446,16 +539,6 @@ async function removeGroup(id: string, name: string): Promise<void> {
                 -->
                 <th>Also</th>
                 <SortableHeader
-                  v-if="role === 'CUSTOMER'"
-                  column="creditLimit"
-                  label="Credit limit"
-                  label-bn="সর্বোচ্চ কত টাকা বাকি দেওয়া যাবে"
-                  numeric
-                  :active="sort"
-                  :direction="direction"
-                  @sort="sortBy"
-                />
-                <SortableHeader
                   column="status"
                   label="Status"
                   label-bn="চালু আছে কি না"
@@ -494,26 +577,21 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   </span>
                   <span v-if="party.roles.length === 1">—</span>
                 </td>
-                <td v-if="role === 'CUSTOMER'" class="num">{{ money(party.creditLimitMinor) }}</td>
                 <td>
                   <span v-if="party.status === 'ACTIVE'" class="pill pill-ok">Active</span>
                   <span v-else class="pill pill-bad">Inactive</span>
                 </td>
                 <td class="actions">
-                  <template v-if="!party.isSystemReserved">
-                    <button v-if="canEdit" type="button" class="linkish" @click="openParty(party)">
-                      Edit
-                    </button>
-                    <button
-                      v-if="canDeactivate"
-                      type="button"
-                      class="linkish"
-                      :class="{ danger: party.status === 'ACTIVE' }"
-                      @click="confirming = party"
-                    >
-                      {{ party.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
-                    </button>
-                  </template>
+                  <button
+                    v-if="!party.isSystemReserved && (canEdit || canDeactivate)"
+                    type="button"
+                    class="row-menu-trigger"
+                    :aria-label="`Actions for ${party.name}`"
+                    aria-haspopup="menu"
+                    @click="openRowMenu($event, party)"
+                  >
+                    <i class="pi pi-ellipsis-v" aria-hidden="true" />
+                  </button>
                   <span v-else class="muted">System</span>
                 </td>
               </tr>
@@ -535,11 +613,68 @@ async function removeGroup(id: string, name: string): Promise<void> {
         </div>
       </template>
 
-      <p class="fine">
-        Balances, statements and transaction history appear on this screen once purchases and
-        sales exist — they are read from the ledger, never stored on the record.
-      </p>
     </template>
+
+    <Menu ref="rowMenu" :model="rowMenuItems" popup />
+
+    <Dialog
+      v-model:visible="createVisible"
+      modal
+      :header="`Add ${NOUN[role]}`"
+      :style="{ width: 'min(42rem, 96vw)' }"
+      :draggable="false"
+    >
+      <form id="create-party-form" class="create-party-form" @submit.prevent="saveCreatedParty">
+        <ErrorNotice v-if="createError" :code="createError.code" :message="createError.message" />
+        <div class="field">
+          <label for="create-party-name">Name <span class="label-bn">নাম</span></label>
+          <input id="create-party-name" v-model="createName" type="text" required autofocus />
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="create-party-phone">Phone <span class="label-bn">মোবাইল নম্বর</span></label>
+            <input id="create-party-phone" v-model="createPhone" type="tel" :required="role === 'CUSTOMER'" />
+          </div>
+          <div v-if="role === 'CUSTOMER'" class="field">
+            <label for="create-party-limit">Credit limit <span class="label-bn">বাকির সীমা</span></label>
+            <input id="create-party-limit" v-model="createCreditLimit" type="text" inputmode="decimal" placeholder="0.00" />
+          </div>
+        </div>
+        <div v-if="setup.fields.address" class="field">
+          <label for="create-party-address">Address <span class="label-bn">ঠিকানা</span></label>
+          <textarea id="create-party-address" v-model="createAddress" rows="2" />
+        </div>
+        <details class="more-fields">
+          <summary>More details <span class="label-bn">আরও তথ্য</span></summary>
+          <div v-if="setup.fields.guardianName" class="field">
+            <label for="create-party-guardian">Father's or guardian's name</label>
+            <input id="create-party-guardian" v-model="createGuardianName" type="text" />
+          </div>
+          <div v-if="setup.fields.nid" class="field">
+            <label for="create-party-nid">NID number</label>
+            <input id="create-party-nid" v-model="createNid" type="text" />
+          </div>
+          <div v-if="setup.fields.email" class="field">
+            <label for="create-party-email">Email</label>
+            <input id="create-party-email" v-model="createEmail" type="email" />
+          </div>
+          <div v-if="role === 'CUSTOMER' && setup.features.customerGroups" class="field">
+            <label for="create-party-group">Customer group</label>
+            <Select input-id="create-party-group" v-model="createGroupId" :options="groupOptions" option-label="name" option-value="id" fluid />
+          </div>
+          <div v-if="setup.fields.notes" class="field">
+            <label for="create-party-notes">Notes</label>
+            <textarea id="create-party-notes" v-model="createNotes" rows="2" />
+          </div>
+        </details>
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-ghost" :disabled="busy" @click="createVisible = false">Cancel</button>
+        <button type="submit" form="create-party-form" class="btn btn-primary" :disabled="busy">
+          {{ busy ? 'Saving…' : `Add ${NOUN[role]}` }}
+        </button>
+      </template>
+    </Dialog>
 
     <!-- --------------------------------------------- deactivate / reactivate -->
     <div v-if="confirming !== null" class="scrim" @click.self="confirming = null">
@@ -635,33 +770,9 @@ async function removeGroup(id: string, name: string): Promise<void> {
 <style scoped>
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
- * `design/components.css`. What is left is the tab strip, the filter bar, the
- * paging line and the group editor.
+ * `design/components.css`. What is left is the filter bar, paging line and
+ * party-specific overlays.
  */
-.tabs {
-  display: flex;
-  gap: 2px;
-  margin-bottom: var(--sher-space-4);
-  border-bottom: 1px solid var(--sher-line);
-}
-
-.tab {
-  appearance: none;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 10px 16px;
-  font-size: var(--sher-text-base);
-  font-weight: 500;
-  color: var(--sher-text-muted);
-  cursor: pointer;
-}
-
-.tab.is-current {
-  color: var(--sher-nav-active-fg);
-  border-bottom-color: var(--sher-nav-active-fg);
-  font-weight: 600;
-}
 
 .filters {
   display: flex;
@@ -702,6 +813,52 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
 .name {
   font-weight: 600;
+}
+
+.row-menu-trigger {
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  color: var(--sher-text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.row-menu-trigger:hover,
+.row-menu-trigger:focus-visible {
+  color: var(--p-primary-color);
+  background: var(--p-primary-50);
+}
+
+.create-party-form,
+.more-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-4);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sher-space-4);
+}
+
+.more-fields {
+  padding-top: var(--sher-space-2);
+}
+
+.more-fields summary {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: 1fr; }
 }
 
 .muted {

@@ -163,6 +163,25 @@ export type {
   UpdateProductCommand,
 } from './catalog/manage-products-service';
 export type {
+  CostAdjustmentListRow,
+  InventoryMovementRow,
+  InventoryLotFilter,
+  InventoryLotRow,
+  InventoryValuationLotRow,
+  InventoryCostStateRow,
+  InventoryRepository,
+  InventoryStockRow,
+  LocationRow,
+  OpeningStockRecord,
+  ProductStockPosition,
+  StockAdjustmentFilter,
+  StockAdjustmentListRow,
+  StockAdjustmentRecord,
+  StockCostLayerRow,
+} from './inventory/inventory-repository';
+export { ManageInventoryService } from './inventory/manage-inventory-service';
+export type { AdjustStockCommand, RecordOpeningStockCommand } from './inventory/manage-inventory-service';
+export type {
   CustomerGroupEntry,
   NewParty,
   PartyCounts,

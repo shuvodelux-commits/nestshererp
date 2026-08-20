@@ -15,7 +15,7 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
-import { brands, categories, products, units } from './schema';
+import { brands, categories, productCostState, products, units } from './schema';
 import { txOf } from './unit-of-work';
 
 /**
@@ -92,6 +92,46 @@ const PRODUCT_COLUMNS = {
   conversionUnitName: conversionUnits.name,
   conversionFactorQty: products.conversionFactorQty,
   version: products.version,
+  /**
+   * Stock, for the §5.5 list columns — read here rather than summed in Vue.
+   *
+   * `stockQty` and `avgUnitCost` come from the cost-state cache; `lotValueMinor`
+   * is the FIFO basis, summed **per lot with each lot rounded once**, which is
+   * exactly what `GetValuationService` does. Rounding the sum instead of summing
+   * the roundings differs by a poisha at the boundary, and INV-05 is precisely
+   * the invariant that would then fail against the `INVENTORY` account.
+   *
+   * The arithmetic is integer throughout: quantity is scale 3, unit cost scale
+   * 4, money scale 2, so the product is divided by 10^5 with `+ 50000` making
+   * the truncation a half-up round (both operands are non-negative). No
+   * floating point, in SQL or anywhere else (R-C3).
+   */
+  stockQty: sql<number | null>`${productCostState.qtyOnHand}`,
+  avgUnitCost: sql<number | null>`${productCostState.avgUnitCost}`,
+  /**
+   * Typed as a string because it is: `SUM` over `BIGINT` is `int8`, and
+   * node-postgres hands `int8` back as text rather than risk losing precision
+   * above 2^53. `toRow` converts it once, with the range checked — pretending
+   * here that it arrives as a number is how a money figure silently becomes
+   * `"100000"` in a JSON body and then `NaN` in the next arithmetic.
+   */
+  lotValueMinor: sql<string | null>`(
+    SELECT COALESCE(SUM((lot.qty_remaining * lot.actual_unit_cost + 50000) / 100000), 0)
+      FROM inventory_lots lot
+     WHERE lot.tenant_id = ${products.tenantId}
+       AND lot.product_id = ${products.id}
+       AND lot.owner_type = 'OWNED'
+       AND lot.deleted_at IS NULL
+  )`,
+  /**
+   * Whether stock has ever moved. `EXISTS` rather than a count — the question
+   * is "any", and the answer is one index seek either way.
+   */
+  hasStockHistory: sql<boolean>`EXISTS (
+    SELECT 1 FROM stock_movements movement
+     WHERE movement.tenant_id = ${products.tenantId}
+       AND movement.product_id = ${products.id}
+  )`,
 };
 
 interface RawProduct {
@@ -123,6 +163,28 @@ interface RawProduct {
   readonly conversionUnitName: string | null;
   readonly conversionFactorQty: number | null;
   readonly version: number;
+  readonly stockQty: number | null;
+  readonly avgUnitCost: number | null;
+  readonly lotValueMinor: string | null;
+  readonly hasStockHistory: boolean;
+}
+
+/**
+ * An `int8` the driver returned as text, back to the integer it is.
+ *
+ * This is **not** R-C3's forbidden float parsing: the value is a whole number
+ * of poisha that PostgreSQL computed with integer arithmetic, and the only
+ * question is whether JavaScript can hold it exactly. If it cannot, that is a
+ * stock valuation past ৳90,000,000,000,000 and a loud failure beats a silently
+ * rounded one.
+ */
+function bigintMinor(value: string | null): number {
+  if (value === null) return 0;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new RangeError(`Stock value ${value} is outside the safe integer range`);
+  }
+  return parsed;
 }
 
 export class PostgresProductRepository implements ProductRepository {
@@ -314,7 +376,6 @@ export class PostgresProductRepository implements ProductRepository {
   /* ------------------------------------------------------------- mechanics */
 
   private selectProducts(tx: Tx, ctx: TenantContext) {
-    void ctx;
     return txOf(tx)
       .select(PRODUCT_COLUMNS)
       .from(products)
@@ -322,7 +383,17 @@ export class PostgresProductRepository implements ProductRepository {
       .leftJoin(brands, eq(brands.id, products.brandId))
       .leftJoin(categories, eq(categories.id, products.categoryId))
       .leftJoin(parentCategories, eq(parentCategories.id, categories.parentId))
-      .leftJoin(conversionUnits, eq(conversionUnits.id, products.conversionUnitId));
+      .leftJoin(conversionUnits, eq(conversionUnits.id, products.conversionUnitId))
+      // Left, not inner: a product with no stock yet still belongs in the list,
+      // reading zero rather than vanishing from it.
+      .leftJoin(
+        productCostState,
+        and(
+          eq(productCostState.tenantId, ctx.tenantId),
+          eq(productCostState.productId, products.id),
+          isNull(productCostState.deletedAt),
+        ),
+      );
   }
 
   private liveInTenant(ctx: TenantContext) {
@@ -403,5 +474,10 @@ function toRow(raw: RawProduct): ProductRow {
     baseUnitName: raw.baseUnitName ?? '',
     status: raw.status as ProductStatus,
     defaultDiscountType: raw.defaultDiscountType as DiscountType | null,
+    // A product with no cost-state row has never been stocked, which is zero —
+    // not unknown, and not a reason to leave the column blank.
+    stockQty: raw.stockQty ?? 0,
+    avgUnitCost: raw.avgUnitCost ?? 0,
+    lotValueMinor: bigintMinor(raw.lotValueMinor),
   };
 }

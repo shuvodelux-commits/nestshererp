@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RoleSummaryResponse, UserResponse } from '@sher/core-contracts';
+import Select from 'primevue/select';
 import { computed, onMounted, ref } from 'vue';
 
 import { createUser, fetchUsers, setUserDisabled, updateUser } from '../api/users';
@@ -362,9 +363,7 @@ async function toggleDisabled(): Promise<void> {
 
           <div class="field">
             <label for="role">Role</label>
-            <select id="role" v-model="roleId" :disabled="busy">
-              <option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option>
-            </select>
+            <Select input-id="role" v-model="roleId" :options="roles" option-label="name" option-value="id" :disabled="busy" fluid />
           </div>
 
           <div v-if="needsPassword" class="field">

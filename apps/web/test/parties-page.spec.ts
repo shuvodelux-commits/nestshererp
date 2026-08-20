@@ -13,18 +13,20 @@ import PartiesPage from '../src/pages/PartiesPage.vue';
  *
  * The two things this suite really has to prove:
  *
- *   §5.6's rule that no screen shows every party type at once — the tab is part
- *   of every request, and changing it asks the server again rather than
- *   filtering rows already in the browser.
+ *   §5.6/UI-55's rule that no screen shows every party type at once — the
+ *   independent sidebar route supplies the role in every request.
  *
  *   UI-09's rule that a control which would be refused is **absent**: no
  *   Vendors tab while vendors are switched off, and no Add button for a role the
  *   caller cannot create.
  */
 const load = vi.fn();
+const create = vi.fn();
 const setStatus = vi.fn();
 const setup = vi.fn();
 const push = vi.fn();
+const replace = vi.fn();
+const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }));
 
 vi.mock('../src/api/parties', async () => {
   const actual = await vi.importActual<typeof PartiesApi>('../src/api/parties');
@@ -32,12 +34,14 @@ vi.mock('../src/api/parties', async () => {
     ...actual,
     fetchParties: (token: string, query: unknown) => load(token, query),
     fetchPartySetup: (token: string) => setup(token),
+    createParty: (token: string, body: unknown, operationId: string) => create(token, body, operationId),
     setPartyStatus: (token: string, id: string, status: string) => setStatus(token, id, status),
   };
 });
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push }),
+  useRoute: () => routeState,
+  useRouter: () => ({ push, replace }),
 }));
 
 vi.mock('../src/components/shell/AppShell.vue', () => ({
@@ -81,6 +85,7 @@ beforeEach(() => {
   session.signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
   session.setPermissions(ALL_RIGHTS);
   load.mockReset();
+  create.mockReset();
   setStatus.mockReset();
   setup.mockReset();
   push.mockReset();
@@ -94,6 +99,7 @@ beforeEach(() => {
     page: { nextCursor: null, hasMore: false },
     summary: SUMMARY,
   });
+  routeState.query = {};
 });
 
 afterEach(() => {
@@ -115,14 +121,14 @@ describe('PartiesPage', () => {
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true);
   });
 
-  it('asks for customers first and formats the credit limit as money (UI-32)', async () => {
+  it('asks for customers first without using credit limit as a balance column', async () => {
     const wrapper = await mountLoaded();
 
     expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ role: 'CUSTOMER' }));
     expect(wrapper.text()).toContain('Karim Uddin');
     expect(wrapper.text()).toContain('01712345678');
-    // ৳5,000.00 — formatted by shared-utils, never divided in the component.
-    expect(wrapper.text()).toContain('৳5,000.00');
+    expect(wrapper.text()).not.toContain('Credit limit');
+    expect(wrapper.text()).not.toContain('৳5,000.00');
   });
 
   it("shows the server's own code and message on failure (UI-28)", async () => {
@@ -135,13 +141,9 @@ describe('PartiesPage', () => {
     expect(wrapper.text()).not.toContain('Something went wrong');
   });
 
-  it('asks the server again when the tab changes, never filtering in the browser', async () => {
-    const wrapper = await mountLoaded();
-    load.mockClear();
-
-    await wrapper.findAll('.tab')[1]!.trigger('click');
-    await flushPromises();
-
+  it('uses the independent sidebar route as the supplier list context', async () => {
+    routeState.query = { role: 'SUPPLIER' };
+    await mountLoaded();
     expect(load).toHaveBeenCalledWith('test-access', expect.objectContaining({ role: 'SUPPLIER' }));
   });
 
@@ -152,18 +154,47 @@ describe('PartiesPage', () => {
     expect(wrapper.find('.table-wrap').exists()).toBe(true);
     expect(wrapper.find('.paging').text()).toContain('Showing 1 of 1');
 
-    await wrapper.findAll('.tab')[1]!.trigger('click');
+    expect(wrapper.find('.tabs').exists()).toBe(false);
+  });
+
+  it('adds a customer in a modal through the existing party create API', async () => {
+    create.mockResolvedValue({ ...KARIM, id: '01NEWCUSTOMERAAAAAAAAAAAA' });
+    const wrapper = await mountLoaded();
+
+    await wrapper.find('.page-actions .btn-primary').trigger('click');
+    await flushPromises();
+    const name = document.querySelector<HTMLInputElement>('#create-party-name');
+    const phone = document.querySelector<HTMLInputElement>('#create-party-phone');
+    const form = document.querySelector<HTMLFormElement>('#create-party-form');
+    expect(name).not.toBeNull();
+    expect(phone).not.toBeNull();
+    expect(form).not.toBeNull();
+    name!.value = 'New Customer';
+    name!.dispatchEvent(new Event('input', { bubbles: true }));
+    phone!.value = '01812345678';
+    phone!.dispatchEvent(new Event('input', { bubbles: true }));
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await flushPromises();
 
-    expect(wrapper.find('.tiles').exists()).toBe(false);
-    expect(wrapper.find('.table-wrap').exists()).toBe(true);
+    expect(create).toHaveBeenCalledWith(
+      'test-access',
+      expect.objectContaining({ name: 'New Customer', phone: '01812345678', roles: ['CUSTOMER'] }),
+      expect.any(String),
+    );
+    expect(load).toHaveBeenCalledTimes(2);
   });
 
   it('deactivates through a confirmation that names the consequence (UI-26)', async () => {
     setStatus.mockResolvedValue({ ...KARIM, status: 'INACTIVE' });
     const wrapper = await mountLoaded();
 
-    await wrapper.find('.actions .danger').trigger('click');
+    await wrapper.find('.row-menu-trigger').trigger('click');
+    await flushPromises();
+    const deactivate = [...document.body.querySelectorAll<HTMLElement>('.p-menu-item')]
+      .find((item) => item.textContent?.includes('Deactivate'));
+    expect(deactivate).toBeDefined();
+    (deactivate!.querySelector<HTMLElement>('.p-menu-item-link') ?? deactivate!).click();
+    await flushPromises();
     expect(wrapper.text()).toContain('Deactivate Karim Uddin?');
     expect(wrapper.text()).toContain('stays exactly as it is');
 
@@ -183,7 +214,7 @@ describe('PartiesPage', () => {
     const wrapper = await mountLoaded();
 
     expect(wrapper.text()).toContain('Walk-in');
-    expect(wrapper.find('.actions .linkish').exists()).toBe(false);
+    expect(wrapper.find('.row-menu-trigger').exists()).toBe(false);
   });
 });
 
@@ -193,30 +224,9 @@ describe('PartiesPage', () => {
  * a feature nobody chose.
  */
 describe('PartiesPage with features off and rights missing', () => {
-  it('shows no Vendors tab while vendors are switched off', async () => {
+  it('does not repeat Customer, Supplier or Vendor navigation inside the page', async () => {
     const wrapper = await mountLoaded();
-
-    expect(wrapper.findAll('.tab').map((tab) => tab.text())).toEqual([
-      'Customers',
-      'Suppliers',
-    ]);
-  });
-
-  it('shows the Vendors tab once vendors are switched on and the caller may see them', async () => {
-    useSession().setPermissions([...ALL_RIGHTS, 'party.vendor.view']);
-    setup.mockResolvedValue({
-      groups: [],
-      features: { customerGroups: false, vendors: true },
-      fields: { address: true, guardianName: false, nid: false, email: false, notes: false },
-    });
-
-    const wrapper = await mountLoaded();
-
-    expect(wrapper.findAll('.tab').map((tab) => tab.text())).toEqual([
-      'Customers',
-      'Suppliers',
-      'Vendors',
-    ]);
+    expect(wrapper.find('.tabs').exists()).toBe(false);
   });
 
   it('hides Add and the row actions from a caller who may only look', async () => {
@@ -225,7 +235,7 @@ describe('PartiesPage with features off and rights missing', () => {
     const wrapper = await mountLoaded();
 
     expect(wrapper.find('.page-actions .btn-primary').exists()).toBe(false);
-    expect(wrapper.find('.actions .linkish').exists()).toBe(false);
+    expect(wrapper.find('.row-menu-trigger').exists()).toBe(false);
   });
 
   it('hides the group column and the group filter while groups are off', async () => {

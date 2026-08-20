@@ -2,9 +2,9 @@
 
 **Status: BINDING.** A change violating any rule below is rejected in full, regardless of how much of it works.
 
-Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.0 (Merged Canonical)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
+Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11) in one month. Work is therefore organised as four large weekly **module increments**, with focused tests while each module is built and full regression at its module gate.
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Focused tests run while each path is changed; full regression runs at the module gate.
 
 ---
 
@@ -41,8 +41,15 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 | A7 | Before implementing any business module, read SRS `§5.0`, `§5.0A`, the **entire target module subsection**, its referenced decisions/invariants, and the task block sections. Do not implement from memory, an old prompt, an archived module document, or existing legacy code alone. |
 | A8 | Create a requirement trace **before writing code**: Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature/entitlement dependencies → Accounting effects → Inventory effects → correction/reversal rules → Search/filters → Edge cases → Acceptance tests. Every applicable item must have an implementation location and verification method. |
 | A9 | Existing code is evidence of current implementation, not authority over v4. If code, Google-Sheets-era behaviour, an archived document or an old test conflicts with v4, do not silently preserve it. Report the conflict and follow the finalized SRS after owner resolution. |
+| A10 | **Existing code is the first reuse candidate.** Before adding a use case, repository method, contract, API endpoint, composable, store action, dialog, list/hub helper or formatter, search the current codebase for the existing implementation and its callers. Reuse or extend the authoritative implementation when it already owns the business meaning. |
+| A11 | **Do not create a parallel implementation to make a new UI easier.** If Customer Hub, Counter, Daybook, Invoice, Search or another context needs Receive/Pay/Return/Correct/Void, route that UI into the existing owning use case. If the required owning use case is missing or materially wrong, change it once at its seam (within scope) rather than adding a context-specific copy. |
+| A12 | **UI migration is not a rewrite license.** Preserve conforming domain/application/database/API behaviour and existing tests. Replace or reorganise the Vue interaction layer only as needed to satisfy the final SRS. Reuse current routes, contracts, stores/composables and shared components where they fit; remove or retire obsolete UI entry points only after every caller has a replacement. |
+| A13 | Before changing existing code, build a **reuse map**: required SRS action → existing module/interface → current implementation/callers → decision (`REUSE`, `EXTEND`, `REPLACE`, `MISSING`) → verification. A new implementation is allowed only for `MISSING`, or for `REPLACE` where the current implementation violates the SRS/architecture and cannot be safely extended. |
+| A14 | **Function reuse means business-action reuse across the entire ERP.** If one authoritative function/use case updates/corrects a Sales Invoice, Customer Ledger, Sales Invoice History, Invoice Detail and Daybook all call it. The same rule applies to Receive/Pay/Return/Void/Change-Date. Never create a screen-specific business function for the same intent. |
+| A15 | **Refactor the owning module first when necessary.** If the existing implementation is duplicated, structurally wrong, mixes business rules into Vue/controller code, or cannot support the final SRS safely, refactor/consolidate that affected module/seam before adding the next caller or starting the next business module. This is approved refactoring inside the current module scope, not permission for unrelated cleanup. |
+| A16 | **Known UI debt blocks module progression.** A currently built module with known final-v4.2 UI conflicts is not considered complete merely because its backend works. Finish its UI migration, reuse wiring and acceptance checks before starting the next module. |
 
-**A5 matters most.** An agent that silently "corrects" a business rule produces software that passes its own tests and computes wrong money. This is the single most dangerous failure mode in this project.
+**A5 matters most.** An agent that silently changes a business rule can produce software that passes its own tests and computes wrong money. **A10–A13 are the next protection:** an agent that ignores working code and creates a second implementation can produce two individually-correct paths that later diverge. SherERP prefers one deep owning module with many UI entry points.
 
 ---
 
@@ -55,16 +62,16 @@ Inside a module, implement one usable path at a time so integration problems rem
 Every module increment follows this order:
 
 ```
- 1  Acceptance criteria + expected numbers   ← given in the task block, never invented
- 2  Domain logic            packages/core-domain
- 3  Application use cases   packages/core-application
- 4  Migration               this module's schema only
- 5  Repository/adapter      packages/adapter-postgres
- 6  API + contract          packages/core-contracts, apps/api
- 7  Frontend screens        apps/web, using the shared design system
- 8  Focused tests           only the changed rules and critical paths
- 9  Internal UI checkpoints while the module is assembled
-10  Module regression       lint · typecheck · test:boundaries · test
+ 1  Acceptance criteria + expected numbers   ← from the SRS/task block, never invented
+ 2  Reuse map + requirement/UI trace         ← inspect existing code before designing new code
+ 3  Domain/application delta                 ← reuse first; change only what the SRS requires
+ 4  Migration                               ← only if the module actually needs schema change
+ 5  Repository/adapter delta                ← reuse current business-specific seam
+ 6  API + contract delta                    ← reuse existing endpoint/use case when authoritative
+ 7  Frontend migration/workflow             ← final v4.2 hub/Counter/Daybook design
+ 8  Focused tests                           ← changed rules + reuse-path integration
+ 9  Real UI checkpoints                     ← desktop/tablet/phone for applicable daily paths
+10  Module regression                       ← lint · typecheck · test:boundaries · test
 11  End-to-end module scenario in the real UI
 12  Update the status ledger and report for owner acceptance
 ```
@@ -80,6 +87,10 @@ Every module increment follows this order:
 | S6 | Write migrations for **this module only**. Do not create tables for a later module. |
 | S7 | Every module UI must be real and reachable, reuse the shared shell/tokens/components, and include loading, empty, error and permission-denied behaviour. A stub or disconnected mock is not delivery. |
 | S8 | Full regression is run once when the complete module is ready for acceptance. During implementation run only the smallest relevant checks after each internal path. A failing focused check blocks further work just as a failing full suite would. |
+| S9 | **Existing-path rule:** when the current code already supports part of the required workflow, start from that path and migrate it forward. Do not rebuild the same capability in a second route/module merely because the old screen layout differs from v4.2. |
+| S10 | **Many entry points, one module interface:** Customer/Supplier/Vendor hubs, Counter, Daybook, source documents and search/history may launch the same action, but all callers cross the same owning module interface. The UI origin may be passed only as navigation/audit context; it must not change business rules. |
+| S11 | **Context restoration is part of completion.** A contextual action launched from a hub/Daybook/reconciliation must save/cancel and return to the originating record, selected date basis/tab/filter/search and practical scroll/page position as required by UI-64. |
+| S12 | **Current-module stabilization gate:** if the current codebase already contains the module being worked on, first make that module conform to v4.2 end to end. Consolidate duplicate business functions, repair architecture violations, migrate its UI, and pass focused + real-UI checks. Only then begin the next business module. |
 
 If a proposed module cannot be completed and accepted within roughly 3–5 working days, split it into two cohesive module increments before writing code. Do not return to one-screen micro-slices.
 
@@ -95,7 +106,7 @@ If a proposed module cannot be completed and accepted within roughly 3–5 worki
 | B4 | Repository **interfaces** live in `core-application`. Implementations live in `adapter-postgres`. Interfaces never expose Drizzle types. |
 | B5 | A controller in `apps/api` is **≤ 20 lines**: validate DTO → build command → call use case → map result. Nothing else. |
 | B6 | Repositories perform no business calculations. No costing, no balance derivation, no validation of business meaning. |
-| B7 | Do not create `BaseRepository`, `GenericRepository`, `RepositoryFactory` or similar. Business-specific interfaces only. |
+| B7 | Do not create `BaseRepository`, `GenericRepository`, `RepositoryFactory` or similar. Business-specific repository interfaces are the intentional persistence seam because PostgreSQL exists now and the committed SQLite-WASM adapter arrives in Phase 12. Do not add extra interfaces for trivial one-implementation helpers merely to imitate this pattern. |
 | B8 | Vue components contain no business rules. Formatting, layout and interaction only. A calculation in a component is a rejected change. |
 
 **CI gate:** `pnpm test:boundaries` fails the build on any violation of B2–B4.
@@ -212,6 +223,27 @@ Anything not on that list and not required by the current module does not get bu
 
 **Do not over-abstract because code looks similar.** Two pieces of code representing different business concepts may stay separate even when they read alike today — they will diverge, and a premature shared abstraction makes that divergence expensive. DRY applies to duplicated *rules*, not to every repeated line.
 
+### Reuse existing behaviour — strong rule
+
+**Reuse the owning function/use case, not copied code.** Before writing a new function, search for the current function that already represents the business intent. Reuse at the module interface whenever possible.
+
+Good reuse:
+- **Sales Invoice edit/correction** from Customer Ledger, Sales Invoice History, Invoice Detail and Daybook → the same authoritative invoice edit/correction module/interface.
+- Customer Ledger `Receive Payment` → existing receipt use case.
+- Counter `Receive Voucher` → the same receipt use case.
+- Daybook `Correct Sale` → the existing sale correction/versioning use case.
+- Account Reconciliation `Add Missing Entry` → Counter/source creation use case with date/account context prefilled.
+- Supplier Hub `Pay Supplier` and Counter `Payment Voucher` → the same supplier payment use case.
+
+Rejected reuse:
+- copying a Vue method into another page,
+- a second `receiveCustomerPaymentV2`,
+- Daybook-specific posting logic,
+- Counter-specific journal calculations,
+- a “shared generic transaction manager” that hides different business intents.
+
+**Reuse can require extension.** If the existing module interface lacks a caller-neutral input needed by multiple real callers, deepen that module once: extend the smallest stable interface, keep caller-specific navigation state outside the business command, and update all callers/tests. Do not add a wrapper layer whose only job is forwarding parameters.
+
 ### Composition over inheritance
 
 Prefer composition, dependency injection and small focused services. Avoid deep inheritance and giant base classes. No `BaseService` unless genuinely required and justified in the report.
@@ -297,6 +329,62 @@ Existing project-specific architectural rules (R-B, R-C, R-D) remain authoritati
 
 ---
 
+## R-UI — Existing UI Migration to Final v4.2
+
+The repository may contain working screens built before the final workflow decisions. **Do not judge them by visual similarity alone.** Preserve useful behaviour and migrate the interaction model to the final SRS.
+
+### UI migration order
+
+1. Read SRS §2.7 plus the complete target module section.
+2. Open the current route in the real app and record what already works.
+3. Search current Vue/routes/stores/composables/API calls and identify reusable behaviour.
+4. Build the reuse map and the UI acceptance trace.
+5. Keep conforming functions; change layout/navigation/action placement around them.
+6. Route every contextual action into the authoritative use case.
+7. Remove obsolete duplicate UI paths only after their callers are migrated.
+8. Verify the final workflow in the running UI.
+
+### Final v4.2 interaction rules that agents frequently miss
+
+- `Daily` is the first operational category: **POS · Counter · Daybook · Daily Cash** when implemented/enabled/permitted.
+- **Counter** is the user-facing Quick Transactions workspace with three primary intents: Receive Voucher, Payment Voucher, Expense Voucher. It owns no posting logic.
+- **Party ledgers are working hubs.** Customer has Due/Advance + Receive Payment/New Sale + full source-linked ledger; Supplier/Vendor have their equivalent actions.
+- **Expense Category/Ledger is not a Party.** Salary/Electricity/Transport/Rent are expense classifications; Payee/Employee/Party is optional identity.
+- **Daybook is a review/correction launcher**, not a writer. Edit/Delete labels on posted rows route to correction/versioning and void/reversal.
+- **Transaction Date = `business_date`** and is the default ledger/Daybook basis. **Entry Date = immutable `created_at`** and is an audit view.
+- **Account Reconciliation** changes date/adds missing/corrects/reverses through owning use cases and preserves reconciliation history.
+- **Daily Cash** shows immutable Expected vs Physical Count and links mismatches to filtered Daybook investigation.
+- **Never ask for context already known** by the origin screen.
+- **Preserve origin state** after save/cancel/drill-down return.
+- **Progressive disclosure:** one or two primary actions visible; frequent views/actions nearby; rare/sensitive actions under More/row menu.
+- **PrimeVue 4 first:** reuse existing shared PrimeVue controls/preset/tokens; do not replace a working shared control with page-specific CSS/native controls.
+- **Bangla helper styling:** prefer compact inline `English — বাংলা`; English keeps normal label size/weight and Bangla uses the shared 11px muted helper style. Do not add a second full helper line under every control.
+- **Tooltip-first where visible Bangla harms density:** icon actions, compact table headers/rows and narrow toolbars use the shared PrimeVue tooltip/help pattern for Bangla/secondary guidance. Tooltip behavior must remain accessible to keyboard and touch where the information matters.
+- **Party ledger overview columns:** Name · Phone · Address · Current role balance · `⋯`. Put View Ledger/Edit/Delete-or-Deactivate/other permitted row actions in the menu. Do not reintroduce detail/configuration columns without an explicit SRS change.
+
+### UI reuse decision
+
+For every changed screen, explicitly classify each current element:
+
+`KEEP` — already satisfies v4.2  
+`MOVE` — behaviour is correct, placement is wrong  
+`REWIRE` — UI is useful but calls the wrong/duplicate path  
+`REPLACE` — interaction or underlying implementation conflicts with v4.2 and must be replaced/consolidated at the owning seam before new module work  
+`REMOVE` — obsolete duplicate/dead UI after replacement is proven
+
+A UI migration report that only says “redesigned page” is incomplete. It must state which existing behaviour was reused and which duplicate path was removed.
+
+### UI acceptance trace
+
+Before code, map:
+
+`SRS rule/action → current route/component → existing callable function/use case → planned UI surface → verification`
+
+Before `CODE COMPLETE`, verify the real UI at the applicable desktop/tablet/phone widths. Source-code inspection alone is not UI acceptance.
+
+
+---
+
 ## R-E — Tests
 
 | # | Rule |
@@ -313,6 +401,9 @@ Existing project-specific architectural rules (R-B, R-C, R-D) remain authoritati
 | E10 | The completed Cash module runs the §5.16.6 worked example with the exact numbers, including all three Day-2 outcomes and proof that Day 1's shortage is unchanged. It is not rerun after unrelated internal cash-screen edits. |
 | E11 | UI tests are one smoke test per module workflow plus tests for any new shared state component. Reusing an already-tested loading/error/empty shell does not require repeating the same component test on every page. |
 | E12 | Do not test framework behaviour, trivial getters, DTO field copies or visual token values in multiple places. Test business rules, security boundaries, transaction rollback, serialization secrecy, and the user's critical workflow. |
+| E13 | When a new UI entry point reuses an existing mutation, add/adjust tests to prove both entry points reach the **same owning use case/result**, not duplicate posting logic. Do not copy the owning module's full business test suite into each caller. |
+| E14 | UI migration tests verify context preservation and action routing where those are new risks: preselected known party/source, return to origin state, correct source action, and absence of duplicate/unauthorized actions. |
+| E15 | For a repeated business action, test the owning module once for business correctness and add caller-routing tests proving every UI entry point reaches that same module/interface. Example: Customer Ledger and Sales Invoice History invoice edit both reach the same invoice edit/correction use case; do not duplicate accounting assertions in every caller. |
 
 E8's cost-visibility check is what catches the leak where Vue hides a cost column while the API still sends it. Reducing repetition never means reducing accounting, inventory, security or tenant-isolation coverage.
 
@@ -326,6 +417,7 @@ When finished, report in exactly this format. Do not narrate outside it.
 ## Module increment
 ## Acceptance criteria and the numbers I verified
 ## Assumptions
+## Reused existing functions/modules
 ## Files changed
 ## Files intentionally NOT touched
 ## Database (PostgreSQL migration)
@@ -341,7 +433,8 @@ When finished, report in exactly this format. Do not narrate outside it.
 | F2 | If any of `lint`, `typecheck`, `test:boundaries`, `test` fails, the task is **not complete**. Say so. |
 | F3 | State every assumption. An unstated assumption in an accounting system becomes a wrong number nobody can trace. |
 | F4 | Report risks you noticed even if outside the current module. |
-| F5 | The UI section must tell the owner exactly what to click to accept the module workflow. A module they cannot find or complete is not accepted. |
+| F5 | The UI section must tell the owner exactly what to click to accept the module workflow, including contextual entry and return path. A module they cannot find or complete is not accepted. |
+| F6 | Report the authoritative existing functions/modules reused, any function extended once for multiple callers, and any duplicate path removed. If `Reused existing functions/modules` is `none`, explain why the reuse map found no suitable implementation. |
 
 ---
 
@@ -358,6 +451,8 @@ When finished, report in exactly this format. Do not narrate outside it.
 7. You need an internal account that is not on the closed list in §2.4.
 8. The module cannot be delivered end to end within its agreed 3–5 day timebox; propose a cohesive split instead.
 9. You cannot satisfy the rule set without an exception.
+10. You are about to create a second implementation of a business action that already exists behind another UI entry point.
+11. You are about to start the next module while the current built module still has known v4.2 UI/reuse/architecture defects.
 
 Stopping is always correct. A half-correct accounting system is worse than an unfinished one.
 
@@ -395,7 +490,7 @@ not replace the four automated gates or owner UI acceptance.
 - [ ] New repository/query patterns have cross-tenant proof; exceptional endpoints have their own isolation test
 - [ ] Class T creations and duplicate-prone Class M creations have idempotency proof
 - [ ] Module permission matrix passes; cost-visibility is checked on the serialized body
-- [ ] v4 module trace checked: required fields, conditional fields, UI actions, search/filters, edge states, print/share behaviour (where applicable), accounting/stock effects, reversal/correction and acceptance tests are all implemented
+- [ ] v4.2 module trace checked: required fields, conditional fields, UI actions, search/filters, edge states, print/share behaviour (where applicable), accounting/stock effects, reversal/correction and acceptance tests are all implemented
 - [ ] Migration runs clean on an empty DB **and** on a seeded DB
 - [ ] OpenAPI regenerates with no manual edits
 - [ ] `saas-smoke` and `onprem-smoke` green — *from Phase 1 onward; these gates do not exist in Phase 0*
@@ -421,7 +516,14 @@ not replace the four automated gates or owner UI acceptance.
 - [ ] Reversal path tested where the module can reverse a posted action: void it, confirm everything returns to the prior state
 - [ ] Backdated path tested where applicable
 - [ ] Numbers still correct after a page refresh and a re-login
-- [ ] The screen is usable — loading state, error state, no console errors
+- [ ] The screen is usable — loading/empty/error/permission states, no console errors
+- [ ] Final v4.2 workflow verified: Daily/Counter/Daybook/hub behavior where applicable
+- [ ] Context already known by the origin was preselected, not asked again
+- [ ] Save/cancel/drill-down returned to the required origin state
+- [ ] Existing authoritative business functions were reused rather than duplicated
+- [ ] Repeated actions from multiple screens were verified to hit the same owning module/interface
+- [ ] Bangla helpers are subtle/inline or tooltip-based where density requires it; they do not distort the final layout
+- [ ] Ledger overview shows only the SRS-approved compact columns and one row action menu
 
 **Baseline scenario — run at every transactional module gate once the prerequisite Purchase and Sales modules exist:**
 
@@ -472,11 +574,12 @@ Any disagreement between two reports is a **blocking** defect, never a rounding 
 Paste this at the top of every task, then the module task block.
 
 ```
-You are implementing ONE MODULE-SCALE VERTICAL INCREMENT of SherERP. You are not redesigning the product.
+You are implementing ONE MODULE-SCALE VERTICAL INCREMENT of SherERP against the final v4.2 SRS. You may be migrating an already-built module. You are not inventing a new product or rebuilding working business logic without cause.
 
 MANDATORY READING before writing any code:
 - AI_CODING_INSTRUCTIONS.md          <- binding rules; violations reject the whole change
-- SRS_AND_BUILD_GUIDE.md, only the sections named in the task block
+- SRS_AND_BUILD_GUIDE.md, §2.7 + only the module/dependency/task sections named in the task block
+- the existing code paths that currently implement the same business actions
 
 WHAT A MODULE INCREMENT IS
 One coherent business area containing all related user actions needed to make it usable,
@@ -486,6 +589,7 @@ module is ready, run full regression once and perform the pre-written scenario i
 If the module cannot be completed in 3-5 working days, propose two cohesive increments.
 
 NON-NEGOTIABLE RULES:
+0. REUSE FIRST. Search the current codebase for the authoritative function/use case before creating a new one. Customer/Counter/Daybook/Invoice/etc. are entry points, not permission to duplicate Receive/Pay/Return/Correct/Void logic. Invoice edit/correction is the reference example: every screen calls the same owning module/interface.
 1. Business logic goes in packages/core-domain (pure TypeScript) and packages/core-application.
    NEVER in controllers, Vue components, SQL, or database triggers.
 2. core-domain must not import @nestjs/*, Drizzle, PostgreSQL, SQLite, express, or DOM types.
@@ -503,6 +607,11 @@ NON-NEGOTIABLE RULES:
 9. Do not modify anything outside the ALLOWED FILES list. If you believe you must, STOP and report.
 10. Do not change any requirement or decision. If one seems wrong or contradictory, STOP and
     report it - do not improvise a fix.
+11. For existing UI, classify current behavior KEEP/MOVE/REWIRE/REPLACE/REMOVE and migrate toward
+    v4.2 while preserving conforming business logic and current callers.
+12. If the current module needs structural refactoring/consolidation to establish one authoritative
+    implementation or satisfy final UI rules, finish that refactor and acceptance FIRST. Do not start
+    the next business module with known defects left behind.
 
 SIMPLICITY IS MANDATORY
 Choose the simplest implementation that satisfies the requirements. Before adding any
@@ -513,12 +622,13 @@ No BaseRepository, GenericRepository, RepositoryFactory, generic CRUD, manager c
 event buses, single-implementation strategies or interfaces, factories, or plugin systems.
 Never use SOLID, DRY, KISS or YAGNI to override a finalized business requirement.
 
-BEFORE YOU CODE: write a short plan (files to add/change, migration, API, UI, tests) and wait
+BEFORE YOU CODE: write the requirement/UI trace, reuse map, and a short plan (existing functions
+reused, files to add/change, migration, API, UI, tests) and wait
 for approval if the task block says PLAN FIRST.
 
 WHEN DONE, report in exactly this format:
 ## Module increment / ## Acceptance criteria and the numbers I verified / ## Assumptions /
-## Files changed / ## Files intentionally NOT touched / ## Database (PostgreSQL migration) /
+## Reused existing functions/modules / ## Files changed / ## Files intentionally NOT touched / ## Database (PostgreSQL migration) /
 ## UI (route, screen, what the owner should click) / ## Tests (paste the real runner output) /
 ## Not implemented / ## Risks I noticed
 ```
@@ -538,8 +648,17 @@ If you disagree with the spec, say so instead of improvising.
 **Codex / IDE agent** — prepend:
 
 ```
-Implement only the files listed. Follow the existing file next to each new file as a style
-template. Do not reorganise folders. Do not add libraries. After each file, show a diff summary.
+Start by reading the existing implementation of this workflow. Search before creating.
+Name the authoritative functions/use cases you will REUSE, EXTEND, REPLACE or mark MISSING.
+Use the **invoice edit/correction rule** as the model: if Customer Ledger, Sales Invoice History,
+Invoice Detail and Daybook expose the same business action, they must call one owning module/interface.
+If current code has duplicate functions or the existing module/UI is structurally wrong, refactor and
+consolidate that current module first, migrate its real UI to v4.2, and verify it before starting the
+next module. Do not create a parallel page/function just because the old layout differs.
+Implement only the allowed files; if the correct refactor needs another file, STOP and propose that
+specific scope expansion instead of copying logic locally. Follow neighboring code/style. Do not add
+libraries or reorganise unrelated folders. After each internal path, show a concise diff summary and
+run the smallest relevant check.
 ```
 
 **Generic GPT agent** — prepend:
@@ -565,10 +684,17 @@ Check this diff against AI_CODING_INSTRUCTIONS.md.
 - Was any unnecessary abstraction added - Base*, Generic*, *Factory, a single-implementation
   interface, an event bus, a config flag nobody asked for?
 - Do migrations cover only this module?
-- Does the implementation satisfy every applicable v4 module-contract item: fields, conditional fields,
+- Does the implementation satisfy every applicable v4.2 module-contract item: fields, conditional fields,
   UI actions, filters/search, permissions, stock/accounting effects, correction/reversal, edge states,
   print/share behaviour, and acceptance criteria?
 - Did any archived/legacy requirement (LIFO, Loyalty/Premium, Tauri-first) leak back into the code?
+- Did the change reuse the existing authoritative use case, or create a second implementation for a new UI entry point?
+- Does the UI match v4.2 stay-in-context behavior: Daily/Counter/Daybook/hubs, progressive disclosure, preselected known context, preserved return state, Transaction Date vs Entry Date?
+- Were existing conforming functions/routes/contracts unnecessarily rewritten instead of reused?
+- Does the same repeated business action resolve to one authoritative module/interface across every caller (especially invoice edit/correction)?
+- Did the agent leave known current-module UI/refactor debt and start another module anyway?
+- Are Bangla helpers subtle inline/tooltip guidance rather than layout-expanding duplicate labels?
+- Are party ledger overview columns limited to Name, Phone, Address, Current Balance and one `⋯` menu?
 
 Do not write code. List the problems only.
 ```
@@ -577,9 +703,9 @@ The agent that wrote the bug cannot catch it — its own tests will agree with i
 
 ---
 
-## R-G2 — v4 Requirement-Fidelity Guardrails
+## R-G2 — v4.2 Requirement-Fidelity Guardrails
 
-These are implementation-process rules, not a duplicate SRS. The merged v4 restored detailed business/UI behaviour that an AI agent must not reduce to generic CRUD.
+These are implementation-process rules, not a duplicate SRS. The reconciled v4.2 carries detailed business/UI behaviour that an AI agent must not reduce to generic CRUD.
 
 | # | Rule |
 |---|---|
@@ -592,6 +718,9 @@ These are implementation-process rules, not a duplicate SRS. The merged v4 resto
 | G2.7 | **Loyalty/Premium is out of current scope.** Do not resurrect it from archived docs, legacy fields or old prompts. |
 | G2.8 | **Roadmap order is binding:** Online V1 → Sync/PWA Offline (12) → Mobile/PWA polish (13) → optional Tauri (14) → MCP (15). Do not scaffold later phases early. |
 | G2.9 | **Existing Google Sheets/Apps Script SherERP is a migration/reference source, not the architectural source of truth.** Preserve required business behaviour and migratable data, but do not copy spreadsheet storage patterns into the new PostgreSQL/domain design unless v4 explicitly requires them. |
+| G2.10 | **Existing new-codebase functions are implementation assets.** Reuse conforming domain/application/API functions during UI migration. Existing code does not override v4.2, but neither may an agent ignore it and create a duplicate implementation. |
+| G2.11 | **Daily workflow is binding:** Daily = POS/Counter/Daybook/Daily Cash; Counter = Receive/Payment/Expense entry surface; Daybook = review/source-action launcher; party ledgers = working hubs; many entry points use one owning module interface. |
+| G2.12 | **Dual date is binding:** `business_date` is Transaction Date/default; `created_at` is immutable Entry Date/audit. No UI or correction workflow may silently rewrite creation time. |
 
 ## Phase 0 Task Blocks
 
@@ -787,6 +916,10 @@ Do not start Phase 1 until every box is ticked.
 | "I also refactored some other files" | "Revert everything outside the ALLOWED FILES list." |
 | "I'll add the UI after this module" | "Then the module isn't complete. Finish its real workflow." |
 | "I added a base class to reduce duplication" | "Remove it. Show me the two real call sites first." |
+| "I created a new payment/return function for this screen" | "Stop. Show me the existing owning use case and reuse it unless the reuse map proves it is missing." |
+| "I rebuilt the page from scratch" | "Show which existing functions/components were reused and why replacement was necessary." |
+| "The current module is messy, I will fix it later" | "No. Consolidate/refactor this module to the final SRS and verify its UI before starting the next module." |
+| "Customer Ledger needs its own invoice-update function" | "No. Reuse the authoritative invoice edit/correction module used by Sales Invoice History/Invoice Detail." |
 | "This is a bit unusual, normally you'd…" | "Follow the spec. If the spec is wrong, report it — don't change it." |
 
 **One module increment per conversation.** Use internal checkpoints and compact summaries when the conversation grows; do not mix a second business module into the same context.

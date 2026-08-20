@@ -83,3 +83,32 @@ export type {
   JournalLineDraft,
   JournalRejection,
 } from './accounting/journal-entry';
+export { openingStockPosting } from './inventory/opening-stock';
+export type { OpeningStockPosting } from './inventory/opening-stock';
+export {
+  rejectStockAdjustment,
+  STOCK_ADJUSTMENT_REASONS,
+  stockAdjustmentPosting,
+} from './inventory/stock-adjustment';
+export type {
+  StockAdjustmentDraft,
+  StockAdjustmentPosting,
+  StockAdjustmentReason,
+  StockAdjustmentRejection,
+} from './inventory/stock-adjustment';
+export {
+  allocateLots,
+  averageAfterReceipt,
+  costIssue,
+  stockValueMinor,
+  unitCostFromMoneyMinor,
+} from './inventory/costing';
+export { stockStatus } from './inventory/stock-status';
+export type { StockStatus } from './inventory/stock-status';
+export type {
+  AverageReceiptResult,
+  CostingMethod,
+  CostLayer,
+  IssueCost,
+  LotAllocation,
+} from './inventory/costing';

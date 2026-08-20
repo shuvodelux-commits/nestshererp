@@ -4,6 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AuditModule } from './audit/audit.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { PartiesModule } from './parties/parties.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
 import { ReadOnlyLicenseGuard } from './deployment/read-only.guard';
@@ -29,6 +30,7 @@ import { UsersModule } from './users/users.module';
     SettingsModule,
     AuditModule,
     CatalogModule,
+    InventoryModule,
     PartiesModule,
   ],
   controllers: [HealthController],

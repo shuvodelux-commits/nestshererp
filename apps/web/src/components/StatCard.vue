@@ -49,7 +49,7 @@ defineProps<{
 .stat {
   display: flex;
   align-items: flex-start;
-  gap: var(--sher-space-3);
+  gap: var(--sher-space-2);
   padding: var(--sher-card-pad);
   border-radius: var(--sher-radius-lg);
   border: 1px solid var(--sher-line);
@@ -69,8 +69,8 @@ defineProps<{
 }
 
 .stat-value {
-  margin: 6px 0 0;
-  font-size: var(--sher-text-2xl);
+  margin: 4px 0 0;
+  font-size: var(--sher-text-xl);
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
@@ -78,7 +78,7 @@ defineProps<{
 }
 
 .stat-detail {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   font-size: var(--sher-text-xs);
   color: var(--sher-text-muted);
 }
@@ -86,12 +86,12 @@ defineProps<{
 .disc {
   margin-left: auto;
   flex-shrink: 0;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  font-size: 20px;
+  font-size: 17px;
 }
 
 /* --- plain: white card, the tone lives in the disc and the figure --------- */

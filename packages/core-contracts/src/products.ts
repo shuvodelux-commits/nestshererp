@@ -94,6 +94,33 @@ export const productResponseSchema = z
      * figure alone.
      */
     conversion: productConversionSchema.nullable(),
+
+    /**
+     * Stock on hand, in base units (§5.5 list column).
+     *
+     * Supplied by the read model rather than counted in Vue, and derived from
+     * the same movements INV-02 checks — a product that has never been stocked
+     * reads `0`, which is a fact, not a missing value.
+     */
+    stockQty: z.number().int(),
+    /**
+     * **Absent** without `inventory.cost.view`, like `purchasePriceMinor` — a
+     * hidden column that still ships the number in the response body is the
+     * leak UI-40 and R-E8 exist to catch.
+     */
+    stockValueMinor: z.number().int().optional(),
+    /** Against the reorder level, decided server-side so two screens cannot disagree. */
+    stockStatus: z.enum(['IN_STOCK', 'LOW_STOCK', 'ZERO_STOCK', 'NEGATIVE_STOCK']),
+    /**
+     * Whether any stock has ever moved for this product.
+     *
+     * One fact, two consequences, so they can never disagree: it is what makes
+     * `Delete` become `Deactivate` (§3.6), and what closes the one-time opening
+     * figure on the product form (§5.10). The server enforces both regardless;
+     * this only decides what the UI offers.
+     */
+    hasStockHistory: z.boolean(),
+
     /** Optimistic lock (D-32). Sent back on edit; a stale one is a 409. */
     version: z.number().int(),
   })

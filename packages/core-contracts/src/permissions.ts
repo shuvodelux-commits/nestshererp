@@ -86,6 +86,8 @@ export const Permission = {
    * what the goods cost.
    */
   COST_VIEW: 'inventory.cost.view',
+  INVENTORY_LOT_VIEW: 'inventory.lot.view',
+  INVENTORY_COST_RECOMPUTE: 'inventory.cost.recompute',
 
   /**
    * Parties (Phase 2, §5.6, D-04). Customers, suppliers and vendors are three
@@ -266,6 +268,18 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
       'See purchase price and, later, cost and profit. Without this the cost is not sent to the screen at all.',
   },
   {
+    code: Permission.INVENTORY_LOT_VIEW,
+    group: 'Inventory',
+    label: 'See stock lots and movement sources',
+    detail: 'Open a product’s batches and trace each quantity back to its source transaction.',
+  },
+  {
+    code: Permission.INVENTORY_COST_RECOMPUTE,
+    group: 'Inventory',
+    label: 'Recompute inventory costs',
+    detail: 'Run the controlled costing repair after a permitted backdated or corrected stock transaction.',
+  },
+  {
     code: Permission.CUSTOMER_VIEW,
     group: 'Customers',
     label: 'See customers',
@@ -402,6 +416,8 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CATEGORY_MANAGE,
       Permission.UNIT_MANAGE,
       Permission.COST_VIEW,
+      Permission.INVENTORY_LOT_VIEW,
+      Permission.INVENTORY_COST_RECOMPUTE,
       Permission.CUSTOMER_VIEW,
       Permission.CUSTOMER_CREATE,
       Permission.CUSTOMER_EDIT,
@@ -454,6 +470,7 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.BRAND_MANAGE,
       Permission.CATEGORY_MANAGE,
       Permission.UNIT_MANAGE,
+      Permission.INVENTORY_LOT_VIEW,
       Permission.SUPPLIER_VIEW,
     ],
   },
@@ -466,6 +483,7 @@ export const SEED_ROLES: readonly SeedRole[] = [
     permissions: [
       Permission.PRODUCT_VIEW,
       Permission.COST_VIEW,
+      Permission.INVENTORY_LOT_VIEW,
       Permission.CUSTOMER_VIEW,
       Permission.SUPPLIER_VIEW,
       Permission.VENDOR_VIEW,
@@ -477,6 +495,7 @@ export const SEED_ROLES: readonly SeedRole[] = [
     // "Read-only, no cost, no profit."
     permissions: [
       Permission.PRODUCT_VIEW,
+      Permission.INVENTORY_LOT_VIEW,
       Permission.CUSTOMER_VIEW,
       Permission.SUPPLIER_VIEW,
     ],

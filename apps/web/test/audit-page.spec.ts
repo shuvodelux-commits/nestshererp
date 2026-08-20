@@ -1,9 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import Select from 'primevue/select';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../src/api/client';
 import { useSession } from '../src/auth/session';
 import AuditPage from '../src/pages/AuditPage.vue';
+import DateOnlyPicker from '../src/components/DateOnlyPicker.vue';
 
 /**
  * Slice 1.6 — the audit workflow smoke test (R-E11).
@@ -144,8 +146,9 @@ describe('AuditPage', () => {
   it('sends the filters the owner chose', async () => {
     const wrapper = await mountLoaded();
 
-    await wrapper.get('#filter-from').setValue('2026-08-01');
-    await wrapper.get('#filter-entity').setValue('setting');
+    wrapper.findAllComponents(DateOnlyPicker).find((item) => item.props('inputId') === 'filter-from')?.vm.$emit('update:modelValue', '2026-08-01');
+    wrapper.findAllComponents(Select).find((item) => item.props('inputId') === 'filter-entity')?.vm.$emit('update:modelValue', 'setting');
+    await flushPromises();
     await wrapper.get('.filters').trigger('submit');
     await flushPromises();
 

@@ -4,6 +4,7 @@ import type {
   AuditWriter,
   CatalogRepository,
   IdempotencyStore,
+  InventoryRepository,
   NumberingService,
   Outbox,
   ProductRepository,
@@ -19,6 +20,7 @@ import {
   CATALOG_REPOSITORY,
   CLOCK,
   IDEMPOTENCY_STORE,
+  INVENTORY_REPOSITORY,
   NUMBERING_SERVICE,
   OUTBOX,
   PRODUCT_REPOSITORY,
@@ -78,6 +80,7 @@ import { MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        inventory: InventoryRepository,
       ): ManageProductsService =>
         new ManageProductsService(
           uow,
@@ -90,6 +93,7 @@ import { MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
           audit,
           outbox,
           clock,
+          inventory,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -102,6 +106,7 @@ import { MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        INVENTORY_REPOSITORY,
       ],
     },
   ],

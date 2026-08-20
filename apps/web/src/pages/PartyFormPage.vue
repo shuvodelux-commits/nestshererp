@@ -113,6 +113,8 @@ const canSave = computed(() =>
 const canDelete = computed(
   () => !isNew.value && roles.value.some((role) => session.can(RIGHTS[role].deactivate)),
 );
+const isEditing = computed(() => isNew.value || route.query['mode'] === 'edit');
+const fieldsDisabled = computed(() => isSystemReserved.value || !isEditing.value);
 
 /*
  * D-39 / UI-45 — quick add from the point of use. The same use case the Parties
@@ -187,6 +189,7 @@ function toggleRole(role: PartyRoleValue): void {
 
 const canSubmit = computed(
   () =>
+    isEditing.value &&
     !busy.value &&
     canSave.value &&
     !isSystemReserved.value &&
@@ -283,7 +286,7 @@ async function remove(): Promise<void> {
   formError.value = null;
   try {
     await deleteParty(session.accessToken.value ?? '', partyId.value);
-    await router.push('/parties');
+    await router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
   } catch (cause) {
     formError.value = describe(cause);
     confirmingDelete.value = false;
@@ -291,19 +294,32 @@ async function remove(): Promise<void> {
     busy.value = false;
   }
 }
+
+function backToList(): void {
+  void router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
+}
+
+function editProfile(): void {
+  if (partyId.value !== null) void router.push({ path: `/parties/${partyId.value}`, query: { role: roles.value[0] ?? 'CUSTOMER', mode: 'edit' } });
+}
 </script>
 
 <template>
   <AppShell
     :title="isNew ? 'Add a record' : name"
-    :breadcrumb="['Dashboard', 'Customers & Suppliers', isNew ? 'New' : name]"
+    :breadcrumb="['Dashboard', roles[0] === 'SUPPLIER' ? 'Suppliers' : roles[0] === 'VENDOR' ? 'Vendors' : 'Customers', isNew ? 'New' : name]"
     help-bn="নাম আর ফোন নম্বর দিলেই ক্রেতা যোগ হয়ে যাবে"
   >
+    <template v-if="!isNew && !isEditing && canSave && !isSystemReserved" #actions>
+      <button type="button" class="btn btn-primary" @click="editProfile">
+        <i class="pi pi-pencil" aria-hidden="true" /> Edit details
+      </button>
+    </template>
     <div v-if="loading" class="skeleton skeleton-form" aria-busy="true" aria-label="Loading" />
 
     <AppCard v-else-if="loadError !== null" title="Could not open this record">
       <ErrorNotice :code="loadError.code" :message="loadError.message" />
-      <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
+      <button type="button" class="btn btn-ghost" @click="backToList">
         Back to the list
       </button>
     </AppCard>
@@ -320,12 +336,7 @@ async function remove(): Promise<void> {
         cannot be renamed, deactivated or removed.
       </p>
 
-      <AppCard
-        icon="pi-user"
-        title="Who this is"
-        subtitle="Their name and how to reach them."
-        subtitle-bn="মানুষটির নাম আর মোবাইল নম্বর লিখুন"
-      >
+      <section class="party-fields">
         <ErrorNotice
           v-if="formError !== null"
           :code="formError.code"
@@ -348,7 +359,7 @@ async function remove(): Promise<void> {
               v-model="name"
               type="text"
               required
-              :disabled="isSystemReserved"
+              :disabled="fieldsDisabled"
               placeholder="Karim Uddin"
             />
           </div>
@@ -364,7 +375,7 @@ async function remove(): Promise<void> {
                 id="party-guardian"
                 v-model="guardianName"
                 type="text"
-                :disabled="isSystemReserved"
+                :disabled="fieldsDisabled"
               />
             </div>
   
@@ -381,7 +392,7 @@ async function remove(): Promise<void> {
                 v-model="phone"
                 type="tel"
                 :required="isCustomer"
-                :disabled="isSystemReserved"
+                :disabled="fieldsDisabled"
                 placeholder="01712345678"
               />
               <p v-if="isCustomer" class="fine">
@@ -401,19 +412,14 @@ async function remove(): Promise<void> {
               id="party-address"
               v-model="address"
               rows="2"
-              :disabled="isSystemReserved"
+              :disabled="fieldsDisabled"
             />
           </div>
 
 
-          <AppCard
-            collapsible
-            :force-open="formError !== null"
-            title="More details"
-            subtitle="Only if you need them."
-            subtitle-bn="দরকার হলেই কেবল এগুলো লাগবে"
-          >
-            <fieldset class="roles" :disabled="isSystemReserved">
+          <details class="more-details" :open="formError !== null">
+            <summary>More details <span class="label-bn">আরও তথ্য</span></summary>
+            <fieldset class="roles" :disabled="fieldsDisabled">
               <legend>
                 This record is a
                 <span class="label-bn">এই মানুষটি কী হিসেবে থাকবেন</span>
@@ -444,7 +450,7 @@ async function remove(): Promise<void> {
                   text-bn="না দিলেও চলবে। পরে সেটিংসে এই ঘরটি বন্ধ করলেও আগে যা সেভ করা আছে তা মুছে যাবে না।"
                 />
               </label>
-              <input id="party-nid" v-model="nid" type="text" :disabled="isSystemReserved" />
+              <input id="party-nid" v-model="nid" type="text" :disabled="fieldsDisabled" />
             </div>
   
             <div v-if="setup.fields.email" class="field">
@@ -452,7 +458,7 @@ async function remove(): Promise<void> {
                 Email
                 <span class="label-bn">ইমেইল</span>
               </label>
-              <input id="party-email" v-model="email" type="email" :disabled="isSystemReserved" />
+              <input id="party-email" v-model="email" type="email" :disabled="fieldsDisabled" />
             </div>
   
             <template v-if="isCustomer">
@@ -467,7 +473,7 @@ async function remove(): Promise<void> {
                 :options="setup.groups"
                 :can-add="canManageGroups"
                 add-placeholder="e.g. Dealer"
-                :disabled="isSystemReserved"
+                :disabled="fieldsDisabled"
                 :create="addGroup"
               />
   
@@ -486,7 +492,7 @@ async function remove(): Promise<void> {
                   v-model="creditLimit"
                   type="text"
                   inputmode="decimal"
-                  :disabled="isSystemReserved"
+                  :disabled="fieldsDisabled"
                   placeholder="Leave empty for no limit"
                 />
                 <p class="fine">
@@ -501,25 +507,25 @@ async function remove(): Promise<void> {
                 Notes
                 <span class="label-bn">নিজের জন্য কোনো মন্তব্য</span>
               </label>
-              <textarea id="party-notes" v-model="notes" rows="3" :disabled="isSystemReserved" />
+              <textarea id="party-notes" v-model="notes" rows="3" :disabled="fieldsDisabled" />
             </div>
   
-          </AppCard>
+          </details>
 
           <!-- Saving is never folded away: it is the point of the screen. -->
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" @click="router.push('/parties')">
-              Cancel
+            <button type="button" class="btn btn-ghost" @click="backToList">
+              {{ isEditing ? 'Cancel' : 'Back to list' }}
             </button>
             <button
-              v-if="canDelete && !isSystemReserved"
+              v-if="isEditing && canDelete && !isSystemReserved"
               type="button"
               class="btn btn-ghost danger"
               @click="confirmingDelete = true"
             >
               Delete
             </button>
-            <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
+            <button v-if="isEditing" type="submit" class="btn btn-primary" :disabled="!canSubmit">
               {{ busy ? 'Saving…' : isNew ? 'Save' : 'Save changes' }}
             </button>
           </div>
@@ -528,20 +534,8 @@ async function remove(): Promise<void> {
             Your role cannot save this record. Ask the owner if you need to.
           </p>
         </form>
-      </AppCard>
+      </section>
 
-      <AppCard
-        v-if="!isNew"
-        icon="pi-book"
-        title="History and balance"
-        subtitle-bn="কেনাবেচা আর হিসাবের খতিয়ান"
-      >
-        <p class="lede">
-          Sales, purchases, payments, returns and the running balance appear here once those
-          modules exist. They are read from the ledger every time, never stored on this record —
-          which is what keeps the balance and the accounts from ever disagreeing.
-        </p>
-      </AppCard>
     </template>
 
     <div v-if="confirmingDelete" class="scrim" @click.self="confirmingDelete = false">
@@ -576,6 +570,28 @@ async function remove(): Promise<void> {
   flex-direction: column;
   gap: var(--sher-space-4);
   max-width: 560px;
+}
+
+.party-fields {
+  max-width: 640px;
+}
+
+.more-details {
+  padding-top: var(--sher-space-2);
+  border-top: 1px solid var(--sher-line);
+}
+
+.more-details > summary {
+  margin-bottom: var(--sher-space-4);
+  color: var(--p-primary-color);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.more-details[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sher-space-4);
 }
 
 .roles {

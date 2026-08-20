@@ -28,3 +28,4 @@ export const ENTITLEMENT_PROVIDER = Symbol('EntitlementProvider');
 export const CATALOG_REPOSITORY = Symbol('CatalogRepository');
 export const PRODUCT_REPOSITORY = Symbol('ProductRepository');
 export const PARTY_REPOSITORY = Symbol('PartyRepository');
+export const INVENTORY_REPOSITORY = Symbol('InventoryRepository');

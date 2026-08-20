@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SettingDescriptorResponse, SettingsResponse } from '@sher/core-contracts';
+import Select from 'primevue/select';
 import { computed, onMounted, ref } from 'vue';
 
 import { ApiError } from '../api/client';
@@ -220,15 +221,7 @@ async function submitProfile(): Promise<void> {
 
           <div class="field">
             <label for="business-timezone">Timezone</label>
-            <select
-              id="business-timezone"
-              v-model="draftTimezone"
-              :disabled="!canEdit || savingProfile"
-            >
-              <option v-for="zone in settings.supportedTimezones" :key="zone" :value="zone">
-                {{ zone }}
-              </option>
-            </select>
+            <Select input-id="business-timezone" v-model="draftTimezone" :options="settings.supportedTimezones" :disabled="!canEdit || savingProfile" filter fluid />
             <p class="help">
               Every report and every day's takings are counted in this timezone.
             </p>
@@ -275,19 +268,17 @@ async function submitProfile(): Promise<void> {
 
             <div class="setting-control">
               <template v-if="mayChange(descriptor)">
-                <select
-                  :id="`setting-${descriptor.key}`"
+                <Select
+                  :input-id="`setting-${descriptor.key}`"
                   :aria-label="descriptor.label"
-                  :value="valueOf(descriptor)"
+                  :model-value="valueOf(descriptor)"
+                  :options="descriptor.options"
                   :disabled="savingKey === descriptor.key"
-                  @change="
-                    apply(descriptor, ($event.target as HTMLSelectElement).value)
-                  "
+                  @update:model-value="apply(descriptor, String($event))"
                 >
-                  <option v-for="option in descriptor.options" :key="option" :value="option">
-                    {{ option === 'on' ? 'On' : option === 'off' ? 'Off' : option }}
-                  </option>
-                </select>
+                  <template #value="slotProps">{{ slotProps.value === 'on' ? 'On' : slotProps.value === 'off' ? 'Off' : slotProps.value }}</template>
+                  <template #option="slotProps">{{ slotProps.option === 'on' ? 'On' : slotProps.option === 'off' ? 'Off' : slotProps.option }}</template>
+                </Select>
               </template>
               <!--
                 UI-09: a control this caller cannot use is not rendered as a

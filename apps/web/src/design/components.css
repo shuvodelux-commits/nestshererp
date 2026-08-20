@@ -21,7 +21,7 @@
   justify-content: center;
   gap: var(--sher-space-2);
   height: var(--sher-control-h);
-  padding: 0 18px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-radius: var(--sher-radius);
   font: inherit;
@@ -254,7 +254,7 @@ select option {
   color: var(--sher-text-muted);
   font-weight: 600;
   background: var(--sher-sunken);
-  padding: 11px 16px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--sher-line);
   white-space: nowrap;
 }
@@ -464,7 +464,7 @@ select option {
   border: 1px solid var(--sher-line);
   border-radius: var(--sher-radius-lg);
   box-shadow: var(--sher-shadow-raised);
-  padding: var(--sher-space-5);
+  padding: var(--sher-space-4);
   display: flex;
   flex-direction: column;
   gap: var(--sher-space-3);

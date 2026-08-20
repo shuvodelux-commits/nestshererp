@@ -4,26 +4,38 @@ import { computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { useSession } from '../../auth/session';
-import { SHER_NAVIGATION } from './navigation';
+import { resolveNavigation } from './navigation';
 
 const emit = defineEmits<{ openNavigation: [] }>();
 const route = useRoute();
 const session = useSession();
 
 const primary = computed(() =>
-  SHER_NAVIGATION.filter((item) => item.needs === null || session.can(item.needs)).slice(0, 4),
+  resolveNavigation({ can: session.can })
+    .flatMap((category) => category.subcategories.map((subcategory) => ({
+      id: subcategory.id,
+      label: subcategory.label,
+      icon: subcategory.icon,
+      to: subcategory.route,
+      activePrefixes: subcategory.activePrefixes,
+    })))
+    .slice(0, 4),
 );
+
+function active(item: (typeof primary.value)[number]): boolean {
+  return item.activePrefixes.some((prefix) => route.path === prefix || route.path.startsWith(`${prefix}/`));
+}
 </script>
 
 <template>
   <nav class="bottom-nav" aria-label="Primary modules">
     <RouterLink
       v-for="item in primary"
-      :key="item.to"
+      :key="item.id"
       :to="item.to"
       class="bottom-item"
-      :class="{ 'is-current': route.path === item.to }"
-      :aria-current="route.path === item.to ? 'page' : undefined"
+      :class="{ 'is-current': active(item) }"
+      :aria-current="active(item) ? 'page' : undefined"
     >
       <i class="pi" :class="item.icon" aria-hidden="true" />
       <span>{{ item.label }}</span>

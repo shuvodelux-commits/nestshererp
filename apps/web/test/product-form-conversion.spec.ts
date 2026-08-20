@@ -20,6 +20,7 @@ import ProductFormPage from '../src/pages/ProductFormPage.vue';
 const create = vi.fn();
 const catalog = vi.fn();
 const push = vi.fn();
+const recordOpening = vi.fn();
 
 const FEET = '01UNITFEETAAAAAAAAAAAAAAAA';
 const PIPE = '01UNITPIPEAAAAAAAAAAAAAAAA';
@@ -31,6 +32,10 @@ vi.mock('../src/api/products', () => ({
   updateProduct: vi.fn(),
   deleteProduct: vi.fn(),
   generateProductBarcode: vi.fn(),
+}));
+
+vi.mock('../src/api/inventory', () => ({
+  recordOpeningStock: (token: string, payload: unknown, key: string) => recordOpening(token, payload, key),
 }));
 
 vi.mock('../src/api/catalog', async () => {
@@ -59,6 +64,7 @@ beforeEach(() => {
   create.mockReset();
   catalog.mockReset();
   push.mockReset();
+  recordOpening.mockReset();
   catalog.mockResolvedValue({
     units: [
       { id: FEET, name: 'Feet' },
@@ -140,6 +146,39 @@ describe('a product with no second unit', () => {
     expect(payload['conversionUnitId']).toBeNull();
     expect(payload['conversionFactorQty']).toBeNull();
     expect(payload['sellingPriceMinor']).toBe(525);
+  });
+
+  it('posts the opening quantity only after the product has an id', async () => {
+    const wrapper = await mountForm();
+    await fillBasics(wrapper);
+    await wrapper.find('#opening-stock').setValue('10');
+    create.mockResolvedValue({ id: '01PRODAAAAAAAAAAAAAAAAAAAA' });
+    recordOpening.mockResolvedValue({ id: '01OPENAAAAAAAAAAAAAAAAAAAA' });
+
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(recordOpening).toHaveBeenCalledOnce();
+    expect(recordOpening.mock.calls[0]![1]).toMatchObject({
+      productId: '01PRODAAAAAAAAAAAAAAAAAAAA',
+      qty: 10_000,
+    });
+    expect(push).toHaveBeenCalledWith('/products/01PRODAAAAAAAAAAAAAAAAAAAA');
+  });
+
+  it('requires an expiry date when the opening quantity belongs to an expiry-tracked product', async () => {
+    catalog.mockResolvedValue({
+      units: [{ id: FEET, name: 'Feet' }], brands: [], categories: [],
+      features: { productOffers: false, expiryTracking: true, serialTracking: false, customerGroups: false, vendors: false },
+    });
+    const wrapper = await mountForm();
+    await fillBasics(wrapper);
+    await wrapper.find('#opening-stock').setValue('10');
+    await wrapper.find('#tracks-expiry').setValue(true);
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+    expect(create).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Enter the expiry date for the opening batch');
   });
 });
 

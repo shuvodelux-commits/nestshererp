@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { AuditEventResponse, AuditListResponse } from '@sher/core-contracts';
+import Select from 'primevue/select';
 import { computed, onMounted, ref } from 'vue';
 
 import { fetchAuditEvents } from '../api/audit';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
+import DateOnlyPicker from '../components/DateOnlyPicker.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
@@ -32,6 +34,15 @@ const session = useSession();
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
 const result = ref<AuditListResponse | null>(null);
+const actorOptions = computed(() => [{ id: '', name: 'Anyone' }, ...(result.value?.actors ?? [])]);
+const entityOptions = computed(() => [
+  { label: 'Everything', value: '' },
+  ...(result.value?.entityTypes ?? []).map((value) => ({ label: value, value })),
+]);
+const actionOptions = computed(() => [
+  { label: 'Any action', value: '' },
+  ...(result.value?.actions ?? []).map((value) => ({ label: value, value })),
+]);
 /** Rows accumulated across "Show older" — the trail reads as one list. */
 const events = ref<AuditEventResponse[]>([]);
 const loadingMore = ref(false);
@@ -128,38 +139,23 @@ function toneFor(action: string): string {
       <form class="filters" @submit.prevent="load">
         <div class="field">
           <label for="filter-from">From</label>
-          <input id="filter-from" v-model="filters.from" type="date" />
+          <DateOnlyPicker input-id="filter-from" v-model="filters.from" />
         </div>
         <div class="field">
           <label for="filter-to">To</label>
-          <input id="filter-to" v-model="filters.to" type="date" />
+          <DateOnlyPicker input-id="filter-to" v-model="filters.to" />
         </div>
         <div class="field">
           <label for="filter-actor">Who</label>
-          <select id="filter-actor" v-model="filters.actorId">
-            <option value="">Anyone</option>
-            <option v-for="actor in result?.actors ?? []" :key="actor.id" :value="actor.id">
-              {{ actor.name }}
-            </option>
-          </select>
+          <Select input-id="filter-actor" v-model="filters.actorId" :options="actorOptions" option-label="name" option-value="id" fluid />
         </div>
         <div class="field">
           <label for="filter-entity">What</label>
-          <select id="filter-entity" v-model="filters.entityType">
-            <option value="">Everything</option>
-            <option v-for="type in result?.entityTypes ?? []" :key="type" :value="type">
-              {{ type }}
-            </option>
-          </select>
+          <Select input-id="filter-entity" v-model="filters.entityType" :options="entityOptions" option-label="label" option-value="value" fluid />
         </div>
         <div class="field">
           <label for="filter-action">Action</label>
-          <select id="filter-action" v-model="filters.action">
-            <option value="">Any action</option>
-            <option v-for="action in result?.actions ?? []" :key="action" :value="action">
-              {{ action }}
-            </option>
-          </select>
+          <Select input-id="filter-action" v-model="filters.action" :options="actionOptions" option-label="label" option-value="value" fluid />
         </div>
 
         <div class="filter-actions">

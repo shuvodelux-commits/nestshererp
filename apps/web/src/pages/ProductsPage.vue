@@ -9,36 +9,41 @@ import type {
 import { defaultDirectionFor } from '@sher/core-contracts';
 import { Money, Qty } from '@sher/shared-utils';
 import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
+import Menu from 'primevue/menu';
 import Select from 'primevue/select';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { EMPTY_CATALOG, fetchCatalog } from '../api/catalog';
 import { ApiError } from '../api/client';
-import { fetchProducts, setProductStatus } from '../api/products';
+import { deleteProduct, fetchProducts, setProductStatus } from '../api/products';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import ProductForm from '../components/ProductForm.vue';
 import SortableHeader from '../components/SortableHeader.vue';
+import StockAdjustDialog from '../components/StockAdjustDialog.vue';
+import StockLotsDialog from '../components/StockLotsDialog.vue';
 import AppShell from '../components/shell/AppShell.vue';
 
 /**
- * The Products screen (Phase 2, §5.5) — a List screen (UI-22): filter bar →
- * table → paging.
+ * Products — the product working hub (§5.5, owner decision 2026-08-20).
  *
- * Filters are visible on the screen rather than behind a menu (UI-25), and cover
- * what §5.5 and §5.7 name: free text over name, code, barcode and brand, plus
- * brand, category, subcategory and status.
+ * M04 and the per-product half of M12 are **one screen**, because a shopkeeper
+ * thinks about a product, not about which module owns its quantity. Everything
+ * done to one product happens from its `⋯` row menu and opens as a modal over
+ * this list (UI-50): the shopkeeper keeps their place, and the changed row is
+ * behind the dialog when it closes, which is its own confirmation.
  *
- * The **stock-status filter** §5.7 also lists is deliberately not here: stock
- * arrives in Phase 3, and a filter over figures that do not exist yet would
- * either do nothing or lie.
+ * What is *not* here is the cross-product reporting — valuation, movements,
+ * the damage trail — which has no single product to hang from and lives on the
+ * Inventory Report (§5.10).
  *
- * Paging is keyset (§3.9, `OFFSET` banned): "Show more" carries the last row's
- * id back to the server, which is what keeps the list fast as a shop's catalog
- * grows.
+ * Actions the caller cannot perform are **absent from the menu, not disabled**
+ * (UI-09), and the server refuses them independently either way (R-D2).
  */
 const session = useSession();
 const router = useRouter();
@@ -46,7 +51,9 @@ const router = useRouter();
 const canCreate = computed(() => session.can('catalog.product.create'));
 const canEdit = computed(() => session.can('catalog.product.edit'));
 const canDeactivate = computed(() => session.can('catalog.product.deactivate'));
-/** Absent from the response without it — this only decides the column (UI-40). */
+const canDelete = computed(() => session.can('catalog.product.delete'));
+const canViewLots = computed(() => session.can('inventory.lot.view'));
+/** Absent from the response without it — this only decides the columns (UI-40). */
 const canSeeCost = computed(() => session.can('inventory.cost.view'));
 
 const loading = ref(true);
@@ -61,6 +68,7 @@ const brandId = ref('');
 const categoryId = ref('');
 const subcategoryId = ref('');
 const status = ref('');
+const stockStatus = ref('');
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
@@ -73,10 +81,7 @@ const subcategories = computed(() =>
     ? []
     : catalog.value.categories.filter((row) => row.parentId === categoryId.value),
 );
-const brandOptions = computed(() => [
-  { id: '', name: 'All brands' },
-  ...catalog.value.brands,
-]);
+const brandOptions = computed(() => [{ id: '', name: 'All brands' }, ...catalog.value.brands]);
 const categoryOptions = computed(() => [
   { id: '', name: 'All categories' },
   ...parentCategories.value,
@@ -93,6 +98,21 @@ const statusOptions = [
   { value: 'ACTIVE', label: 'Active only' },
   { value: 'INACTIVE', label: 'Inactive only' },
 ];
+/**
+ * §5.7's stock-status filter, now that stock exists. Applied to the loaded page
+ * rather than sent to the server: `stockStatus` is derived from the reorder
+ * level per row, not an indexed column, and filtering it in SQL would mean a
+ * keyset cursor over a computed value. Stated plainly so nobody reads it as a
+ * business rule living in Vue — the *classification* is the server's (§5.10),
+ * this only chooses which of the returned rows to draw.
+ */
+const stockStatusOptions = [
+  { value: '', label: 'Any stock level' },
+  { value: 'IN_STOCK', label: 'In stock' },
+  { value: 'LOW_STOCK', label: 'Low stock' },
+  { value: 'ZERO_STOCK', label: 'Out of stock' },
+  { value: 'NEGATIVE_STOCK', label: 'Negative stock' },
+];
 
 const filtersActive = computed(
   () =>
@@ -100,7 +120,14 @@ const filtersActive = computed(
     brandId.value !== '' ||
     categoryId.value !== '' ||
     subcategoryId.value !== '' ||
-    status.value !== '',
+    status.value !== '' ||
+    stockStatus.value !== '',
+);
+
+const visibleProducts = computed(() =>
+  stockStatus.value === ''
+    ? products.value
+    : products.value.filter((product) => product.stockStatus === stockStatus.value),
 );
 
 function describe(cause: unknown): { code: string; message: string } {
@@ -112,15 +139,6 @@ function describe(cause: unknown): { code: string; message: string } {
 /** UI-31/UI-32: formatted by shared-utils, right-aligned, two decimals, ৳. */
 function money(minor: number | undefined): string {
   return minor === undefined ? '—' : `৳${Money(minor).format()}`;
-}
-
-/**
- * A reorder level is a scaled quantity, so it is formatted by `shared-utils`
- * too (UI-31). Dividing by a thousand here would be arithmetic on a quantity in
- * a component, which R-C3 and B8 both forbid.
- */
-function qty(raw: number): string {
-  return Qty(raw).format();
 }
 
 function currentQuery(cursor: string | null = null) {
@@ -219,15 +237,98 @@ function clearFilters(): void {
   categoryId.value = '';
   subcategoryId.value = '';
   status.value = '';
+  stockStatus.value = '';
   void load();
 }
 
-/* --------------------------------------------------------- deactivate */
+/* ------------------------------------------------------------- the row menu */
 
-const confirming = ref<ProductResponse | null>(null);
+const menu = ref<InstanceType<typeof Menu> | null>(null);
+const menuProduct = ref<ProductResponse | null>(null);
+
+/**
+ * One menu instance, repositioned — not one per row. A hundred products would
+ * otherwise mean a hundred mounted popups.
+ */
+const menuItems = computed(() => {
+  const product = menuProduct.value;
+  if (product === null) return [];
+
+  const items: Array<Record<string, unknown>> = [];
+
+  if (canEdit.value) {
+    items.push({ label: 'Edit', icon: 'pi pi-pencil', command: () => openForm(product) });
+  }
+  if (canEdit.value) {
+    items.push({ label: 'Stock', icon: 'pi pi-sliders-h', command: () => (adjusting.value = product) });
+  }
+  if (canViewLots.value) {
+    items.push({ label: 'Lots', icon: 'pi pi-box', command: () => (viewingLots.value = product) });
+  }
+  if (canDeactivate.value) {
+    items.push({
+      label: product.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
+      icon: product.status === 'ACTIVE' ? 'pi pi-ban' : 'pi pi-check-circle',
+      command: () => (confirmingStatus.value = product),
+    });
+  }
+  // §3.6: a product with stock history cannot be removed, so the action that
+  // would always be refused is not offered. The server refuses it regardless.
+  if (canDelete.value && !product.hasStockHistory) {
+    items.push({ separator: true });
+    items.push({
+      label: 'Delete',
+      icon: 'pi pi-trash',
+      class: 'row-menu-danger',
+      command: () => (confirmingDelete.value = product),
+    });
+  }
+
+  return items;
+});
+
+function openMenu(event: Event, product: ProductResponse): void {
+  menuProduct.value = product;
+  menu.value?.toggle(event);
+}
+
+/* ------------------------------------------------------------ the form dialog */
+
+const editing = ref<ProductResponse | null>(null);
+const creating = ref(false);
+const formOpen = computed({
+  get: () => creating.value || editing.value !== null,
+  set: (open: boolean) => {
+    if (!open) closeForm();
+  },
+});
+
+function openForm(product: ProductResponse): void {
+  editing.value = product;
+  creating.value = false;
+}
+
+function closeForm(): void {
+  editing.value = null;
+  creating.value = false;
+}
+
+/**
+ * UI-64: a save returns to the list that launched it, refreshed in place — the
+ * shopkeeper keeps their filters, their sort and their position.
+ */
+async function onSaved(): Promise<void> {
+  closeForm();
+  await load();
+}
+
+/* ----------------------------------------------- deactivate / reactivate / delete */
+
+const confirmingStatus = ref<ProductResponse | null>(null);
+const confirmingDelete = ref<ProductResponse | null>(null);
 
 async function toggleStatus(): Promise<void> {
-  const product = confirming.value;
+  const product = confirmingStatus.value;
   if (product === null) return;
 
   busy.value = true;
@@ -238,7 +339,7 @@ async function toggleStatus(): Promise<void> {
       next === 'INACTIVE'
         ? `${product.displayName} will not appear in new sales or purchases. Nothing recorded about it changes.`
         : `${product.displayName} can be sold and purchased again.`;
-    confirming.value = null;
+    confirmingStatus.value = null;
     await load();
   } catch (cause) {
     loadError.value = describe(cause);
@@ -247,8 +348,44 @@ async function toggleStatus(): Promise<void> {
   }
 }
 
-function openProduct(product: ProductResponse): void {
-  void router.push(`/products/${product.id}`);
+async function removeProduct(): Promise<void> {
+  const product = confirmingDelete.value;
+  if (product === null) return;
+
+  busy.value = true;
+  try {
+    await deleteProduct(session.accessToken.value ?? '', product.id);
+    notice.value = `${product.displayName} was deleted.`;
+    confirmingDelete.value = null;
+    await load();
+  } catch (cause) {
+    // The server's own refusal — including "this has stock history, deactivate
+    // it instead" — is what the shopkeeper reads, not a guess made here.
+    loadError.value = describe(cause);
+    confirmingDelete.value = null;
+  } finally {
+    busy.value = false;
+  }
+}
+
+/* ------------------------------------------------------------- stock dialogs */
+
+const adjusting = ref<ProductResponse | null>(null);
+const viewingLots = ref<ProductResponse | null>(null);
+
+async function onAdjusted(): Promise<void> {
+  const name = adjusting.value?.displayName ?? 'Stock';
+  adjusting.value = null;
+  notice.value = `${name} stock updated.`;
+  await load();
+}
+
+/** The stock column's own colour, by what it means for the shop. */
+function stockPill(product: ProductResponse): string {
+  if (product.stockStatus === 'NEGATIVE_STOCK') return 'pill-bad';
+  if (product.stockStatus === 'ZERO_STOCK') return 'pill-bad';
+  if (product.stockStatus === 'LOW_STOCK') return 'pill-warn';
+  return 'pill-ok';
 }
 </script>
 
@@ -256,15 +393,10 @@ function openProduct(product: ProductResponse): void {
   <AppShell
     title="Products"
     :breadcrumb="['Dashboard', 'Products']"
-    help-bn="আপনার দোকানের সব পণ্য — দাম, ইউনিট আর বারকোড এখানে"
+    help-bn="আপনার দোকানের সব পণ্য — দাম, স্টক আর হিসাব এখানে"
   >
     <template #actions>
-      <Button
-        v-if="canCreate"
-        label="Add product"
-        icon="pi pi-plus"
-        @click="router.push('/products/new')"
-      />
+      <Button v-if="canCreate" label="Add product" icon="pi pi-plus" @click="creating = true" />
     </template>
 
     <!-- UI-25: filters are visible, and what is filtered is readable at a glance -->
@@ -329,6 +461,19 @@ function openProduct(product: ProductResponse): void {
       </div>
 
       <div class="field">
+        <label for="filter-stock">Stock</label>
+        <Select
+          v-model="stockStatus"
+          input-id="filter-stock"
+          :options="stockStatusOptions"
+          option-label="label"
+          option-value="value"
+          append-to="self"
+          fluid
+        />
+      </div>
+
+      <div class="field">
         <label for="filter-status">Status</label>
         <Select
           v-model="status"
@@ -370,24 +515,25 @@ function openProduct(product: ProductResponse): void {
         icon="pi-box"
         title="No products yet"
       >
-        A product needs a name, a unit, its two prices and a reorder level. Stock comes later,
-        when the inventory module arrives — every product starts at zero.
+        A product needs a name, a unit, its two prices and a reorder level. You can record what
+        you already have on the shelf in the same breath, as its opening stock.
         <template #action>
-          <button
-            v-if="canCreate"
-            type="button"
-            class="btn btn-primary"
-            @click="router.push('/products/new')"
-          >
+          <button v-if="canCreate" type="button" class="btn btn-primary" @click="creating = true">
             Add the first product
           </button>
         </template>
       </EmptyState>
 
-      <EmptyState v-else-if="products.length === 0" icon="pi-search" title="Nothing matched">
+      <EmptyState
+        v-else-if="visibleProducts.length === 0"
+        icon="pi-search"
+        title="Nothing matched"
+      >
         No product matches these filters.
         <template #action>
-          <button type="button" class="btn btn-ghost" @click="clearFilters">Clear the filters</button>
+          <button type="button" class="btn btn-ghost" @click="clearFilters">
+            Clear the filters
+          </button>
         </template>
       </EmptyState>
 
@@ -396,8 +542,8 @@ function openProduct(product: ProductResponse): void {
           <table>
             <thead>
               <!--
-                UI-46: every one of these sorts on tap. `Actions` does not, and
-                is a plain `th` — it holds buttons, not a value to order by.
+                UI-46: every one of these sorts on tap. The `⋯` column does not,
+                and is a plain `th` — it holds one action, not a value to order by.
               -->
               <tr>
                 <SortableHeader
@@ -409,34 +555,9 @@ function openProduct(product: ProductResponse): void {
                   @sort="sortBy"
                 />
                 <SortableHeader
-                  column="barcode"
-                  label="Code / barcode"
-                  label-bn="বারকোড"
-                  :active="sort"
-                  :direction="direction"
-                  @sort="sortBy"
-                />
-                <SortableHeader
                   column="categoryName"
                   label="Category"
                   label-bn="ধরন"
-                  :active="sort"
-                  :direction="direction"
-                  @sort="sortBy"
-                />
-                <SortableHeader
-                  column="unitName"
-                  label="Unit"
-                  label-bn="একক"
-                  :active="sort"
-                  :direction="direction"
-                  @sort="sortBy"
-                />
-                <SortableHeader
-                  column="sellingPrice"
-                  label="Selling"
-                  label-bn="বিক্রয় দর"
-                  numeric
                   :active="sort"
                   :direction="direction"
                   @sort="sortBy"
@@ -452,14 +573,16 @@ function openProduct(product: ProductResponse): void {
                   @sort="sortBy"
                 />
                 <SortableHeader
-                  column="minStockQty"
-                  label="Reorder at"
-                  label-bn="যত কমে গেলে আবার আনতে হবে"
+                  column="sellingPrice"
+                  label="Selling"
+                  label-bn="বিক্রয় দর"
                   numeric
                   :active="sort"
                   :direction="direction"
                   @sort="sortBy"
                 />
+                <th class="num">Stock<small>স্টক</small></th>
+                <th v-if="canSeeCost" class="num">Stock value<small>স্টকের মূল্য</small></th>
                 <SortableHeader
                   column="status"
                   label="Status"
@@ -468,26 +591,21 @@ function openProduct(product: ProductResponse): void {
                   :direction="direction"
                   @sort="sortBy"
                 />
-                <th class="actions-col">Actions</th>
+                <th class="actions-col" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="product in products"
+                v-for="product in visibleProducts"
                 :key="product.id"
                 :class="{ 'is-inactive': product.status === 'INACTIVE' }"
               >
                 <td>
-                  <button type="button" class="linkish name" @click="openProduct(product)">
+                  <button type="button" class="linkish name" @click="openForm(product)">
                     {{ product.displayName }}
                   </button>
                   <span v-if="product.offerLive" class="pill pill-info">Offer on</span>
-                </td>
-                <td class="mono">
-                  <span v-if="product.sku !== null">{{ product.sku }}</span>
-                  <span v-if="product.sku !== null && product.barcode !== null"> · </span>
-                  <span v-if="product.barcode !== null">{{ product.barcode }}</span>
-                  <span v-if="product.sku === null && product.barcode === null">—</span>
+                  <small>{{ product.baseUnitName }}</small>
                 </td>
                 <td>
                   <span v-if="product.parentCategoryName !== null" class="muted">
@@ -495,26 +613,33 @@ function openProduct(product: ProductResponse): void {
                   </span>
                   {{ product.categoryName ?? '—' }}
                 </td>
-                <td>{{ product.baseUnitName }}</td>
-                <td class="num">{{ money(product.sellingPriceMinor) }}</td>
                 <td v-if="canSeeCost" class="num">{{ money(product.purchasePriceMinor) }}</td>
-                <td class="num">{{ product.minStockQty === 0 ? '—' : qty(product.minStockQty) }}</td>
+                <td class="num">{{ money(product.sellingPriceMinor) }}</td>
+                <td class="num">
+                  {{ Qty(product.stockQty).format() }}
+                  <span
+                    v-if="product.stockStatus !== 'IN_STOCK'"
+                    class="pill"
+                    :class="stockPill(product)"
+                  >
+                    {{ product.stockStatus === 'LOW_STOCK' ? 'Low' : product.stockStatus === 'ZERO_STOCK' ? 'Out' : 'Negative' }}
+                  </span>
+                </td>
+                <td v-if="canSeeCost" class="num">{{ money(product.stockValueMinor) }}</td>
                 <td>
                   <span v-if="product.status === 'ACTIVE'" class="pill pill-ok">Active</span>
                   <span v-else class="pill pill-bad">Inactive</span>
                 </td>
                 <td class="actions">
-                  <button v-if="canEdit" type="button" class="linkish" @click="openProduct(product)">
-                    Edit
-                  </button>
                   <button
-                    v-if="canDeactivate"
                     type="button"
-                    class="linkish"
-                    :class="{ danger: product.status === 'ACTIVE' }"
-                    @click="confirming = product"
+                    class="row-menu-trigger"
+                    :aria-label="`Actions for ${product.displayName}`"
+                    aria-haspopup="true"
+                    v-tooltip.left="'Edit, stock, lots and more'"
+                    @click="openMenu($event, product)"
                   >
-                    {{ product.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
+                    <i class="pi pi-ellipsis-h" aria-hidden="true" />
                   </button>
                 </td>
               </tr>
@@ -522,9 +647,12 @@ function openProduct(product: ProductResponse): void {
           </table>
         </div>
 
+        <!-- One popup for every row, repositioned on open. -->
+        <Menu ref="menu" :model="menuItems" popup />
+
         <!-- §2.7.I: pagination sits bottom-right. Keyset, so forward only. -->
         <div class="paging">
-          <span class="muted">Showing {{ products.length }} of {{ summary.total }}</span>
+          <span class="muted">Showing {{ visibleProducts.length }} of {{ summary.total }}</span>
           <button
             v-if="nextCursor !== null"
             type="button"
@@ -538,19 +666,39 @@ function openProduct(product: ProductResponse): void {
       </template>
 
       <p v-if="!canSeeCost" class="fine">
-        Purchase price is not shown to your role, and is not sent to this screen at all.
+        Purchase price and stock value are not shown to your role, and are not sent to this
+        screen at all.
       </p>
     </template>
 
+    <!-- ------------------------------------------------------- add / edit -->
+    <Dialog
+      v-model:visible="formOpen"
+      modal
+      :header="creating ? 'Add product — নতুন পণ্য' : 'Edit product — পণ্যের তথ্য'"
+      :style="{ width: 'min(52rem, 96vw)' }"
+    >
+      <ProductForm
+        :key="editing?.id ?? 'new'"
+        :product-id="editing?.id ?? null"
+        @saved="onSaved"
+        @deleted="onSaved"
+        @close="closeForm"
+      />
+    </Dialog>
+
+    <StockAdjustDialog :product="adjusting" @close="adjusting = null" @adjusted="onAdjusted" />
+    <StockLotsDialog :product="viewingLots" @close="viewingLots = null" />
+
     <!-- --------------------------------------------- deactivate / reactivate -->
-    <div v-if="confirming !== null" class="scrim" @click.self="confirming = null">
+    <div v-if="confirmingStatus !== null" class="scrim" @click.self="confirmingStatus = null">
       <div class="dialog" role="dialog" aria-modal="true">
         <h2>
-          {{ confirming.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
-          {{ confirming.displayName }}?
+          {{ confirmingStatus.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
+          {{ confirmingStatus.displayName }}?
         </h2>
         <p class="lede">
-          <template v-if="confirming.status === 'ACTIVE'">
+          <template v-if="confirmingStatus.status === 'ACTIVE'">
             It stops appearing in new sales and new purchases. Everything already recorded about
             it stays exactly as it is, and you can reactivate it at any time.
           </template>
@@ -558,24 +706,55 @@ function openProduct(product: ProductResponse): void {
         </p>
         <p class="sher-bn">
           {{
-            confirming.status === 'ACTIVE'
+            confirmingStatus.status === 'ACTIVE'
               ? 'পণ্যটি আর নতুন বিক্রি বা কেনায় দেখা যাবে না — পুরনো হিসাব ঠিক থাকবে'
               : 'পণ্যটি আবার বিক্রি ও কেনায় ব্যবহার করা যাবে'
           }}
         </p>
 
         <div class="dialog-actions">
-          <button type="button" class="btn btn-ghost" :disabled="busy" @click="confirming = null">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            :disabled="busy"
+            @click="confirmingStatus = null"
+          >
             Cancel
           </button>
           <button
             type="button"
             class="btn"
-            :class="confirming.status === 'ACTIVE' ? 'btn-danger' : 'btn-primary'"
+            :class="confirmingStatus.status === 'ACTIVE' ? 'btn-danger' : 'btn-primary'"
             :disabled="busy"
             @click="toggleStatus"
           >
-            {{ busy ? 'Saving…' : confirming.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
+            {{ busy ? 'Saving…' : confirmingStatus.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ------------------------------------------------------------ delete -->
+    <div v-if="confirmingDelete !== null" class="scrim" @click.self="confirmingDelete = null">
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h2>Delete {{ confirmingDelete.displayName }}?</h2>
+        <p class="lede">
+          Nothing has ever been stocked, bought or sold for this product, so it can be removed
+          completely. This cannot be undone.
+        </p>
+        <p class="sher-bn">পণ্যটি একেবারে মুছে যাবে — আর ফেরানো যাবে না</p>
+
+        <div class="dialog-actions">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            :disabled="busy"
+            @click="confirmingDelete = null"
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-danger" :disabled="busy" @click="removeProduct">
+            {{ busy ? 'Deleting…' : 'Delete' }}
           </button>
         </div>
       </div>
@@ -586,7 +765,8 @@ function openProduct(product: ProductResponse): void {
 <style scoped>
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
- * `design/components.css`. What is left is the filter bar and paging line.
+ * `design/components.css`. What is left is the filter bar, the row menu trigger
+ * and the paging line.
  */
 .filters {
   display: flex;
@@ -598,11 +778,11 @@ function openProduct(product: ProductResponse): void {
 
 .filters .field {
   margin: 0;
-  min-width: 170px;
+  min-width: 150px;
 }
 
 .filters .field.grow {
-  flex: 1 1 260px;
+  flex: 1 1 240px;
 }
 
 .skeletons {
@@ -625,8 +805,21 @@ function openProduct(product: ProductResponse): void {
   font-variant-numeric: tabular-nums;
 }
 
+th small {
+  display: block;
+  color: var(--sher-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .name {
   font-weight: 600;
+}
+
+td small {
+  display: block;
+  color: var(--sher-text-muted);
+  font-size: 11px;
 }
 
 .muted {
@@ -642,6 +835,33 @@ tbody tr.is-inactive td:not(.actions) {
   color: var(--sher-text-muted);
 }
 
+.actions-col,
+td.actions {
+  width: 44px;
+  text-align: right;
+}
+
+/* 40px stays the touch target even though the glyph is small (UI-59). */
+.row-menu-trigger {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--sher-radius);
+  background: transparent;
+  color: var(--sher-text-muted);
+  cursor: pointer;
+}
+
+.row-menu-trigger:hover,
+.row-menu-trigger:focus-visible {
+  border-color: var(--sher-line-strong);
+  background: var(--sher-sunken);
+  color: var(--sher-text);
+}
+
 .paging {
   display: flex;
   align-items: center;
@@ -649,5 +869,13 @@ tbody tr.is-inactive td:not(.actions) {
   gap: var(--sher-space-3);
   margin-top: var(--sher-space-4);
   font-size: var(--sher-text-sm);
+}
+</style>
+
+<style>
+/* Not scoped: the menu renders in a popup outside this component's tree. */
+.row-menu-danger .p-menu-item-label,
+.row-menu-danger .p-menu-item-icon {
+  color: var(--sher-bad);
 }
 </style>

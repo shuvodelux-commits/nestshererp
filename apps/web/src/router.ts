@@ -37,6 +37,15 @@ const router = createRouter({
     { path: '/audit', name: 'audit', component: () => import('./pages/AuditPage.vue') },
     { path: '/catalog', name: 'catalog', component: () => import('./pages/CatalogPage.vue') },
     { path: '/products', name: 'products', component: () => import('./pages/ProductsPage.vue') },
+    // §5.10: per-product stock work lives on the Products row menu; what is
+    // left here is the cross-product reporting. `/inventory` redirects because
+    // it was a real route and somebody's bookmark should not 404.
+    { path: '/inventory', redirect: '/inventory-report' },
+    {
+      path: '/inventory-report',
+      name: 'inventory-report',
+      component: () => import('./pages/InventoryReportPage.vue'),
+    },
     // 'new' and an id share one component: adding and editing a product are the
     // same form, and a second one would be the same fields written twice.
     { path: '/products/:id', name: 'product', component: () => import('./pages/ProductFormPage.vue') },

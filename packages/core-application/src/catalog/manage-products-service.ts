@@ -6,6 +6,8 @@ import {
   offerAppliesAt,
   rejectConversion,
   rejectPricing,
+  stockStatus,
+  stockValueMinor,
 } from '@sher/core-domain';
 import type { ConversionRejection, PricingRejection, ProductStatus } from '@sher/core-domain';
 import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
@@ -25,6 +27,7 @@ import type { NumberingService } from '../ports/numbering-service';
 import type { Outbox } from '../ports/outbox';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
+import type { InventoryRepository } from '../inventory/inventory-repository';
 import { isFeatureOn, settingValuesOf } from '../settings/feature-dependencies';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { CatalogRepository } from './catalog-repository';
@@ -165,6 +168,8 @@ export class ManageProductsService {
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
+    /** Read-only here: the §3.6 delete guard asks it whether stock ever moved. */
+    private readonly inventory: InventoryRepository,
   ) {}
 
   async list(command: ListProductsCommand): Promise<ProductListResponse> {
@@ -210,9 +215,10 @@ export class ManageProductsService {
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
       const now = this.clock.now();
+      const method = await this.valuationMethod(tx, ctx);
 
       return {
-        data: page.map((row) => this.toResponse(ctx, row, showCost, now)),
+        data: page.map((row) => this.toResponse(ctx, row, showCost, now, method)),
         page: {
           nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
           hasMore,
@@ -232,7 +238,7 @@ export class ManageProductsService {
 
       const row = await this.requireProduct(tx, ctx, command.productId);
 
-      return this.toResponse(ctx, row, showCost, this.clock.now());
+      return this.toResponse(ctx, row, showCost, this.clock.now(), await this.valuationMethod(tx, ctx));
     });
   }
 
@@ -287,7 +293,7 @@ export class ManageProductsService {
       });
 
       const created = await this.requireProduct(tx, ctx, id);
-      const response = this.toResponse(ctx, created, await this.maySeeCost(tx, ctx), this.clock.now());
+      const response = this.toResponse(ctx, created, await this.maySeeCost(tx, ctx), this.clock.now(), await this.valuationMethod(tx, ctx));
 
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
@@ -348,7 +354,7 @@ export class ManageProductsService {
       });
 
       const updated = await this.requireProduct(tx, ctx, command.productId);
-      return this.toResponse(ctx, updated, await this.maySeeCost(tx, ctx), this.clock.now());
+      return this.toResponse(ctx, updated, await this.maySeeCost(tx, ctx), this.clock.now(), await this.valuationMethod(tx, ctx));
     });
   }
 
@@ -384,7 +390,7 @@ export class ManageProductsService {
       });
 
       const updated = await this.requireProduct(tx, ctx, command.productId);
-      return this.toResponse(ctx, updated, await this.maySeeCost(tx, ctx), this.clock.now());
+      return this.toResponse(ctx, updated, await this.maySeeCost(tx, ctx), this.clock.now(), await this.valuationMethod(tx, ctx));
     });
   }
 
@@ -439,14 +445,13 @@ export class ManageProductsService {
 
   /**
    * §3.6: master data is hard-deleted "only if never used", and soft-deleted once
-   * something refers to it. In Phase 2 the only rows that can refer to a product
-   * are its own unit conversions, so a product with no stock, no purchase and no
-   * sale — none of which exist yet — is genuinely removable.
+   * something refers to it. A product that has never been stocked is genuinely
+   * removable; one with any movement behind it is refused and the caller is told
+   * to deactivate instead, which keeps every posted document that names it.
    *
    * **Every later module that references a product must add its count to
-   * `assertNeverUsed`.** A product with stock movements must be deactivated, not
-   * deleted, and the check belongs in one named place rather than being left to a
-   * foreign key to fail with a 500.
+   * `assertNeverUsed`.** The check belongs in one named place rather than being
+   * left to a foreign key to fail with a 500.
    */
   async deleteProduct(command: ProductIdCommand): Promise<void> {
     const { ctx } = command;
@@ -455,7 +460,7 @@ export class ManageProductsService {
       await this.accessControl.require(tx, ctx, Permission.PRODUCT_DELETE);
 
       const before = await this.requireProduct(tx, ctx, command.productId);
-      await this.assertNeverUsed();
+      await this.assertNeverUsed(tx, ctx, command.productId);
 
       await this.products.deleteUnused(tx, ctx, command.productId);
 
@@ -654,12 +659,26 @@ export class ManageProductsService {
   }
 
   /**
-   * Nothing refers to a product yet. Phase 3 adds stock movements and lots,
-   * Phase 5 purchases, Phase 6 sales: each must add its count here, and each is a
-   * reason to refuse the delete and offer deactivation instead (§3.6).
+   * §3.6: a product nothing refers to is removable; one with history is not.
+   *
+   * Stock is the first real referrer. Every movement — opening, adjustment, and
+   * from Phase 5/6 purchases and sales — writes a `stock_movements` row, so one
+   * question answers all of them, and it is asked **inside the transaction**
+   * rather than trusting a quantity the dialog happened to be showing: a
+   * product can read as zero on hand and still have a lifetime of movements
+   * behind it, every one of which names it on a posted document.
+   *
+   * Phase 5 and Phase 6 must still add anything that references a product
+   * *without* moving stock — a quotation line, a purchase order line — for the
+   * same reason.
    */
-  private async assertNeverUsed(): Promise<void> {
-    return Promise.resolve();
+  private async assertNeverUsed(tx: Tx, ctx: TenantContext, productId: string): Promise<void> {
+    if (await this.inventory.productHasStockHistory(tx, ctx, productId)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'This product has stock history, so it cannot be deleted. Deactivate it instead — it will stop appearing in new sales and purchases, and everything already recorded stays as it is.',
+      );
+    }
   }
 
   /**
@@ -685,6 +704,7 @@ export class ManageProductsService {
     row: ProductRow,
     showCost: boolean,
     now: Date,
+    method: 'FIFO' | 'AVERAGE',
   ): ProductResponse {
     const { timezone } = ctx;
 
@@ -730,6 +750,9 @@ export class ManageProductsService {
       ),
       tracksExpiry: row.tracksExpiry,
       tracksSerial: row.tracksSerial,
+      stockQty: row.stockQty,
+      stockStatus: stockStatus(row.stockQty, row.minStockQty),
+      hasStockHistory: row.hasStockHistory,
       /*
        * D-41: one conversion or none. Present only when the product genuinely
        * carries both halves — the schema, the migration's CHECK and the domain
@@ -747,7 +770,35 @@ export class ManageProductsService {
     };
 
     // UI-40 / R-E8: absent, not zeroed. A hidden column the API still sends is
-    // readable in the network tab by anyone.
-    return showCost ? { ...response, purchasePriceMinor: row.purchasePriceMinor } : response;
+    // readable in the network tab by anyone. Stock **value** is a cost figure
+    // and goes with it; stock **quantity** is not, and stays.
+    return showCost
+      ? {
+          ...response,
+          purchasePriceMinor: row.purchasePriceMinor,
+          stockValueMinor: this.stockValueOf(row, method),
+        }
+      : response;
+  }
+
+  /**
+   * The valuation basis the tenant is actually on (D-05, INV-05).
+   *
+   * Under `FIFO` a product is worth the sum of its remaining lots; under
+   * `AVERAGE` it is quantity times the moving average. Sending the wrong one
+   * would put a figure on this list that disagrees with the valuation report
+   * over the same stock, and INV-10 calls two reports disagreeing a blocking
+   * defect rather than a rounding excuse.
+   */
+  private async valuationMethod(tx: Tx, ctx: TenantContext): Promise<'FIFO' | 'AVERAGE'> {
+    const values = settingValuesOf(await this.settings.listStored(tx, ctx));
+    return values.get(SettingKey.SALE_COSTING_METHOD) === 'AVERAGE' ? 'AVERAGE' : 'FIFO';
+  }
+
+  private stockValueOf(row: ProductRow, method: 'FIFO' | 'AVERAGE'): number {
+    if (method === 'AVERAGE') {
+      return row.stockQty <= 0 ? 0 : stockValueMinor(row.stockQty, row.avgUnitCost);
+    }
+    return row.lotValueMinor;
   }
 }

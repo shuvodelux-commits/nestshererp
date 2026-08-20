@@ -6,7 +6,7 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 
 | File | Contains | Read it for |
 |---|---|---|
-| `SRS_AND_BUILD_GUIDE.md` | **SherERP Master SRS & Build Guide v4.0 (Merged Canonical)**: requirements, final decisions, architecture, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
+| `SRS_AND_BUILD_GUIDE.md` | **SherERP Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)**: requirements, final decisions, architecture, UI workflow, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
 | `AI_CODING_INSTRUCTIONS.md` | Module-scale vertical workflow, coding standards, anti-overengineering rules, layering, risk-based tests, Definition of Done, prompt kernel | **HOW** to build |
 | `AGENTS.md` | This file | Orientation |
 
@@ -15,20 +15,30 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 ## Token efficiency — binding
 
 - Read `AI_CODING_INSTRUCTIONS.md` in full before writing code.
-- Before coding, verify `SRS_AND_BUILD_GUIDE.md` begins with **“SherERP — Master SRS & Build Guide v4.0 (Merged Canonical)”**. If it does not, STOP: the repo has a stale SRS.
+- Before coding, verify `SRS_AND_BUILD_GUIDE.md` begins with **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. If it does not, STOP: the repo has a stale SRS.
 - For every business module, read `§5.0` (cross-module consistency), `§5.0A` (binding AI module specification contract), the complete target module subsection, the task block sections, and direct dependencies. Do not rely on remembered requirements or old module documents.
 - Do not re-read large sections you already know and that have not changed.
 - **Do not create new `.md` files.** No task logs, decision logs, module docs, planning docs, READMEs or scratch notes. If information belongs somewhere, it belongs in one of the three files above — update the relevant section.
 - Decisions that change: edit the section **and** add one line to the change log at the end of `SRS_AND_BUILD_GUIDE.md`.
 - Source code, tests, schema and migrations are the source of truth for implementation detail.
 
+### Existing codebase — reuse first
+
+- A meaningful portion of SherERP may already be implemented. **Search current code before creating a new function, use case, endpoint, composable, store action, dialog or page.**
+- Existing code is authoritative for **implementation detail only when it conforms to v4.2**. The SRS remains authoritative for business/UI behaviour.
+- Build a reuse map for changed workflows: `SRS action → existing module/interface → existing implementation/callers → REUSE / EXTEND / REPLACE / MISSING`.
+- **Reference rule:** invoice edit/correction is one authoritative module/interface reused from Customer Ledger, Sales Invoice History, Invoice Detail and Daybook. Apply the same rule to every repeated business action.
+- If the current implementation has duplicate writers, broken layering or final-SRS UI debt, **refactor/consolidate that current module first and complete its UI acceptance before starting the next module**. Refactor inside the affected seam; do not perform unrelated cleanup.
+- Prefer **one deep owning module with many entry points**. Customer Hub, Supplier/Vendor Hub, Counter, Daybook, Invoice, Search and Reconciliation must reuse the same Receive/Pay/Return/Correct/Void use case where the business intent is the same.
+- UI migration should keep working domain/application/API logic and reshape the Vue interaction layer around the final SRS. Do not create a parallel route or `V2` business function just because an older screen is arranged differently.
+
 ## Module-scale vertical increments — how work is organised
 
 One coherent business module at a time, normally 3–5 working days. Inside it, connect each user path top to bottom before starting the next path:
 
 ```
-module acceptance criteria → domain → use cases → module migration → repositories →
-API/contracts → consistent Vue workflows → focused tests/checkpoints →
+module acceptance criteria → reuse map + requirement/UI trace → domain/application delta →
+module migration (if needed) → repositories/API/contracts delta → final-v4.2 Vue workflow → focused tests/checkpoints →
 one full module regression → manual UI acceptance → module-gate commit
 ```
 
@@ -38,7 +48,7 @@ Never all backend, then all database, then all frontend. Run focused risk-based 
 
 ```
 packages/core-domain/         PURE TS — entities, invariants, costing, posting rules
-packages/core-application/    use cases, repository interfaces, permissions, audit
+packages/core-application/    authoritative use cases, repository interfaces, permissions, audit
 packages/core-contracts/      zod schemas, DTOs, error codes
 packages/adapter-postgres/    Drizzle + PostgreSQL implementations
 packages/shared-utils/        Money, Qty, UnitCost, Ulid, Clock
@@ -47,6 +57,28 @@ apps/web/                     Vue 3 + Vite (PWA)
 ```
 
 Dependencies flow one way: `api → application → domain → shared-utils`. CI enforces it. `adapter-sqlite-wasm` (Phase 12, browser SQLite WASM + OPFS), optional future desktop packaging (Phase 14), and `apps/mcp` (Phase 15) are created only in their own phases, not now. **PWA Offline is the canonical offline runtime. Tauri is deferred until after Mobile and is optional, not rejected.** If Phase 14 is approved, it may add only a packaging/native-integration shell and must reuse the same domain/application services, repository contracts, sync protocol and acceptance tests. `core-domain` and `core-application` therefore stay browser-safe and free of Node built-ins (`fs`, `path`, `crypto`).
+
+## Daily workflow orientation — v4.2
+
+The first operational navigation category is **Daily**:
+
+```
+Daily
+├── POS
+├── Counter
+├── Daybook
+└── Daily Cash
+```
+
+- **Counter** is Quick Transactions: Receive Voucher, Payment Voucher, Expense Voucher. It is a UI/workflow module, not a second posting engine.
+- **Daybook** is the universal daily review/notebook-reconciliation and source-action launcher. It never owns correction/posting logic.
+- **Daily Cash** is expected-vs-physical cash-session reconciliation/history. Stored expected closing is immutable.
+- **Customer/Supplier/Vendor ledgers are working hubs**, with relevant Receive/Pay/New Sale/New Purchase/Return/Correct actions in context.
+- **Expense Category/Ledger is a classification**, not a Party role; Payee/Employee/Party is optional identity.
+- **Transaction Date = `business_date`** and is the default ledger/Daybook/report basis. **Entry Date = immutable `created_at`** for audit.
+- Many entry points must reuse one authoritative application use case.
+- Bangla helper labels are subtle: prefer inline `English — বাংলা` with the Bangla part at shared 11px muted styling. Where visible Bangla would crowd a compact surface, use the shared accessible PrimeVue tooltip/help behavior instead.
+- Party ledger overview lists are intentionally narrow: `Name · Phone · Address · Current role balance · ⋯`. Open the individual ledger for transaction details.
 
 ## Commands
 
@@ -77,8 +109,16 @@ At a module gate, completion requires all four checks, pasted **real** output, a
 10. **Choose the simplest thing that works.** No `BaseRepository`, `GenericRepository`, `RepositoryFactory`, generic CRUD, manager classes, single-implementation interfaces, or unrequested config flags.
 11. **Risk-based tests ship with the module.** Never skip, weaken or delete an existing test. Keep exact-number, journal/stock/cash, tenant, security, idempotency, reversal and transaction tests; avoid repeating identical framework, permission and UI-state assertions.
 12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number, workflow, permission, stock state, invoice output, serial/barcode behaviour or user-visible action — **STOP and report.**
-13. **Implementation must be traceable to the v4 module contract.** Before coding a business module, map its Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature dependencies → Accounting effects → Inventory effects → Correction/reversal rules → Search/filters → Edge cases → Acceptance tests. A capability is not complete merely because its database field or endpoint exists.
-14. **Do not resurrect superseded requirements.** No LIFO. No current Loyalty/Premium feature. PWA Offline precedes Mobile; optional Tauri comes only later. Confirmed business/UI behaviours merged into v4 are binding even when older code or archived docs differ.
+13. **Implementation must be traceable to the v4.2 module contract.** Before coding a business module, map its Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature dependencies → Accounting effects → Inventory effects → Correction/reversal rules → Search/filters → Edge cases → Acceptance tests. A capability is not complete merely because its database field or endpoint exists.
+14. **Do not resurrect superseded requirements.** No LIFO. No current Loyalty/Premium feature. PWA Offline precedes Mobile; optional Tauri comes only later. Confirmed business/UI behaviours merged into v4.2 are binding even when older code or archived docs differ.
+15. **Reuse before create.** Search for the existing authoritative function/use case before adding a new implementation. A new UI entry point does not justify duplicate business logic.
+16. **UI migration preserves working core logic.** For already-built modules, classify current UI behavior `KEEP / MOVE / REWIRE / REPLACE / REMOVE`; keep conforming domain/application/API behavior and migrate the screen to final v4.2.
+17. **Many entry points, one owning module interface.** Counter, Daybook, party hubs, source documents and search/history may launch the same action, but must converge on the same use case.
+18. **Context is not business input.** Origin route/tab/filter/scroll state may control navigation after success, but never changes accounting, permission, stock or reversal rules.
+19. **One repeated action = one authoritative module/interface.** Invoice edit/correction is the reference example: every ERP entry point reuses it.
+20. **Fix the current module before the next.** Known duplicate functions, architecture violations or v4.2 UI defects in the module under work are blocking; consolidate/refactor and verify them before moving on.
+21. **Compact bilingual UI.** English is primary; Bangla is small/muted inline where it fits and otherwise delivered through the shared accessible tooltip/help pattern. Do not let helper text distort page density.
+22. **Compact ledger overviews.** Party overview columns are Name, Phone, Address, Current Balance and `⋯`; transaction detail belongs inside the selected ledger hub.
 
 Priority when rules conflict: SRS → security/tenant isolation → accounting/inventory correctness → architecture → transactions → tests → API compatibility → SOLID/KISS/YAGNI/DRY → preference. Never use a coding principle to override a business requirement.
 
@@ -86,10 +126,12 @@ Priority when rules conflict: SRS → security/tenant isolation → accounting/i
 
 Implement only the module increment in the task block. Do not touch files outside its ALLOWED FILES list, add dependencies, reorganise folders, refactor adjacent code, or build the next module's schema. If you think you must, stop and report.
 
-Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (focused plus module-gate real output) · Not implemented · Risks noticed.
+For an existing-code UI migration, the task block's ALLOWED FILES should include the **current implementation files discovered by the reuse map**, not a guessed set of new files. If the authoritative use case sits outside the allowed set and must change, stop and propose that exact scope expansion instead of duplicating it locally. A necessary consolidation/refactor of the current owning module is valid work once its exact files are approved; unrelated refactoring remains out of scope.
+
+Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Reused existing functions/modules · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (focused plus module-gate real output) · Not implemented · Risks noticed.
 
 ## Recording a finished module
 
-The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Before marking `CODE COMPLETE`, verify every acceptance item in the target module against the real UI, including explicit filters, actions, print/share behaviour and edge states required by the v4 SRS. This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
+The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Before marking `CODE COMPLETE`, verify every acceptance item in the target module against the real UI, including explicit filters, actions, print/share behaviour, stay-in-context behavior, reuse of one authoritative business function across repeated entry points, compact Bangla/tooltip treatment, compact ledger columns, date-basis behavior and edge states required by the v4.2 SRS. This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
 
 Set status to `CODE COMPLETE`. **Only the owner sets `DONE`**, after running the complete module workflow and confirming the numbers. The owner may fill the accepted code commit in a small follow-up ledger commit; a commit cannot contain its own final hash. Never delete or rewrite existing history.

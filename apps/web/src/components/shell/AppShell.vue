@@ -5,6 +5,7 @@ import { loadMyAccess } from '../../auth/access';
 import AppBottomNav from './AppBottomNav.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopBar from './AppTopBar.vue';
+import ModuleFeatureNav from './ModuleFeatureNav.vue';
 
 /**
  * UI-08: one shell — 256px left sidebar (modules) · top bar · content area,
@@ -65,6 +66,8 @@ onMounted(() => void loadMyAccess());
             </div>
           </header>
 
+          <ModuleFeatureNav />
+
           <slot />
         </div>
 
@@ -100,22 +103,22 @@ onMounted(() => void loadMyAccess());
   flex-direction: column;
 }
 
-/* §2.7.I: 32px horizontal / 24px vertical padding, ~1400px maximum width. */
+/* Compact back-office density with enough room for touch and Bangla labels. */
 .content {
   flex: 1;
   width: 100%;
   max-width: var(--sher-content-max);
   margin: 0 auto;
-  padding: 24px 32px 32px;
+  padding: 18px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--sher-space-5);
+  gap: var(--sher-space-4);
 }
 
 .page-head {
   display: flex;
   align-items: flex-start;
-  gap: var(--sher-space-4);
+  gap: var(--sher-space-3);
   flex-wrap: wrap;
 }
 
@@ -168,7 +171,7 @@ onMounted(() => void loadMyAccess());
   width: 100%;
   max-width: var(--sher-content-max);
   margin: 0 auto;
-  padding: 16px 32px 20px;
+  padding: 12px 24px 16px;
   border-top: 1px solid var(--sher-line);
   font-size: var(--sher-text-xs);
   color: var(--sher-text-muted);
@@ -176,7 +179,7 @@ onMounted(() => void loadMyAccess());
 
 @media (max-width: 1023px) {
   .content {
-    padding: 20px 16px 24px;
+    padding: 16px 14px 20px;
   }
 
   .foot {
@@ -186,8 +189,8 @@ onMounted(() => void loadMyAccess());
 
 @media (max-width: 767px) {
   .content {
-    padding: 16px 12px 88px;
-    gap: var(--sher-space-4);
+    padding: 12px 10px 84px;
+    gap: var(--sher-space-3);
   }
 
   .page-head {

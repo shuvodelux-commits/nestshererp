@@ -141,17 +141,17 @@ export const SherPreset = definePreset(Aura, {
       panel: { borderRadius: '12px', shadow: '0 12px 34px rgba(15, 23, 42, 0.16)' },
     },
     checkbox: { root: { borderRadius: '6px' } },
-    card: { root: { borderRadius: '12px', shadow: '0 1px 3px rgba(15, 23, 42, 0.06)' }, body: { padding: '20px' } },
+    card: { root: { borderRadius: '12px', shadow: '0 1px 3px rgba(15, 23, 42, 0.06)' }, body: { padding: '16px' } },
     datatable: {
-      headerCell: { background: '{surface.50}', padding: '12px 16px' },
-      bodyCell: { padding: '12px 16px' },
+      headerCell: { background: '{surface.50}', padding: '9px 12px' },
+      bodyCell: { padding: '9px 12px' },
       row: { hoverBackground: '{surface.50}', selectedBackground: '{primary.50}', selectedColor: '{primary.700}' },
     },
     dialog: {
       root: { borderRadius: '12px', shadow: '0 18px 44px rgba(15, 23, 42, 0.20)' },
-      header: { padding: '20px 20px 12px' },
-      content: { padding: '0 20px 20px' },
-      footer: { padding: '0 20px 20px' },
+      header: { padding: '16px 16px 10px' },
+      content: { padding: '0 16px 16px' },
+      footer: { padding: '0 16px 16px' },
     },
     drawer: {
       root: { shadow: '0 18px 44px rgba(15, 23, 42, 0.20)' },

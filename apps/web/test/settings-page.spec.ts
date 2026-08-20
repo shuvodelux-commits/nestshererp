@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import Select from 'primevue/select';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../src/api/client';
@@ -160,8 +161,8 @@ describe('SettingsPage', () => {
     });
 
     const wrapper = await mountLoaded();
-    const select = wrapper.get('#setting-serial_tracking_enabled');
-    await select.setValue('on');
+    const select = wrapper.findAllComponents(Select).find((item) => item.props('inputId') === 'setting-serial_tracking_enabled');
+    select?.vm.$emit('update:modelValue', 'on');
     await flushPromises();
 
     expect(save).toHaveBeenCalledWith('test-access', {
@@ -178,7 +179,7 @@ describe('SettingsPage', () => {
     });
 
     const wrapper = await mountLoaded();
-    await wrapper.get('#setting-serial_tracking_enabled').setValue('on');
+    wrapper.findAllComponents(Select).find((item) => item.props('inputId') === 'setting-serial_tracking_enabled')?.vm.$emit('update:modelValue', 'on');
     await flushPromises();
 
     expect(wrapper.text()).toContain('Warranty was turned off too.');
@@ -187,7 +188,7 @@ describe('SettingsPage', () => {
   it('asks for the password before sending a step-up change (§5.3)', async () => {
     const wrapper = await mountLoaded();
 
-    await wrapper.get('#setting-sale_costing_method').setValue('AVERAGE');
+    wrapper.findAllComponents(Select).find((item) => item.props('inputId') === 'setting-sale_costing_method')?.vm.$emit('update:modelValue', 'AVERAGE');
     await flushPromises();
 
     // Nothing was sent yet — the password is collected first.

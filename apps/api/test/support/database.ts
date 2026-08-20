@@ -7,6 +7,15 @@ import type pg from 'pg';
 const clock = new SystemClock();
 
 const TENANT_SCOPED_TABLES = [
+  'cost_adjustments',
+  'lot_consumptions',
+  'journal_lines',
+  'journal_entries',
+  'stock_movements',
+  'product_cost_state',
+  'inventory_lots',
+  'stock_openings',
+  'inventory_locations',
   'notes',
   'settings',
   // Phase 2 parties (path 2.3). Before `tenants`, and party_roles before

@@ -58,9 +58,9 @@ export type JournalRejection =
 /**
  * Accounts whose lines are meaningless without a party (INV-06).
  *
- * `CUSTOMER_ADVANCE` and `VENDOR_PAYABLE` are here for the same reason `AR` and
- * `AP` are: they are somebody's money, and a statement that cannot name whose
- * is not a statement. `OWNER_CURRENT_ACCOUNT` is deliberately **not** required —
+ * Party advance/payable accounts are here for the same reason `AR` and `AP`
+ * are: they are somebody's money, and a statement that cannot name whose is
+ * not a statement. `OWNER_CURRENT_ACCOUNT` is deliberately **not** required —
  * §2.4 says lines carry `party_id` so an owner statement can be produced, but a
  * single-owner shop that never names the owner as a party is normal, and
  * refusing its cash injection would stop real work over a reporting nicety.
@@ -69,6 +69,8 @@ const PARTY_REQUIRED_ACCOUNTS: readonly string[] = [
   'AR',
   'AP',
   'CUSTOMER_ADVANCE',
+  'SUPPLIER_ADVANCE',
+  'VENDOR_ADVANCE',
   'VENDOR_PAYABLE',
 ];
 

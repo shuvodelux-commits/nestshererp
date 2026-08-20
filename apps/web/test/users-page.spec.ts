@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import Select from 'primevue/select';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../src/api/client';
@@ -165,7 +166,8 @@ describe('UsersPage', () => {
     const wrapper = await mountLoaded();
 
     await wrapper.findAll('tbody tr')[1]!.findAll('.linkish')[0]!.trigger('click');
-    await wrapper.find('#role').setValue(ROLES[0]!.id);
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', ROLES[0]!.id);
+    await flushPromises();
 
     expect(wrapper.find('#confirm').exists()).toBe(true);
   });

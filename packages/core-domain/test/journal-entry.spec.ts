@@ -83,6 +83,15 @@ describe('a party account without a party (INV-06)', () => {
     expect(rejectEntry(entry)).toBe('PARTY_ACCOUNT_WITHOUT_PARTY');
   });
 
+  it.each(['SUPPLIER_ADVANCE', 'VENDOR_ADVANCE'] as const)(
+    'refuses a %s balance belonging to nobody',
+    (account) => {
+      const entry = { lines: [line(fixedAccount(account), 50000), line(OPENING_EQUITY, -50000)] };
+
+      expect(rejectEntry(entry)).toBe('PARTY_ACCOUNT_WITHOUT_PARTY');
+    },
+  );
+
   it('allows an owner injection without naming the owner as a party', () => {
     const entry = {
       lines: [

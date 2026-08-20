@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest';
+
+import { resolveNavigation, SHER_NAVIGATION_ARCHITECTURE } from '../src/components/shell/navigation';
+
+const allFeatures = () => SHER_NAVIGATION_ARCHITECTURE
+  .flatMap((category) => category.subcategories)
+  .flatMap((subcategory) => subcategory.features);
+
+describe('navigation architecture', () => {
+  it('has unique stable keys at category, subcategory and feature levels', () => {
+    const categories = SHER_NAVIGATION_ARCHITECTURE.map((category) => category.id);
+    const subcategories = SHER_NAVIGATION_ARCHITECTURE.flatMap((category) => category.subcategories.map((item) => item.id));
+    const features = allFeatures().map((feature) => feature.id);
+    expect(new Set(categories).size).toBe(categories.length);
+    expect(new Set(subcategories).size).toBe(subcategories.length);
+    expect(new Set(features).size).toBe(features.length);
+    expect(features.every((id) => id.includes('.'))).toBe(true);
+  });
+
+  it('resolves only category and subcategory levels, keeping feature leaves inside hubs', () => {
+    const resolved = resolveNavigation({ can: () => true, featureEnabled: () => true });
+    expect(resolved.find((category) => category.id === 'inventory')?.subcategories.map((item) => item.id)).toEqual([
+      'inventory.products', 'inventory.reporting',
+    ]);
+    expect(resolved.flatMap((category) => category.subcategories).some((item) => 'features' in item)).toBe(false);
+    expect(resolved.find((category) => category.id === 'sales')).toBeUndefined();
+    expect(resolved.find((category) => category.id === 'finance')).toBeUndefined();
+  });
+
+  it('hides empty subcategories and categories after permission and feature filtering', () => {
+    const customerOnly = resolveNavigation({ can: (permission) => permission === 'party.customer.view' });
+    expect(customerOnly.find((category) => category.id === 'parties')?.subcategories.map((item) => item.id)).toEqual(['customers.management']);
+    expect(customerOnly.find((category) => category.id === 'parties')?.subcategories[0]?.featureIds).toEqual(['parties.customers']);
+    expect(customerOnly.find((category) => category.id === 'administration')).toBeUndefined();
+    expect(customerOnly.find((category) => category.id === 'overview')).toBeDefined();
+  });
+
+  it('requires both vendor permission and the vendor feature flag', () => {
+    const denied = resolveNavigation({ can: () => true });
+    expect(denied.find((category) => category.id === 'parties')?.subcategories.some((item) => item.id === 'parties.vendors')).toBe(false);
+    const allowed = resolveNavigation({ can: () => true, featureEnabled: (flag) => flag === 'vendors_enabled' });
+    expect(allowed.find((category) => category.id === 'parties')?.subcategories.some((item) => item.id === 'parties.vendors')).toBe(true);
+  });
+
+  it('preserves every current signed-in route through a hub and does not resurrect LIFO or V1 tax', () => {
+    const routes = new Set(allFeatures().flatMap((feature) => feature.route === undefined ? [] : [feature.route.split('?')[0]]));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/inventory-report', '/parties', '/users', '/roles', '/audit', '/settings', '/settings/security']));
+    expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
+    expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
+  });
+});

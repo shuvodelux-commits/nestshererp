@@ -23,6 +23,12 @@
  * opening stock, opening receivables, opening payables and opening cash all
  * need a credit somewhere, and inventing a "balance" column instead is what
  * §5.6 and INV-06 forbid.
+ *
+ * `STOCK_ADJUSTMENT` is the stock-side twin of `CASH_SHORT_OVER` (§2.4, owner
+ * decision 2026-08-20): a loss debits it, a gain credits it, and the period
+ * balance is the shop's shrinkage. Without it a physical-count correction has
+ * nowhere to balance and `INVENTORY` drifts away from the goods on the shelf,
+ * which is the same argument that added `CASH_SHORT_OVER` for the drawer.
  */
 export const FIXED_ACCOUNTS = [
   'AR',
@@ -32,8 +38,11 @@ export const FIXED_ACCOUNTS = [
   'SALES',
   'VENDOR_PAYABLE',
   'CUSTOMER_ADVANCE',
+  'SUPPLIER_ADVANCE',
+  'VENDOR_ADVANCE',
   'WARRANTY_EXPENSE',
   'CASH_SHORT_OVER',
+  'STOCK_ADJUSTMENT',
   'OWNER_CURRENT_ACCOUNT',
   'ROUNDING',
   'OPENING_EQUITY',
