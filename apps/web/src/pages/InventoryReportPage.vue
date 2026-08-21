@@ -584,19 +584,6 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
 </template>
 
 <style scoped>
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--sher-space-3);
-  margin-bottom: var(--sher-space-4);
-}
-
-.filters .field {
-  margin: 0;
-  min-width: 160px;
-}
-
 .filters label span {
   display: block;
   color: var(--sher-text-muted);

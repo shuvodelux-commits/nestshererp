@@ -10,7 +10,6 @@ import { defaultDirectionFor } from '@sher/core-contracts';
 import { Money, Qty } from '@sher/shared-utils';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
-import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
 import Select from 'primevue/select';
 import { computed, onMounted, ref, watch } from 'vue';
@@ -24,6 +23,7 @@ import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import ProductForm from '../components/ProductForm.vue';
+import SearchField from '../components/SearchField.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import StockAdjustDialog from '../components/StockAdjustDialog.vue';
 import StockLotsDialog from '../components/StockLotsDialog.vue';
@@ -63,12 +63,21 @@ const summary = ref<ProductSummary>({ total: 0, active: 0, inactive: 0, withoutB
 const nextCursor = ref<string | null>(null);
 const catalog = ref<CatalogResponse>(EMPTY_CATALOG);
 
+/**
+ * "No filter" is a value the dropdown can actually hold, not an empty string.
+ *
+ * PrimeVue reads an empty model as *nothing chosen* and draws the placeholder,
+ * so a filter resting on its own default ("All brands") came out blank — five
+ * empty boxes that read as broken rather than as unfiltered.
+ */
+const ANY = 'any';
+
 const search = ref('');
-const brandId = ref('');
-const categoryId = ref('');
-const subcategoryId = ref('');
-const status = ref('');
-const stockStatus = ref('');
+const brandId = ref(ANY);
+const categoryId = ref(ANY);
+const subcategoryId = ref(ANY);
+const status = ref(ANY);
+const stockStatus = ref(ANY);
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
@@ -77,24 +86,24 @@ const parentCategories = computed(() =>
   catalog.value.categories.filter((row) => row.parentId === null),
 );
 const subcategories = computed(() =>
-  categoryId.value === ''
+  categoryId.value === ANY
     ? []
     : catalog.value.categories.filter((row) => row.parentId === categoryId.value),
 );
-const brandOptions = computed(() => [{ id: '', name: 'All brands' }, ...catalog.value.brands]);
+const brandOptions = computed(() => [{ id: ANY, name: 'All brands' }, ...catalog.value.brands]);
 const categoryOptions = computed(() => [
-  { id: '', name: 'All categories' },
+  { id: ANY, name: 'All categories' },
   ...parentCategories.value,
 ]);
 const subcategoryOptions = computed(() => [
   {
-    id: '',
+    id: ANY,
     name: `All of ${parentCategories.value.find((row) => row.id === categoryId.value)?.name ?? 'category'}`,
   },
   ...subcategories.value,
 ]);
 const statusOptions = [
-  { value: '', label: 'Active and inactive' },
+  { value: ANY, label: 'Active and inactive' },
   { value: 'ACTIVE', label: 'Active only' },
   { value: 'INACTIVE', label: 'Inactive only' },
 ];
@@ -107,7 +116,7 @@ const statusOptions = [
  * this only chooses which of the returned rows to draw.
  */
 const stockStatusOptions = [
-  { value: '', label: 'Any stock level' },
+  { value: ANY, label: 'Any stock level' },
   { value: 'IN_STOCK', label: 'In stock' },
   { value: 'LOW_STOCK', label: 'Low stock' },
   { value: 'ZERO_STOCK', label: 'Out of stock' },
@@ -117,15 +126,15 @@ const stockStatusOptions = [
 const filtersActive = computed(
   () =>
     search.value !== '' ||
-    brandId.value !== '' ||
-    categoryId.value !== '' ||
-    subcategoryId.value !== '' ||
-    status.value !== '' ||
-    stockStatus.value !== '',
+    brandId.value !== ANY ||
+    categoryId.value !== ANY ||
+    subcategoryId.value !== ANY ||
+    status.value !== ANY ||
+    stockStatus.value !== ANY,
 );
 
 const visibleProducts = computed(() =>
-  stockStatus.value === ''
+  stockStatus.value === ANY
     ? products.value
     : products.value.filter((product) => product.stockStatus === stockStatus.value),
 );
@@ -144,14 +153,14 @@ function money(minor: number | undefined): string {
 function currentQuery(cursor: string | null = null) {
   return {
     ...(search.value === '' ? {} : { search: search.value }),
-    ...(brandId.value === '' ? {} : { brandId: brandId.value }),
+    ...(brandId.value === ANY ? {} : { brandId: brandId.value }),
     // The narrower of the two wins: a subcategory is a category.
-    ...(subcategoryId.value !== ''
+    ...(subcategoryId.value !== ANY
       ? { categoryId: subcategoryId.value }
-      : categoryId.value === ''
+      : categoryId.value === ANY
         ? {}
         : { categoryId: categoryId.value }),
-    ...(status.value === '' ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
+    ...(status.value === ANY ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
     ...(cursor === null ? {} : { cursor }),
     sort: sort.value,
     direction: direction.value,
@@ -228,16 +237,16 @@ onMounted(async () => {
 
 // Choosing a different category invalidates whichever subcategory was chosen.
 watch(categoryId, () => {
-  subcategoryId.value = '';
+  subcategoryId.value = ANY;
 });
 
 function clearFilters(): void {
   search.value = '';
-  brandId.value = '';
-  categoryId.value = '';
-  subcategoryId.value = '';
-  status.value = '';
-  stockStatus.value = '';
+  brandId.value = ANY;
+  categoryId.value = ANY;
+  subcategoryId.value = ANY;
+  status.value = ANY;
+  stockStatus.value = ANY;
   void load();
 }
 
@@ -402,13 +411,12 @@ function stockPill(product: ProductResponse): string {
     <!-- UI-25: filters are visible, and what is filtered is readable at a glance -->
     <form class="filters" @submit.prevent="load">
       <div class="field grow">
-        <label for="product-search">Search</label>
-        <InputText
-          id="product-search"
+        <SearchField
           v-model="search"
-          type="search"
+          field-id="product-search"
+          label="Search products"
           placeholder="Name, code, barcode or brand"
-          fluid
+          @search="load"
         />
       </div>
 
@@ -487,7 +495,6 @@ function stockPill(product: ProductResponse): string {
         />
       </div>
 
-      <Button type="submit" label="Search" severity="secondary" outlined />
       <Button
         v-if="filtersActive"
         type="button"
@@ -581,8 +588,23 @@ function stockPill(product: ProductResponse): string {
                   :direction="direction"
                   @sort="sortBy"
                 />
-                <th class="num">Stock<small>স্টক</small></th>
-                <th v-if="canSeeCost" class="num">Stock value<small>স্টকের মূল্য</small></th>
+                <!--
+                  Not sortable — `stockQty` has no sort key in the contract —
+                  but drawn with the same label box as the columns that are, so
+                  the header row reads as one row.
+                -->
+                <th class="num">
+                  <span class="th-label">
+                    Stock
+                    <span class="sher-bn header-bn">স্টক</span>
+                  </span>
+                </th>
+                <th v-if="canSeeCost" class="num">
+                  <span class="th-label">
+                    Stock value
+                    <span class="sher-bn header-bn">স্টকের মূল্য</span>
+                  </span>
+                </th>
                 <SortableHeader
                   column="status"
                   label="Status"
@@ -768,23 +790,6 @@ function stockPill(product: ProductResponse): string {
  * `design/components.css`. What is left is the filter bar, the row menu trigger
  * and the paging line.
  */
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--sher-space-3);
-  margin-bottom: var(--sher-space-5);
-}
-
-.filters .field {
-  margin: 0;
-  min-width: 150px;
-}
-
-.filters .field.grow {
-  flex: 1 1 240px;
-}
-
 .skeletons {
   display: flex;
   flex-direction: column;

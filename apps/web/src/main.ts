@@ -22,7 +22,7 @@ import router from './router';
 // Before mount, so a device set to dark never shows a white flash first.
 initTheme();
 
-createApp(App)
+const app = createApp(App)
   .use(PrimeVue, {
     theme: {
       preset: SherPreset,
@@ -37,5 +37,12 @@ createApp(App)
   .use(ConfirmationService)
   .use(ToastService)
   .directive('tooltip', Tooltip)
-  .use(router)
-  .mount('#app');
+  .use(router);
+
+/*
+ * Mounted only once the router knows where it is. The shell and the sign-in
+ * screen are different layouts, and mounting first means rendering one frame of
+ * the wrong one before the first route resolves — a flash of the whole ERP
+ * behind the login form.
+ */
+void router.isReady().then(() => app.mount('#app'));

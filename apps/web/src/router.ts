@@ -11,7 +11,7 @@ import { GOOGLE_REDIRECT_PATH } from './auth/google';
  * own access server-side (R-D2). Routing someone away from a page they cannot
  * see is politeness; the API refusing them is the security.
  */
-const PUBLIC_ROUTES = new Set(['login', 'register', 'google-callback', 'forgot-password']);
+export const PUBLIC_ROUTES = new Set(['login', 'register', 'google-callback', 'forgot-password']);
 
 const router = createRouter({
   history: createWebHistory(),

@@ -16,3 +16,8 @@ design-system/
 # Superseded copies of the three canonical documents. AGENTS.md keeps exactly
 # one copy of each; a second one in the tree is how a stale spec gets read.
 Old/
+
+# Owner-supplied reference screenshots of the running app and the reference
+# build. Same reason as design-system/: binary shots belong beside the repo,
+# not permanently in its history.
+Screenshot/

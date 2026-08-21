@@ -34,8 +34,15 @@ import ErrorNotice from './ErrorNotice.vue';
 import HelpTip from './HelpTip.vue';
 import QuickAddSelect from './QuickAddSelect.vue';
 
+/**
+ * "None" is a value the dropdown can hold. PrimeVue reads an empty model as
+ * *nothing chosen* and draws the placeholder instead, which left the field
+ * looking blank when the product simply has no default discount.
+ */
+const NO_DISCOUNT = 'none';
+
 const discountTypeOptions = [
-  { label: 'None', value: '' },
+  { label: 'None', value: NO_DISCOUNT },
   { label: 'A fixed amount off', value: 'FIXED_AMOUNT' },
   { label: 'A percentage off', value: 'PERCENTAGE' },
 ];
@@ -135,7 +142,7 @@ const offerEnabled = ref(false);
 const offerPrice = ref('');
 const offerStartDate = ref('');
 const offerEndDate = ref('');
-const discountType = ref<'' | 'FIXED_AMOUNT' | 'PERCENTAGE'>('');
+const discountType = ref<typeof NO_DISCOUNT | 'FIXED_AMOUNT' | 'PERCENTAGE'>(NO_DISCOUNT);
 const discountValue = ref('');
 
 const tracksExpiry = ref(false);
@@ -378,7 +385,7 @@ function fill(product: ProductResponse): void {
   offerPrice.value = moneyText(product.offerPriceMinor);
   offerStartDate.value = product.offerStartDate ?? '';
   offerEndDate.value = product.offerEndDate ?? '';
-  discountType.value = product.defaultDiscountType ?? '';
+  discountType.value = product.defaultDiscountType ?? NO_DISCOUNT;
   discountValue.value =
     product.defaultDiscountValue === null ? '' : moneyText(product.defaultDiscountValue);
   tracksExpiry.value = product.tracksExpiry;
@@ -478,8 +485,8 @@ function toRequest(): SaveProductRequest | null {
   }
 
   const discountMinor =
-    discountType.value === '' ? null : parseMoney(discountValue.value);
-  if (discountType.value !== '' && discountMinor === null) {
+    discountType.value === NO_DISCOUNT ? null : parseMoney(discountValue.value);
+  if (discountType.value !== NO_DISCOUNT && discountMinor === null) {
     formError.value = { code: 'VALIDATION_FAILED', message: 'Enter how much the discount is' };
     return null;
   }
@@ -540,7 +547,7 @@ function toRequest(): SaveProductRequest | null {
     sku: sku.value.trim() === '' ? null : sku.value.trim(),
     barcode: barcode.value.trim() === '' ? null : barcode.value.trim(),
     description: description.value.trim() === '' ? null : description.value.trim(),
-    defaultDiscountType: discountType.value === '' ? null : discountType.value,
+    defaultDiscountType: discountType.value === NO_DISCOUNT ? null : discountType.value,
     defaultDiscountValue: discountMinor,
     offerEnabled: offerEnabled.value,
     offerPriceMinor: offerMinor,
@@ -971,7 +978,7 @@ const baseUnitName = computed(
             <Select input-id="discount-type" v-model="discountType" :options="discountTypeOptions" option-label="label" option-value="value" :disabled="!canSave" fluid />
           </div>
 
-          <div v-if="discountType !== ''" class="field">
+          <div v-if="discountType !== NO_DISCOUNT" class="field">
             <label for="discount-value">
               {{ discountType === 'PERCENTAGE' ? 'Percent off (%)' : 'Amount off (৳)' }}
             </label>

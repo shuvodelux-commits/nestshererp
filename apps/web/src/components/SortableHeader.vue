@@ -81,28 +81,51 @@ const arrow = computed(() => (props.direction === 'ASC' ? 'pi-arrow-up' : 'pi-ar
 .sort-button {
   display: flex;
   align-items: baseline;
+  justify-content: flex-start;
   gap: 0.375rem;
   width: 100%;
-  min-height: 2.75rem;
-  padding: 0.5rem 0;
+  min-height: 2.25rem;
+  padding: 0.25rem 0;
   font: inherit;
   color: inherit;
-  text-align: inherit;
+  /*
+   * Explicit, because `font: inherit` does not carry either of these and the
+   * user-agent's `button { text-transform: none }` reset actively cancels the
+   * first. Left to inherit, a sortable column rendered "Product" next to a
+   * plain column's "STOCK" in the same header row.
+   */
+  text-transform: inherit;
+  letter-spacing: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
 th.num .sort-button {
   justify-content: flex-end;
+  text-align: right;
 }
 
+/*
+ * English label and Bangla helper on **one line** (UI-16), the same way a form
+ * field carries its `.label-bn`.
+ *
+ * Stacked, the Bangla became a second header row: every list grew about 18px of
+ * chrome above the first record, and the eye had to skip a line of text it may
+ * not read to reach the data. Beside the label it is what it is — the same
+ * column name, said the other way — and the table starts a row sooner.
+ */
 .sort-label {
   display: flex;
-  flex-direction: column;
-  gap: 0.0625rem;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
 }
 
 .header-bn {
   font-weight: 400;
+  font-size: var(--sher-text-2xs);
+  letter-spacing: normal;
+  text-transform: none;
   opacity: 0.75;
 }
 

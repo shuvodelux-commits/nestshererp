@@ -39,7 +39,6 @@ function grantAll(): void {
 
 afterEach(() => {
   useSession().clear();
-  localStorage.removeItem('sher.navigation.expanded');
 });
 
 describe('categorized module navigation', () => {
@@ -52,9 +51,12 @@ describe('categorized module navigation', () => {
     });
     await flushPromises();
 
+    // Short names (owner decision 2026-08-20): the caption already says
+    // Inventory, so the rows under it are "Products" and "Reports", not
+    // "Product Management" and "Inventory Report" said twice over.
     expect(wrapper.text()).toContain('Inventory');
-    expect(wrapper.text()).toContain('Product Management');
-    expect(wrapper.text()).toContain('Inventory Report');
+    expect(wrapper.text()).toContain('Products');
+    expect(wrapper.text()).toContain('Reports');
     expect(wrapper.text()).not.toContain('Sales Invoice');
     expect(wrapper.text()).not.toContain('Journal Entries');
   });
@@ -87,6 +89,25 @@ describe('categorized module navigation', () => {
     expect(top.text()).not.toContain('Customer Ledger');
   });
 
+  /**
+   * The tab is named after the page it opens. Stock adjustment and lots are row
+   * actions on Products, so naming the tab after all three produced "Products &
+   * Stock Adjustment & Lots/Batch" — a label wider than the control holding it.
+   */
+  it('names a feature tab after its page, not after everything reachable from it', async () => {
+    grantAll();
+    const router = await routerAt('/products');
+    const wrapper = mount(ModuleFeatureNav, { global: { plugins: [router] } });
+    await flushPromises();
+
+    const labels = wrapper.findAll('.feature-label').map((item) => item.text());
+    expect(labels).toEqual(['Products', 'Catalog Setup']);
+    expect(wrapper.text()).not.toContain('Stock Adjustment &');
+
+    // The capabilities are not lost — they are the tab's hover text.
+    expect(wrapper.find('.p-tab')?.attributes('title')).toContain('Lots/Batch');
+  });
+
   it('omits a redundant feature strip when all capabilities share one hub route', async () => {
     grantAll();
     const router = await routerAt('/inventory-report');
@@ -104,11 +125,17 @@ describe('categorized module navigation', () => {
     });
     await flushPromises();
 
-    expect(wrapper.findAll('.nav-item.is-current').map((item) => item.text())).toEqual(['Account Security']);
+    expect(wrapper.findAll('.nav-item.is-current').map((item) => item.text())).toEqual(['Security']);
     expect(wrapper.findAll('.module-menu .nav-item').every((item) => item.attributes('title') === undefined)).toBe(true);
   });
 
-  it('opens the first accessible subcategory when an inactive category is expanded', async () => {
+  /**
+   * The accordion is gone: standing on the Dashboard, every page of every
+   * category the caller may open is already a link on screen, and the category
+   * caption above them is a caption — no click, no expand, nothing to remember
+   * between visits.
+   */
+  it('lists every accessible page without an expand step', async () => {
     grantAll();
     const router = await routerAt('/dashboard');
     const wrapper = mount(AppSidebar, {
@@ -116,11 +143,14 @@ describe('categorized module navigation', () => {
       global: { plugins: [router], directives: { tooltip: () => undefined } },
     });
     await flushPromises();
-    const parties = wrapper.findAll('.nav-category').find((item) => item.text().includes('Parties'));
 
-    await parties?.trigger('click');
-    await flushPromises();
+    const targets = wrapper.findAll('.module-menu .nav-item').map((item) => item.attributes('href'));
+    expect(targets).toContain('/parties?role=CUSTOMER');
+    expect(targets).toContain('/parties?role=SUPPLIER');
+    expect(targets).toContain('/products');
+    expect(targets).toContain('/settings/security');
 
-    expect(router.currentRoute.value.fullPath).toBe('/parties?role=CUSTOMER');
+    const caption = wrapper.findAll('.nav-section').find((item) => item.text().includes('Parties'));
+    expect(caption?.element.tagName).toBe('P');
   });
 });

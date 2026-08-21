@@ -28,8 +28,15 @@ const emit = defineEmits<{ (event: 'close'): void }>();
 
 const session = useSession();
 
+/**
+ * "No filter" is a value the dropdown can hold. PrimeVue reads an empty model
+ * as *nothing chosen* and draws the placeholder instead, which left the filter
+ * resting on its own default looking like an empty box.
+ */
+const ANY = 'any';
+
 const lotStatusOptions = [
-  { label: 'All batches', value: '' },
+  { label: 'All batches', value: ANY },
   { label: 'Still has stock', value: 'OPEN' },
   { label: 'Used up', value: 'CLOSED' },
 ];
@@ -44,7 +51,7 @@ const visible = computed({
 const loading = ref(false);
 const error = ref<{ code: string; message: string } | null>(null);
 const lots = ref<InventoryLot[]>([]);
-const status = ref<'' | 'OPEN' | 'CLOSED'>('');
+const status = ref<typeof ANY | 'OPEN' | 'CLOSED'>(ANY);
 const sort = ref<InventoryLotSort>('businessDate');
 const direction = ref<SortDirection>('DESC');
 const nextCursor = ref<string | null>(null);
@@ -60,7 +67,7 @@ async function load(append = false): Promise<void> {
       limit: 50,
       sort: sort.value,
       direction: direction.value,
-      ...(status.value === '' ? {} : { status: status.value }),
+      ...(status.value === ANY ? {} : { status: status.value }),
       ...(append && nextCursor.value !== null ? { cursor: nextCursor.value } : {}),
     });
     lots.value = append ? [...lots.value, ...page.data] : [...page.data];

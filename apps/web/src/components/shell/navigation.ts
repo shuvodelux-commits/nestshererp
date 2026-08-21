@@ -70,7 +70,7 @@ const planned = (id: string, label: string, labelBn: string, purpose: string): S
 export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
   {
     id: 'overview', label: 'Overview', icon: 'pi-home', subcategories: [
-      { id: 'overview.business', label: 'Business Overview', icon: 'pi-chart-bar', features: [
+      { id: 'overview.business', label: 'Overview', icon: 'pi-chart-bar', features: [
         feature('overview.dashboard', 'Dashboard', 'ব্যবসার সারসংক্ষেপ', 'Business summary and daily attention', '/dashboard'),
       ] },
     ],
@@ -80,13 +80,13 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       // §5.5: Products is the product working hub — stock adjustment, lots and
       // the opening figure are row actions on it, not separate destinations
       // (UI-56: a feature label does not imply a separate route).
-      { id: 'inventory.products', label: 'Product Management', icon: 'pi-box', features: [
+      { id: 'inventory.products', label: 'Products', icon: 'pi-box', features: [
         feature('inventory.products.page', 'Products', 'পণ্য ও স্টক', 'Products with stock, adjustment and lots', '/products', ['catalog.product.view'], ['/products']),
         feature('inventory.stock.adjust', 'Stock Adjustment', 'স্টক ঠিক করুন', 'Correct stock for damage, recount or loss', '/products', ['catalog.product.edit'], ['/products'], false),
         feature('inventory.lots', 'Lots/Batch', 'কোন চালানের পণ্য', 'Trace stock by source batch', '/products', ['inventory.lot.view'], ['/products'], false),
         feature('inventory.catalog', 'Catalog Setup', 'ইউনিট, ব্র্যান্ড ও ক্যাটাগরি', 'Manage units, brands and categories', '/catalog', ['catalog.product.view'], ['/catalog']),
       ] },
-      { id: 'inventory.reporting', label: 'Inventory Report', icon: 'pi-chart-bar', features: [
+      { id: 'inventory.reporting', label: 'Reports', icon: 'pi-chart-bar', features: [
         feature('inventory.report.page', 'Inventory Report', 'স্টকের হিসাব', 'Stock, low stock, movements, write-offs and valuation', '/inventory-report', ['catalog.product.view'], ['/inventory-report']),
         feature('inventory.valuation', 'Stock Valuation', 'স্টকের হিসাব করা মূল্য', 'Reconcile stock value to the journal', '/inventory-report', ['inventory.cost.view'], ['/inventory-report'], false),
       ] },
@@ -123,15 +123,39 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
   },
   {
     id: 'settings', label: 'Settings', icon: 'pi-cog', subcategories: [
-      { id: 'settings.business', label: 'Business Settings', icon: 'pi-building', features: [
+      { id: 'settings.business', label: 'Business', icon: 'pi-building', features: [
         feature('settings.business.page', 'Settings', 'ব্যবসার সেটিংস', 'Business details and approved feature controls', '/settings', ['settings.setting.view'], ['/settings']),
       ] },
-      { id: 'settings.security', label: 'Account Security', icon: 'pi-lock', features: [
+      { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),
       ] },
     ],
   },
 ];
+
+/**
+ * Which module a path belongs to, by the longest `activePrefix` that claims it.
+ *
+ * The shell uses this to decide how one screen replaces another: moving inside
+ * a module is a sideways step and slides, moving between modules is a change of
+ * place and cross-fades. Without it every navigation looked identical, so
+ * stepping from Products to Catalog Setup — two pages of the same module — was
+ * animated as heavily as leaving Inventory altogether.
+ */
+export function navigationModuleId(path: string): string {
+  let best = { length: 0, id: '' };
+  for (const category of SHER_NAVIGATION_ARCHITECTURE) {
+    for (const subcategory of category.subcategories) {
+      for (const item of subcategory.features) {
+        for (const prefix of item.activePrefixes) {
+          const matches = path === prefix || path.startsWith(`${prefix}/`);
+          if (matches && prefix.length > best.length) best = { length: prefix.length, id: category.id };
+        }
+      }
+    }
+  }
+  return best.id;
+}
 
 export interface NavigationAccess {
   readonly can: (permission: string) => boolean;

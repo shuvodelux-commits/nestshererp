@@ -36,19 +36,37 @@ const pages = computed(() => {
   const current = candidates[0];
   if (current === undefined || current.score === 0) return [];
 
-  const grouped = new Map<string, { labels: string[]; labelsBn: string[]; purpose: string }>();
+  /**
+   * **A tab is named after the page it opens, not after everything reachable
+   * once you are there.**
+   *
+   * Joining every capability that shares a route produced "Products & Stock
+   * Adjustment & Lots/Batch" on a control barely wider than the word Products —
+   * a label nobody reads, wrapping over two lines, in a strip meant to be
+   * scanned in one glance. Stock adjustment and lots are row actions on the
+   * Products page; they are things you can do there, not places to go. They
+   * stay in the hover text, where a full sentence costs nothing.
+   */
+  const grouped = new Map<string, { label: string; labelBn: string; purposes: string[] }>();
   for (const feature of current.features) {
     if (feature.route === undefined) continue;
-    const entry = grouped.get(feature.route) ?? { labels: [], labelsBn: [], purpose: feature.purpose };
-    entry.labels.push(feature.label);
-    entry.labelsBn.push(feature.labelBn);
-    grouped.set(feature.route, entry);
+    const entry = grouped.get(feature.route);
+    if (entry === undefined) {
+      grouped.set(feature.route, {
+        label: feature.label,
+        labelBn: feature.labelBn,
+        purposes: [`${feature.label}: ${feature.purpose}`],
+      });
+      continue;
+    }
+    entry.purposes.push(`${feature.label}: ${feature.purpose}`);
   }
+
   return [...grouped.entries()].map(([target, entry]) => ({
     target,
-    label: entry.labels.join(' & '),
-    labelBn: entry.labelsBn.join(' ও '),
-    purpose: entry.purpose,
+    label: entry.label,
+    labelBn: entry.labelBn,
+    purpose: entry.purposes.join(' · '),
     active: matchScore(target, []) >= 3,
   }));
 });
@@ -76,50 +94,76 @@ const activeTarget = computed(() => pages.value.find((page) => page.active)?.tar
 </template>
 
 <style scoped>
+/*
+ * The pages of the module you are standing in, drawn as **underlined tabs**.
+ *
+ * They were chips in a segmented control for a while, on the argument that a
+ * border makes it obvious a thing can be pressed. In practice it made the strip
+ * heavy: two bordered boxes directly under the page title compete with it, and
+ * on Products the box was wide enough to look like a section of its own. Tabs
+ * are the convention this audience already meets in every app they use, and the
+ * moving bar under the current one says where you are without drawing a box
+ * around it.
+ */
 .feature-nav {
   min-width: 0;
   overflow: hidden;
-  border-bottom: 1px solid var(--p-content-border-color);
 }
+
 .feature-nav :deep(.p-tabs),
 .feature-nav :deep(.p-tablist),
 .feature-nav :deep(.p-tablist-tab-list) {
   background: transparent;
 }
+
 .feature-nav :deep(.p-tablist-tab-list) {
-  border-width: 0;
+  gap: var(--sher-space-5);
+  border-bottom: 1px solid var(--sher-line);
 }
+
 .feature-nav :deep(.p-tab) {
   flex: 0 0 auto;
-  min-width: 9rem;
-  padding: 0.8rem 1.1rem 0.7rem;
+  padding: 0.4rem 0 0.55rem;
+  border: 0;
+  background: transparent;
   white-space: nowrap;
+  transition: color var(--sher-transition);
 }
+
+/* The bar under the current tab is the only "selected" mark there is. */
+.feature-nav :deep(.p-tablist-active-bar) {
+  height: 2px;
+  background: var(--sher-primary);
+}
+
 .feature-label,
 .feature-label-bn {
   display: block;
-  width: 100%;
-  text-align: center;
-}
-.feature-label {
-  color: var(--p-text-color);
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-.feature-label-bn {
-  margin-top: 0.15rem;
-  color: var(--p-text-muted-color);
-  font-size: 0.75rem;
-  font-weight: 400;
-}
-.feature-nav :deep(.p-tab-active) .feature-label {
-  color: var(--p-primary-color);
+  text-align: left;
 }
 
-@media (max-width: 640px) {
-  .feature-nav :deep(.p-tab) {
-    min-width: 8rem;
-    padding-inline: 0.8rem;
-  }
+.feature-label {
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-sm);
+  font-weight: 600;
+}
+
+.feature-label-bn {
+  margin-top: 0.1rem;
+  color: var(--sher-text-faint);
+  font-size: var(--sher-text-2xs);
+  font-weight: 400;
+}
+
+.feature-nav :deep(.p-tab:hover) .feature-label {
+  color: var(--sher-text);
+}
+
+.feature-nav :deep(.p-tab-active) .feature-label {
+  color: var(--sher-primary-text);
+}
+
+.feature-nav :deep(.p-tab-active) .feature-label-bn {
+  color: var(--sher-text-muted);
 }
 </style>

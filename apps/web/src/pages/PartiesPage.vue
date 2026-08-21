@@ -31,6 +31,7 @@ import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import SearchField from '../components/SearchField.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
 
@@ -102,18 +103,22 @@ const parties = ref<PartyResponse[]>([]);
 const summary = ref<PartySummary>({ total: 0, active: 0, inactive: 0, ungrouped: 0 });
 const nextCursor = ref<string | null>(null);
 
+/**
+ * "No filter" is a value the dropdown can hold. PrimeVue reads an empty model
+ * as *nothing chosen* and draws the placeholder instead, which left a filter
+ * resting on its own default looking like an empty box.
+ */
+const ANY = 'any';
+
 const search = ref('');
-const groupId = ref('');
-const status = ref('');
+const groupId = ref(ANY);
+const status = ref(ANY);
 const statusOptions = [
-  { label: 'Active and inactive', value: '' },
+  { label: 'Active and inactive', value: ANY },
   { label: 'Active only', value: 'ACTIVE' },
   { label: 'Inactive only', value: 'INACTIVE' },
 ];
-const groupOptions = computed(() => [
-  { id: '', name: 'All groups' },
-  ...setup.value.groups,
-]);
+const groupOptions = computed(() => [{ id: ANY, name: 'All groups' }, ...setup.value.groups]);
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
@@ -216,7 +221,7 @@ const showsGroups = computed(
 );
 
 const filtersActive = computed(
-  () => search.value !== '' || groupId.value !== '' || status.value !== '',
+  () => search.value !== '' || groupId.value !== ANY || status.value !== ANY,
 );
 
 const NOUN: Record<PartyRoleValue, string> = {
@@ -241,8 +246,8 @@ function currentQuery(cursor: string | null = null) {
   return {
     role: role.value,
     ...(search.value === '' ? {} : { search: search.value }),
-    ...(groupId.value === '' ? {} : { groupId: groupId.value }),
-    ...(status.value === '' ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
+    ...(groupId.value === ANY ? {} : { groupId: groupId.value }),
+    ...(status.value === ANY ? {} : { status: status.value as 'ACTIVE' | 'INACTIVE' }),
     ...(cursor === null ? {} : { cursor }),
     sort: sort.value,
     direction: direction.value,
@@ -312,7 +317,7 @@ onMounted(async () => {
 });
 
 watch(role, () => {
-  groupId.value = '';
+  groupId.value = ANY;
   void load();
 });
 
@@ -323,8 +328,8 @@ watch(() => route.query.role, (value) => {
 
 function clearFilters(): void {
   search.value = '';
-  groupId.value = '';
-  status.value = '';
+  groupId.value = ANY;
+  status.value = ANY;
   void load();
 }
 
@@ -402,7 +407,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
         ? `${name} was removed.`
         : `${name} is no longer offered. Customers already in it keep showing it.`;
     setup.value = await fetchPartySetup(session.accessToken.value ?? '');
-    if (groupId.value === id) groupId.value = '';
+    if (groupId.value === id) groupId.value = ANY;
     await load();
   } catch (cause) {
     groupError.value = describe(cause);
@@ -441,8 +446,13 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
     <form class="filters" @submit.prevent="load">
       <div class="field grow">
-        <label for="party-search">Search</label>
-        <input id="party-search" v-model="search" type="search" placeholder="Name or phone" />
+        <SearchField
+          v-model="search"
+          field-id="party-search"
+          :label="`Search ${NOUN[role]}s`"
+          placeholder="Name or phone"
+          @search="load"
+        />
       </div>
 
       <div v-if="showsGroups" class="field">
@@ -455,7 +465,6 @@ async function removeGroup(id: string, name: string): Promise<void> {
         <Select input-id="filter-status" v-model="status" :options="statusOptions" option-label="label" option-value="value" fluid @change="load" />
       </div>
 
-      <button type="submit" class="btn btn-ghost">Search</button>
       <button v-if="filtersActive" type="button" class="btn btn-ghost" @click="clearFilters">
         Clear
       </button>
@@ -522,6 +531,14 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   :direction="direction"
                   @sort="sortBy"
                 />
+                <!--
+                  Where they are — the field a shopkeeper reads to tell two
+                  Kamals apart, and the one they need when sending goods. Not
+                  sortable: `address` is free text with no index behind it, and
+                  UI-46 leaves such a column unsorted rather than ordering only
+                  the page you can see.
+                -->
+                <th>Address <span class="sher-bn header-bn">ঠিকানা</span></th>
                 <SortableHeader
                   v-if="showsGroups"
                   column="groupName"
@@ -566,6 +583,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   <span v-if="party.isSystemReserved" class="pill pill-info">Walk-in</span>
                 </td>
                 <td class="mono">{{ party.phone ?? '—' }}</td>
+                <td class="address">{{ party.address ?? '—' }}</td>
                 <td v-if="showsGroups">{{ party.customerGroupName ?? '—' }}</td>
                 <td>
                   <span
@@ -774,21 +792,12 @@ async function removeGroup(id: string, name: string): Promise<void> {
  * party-specific overlays.
  */
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--sher-space-3);
-  margin-bottom: var(--sher-space-5);
-}
-
-.filters .field {
-  margin: 0;
-  min-width: 170px;
-}
-
-.filters .field.grow {
-  flex: 1 1 260px;
+/* A long address wraps the row twice and pushes Status off the screen. */
+.address {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skeletons {

@@ -34,20 +34,34 @@ const session = useSession();
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
 const result = ref<AuditListResponse | null>(null);
-const actorOptions = computed(() => [{ id: '', name: 'Anyone' }, ...(result.value?.actors ?? [])]);
+/**
+ * "No filter" is a value the dropdown can hold. PrimeVue reads an empty model
+ * as *nothing chosen* and draws the placeholder instead, which left a filter
+ * resting on its own default looking like an empty box.
+ */
+const ANY = 'any';
+
+const actorOptions = computed(() => [{ id: ANY, name: 'Anyone' }, ...(result.value?.actors ?? [])]);
 const entityOptions = computed(() => [
-  { label: 'Everything', value: '' },
+  { label: 'Everything', value: ANY },
   ...(result.value?.entityTypes ?? []).map((value) => ({ label: value, value })),
 ]);
 const actionOptions = computed(() => [
-  { label: 'Any action', value: '' },
+  { label: 'Any action', value: ANY },
   ...(result.value?.actions ?? []).map((value) => ({ label: value, value })),
 ]);
 /** Rows accumulated across "Show older" — the trail reads as one list. */
 const events = ref<AuditEventResponse[]>([]);
 const loadingMore = ref(false);
 
-const filters = ref({ from: '', to: '', actorId: '', entityType: '', action: '' });
+const filters = ref({ from: '', to: '', actorId: ANY, entityType: ANY, action: ANY });
+
+/** A dropdown left on its default is not a filter, so it never reaches the query. */
+function currentQuery(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(filters.value).map(([key, value]) => [key, value === ANY ? '' : value]),
+  );
+}
 
 function describe(cause: unknown): { code: string; message: string } {
   return cause instanceof ApiError
@@ -59,7 +73,7 @@ async function load(): Promise<void> {
   loading.value = true;
   loadError.value = null;
   try {
-    const page = await fetchAuditEvents(session.accessToken.value ?? '', { ...filters.value });
+    const page = await fetchAuditEvents(session.accessToken.value ?? '', currentQuery());
     result.value = page;
     events.value = [...page.events];
   } catch (cause) {
@@ -76,7 +90,7 @@ async function loadMore(): Promise<void> {
   loadingMore.value = true;
   try {
     const page = await fetchAuditEvents(session.accessToken.value ?? '', {
-      ...filters.value,
+      ...currentQuery(),
       cursor,
     });
     result.value = page;
@@ -91,11 +105,13 @@ async function loadMore(): Promise<void> {
 onMounted(load);
 
 function clearFilters(): void {
-  filters.value = { from: '', to: '', actorId: '', entityType: '', action: '' };
+  filters.value = { from: '', to: '', actorId: ANY, entityType: ANY, action: ANY };
   void load();
 }
 
-const anyFilter = computed(() => Object.values(filters.value).some((value) => value !== ''));
+const anyFilter = computed(() =>
+  Object.values(currentQuery()).some((value) => value !== ''),
+);
 
 /**
  * Rendered in the tenant's own timezone, so a 00:30 Dhaka event reads as that
@@ -232,13 +248,6 @@ function toneFor(action: string): string {
 </template>
 
 <style scoped>
-.filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--sher-space-3);
-  align-items: end;
-}
-
 .filter-actions {
   display: flex;
   gap: var(--sher-space-2);

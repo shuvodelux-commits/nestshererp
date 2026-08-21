@@ -1,114 +1,33 @@
 <script setup lang="ts">
 import Drawer from 'primevue/drawer';
-import type { MenuItem } from 'primevue/menuitem';
-import PanelMenu from 'primevue/panelmenu';
-import { computed, ref, watch } from 'vue';
-import { RouterLink, useRoute, useRouter } from 'vue-router';
+import { computed } from 'vue';
+import { RouterLink } from 'vue-router';
 
 import { useSession } from '../../auth/session';
-import { resolveNavigation } from './navigation';
+import AppSidebarNav from './AppSidebarNav.vue';
 
+/**
+ * Two frames around one module list.
+ *
+ * On a desk the sidebar is a permanent rail that can be narrowed to icons. On a
+ * phone or a small laptop the same list is PrimeVue's `Drawer` — its `Sidebar`
+ * under the v4 name — so the overlay, the focus trap, the escape key and the
+ * scroll lock are the component library's job and not a second implementation
+ * of them here.
+ *
+ * What is *inside* both is `AppSidebarNav`, once. The brand block and the
+ * business footer are the only things this component draws itself.
+ */
 const props = defineProps<{ collapsed: boolean; drawerVisible: boolean }>();
 const emit = defineEmits<{ 'update:drawerVisible': [visible: boolean] }>();
 
-const route = useRoute();
-const router = useRouter();
 const session = useSession();
 const { businessName } = session;
-const NAV_STATE_KEY = 'sher.navigation.expanded';
 
 const drawerOpen = computed({
   get: () => props.drawerVisible,
   set: (visible: boolean) => emit('update:drawerVisible', visible),
 });
-
-const navigation = computed(() => resolveNavigation({ can: session.can }));
-
-const visibleGroups = computed<MenuItem[]>(() => navigation.value.map((category) => {
-  const only = !category.alwaysGroup && category.subcategories.length === 1 ? category.subcategories[0] : undefined;
-  if (only !== undefined) return {
-    key: category.id,
-    label: category.label,
-    icon: `pi ${category.icon}`,
-    route: only.route,
-    title: only.purpose,
-    activePrefixes: only.activePrefixes,
-  };
-  return {
-    key: category.id,
-    label: category.label,
-    icon: `pi ${category.icon}`,
-    defaultRoute: category.subcategories[0]?.route,
-    items: category.subcategories.map((subcategory) => ({
-      key: subcategory.id,
-      label: subcategory.label,
-      icon: `pi ${subcategory.icon}`,
-      route: subcategory.route,
-      title: subcategory.purpose,
-      activePrefixes: subcategory.activePrefixes,
-    })),
-  };
-}));
-
-const collapsedCategories = computed(() => navigation.value.map((category) => ({
-  id: category.id,
-  label: category.label,
-  icon: category.icon,
-  to: category.subcategories[0]?.route ?? '/dashboard',
-  purpose: category.subcategories.map((subcategory) => subcategory.label).join(' · '),
-  subcategories: category.subcategories,
-})));
-
-function storedExpandedKeys(): Record<string, boolean> {
-  try {
-    const stored = localStorage.getItem(NAV_STATE_KEY);
-    return stored === null ? {} : JSON.parse(stored) as Record<string, boolean>;
-  } catch {
-    return {};
-  }
-}
-
-const expansionIsUserManaged = ref(localStorage.getItem(NAV_STATE_KEY) !== null);
-const expandedKeys = ref<Record<string, boolean>>(storedExpandedKeys());
-
-function routeMatches(target: string, prefixes: readonly string[]): boolean {
-  const resolved = router.resolve(target);
-  const targetRole = resolved.query.role;
-  if (typeof targetRole === 'string' && route.path === resolved.path) return route.query.role === targetRole;
-  return prefixes.some((prefix) => route.path === prefix || route.path.startsWith(`${prefix}/`));
-}
-
-function menuItemActive(item: MenuItem): boolean {
-  return typeof item.key === 'string' && item.key === activeSubcategoryId.value;
-}
-
-const activeSubcategoryId = computed(() => navigation.value
-  .flatMap((category) => category.subcategories)
-  .filter((subcategory) => routeMatches(subcategory.route, subcategory.activePrefixes))
-  .sort((left, right) => router.resolve(right.route).path.length - router.resolve(left.route).path.length)[0]?.id);
-
-function categoryActive(categoryId: string): boolean {
-  const category = navigation.value.find((item) => item.id === categoryId);
-  return category?.subcategories.some((subcategory) => routeMatches(subcategory.route, subcategory.activePrefixes)) ?? false;
-}
-
-function openCategoryDefault(item: MenuItem): void {
-  if (typeof item.key !== 'string' || categoryActive(item.key) || typeof item.defaultRoute !== 'string') return;
-  void router.push(item.defaultRoute);
-}
-
-watch([navigation, () => route.fullPath], () => {
-  if (expansionIsUserManaged.value) return;
-  const active = navigation.value.find((category) => categoryActive(category.id));
-  if (active !== undefined) expandedKeys.value = { [active.id]: true };
-}, { immediate: true });
-
-watch(expandedKeys, (value) => localStorage.setItem(NAV_STATE_KEY, JSON.stringify(value)), { deep: true });
-
-function updateExpandedKeys(value: Record<string, boolean>): void {
-  expansionIsUserManaged.value = true;
-  expandedKeys.value = value;
-}
 
 const businessInitials = computed(() => {
   const words = (businessName.value ?? '').trim().split(/\s+/).filter(Boolean);
@@ -133,36 +52,7 @@ function closeDrawer(): void {
       </span>
     </RouterLink>
 
-    <nav v-if="collapsed" class="nav collapsed-nav" aria-label="Modules">
-      <RouterLink
-        v-for="item in collapsedCategories"
-        :key="item.id"
-        :to="item.to"
-        v-tooltip.right="`${item.label} — ${item.purpose}`"
-        class="nav-item"
-        :class="{ 'is-current': categoryActive(item.id) }"
-        :aria-current="categoryActive(item.id) ? 'page' : undefined"
-        :aria-label="item.label"
-      >
-        <i class="pi" :class="item.icon" aria-hidden="true" />
-        <span class="nav-label">{{ item.label }}</span>
-      </RouterLink>
-    </nav>
-    <PanelMenu v-else :expanded-keys="expandedKeys" :model="visibleGroups" multiple class="module-menu" @update:expanded-keys="updateExpandedKeys">
-      <template #item="{ item, props: menuProps }">
-        <RouterLink v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
-          <a :href="href" v-bind="menuProps.action" class="nav-item" :class="{ 'is-current': menuItemActive(item) }" @click="navigate">
-            <span v-bind="menuProps.icon" aria-hidden="true" />
-            <span v-bind="menuProps.label">{{ item.label }}</span>
-          </a>
-        </RouterLink>
-        <a v-else v-bind="menuProps.action" class="nav-category" @click="openCategoryDefault(item)">
-          <span v-bind="menuProps.icon" aria-hidden="true" />
-          <span v-bind="menuProps.label">{{ item.label }}</span>
-          <span v-bind="menuProps.submenuicon" />
-        </a>
-      </template>
-    </PanelMenu>
+    <AppSidebarNav :collapsed="collapsed" />
 
     <div class="sidebar-foot">
       <p class="absent-note">More modules appear here as each approved phase is built.</p>
@@ -185,21 +75,7 @@ function closeDrawer(): void {
       </span>
     </RouterLink>
 
-    <PanelMenu :expanded-keys="expandedKeys" :model="visibleGroups" multiple class="module-menu drawer-nav" @update:expanded-keys="updateExpandedKeys">
-      <template #item="{ item, props: menuProps }">
-        <RouterLink v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
-          <a :href="href" v-bind="menuProps.action" class="nav-item" :class="{ 'is-current': menuItemActive(item) }" @click="navigate(); closeDrawer()">
-            <span v-bind="menuProps.icon" aria-hidden="true" />
-            <span v-bind="menuProps.label">{{ item.label }}</span>
-          </a>
-        </RouterLink>
-        <a v-else v-bind="menuProps.action" class="nav-category" @click="openCategoryDefault(item)">
-          <span v-bind="menuProps.icon" aria-hidden="true" />
-          <span v-bind="menuProps.label">{{ item.label }}</span>
-          <span v-bind="menuProps.submenuicon" />
-        </a>
-      </template>
-    </PanelMenu>
+    <AppSidebarNav class="drawer-nav" @navigate="closeDrawer" />
 
     <div class="drawer-business biz" :title="businessName ?? ''">
       <span class="biz-mark" aria-hidden="true">{{ businessInitials }}</span>
@@ -272,79 +148,6 @@ function closeDrawer(): void {
   white-space: nowrap;
 }
 
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: var(--sher-space-2) var(--sher-space-3);
-}
-
-:deep(.module-menu) {
-  flex: 1;
-  overflow-y: auto;
-  border: 0;
-  background: transparent;
-  padding: var(--sher-space-2) var(--sher-space-3);
-}
-
-:deep(.module-menu .p-panelmenu-panel) { border: 0; background: transparent; }
-:deep(.module-menu .p-panelmenu-header-content),
-:deep(.module-menu .p-panelmenu-content) { border: 0; background: transparent; }
-:deep(.module-menu .p-panelmenu-content) { padding: 0 0 var(--sher-space-2); }
-:deep(.module-menu .p-panelmenu-item-content) { background: transparent; }
-:deep(.module-menu .p-panelmenu-item-link) { padding: 0; }
-
-.nav-category {
-  display:flex;
-  align-items:center;
-  gap:9px;
-  min-height:34px;
-  padding:8px 10px 5px;
-  color:var(--sher-text-faint);
-  text-transform:uppercase;
-  letter-spacing:.07em;
-  font-size:var(--sher-text-2xs);
-  font-weight:700;
-  text-decoration:none;
-}
-.nav-category :last-child { margin-left:auto; }
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  min-height: 42px;
-  border-radius: var(--sher-radius);
-  color: var(--sher-text-muted);
-  text-decoration: none;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background var(--sher-transition), color var(--sher-transition);
-}
-
-.nav-item .pi {
-  width: 18px;
-  flex-shrink: 0;
-  text-align: center;
-  font-size: 17px;
-  color: currentColor !important;
-  transition: color var(--sher-transition);
-}
-
-.nav-item:hover {
-  background: var(--sher-hover);
-  color: var(--sher-text);
-}
-
-.nav-item.is-current {
-  background: var(--sher-nav-active-bg);
-  color: var(--sher-nav-active-fg);
-  font-weight: 600;
-}
-
-.nav-item.is-current .pi { color: currentColor !important; }
-
 .sidebar-foot {
   margin-top: auto;
   padding: var(--sher-space-4) var(--sher-space-3) 0;
@@ -394,16 +197,12 @@ function closeDrawer(): void {
 }
 
 .sidebar.is-collapsed .brand-text,
-.sidebar.is-collapsed .nav-label,
 .sidebar.is-collapsed .absent-note,
 .sidebar.is-collapsed .biz-text {
   display: none;
 }
 
-.collapsed-nav { overflow-y:auto; }
-
 .sidebar.is-collapsed .brand,
-.sidebar.is-collapsed .nav-item,
 .sidebar.is-collapsed .biz {
   justify-content: center;
   padding-left: 0;
