@@ -6,13 +6,14 @@ import { Permission } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool, todayIn } from './support/database';
+import { assertGoldenInvariants } from './support/invariants';
 
 const clock = new SystemClock();
 let app: INestApplication; let pool: pg.Pool; let tenant: SeededTenant; let token: string; let productId: string;
@@ -23,6 +24,14 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication(); app.useGlobalFilters(new AppErrorFilter()); await app.init();
 });
 afterAll(async () => { await app.close(); await pool.end(); });
+
+/**
+ * §3.11: whatever each test set out to prove, the five golden invariants also
+ * have to be true when it finishes. Asserting them here rather than inside each
+ * test is what makes them cost nothing to keep — a stock path added later is
+ * covered the moment its test is written.
+ */
+afterEach(async () => { await assertGoldenInvariants(pool, tenant.tenantId); });
 
 beforeEach(async () => {
   await resetDatabase(pool);
