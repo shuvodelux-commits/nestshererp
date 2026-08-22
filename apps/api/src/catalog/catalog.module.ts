@@ -110,5 +110,6 @@ import { MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
       ],
     },
   ],
+  exports: [MANAGE_PRODUCTS_SERVICE],
 })
 export class CatalogModule {}

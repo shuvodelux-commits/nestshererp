@@ -405,6 +405,14 @@ function stockPill(product: ProductResponse): string {
     help-bn="আপনার দোকানের সব পণ্য — দাম, স্টক আর হিসাব এখানে"
   >
     <template #actions>
+      <!-- §5.6: the same list is where a whole catalogue arrives from a file. -->
+      <Button
+        v-if="canCreate"
+        label="Import"
+        icon="pi pi-upload"
+        severity="secondary"
+        @click="router.push('/import?type=PRODUCTS')"
+      />
       <Button v-if="canCreate" label="Add product" icon="pi pi-plus" @click="creating = true" />
     </template>
 

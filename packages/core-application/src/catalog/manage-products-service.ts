@@ -272,28 +272,7 @@ export class ManageProductsService {
         return replayed.response as ProductResponse;
       }
 
-      const clean = await this.validate(tx, ctx, command.input, null);
-      const id = Ulid.generate(this.clock);
-
-      await this.products.insert(tx, ctx, { id, ...clean });
-
-      await this.audit.append(tx, ctx, {
-        entityType: ENTITY_TYPE,
-        entityId: id,
-        action: 'CREATE',
-        before: null,
-        after: this.auditValues(clean),
-        source: 'API',
-      });
-      await this.outbox.append(tx, ctx, {
-        eventType: 'product.created',
-        aggregateType: ENTITY_TYPE,
-        aggregateId: id,
-        payload: { name: clean.name, sku: clean.sku },
-      });
-
-      const created = await this.requireProduct(tx, ctx, id);
-      const response = this.toResponse(ctx, created, await this.maySeeCost(tx, ctx), this.clock.now(), await this.valuationMethod(tx, ctx));
+      const response = await this.createWithin(tx, ctx, command.input, 'API');
 
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
@@ -303,6 +282,57 @@ export class ManageProductsService {
 
       return response;
     });
+  }
+
+  /**
+   * Creating one product inside a transaction the **caller** owns.
+   *
+   * Split out for the guided CSV import (§5.6), which must post a whole file
+   * all-or-nothing: one file is one transaction (R-D5), so the importer cannot
+   * call `create` once per row — each call would open and commit its own. It
+   * calls this instead, and every rule a typed-in product passes, an imported
+   * one passes too: the same permission, the same `validate`, the same insert,
+   * the same audit and outbox rows. There is one product writer (A11, A14).
+   *
+   * Idempotency stays with the caller: a form submission is idempotent on its
+   * own row, an import on the whole file.
+   */
+  async createWithin(
+    tx: Tx,
+    ctx: TenantContext,
+    input: ProductInput,
+    source: string,
+  ): Promise<ProductResponse> {
+    await this.accessControl.require(tx, ctx, Permission.PRODUCT_CREATE);
+
+    const clean = await this.validate(tx, ctx, input, null);
+    const id = Ulid.generate(this.clock);
+
+    await this.products.insert(tx, ctx, { id, ...clean });
+
+    await this.audit.append(tx, ctx, {
+      entityType: ENTITY_TYPE,
+      entityId: id,
+      action: 'CREATE',
+      before: null,
+      after: this.auditValues(clean),
+      source,
+    });
+    await this.outbox.append(tx, ctx, {
+      eventType: 'product.created',
+      aggregateType: ENTITY_TYPE,
+      aggregateId: id,
+      payload: { name: clean.name, sku: clean.sku },
+    });
+
+    const created = await this.requireProduct(tx, ctx, id);
+    return this.toResponse(
+      ctx,
+      created,
+      await this.maySeeCost(tx, ctx),
+      this.clock.now(),
+      await this.valuationMethod(tx, ctx),
+    );
   }
 
   async update(command: UpdateProductCommand): Promise<ProductResponse> {

@@ -257,6 +257,14 @@ export class PostgresProductRepository implements ProductRepository {
     return rows[0]?.id ?? null;
   }
 
+  async findIdsByName(tx: Tx, ctx: TenantContext, name: string): Promise<readonly string[]> {
+    const rows = await txOf(tx)
+      .select({ id: products.id })
+      .from(products)
+      .where(and(this.liveInTenant(ctx), sql`lower(${products.name}) = lower(${name})`));
+    return rows.map((row) => row.id);
+  }
+
   async insert(tx: Tx, ctx: TenantContext, product: NewProduct): Promise<void> {
     const now = this.clock.now();
     await txOf(tx)

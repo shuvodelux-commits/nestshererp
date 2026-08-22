@@ -120,6 +120,35 @@ export {
   stockValueMinor,
   unitCostFromMoneyMinor,
 } from './inventory/costing';
+/**
+ * The onboarding CSV import (§5.6): the file's shape and the meaning of one
+ * cell. Which unit or customer group a name refers to is resolved in
+ * `core-application`, where the tenant's own rows can be read.
+ */
+export { parseCsv, toCsv } from './import/csv';
+export type { CsvParseResult, CsvRecord, CsvRejection, CsvTable } from './import/csv';
+export {
+  IMPORT_COLUMNS,
+  IMPORT_TYPES,
+  importTemplate,
+  isCalendarDate,
+  missingColumns,
+  readCustomerRow,
+  readOpeningStockRow,
+  readProductRow,
+  readSupplierRow,
+  valuesOf,
+} from './import/templates';
+export type {
+  ImportCellError,
+  ImportColumn,
+  ImportDraft,
+  ImportType,
+  OpeningStockImportDraft,
+  PartyImportDraft,
+  ProductImportDraft,
+  ReadRowResult,
+} from './import/templates';
 export { stockStatus } from './inventory/stock-status';
 export type { StockStatus } from './inventory/stock-status';
 export type {

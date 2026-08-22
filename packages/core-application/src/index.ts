@@ -212,3 +212,5 @@ export type {
   RemoveCustomerGroupCommand,
   RenameCustomerGroupCommand,
 } from './parties/manage-party-groups-service';
+export { ImportDataService } from './imports/import-data-service';
+export type { CommitImportCommand, ImportCommand } from './imports/import-data-service';

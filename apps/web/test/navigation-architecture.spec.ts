@@ -44,7 +44,10 @@ describe('navigation architecture', () => {
 
   it('preserves every current signed-in route through a hub and does not resurrect LIFO or V1 tax', () => {
     const routes = new Set(allFeatures().flatMap((feature) => feature.route === undefined ? [] : [feature.route.split('?')[0]]));
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/inventory-report', '/parties', '/users', '/roles', '/audit', '/settings', '/settings/security']));
+    // `/import` is §5.6's guided onboarding import, added with path 2.4. The
+    // list grows only when a real implemented route ships; nothing is ever
+    // removed from it, which is what makes a lost route fail here.
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/parties', '/users', '/roles', '/audit', '/settings', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

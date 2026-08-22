@@ -34,6 +34,21 @@ export interface RecordOpeningStockCommand {
   readonly source: string;
 }
 
+/**
+ * One opening, inside a transaction the caller already owns.
+ *
+ * `unitCostMinor` is what §5.6 calls "opening stock with location and unit
+ * cost": a shop's own record of what its shelf stock cost, which the CSV
+ * carries and the product form does not. `null` means "value it at the
+ * product's purchase price", which is exactly what the form does — one rule,
+ * two entry points, no second valuation path.
+ */
+export interface OpeningStockInput {
+  readonly operationId: string; readonly productId: string; readonly qty: number;
+  readonly unitCostMinor: number | null; readonly businessDate?: string | undefined;
+  readonly expiryDate: string | null; readonly source: string;
+}
+
 export interface AdjustStockCommand {
   readonly ctx: TenantContext; readonly operationId: string; readonly productId: string;
   readonly qtyDelta: number; readonly reason: StockAdjustmentReason; readonly note: string | null;
@@ -92,48 +107,72 @@ export class ManageInventoryService {
       const permanentReplay = await this.inventory.findOpeningByOperationId(tx, command.ctx, command.operationId);
       if (permanentReplay !== null) return this.response(tx, command.ctx, permanentReplay);
 
-      const today = this.clock.businessDate(command.ctx.timezone);
-      const businessDate = command.businessDate ?? today;
-      await this.periods.assertOpen(tx, command.ctx, businessDate);
-      if (businessDate > today) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock date cannot be in the future');
-
-      const product = await this.products.findById(tx, command.ctx, command.productId);
-      if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
-      if ((await this.inventory.findOpeningByProduct(tx, command.ctx, product.id)) !== null) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock was already recorded for this product');
-      }
-      if (product.tracksExpiry && command.expiryDate === null) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Enter the expiry date for this opening batch');
-      }
-      if (!product.tracksExpiry && command.expiryDate !== null) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This product does not track expiry dates');
-      }
-
-      let posting;
-      try { posting = openingStockPosting(command.qty, unitCostFromMoneyMinor(product.purchasePriceMinor)); }
-      catch { throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock must have a positive quantity and value'); }
-
-      let location = await this.inventory.findDefaultLocation(tx, command.ctx);
-      if (location === null) location = await this.inventory.createDefaultLocation(tx, command.ctx, Ulid.generate(this.clock));
-      const openingId = Ulid.generate(this.clock);
-      const opening: OpeningStockRecord = {
-        id: openingId, number: await this.numbering.allocate(tx, command.ctx, 'OPENING_STOCK', Number(businessDate.slice(0, 4))),
-        operationId: command.operationId, productId: product.id, productName: product.name,
-        locationId: location.id, locationName: location.name, qty: posting.qty,
-        unitCost: posting.unitCost, valueMinor: posting.valueMinor, businessDate,
-        expiryDate: command.expiryDate,
-        entryMode: entryModeFor(businessDate, today), lotId: Ulid.generate(this.clock),
-        movementId: Ulid.generate(this.clock), journalEntryId: Ulid.generate(this.clock),
-        costStateId: Ulid.generate(this.clock),
-        journalLines: posting.journal.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
-      };
-      await this.inventory.insertOpening(tx, command.ctx, opening);
-      await this.audit.append(tx, command.ctx, { entityType: 'stock_opening', entityId: opening.id, action: 'CREATE', before: null, after: { productId: opening.productId, qty: opening.qty, valueMinor: opening.valueMinor, locationId: opening.locationId }, source: command.source });
-      await this.outbox.append(tx, command.ctx, { eventType: 'inventory.opening-recorded', aggregateType: 'stock_opening', aggregateId: opening.id, payload: { productId: opening.productId, movementId: opening.movementId } });
-      const response = await this.response(tx, command.ctx, opening);
+      const response = await this.recordOpeningWithin(tx, command.ctx, {
+        operationId: command.operationId, productId: command.productId, qty: command.qty,
+        unitCostMinor: null, businessDate: command.businessDate,
+        expiryDate: command.expiryDate, source: command.source,
+      });
       await this.idempotency.save(tx, command.ctx, { operationId: command.operationId, requestFingerprint: fingerprint, response });
       return response;
     });
+  }
+
+  /**
+   * One opening stock document, inside a transaction the **caller** owns.
+   *
+   * Split out for the guided CSV import (§5.6): a file posts all-or-nothing, so
+   * the whole file is one transaction (R-D5) and the importer cannot call
+   * `recordOpening` once per row. Every step below is the one the product form
+   * runs — the same permission, the same one-opening-per-product rule, the same
+   * `openingStockPosting`, the same movement, lot, journal, audit and outbox.
+   * §5.6's "an import must never write balances or stock directly" is satisfied
+   * by there being no other way in.
+   */
+  async recordOpeningWithin(tx: Tx, ctx: TenantContext, input: OpeningStockInput): Promise<OpeningStockResponse> {
+    await this.access.require(tx, ctx, Permission.PRODUCT_CREATE);
+
+    const today = this.clock.businessDate(ctx.timezone);
+    const businessDate = input.businessDate ?? today;
+    await this.periods.assertOpen(tx, ctx, businessDate);
+    if (businessDate > today) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock date cannot be in the future');
+
+    const product = await this.products.findById(tx, ctx, input.productId);
+    if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+    if ((await this.inventory.findOpeningByProduct(tx, ctx, product.id)) !== null) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock was already recorded for this product');
+    }
+    if (product.tracksExpiry && input.expiryDate === null) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Enter the expiry date for this opening batch');
+    }
+    if (!product.tracksExpiry && input.expiryDate !== null) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'This product does not track expiry dates');
+    }
+
+    // The file may state what the stock actually cost; without one the product's
+    // purchase price stands, exactly as it does from the form (§5.6).
+    const unitCost = unitCostFromMoneyMinor(input.unitCostMinor ?? product.purchasePriceMinor);
+    let posting;
+    try { posting = openingStockPosting(input.qty, unitCost); }
+    catch { throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock must have a positive quantity and value'); }
+
+    let location = await this.inventory.findDefaultLocation(tx, ctx);
+    if (location === null) location = await this.inventory.createDefaultLocation(tx, ctx, Ulid.generate(this.clock));
+    const openingId = Ulid.generate(this.clock);
+    const opening: OpeningStockRecord = {
+      id: openingId, number: await this.numbering.allocate(tx, ctx, 'OPENING_STOCK', Number(businessDate.slice(0, 4))),
+      operationId: input.operationId, productId: product.id, productName: product.name,
+      locationId: location.id, locationName: location.name, qty: posting.qty,
+      unitCost: posting.unitCost, valueMinor: posting.valueMinor, businessDate,
+      expiryDate: input.expiryDate,
+      entryMode: entryModeFor(businessDate, today), lotId: Ulid.generate(this.clock),
+      movementId: Ulid.generate(this.clock), journalEntryId: Ulid.generate(this.clock),
+      costStateId: Ulid.generate(this.clock),
+      journalLines: posting.journal.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
+    };
+    await this.inventory.insertOpening(tx, ctx, opening);
+    await this.audit.append(tx, ctx, { entityType: 'stock_opening', entityId: opening.id, action: 'CREATE', before: null, after: { productId: opening.productId, qty: opening.qty, valueMinor: opening.valueMinor, locationId: opening.locationId }, source: input.source });
+    await this.outbox.append(tx, ctx, { eventType: 'inventory.opening-recorded', aggregateType: 'stock_opening', aggregateId: opening.id, payload: { productId: opening.productId, movementId: opening.movementId } });
+    return this.response(tx, ctx, opening);
   }
 
   /**

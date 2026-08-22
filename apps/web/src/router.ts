@@ -50,6 +50,8 @@ const router = createRouter({
     // same form, and a second one would be the same fields written twice.
     { path: '/products/:id', name: 'product', component: () => import('./pages/ProductFormPage.vue') },
     { path: '/parties', name: 'parties', component: () => import('./pages/PartiesPage.vue') },
+    // §5.6's guided onboarding import, one screen for every file type.
+    { path: '/import', name: 'import', component: () => import('./pages/ImportPage.vue') },
     // 'new' and an id share one component: adding and editing a party are the
     // same form, and a second one would be the same fields written twice.
     { path: '/parties/:id', name: 'party', component: () => import('./pages/PartyFormPage.vue') },

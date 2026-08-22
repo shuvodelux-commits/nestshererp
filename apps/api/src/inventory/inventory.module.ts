@@ -17,5 +17,6 @@ import { MANAGE_INVENTORY_SERVICE } from './tokens';
       new ManageInventoryService(uow, access, idempotency, periods, products, inventory, numbering, audit, outbox, clock, settings),
     inject: [UNIT_OF_WORK, ACCESS_CONTROL, IDEMPOTENCY_STORE, PERIOD_GUARD, PRODUCT_REPOSITORY, INVENTORY_REPOSITORY, NUMBERING_SERVICE, AUDIT_WRITER, OUTBOX, CLOCK, SETTINGS_REPOSITORY],
   }],
+  exports: [MANAGE_INVENTORY_SERVICE],
 })
 export class InventoryModule {}

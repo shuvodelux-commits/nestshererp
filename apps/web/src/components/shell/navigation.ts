@@ -84,6 +84,7 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
         feature('inventory.products.page', 'Products', 'পণ্য ও স্টক', 'Products with stock, adjustment and lots', '/products', ['catalog.product.view'], ['/products']),
         feature('inventory.stock.adjust', 'Stock Adjustment', 'স্টক ঠিক করুন', 'Correct stock for damage, recount or loss', '/products', ['catalog.product.edit'], ['/products'], false),
         feature('inventory.lots', 'Lots/Batch', 'কোন চালানের পণ্য', 'Trace stock by source batch', '/products', ['inventory.lot.view'], ['/products'], false),
+        feature('inventory.import', 'Import Data', 'ফাইল থেকে তুলুন', 'Bring products, parties and opening stock in from a CSV file', '/import', ['catalog.product.create'], ['/import']),
         feature('inventory.catalog', 'Catalog Setup', 'ইউনিট, ব্র্যান্ড ও ক্যাটাগরি', 'Manage units, brands and categories', '/catalog', ['catalog.product.view'], ['/catalog']),
       ] },
       { id: 'inventory.reporting', label: 'Reports', icon: 'pi-chart-bar', features: [

@@ -138,6 +138,15 @@ export interface ProductRepository {
   /** For the duplicate-code checks; returns the owning product's id, if any. */
   findIdByBarcode(tx: Tx, ctx: TenantContext, barcode: string): Promise<string | null>;
   findIdBySku(tx: Tx, ctx: TenantContext, sku: string): Promise<string | null>;
+  /**
+   * Every live product with exactly this name, for the opening-stock import
+   * (§5.6), where a shop's file names the product rather than carrying its id.
+   *
+   * Returns **all** of them rather than the first: §5.5 allows two products to
+   * share a name, and picking one for the shopkeeper would open stock against
+   * the wrong item. The use case turns two matches into "add its Product Code".
+   */
+  findIdsByName(tx: Tx, ctx: TenantContext, name: string): Promise<readonly string[]>;
 
   insert(tx: Tx, ctx: TenantContext, product: NewProduct): Promise<void>;
   /**

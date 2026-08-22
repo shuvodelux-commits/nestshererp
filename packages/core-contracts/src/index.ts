@@ -258,3 +258,23 @@ export type {
   StockAdjustmentResponse,
   StockAdjustmentRow,
 } from './inventory';
+export {
+  IMPORT_MAX_CHARACTERS,
+  IMPORT_MAX_ROWS,
+  importCellErrorSchema,
+  importColumnSchema,
+  importPreviewResponseSchema,
+  importPreviewRowSchema,
+  importRequestSchema,
+  importResultResponseSchema,
+  importTypeSchema,
+} from './imports';
+export type {
+  ImportCellErrorResponse,
+  ImportColumnDescription,
+  ImportPreviewResponse,
+  ImportPreviewRow,
+  ImportRequest,
+  ImportResultResponse,
+  ImportTypeValue,
+} from './imports';

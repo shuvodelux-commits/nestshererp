@@ -4,6 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AuditModule } from './audit/audit.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { ImportsModule } from './imports/imports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { PartiesModule } from './parties/parties.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     CatalogModule,
     InventoryModule,
     PartiesModule,
+    ImportsModule,
   ],
   controllers: [HealthController],
   providers: [
