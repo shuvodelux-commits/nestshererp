@@ -1,9 +1,12 @@
 import type {
   CustomerGroupEntry,
   NewParty,
+  NewPartyOpening,
   PartyCounts,
   PartyEdit,
   PartyFilter,
+  PartyLedgerFilter,
+  PartyLedgerLineRow,
   PartyRepository,
   PartyRow,
   TenantContext,
@@ -11,14 +14,21 @@ import type {
 } from '@sher/core-application';
 import type { PartySort } from '@sher/core-contracts';
 import type { PartyRole, PartyStatus } from '@sher/core-domain';
-import { customerPhoneKey } from '@sher/core-domain';
+import { customerPhoneKey, PARTY_BALANCE_ACCOUNTS } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 import type { SQL } from 'drizzle-orm';
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
-import { customerGroups, parties, partyRoles } from './schema';
+import {
+  customerGroups,
+  journalEntries,
+  journalLines,
+  parties,
+  partyOpenings,
+  partyRoles,
+} from './schema';
 import { txOf } from './unit-of-work';
 
 /**
@@ -61,6 +71,42 @@ const PARTY_SORTS: Record<PartySort, SortableColumn> = {
   status: ownColumn(sql`${parties.status}`, sql`anchor.status`),
 };
 
+/**
+ * The accounts a party's balance is made of, as a SQL list.
+ *
+ * Built from the domain's `PARTY_BALANCE_ACCOUNTS` rather than written out
+ * here, so adding an account to the closed chart in `account.ts` cannot leave
+ * this query summing an outdated set — which would show a balance that quietly
+ * disagreed with the ledger.
+ *
+ * All of them are fixed accounts with no `:` segment, so plain equality is
+ * enough; a parameterised account never belongs to a party.
+ */
+const BALANCE_ACCOUNTS = sql.join(
+  PARTY_BALANCE_ACCOUNTS.map((account) => sql`${account}`),
+  sql`, `,
+);
+
+/**
+ * INV-06 as a scalar subquery: a party's balance *is* the sum of their journal
+ * lines, so the list computes it rather than reading a cached column.
+ *
+ * Correlated per row, which sounds expensive and is not: migration 0015's
+ * partial index on `(tenant_id, party_id, …)` makes each one an index-only
+ * range scan, and a page is at most 200 rows.
+ *
+ * `COALESCE` to zero matters — a party who has never traded has no lines at
+ * all, and a NULL here would render as an empty balance cell rather than the
+ * "settled" the shopkeeper needs to see.
+ */
+const BALANCE_NET_MINOR = sql<number>`COALESCE((
+  SELECT SUM(jl.amount_minor)
+  FROM journal_lines jl
+  WHERE jl.tenant_id = ${parties.tenantId}
+    AND jl.party_id = ${parties.id}
+    AND jl.account_code IN (${BALANCE_ACCOUNTS})
+), 0)::bigint`;
+
 const PARTY_COLUMNS = {
   id: parties.id,
   name: parties.name,
@@ -76,6 +122,7 @@ const PARTY_COLUMNS = {
   status: parties.status,
   isSystemReserved: parties.isSystemReserved,
   version: parties.version,
+  balanceNetMinor: BALANCE_NET_MINOR,
 };
 
 interface RawParty {
@@ -93,6 +140,7 @@ interface RawParty {
   readonly status: string;
   readonly isSystemReserved: boolean;
   readonly version: number;
+  readonly balanceNetMinor: number;
 }
 
 export class PostgresPartyRepository implements PartyRepository {
@@ -120,6 +168,24 @@ export class PostgresPartyRepository implements PartyRepository {
         active: sql<number>`count(*) FILTER (WHERE ${parties.status} = 'ACTIVE')::int`,
         inactive: sql<number>`count(*) FILTER (WHERE ${parties.status} = 'INACTIVE')::int`,
         ungrouped: sql<number>`count(*) FILTER (WHERE ${parties.customerGroupId} IS NULL)::int`,
+        /*
+         * The money tiles, from the same query and the same filter as the rows
+         * (§2.7.I). Summed as two one-sided totals rather than one net, because
+         * netting would hide a shop carrying large receivables *and* large
+         * advances behind a small-looking difference.
+         */
+        totalOutstandingMinor: sql<number>`COALESCE(SUM(GREATEST(${BALANCE_NET_MINOR}, 0)), 0)::bigint`,
+        totalAdvanceMinor: sql<number>`COALESCE(SUM(GREATEST(-${BALANCE_NET_MINOR}, 0)), 0)::bigint`,
+        /*
+         * `exceedsCreditLimit` in SQL. A NULL limit is no limit, not zero, so
+         * the FILTER's NULL comparison correctly excludes those rows; `>` and
+         * not `>=` lets a customer sit exactly on their limit, matching the
+         * domain function the sale path will call.
+         */
+        overCreditLimit: sql<number>`count(*) FILTER (
+          WHERE ${parties.creditLimitMinor} IS NOT NULL
+            AND GREATEST(${BALANCE_NET_MINOR}, 0) > ${parties.creditLimitMinor}
+        )::int`,
       })
       .from(parties)
       .where(and(this.liveInTenant(ctx), ...this.filters(ctx, filter)));
@@ -130,6 +196,9 @@ export class PostgresPartyRepository implements PartyRepository {
       active: counts?.active ?? 0,
       inactive: counts?.inactive ?? 0,
       ungrouped: counts?.ungrouped ?? 0,
+      totalOutstandingMinor: counts?.totalOutstandingMinor ?? 0,
+      totalAdvanceMinor: counts?.totalAdvanceMinor ?? 0,
+      overCreditLimit: counts?.overCreditLimit ?? 0,
     };
   }
 
@@ -324,6 +393,214 @@ export class PostgresPartyRepository implements PartyRepository {
       .from(parties)
       .where(and(this.liveInTenant(ctx), eq(parties.customerGroupId, groupId)));
     return rows[0]?.total ?? 0;
+  }
+
+  /* --------------------------------------------------- openings and ledger */
+
+  async insertOpening(tx: Tx, ctx: TenantContext, opening: NewPartyOpening): Promise<void> {
+    const now = this.clock.now();
+    const owner = {
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+    };
+
+    await txOf(tx)
+      .insert(partyOpenings)
+      .values({
+        id: opening.id,
+        ...owner,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: 1,
+        openingNumber: opening.number,
+        partyId: opening.partyId,
+        role: opening.role,
+        direction: opening.direction,
+        amountMinor: opening.amountMinor,
+        businessDate: opening.businessDate,
+        entryMode: opening.entryMode,
+        status: 'POSTED',
+        operationId: opening.operationId,
+      });
+
+    // The document and its posting in the same transaction. `OPENING_BALANCE`
+    // is the source type a ledger row shows, and 0012's unique on
+    // (tenant, source type, source id) makes a double-post impossible.
+    await txOf(tx)
+      .insert(journalEntries)
+      .values({
+        id: opening.journalEntryId,
+        ...owner,
+        businessDate: opening.businessDate,
+        sourceDocumentType: 'OPENING_BALANCE',
+        sourceDocumentId: opening.id,
+        sourceNumber: opening.number,
+        entryMode: opening.entryMode,
+      });
+
+    await txOf(tx)
+      .insert(journalLines)
+      .values(
+        opening.journalLines.map((line) => ({
+          id: line.id,
+          ...owner,
+          journalEntryId: opening.journalEntryId,
+          accountCode: line.account,
+          amountMinor: line.amountMinor,
+          partyId: line.partyId,
+        })),
+      );
+  }
+
+  async findOpening(
+    tx: Tx,
+    ctx: TenantContext,
+    partyId: string,
+    role: PartyRole,
+  ): Promise<{ readonly id: string; readonly amountMinor: number } | null> {
+    const rows = await txOf(tx)
+      .select({ id: partyOpenings.id, amountMinor: partyOpenings.amountMinor })
+      .from(partyOpenings)
+      .where(
+        and(
+          eq(partyOpenings.tenantId, ctx.tenantId),
+          isNull(partyOpenings.deletedAt),
+          eq(partyOpenings.partyId, partyId),
+          eq(partyOpenings.role, role),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    return row === undefined ? null : { id: row.id.trim(), amountMinor: row.amountMinor };
+  }
+
+  async listLedgerLines(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PartyLedgerFilter,
+  ): Promise<readonly PartyLedgerLineRow[]> {
+    const rows = await txOf(tx)
+      .select({
+        journalEntryId: journalEntries.id,
+        journalLineId: journalLines.id,
+        businessDate: journalEntries.businessDate,
+        sourceDocumentType: journalEntries.sourceDocumentType,
+        sourceDocumentId: journalEntries.sourceDocumentId,
+        sourceNumber: journalEntries.sourceNumber,
+        account: journalLines.accountCode,
+        amountMinor: journalLines.amountMinor,
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+      .where(and(...this.ledgerFilters(ctx, filter), ...this.ledgerAfter(ctx, filter)))
+      /*
+       * Business date first, then the journal line's own creation order. Two
+       * entries posted on the same business date have to break the tie the same
+       * way every time, or a running balance would shuffle between page loads
+       * and the closing figure of page one would not match the opening of
+       * page two.
+       */
+      .orderBy(
+        asc(journalEntries.businessDate),
+        asc(journalLines.createdAt),
+        asc(journalLines.id),
+      )
+      .limit(filter.limit);
+
+    return rows.map((row) => ({
+      ...row,
+      journalEntryId: row.journalEntryId.trim(),
+      journalLineId: row.journalLineId.trim(),
+      sourceDocumentId: row.sourceDocumentId.trim(),
+    }));
+  }
+
+  async sumLedgerBefore(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PartyLedgerFilter,
+  ): Promise<number> {
+    /*
+     * With neither a date floor nor a cursor there is nothing before the
+     * window — the statement starts at the beginning of history, so it opens at
+     * zero.
+     *
+     * This is not an optimisation. Without it the conditions below reduce to
+     * "every line this party has", the opening balance comes back equal to the
+     * closing one, and every running total on an unfiltered first page is
+     * doubled — a statement that is wrong and still adds up internally.
+     */
+    if (filter.fromDate === null && filter.cursor === null) return 0;
+
+    /*
+     * Everything before the window, whatever "before" means for this request:
+     * with a `fromDate`, every line dated earlier; with a cursor, every line
+     * that sorts ahead of it. Both can apply at once on page two of a filtered
+     * statement, which is why they are separate conditions rather than a
+     * single one.
+     */
+    const conditions: (SQL<unknown> | undefined)[] = [
+      eq(journalLines.tenantId, ctx.tenantId),
+      eq(journalLines.partyId, filter.partyId),
+      sql`${journalLines.accountCode} IN (${BALANCE_ACCOUNTS})`,
+    ];
+
+    if (filter.fromDate !== null) {
+      conditions.push(sql`${journalEntries.businessDate} < ${filter.fromDate}`);
+    }
+
+    if (filter.cursor !== null) {
+      conditions.push(
+        sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) <
+            (SELECT e.business_date, l.created_at, l.id
+             FROM journal_lines l
+             JOIN journal_entries e ON e.id = l.journal_entry_id
+             WHERE l.tenant_id = ${ctx.tenantId} AND l.id = ${filter.cursor})`,
+      );
+    }
+
+    const rows = await txOf(tx)
+      .select({ net: sql<number>`COALESCE(SUM(${journalLines.amountMinor}), 0)::bigint` })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+      .where(and(...conditions));
+
+    return rows[0]?.net ?? 0;
+  }
+
+  private ledgerFilters(ctx: TenantContext, filter: PartyLedgerFilter) {
+    const conditions: (SQL<unknown> | undefined)[] = [
+      eq(journalLines.tenantId, ctx.tenantId),
+      eq(journalLines.partyId, filter.partyId),
+      // The same account set the balance is summed over, so the rows on the
+      // statement are exactly the rows behind the figure in its header.
+      sql`${journalLines.accountCode} IN (${BALANCE_ACCOUNTS})`,
+    ];
+
+    // Inclusive both ends — what someone asking for "January" means.
+    if (filter.fromDate !== null) {
+      conditions.push(sql`${journalEntries.businessDate} >= ${filter.fromDate}`);
+    }
+    if (filter.toDate !== null) {
+      conditions.push(sql`${journalEntries.businessDate} <= ${filter.toDate}`);
+    }
+
+    return conditions;
+  }
+
+  /** Keyset paging on the same triple the ordering uses (§3.9 — no `OFFSET`). */
+  private ledgerAfter(ctx: TenantContext, filter: PartyLedgerFilter) {
+    if (filter.cursor === null) return [];
+
+    return [
+      sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) >
+          (SELECT e.business_date, l.created_at, l.id
+           FROM journal_lines l
+           JOIN journal_entries e ON e.id = l.journal_entry_id
+           WHERE l.tenant_id = ${ctx.tenantId} AND l.id = ${filter.cursor})`,
+    ];
   }
 
   /* ------------------------------------------------------------- mechanics */

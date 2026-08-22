@@ -67,9 +67,24 @@ const KARIM = {
   status: 'ACTIVE' as const,
   isSystemReserved: false,
   version: 1,
+  // INV-06's rollup, as the server sends it. Karim owes ৳1,250.00.
+  balance: {
+    netMinor: 125_000,
+    direction: 'RECEIVABLE' as const,
+    outstandingMinor: 125_000,
+    advanceMinor: 0,
+  },
 };
 
-const SUMMARY = { total: 1, active: 1, inactive: 0, ungrouped: 1 };
+const SUMMARY = {
+  total: 1,
+  active: 1,
+  inactive: 0,
+  ungrouped: 1,
+  totalOutstandingMinor: 125_000,
+  totalAdvanceMinor: 0,
+  overCreditLimit: 0,
+};
 
 const ALL_RIGHTS = [
   'party.customer.view',

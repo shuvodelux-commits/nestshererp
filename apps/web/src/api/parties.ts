@@ -1,4 +1,6 @@
 import type {
+  PartyLedgerQuery,
+  PartyLedgerResponse,
   PartyListResponse,
   PartyQuery,
   PartyResponse,
@@ -38,6 +40,31 @@ export function fetchParties(token: string, query: PartyQuery): Promise<PartyLis
   if (query.direction !== undefined) params.set('direction', query.direction);
 
   return request(`/api/v1/parties?${params.toString()}`, { token, envelope: true });
+}
+
+/**
+ * A party's statement (§2.4, INV-06).
+ *
+ * `envelope: true` — take the payload whole rather than unwrapping `data`. The
+ * ledger response *is* the payload: it carries its own `rows`, `page` and
+ * balances, exactly as the parties list does.
+ */
+export function fetchPartyLedger(
+  token: string,
+  id: string,
+  query: PartyLedgerQuery = {},
+): Promise<PartyLedgerResponse> {
+  const params = new URLSearchParams();
+  if (query.fromDate !== undefined) params.set('fromDate', query.fromDate);
+  if (query.toDate !== undefined) params.set('toDate', query.toDate);
+  if (query.cursor !== undefined) params.set('cursor', query.cursor);
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+
+  const search = params.toString();
+  return request(`/api/v1/parties/${id}/ledger${search === '' ? '' : `?${search}`}`, {
+    token,
+    envelope: true,
+  });
 }
 
 export function fetchParty(token: string, id: string): Promise<PartyResponse> {

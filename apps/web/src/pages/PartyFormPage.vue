@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PartyResponse, PartyRoleValue, PartySetupResponse, SavePartyRequest } from '@sher/core-contracts';
 import { Money, parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
@@ -87,6 +87,20 @@ const notes = ref('');
 const customerGroupId = ref('');
 const creditLimit = ref('');
 
+/*
+ * The opening balance (§5.0, §5.6) — what this party already owed, or was
+ * already owed, on the day the shop moved onto SherERP.
+ *
+ * Create-only, and deliberately so: this posts a real journal entry, and §2.5
+ * corrects a posted entry by reversing and reposting it rather than by editing
+ * the form that made it. `openingRole` defaults to the role the list was on,
+ * which is the one a shopkeeper adding "a supplier" means.
+ */
+const openingAmount = ref('');
+const openingDirection = ref<'RECEIVABLE' | 'PAYABLE'>('RECEIVABLE');
+const openingRole = ref<PartyRoleValue>('CUSTOMER');
+const openingDate = ref(clock.businessDate(Intl.DateTimeFormat().resolvedOptions().timeZone));
+
 /**
  * One operation id per user intent (UI-34): generated when the form opens and
  * reused on every retry of the same save, so a resubmitted create is recognised
@@ -95,6 +109,28 @@ const creditLimit = ref('');
 const operationId = ref(Ulid.generate(clock));
 
 const isCustomer = computed(() => roles.value.includes('CUSTOMER'));
+
+/*
+ * Keep the opening's role among the ones the party actually holds — the server
+ * refuses an opening for a role the party does not have, and the shopkeeper
+ * should never be able to aim at one. Unticking a role while its opening was
+ * selected falls back to the first remaining role rather than leaving a stale
+ * selection pointing at nothing.
+ *
+ * A vendor can only ever be owed money, so the direction follows.
+ */
+watch(
+  roles,
+  (held) => {
+    if (!held.includes(openingRole.value)) openingRole.value = held[0] ?? 'CUSTOMER';
+    if (openingRole.value === 'VENDOR') openingDirection.value = 'PAYABLE';
+  },
+  { immediate: true, deep: true },
+);
+
+watch(openingRole, (value) => {
+  if (value === 'VENDOR') openingDirection.value = 'PAYABLE';
+});
 
 /** Roles the caller may put on a record at all — never a tick-box that 403s. */
 const offerableRoles = computed(() =>
@@ -214,6 +250,25 @@ function toRequest(): SavePartyRequest | null {
     return null;
   }
 
+  /*
+   * The opening balance (§5.0, §5.6). Blank means no opening, which is the
+   * normal case for a party added after go-live — it is not the same as an
+   * opening of zero, and the server refuses zero rather than posting a document
+   * that moves nothing.
+   */
+  let openingMinor = 0;
+  if (openingAmount.value.trim() !== '') {
+    const parsed = parseMoney(openingAmount.value);
+    if (parsed === null || parsed <= 0) {
+      formError.value = {
+        code: 'VALIDATION_FAILED',
+        message: 'Enter the opening balance as an amount greater than zero',
+      };
+      return null;
+    }
+    openingMinor = parsed;
+  }
+
   const blank = (value: string): string | null => (value.trim() === '' ? null : value.trim());
 
   return {
@@ -227,6 +282,12 @@ function toRequest(): SavePartyRequest | null {
     notes: blank(notes.value),
     customerGroupId: isCustomer.value && customerGroupId.value !== '' ? customerGroupId.value : null,
     creditLimitMinor: isCustomer.value ? limitMinor : null,
+    opening: openingMinor === 0 ? null : {
+      role: openingRole.value,
+      direction: openingDirection.value,
+      amountMinor: openingMinor,
+      businessDate: openingDate.value,
+    },
   };
 }
 
@@ -264,8 +325,12 @@ async function save(): Promise<void> {
       // UI-36: land on the saved record, showing what the server actually stored.
       await router.push(`/parties/${created.id}`);
     } else {
+      // An edit never carries an opening (§2.5 — a posted document is corrected
+      // by reversing and reposting, not by rewriting). The edit form does not
+      // offer the fields, and the request schema refuses them outright.
+      const { opening: _opening, ...editable } = payload;
       const saved = await updateParty(session.accessToken.value ?? '', partyId.value, {
-        ...payload,
+        ...editable,
         version: version.value,
       });
       fill(saved);
@@ -509,7 +574,76 @@ function editProfile(): void {
               </label>
               <textarea id="party-notes" v-model="notes" rows="3" :disabled="fieldsDisabled" />
             </div>
-  
+
+            <!--
+              §5.0's opening balance. Only on create: this posts a journal entry,
+              and a posted entry is corrected by reversing and reposting it
+              (§2.5), never by retyping it on an edit form.
+            -->
+            <template v-if="!isEditing">
+              <div class="field">
+                <label for="party-opening">
+                  Opening balance
+                  <span class="label-bn">আগে থেকে যত টাকা বাকি আছে</span>
+                  <HelpTip
+                    label="Opening balance"
+                    text="What this party already owed — or was already owed — on the day you started using SherERP. Leave it empty for someone new. It is posted as a real entry, so it shows up in their ledger with everything else."
+                    text-bn="আপনি সফটওয়্যার চালু করার দিন এই পক্ষের কাছে যত টাকা পেতেন বা দিতেন। নতুন কারও ক্ষেত্রে খালি রাখুন। এটি নিয়মিত এন্ট্রি হিসেবে জমা হয়, তাই খাতায় বাকি সবকিছুর সঙ্গেই দেখা যাবে।"
+                  />
+                </label>
+                <div class="opening-row">
+                  <input
+                    id="party-opening"
+                    v-model="openingAmount"
+                    type="text"
+                    inputmode="decimal"
+                    :disabled="fieldsDisabled"
+                    placeholder="Leave empty if none"
+                  />
+                  <select v-model="openingDirection" :disabled="fieldsDisabled" aria-label="Direction">
+                    <option value="RECEIVABLE">I will receive (পাবো)</option>
+                    <option value="PAYABLE">I will pay (দিব)</option>
+                  </select>
+                </div>
+              </div>
+
+              <template v-if="openingAmount.trim() !== ''">
+                <!--
+                  Which relationship the opening belongs to. Only asked when a
+                  party holds more than one role (D-04) — otherwise the answer
+                  is not in doubt and the question is noise.
+                -->
+                <div v-if="roles.length > 1" class="field">
+                  <label for="party-opening-role">Opening balance is for</label>
+                  <select
+                    id="party-opening-role"
+                    v-model="openingRole"
+                    :disabled="fieldsDisabled"
+                  >
+                    <option v-for="held in roles" :key="held" :value="held">
+                      {{ held === 'CUSTOMER' ? 'Customer' : held === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
+                    </option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="party-opening-date">
+                    As on
+                    <span class="label-bn">কোন তারিখ পর্যন্ত</span>
+                  </label>
+                  <input
+                    id="party-opening-date"
+                    v-model="openingDate"
+                    type="date"
+                    :disabled="fieldsDisabled"
+                  />
+                  <p class="fine">
+                    Usually the day you started using SherERP. It cannot be a future date.
+                  </p>
+                </div>
+              </template>
+            </template>
+
           </details>
 
           <!-- Saving is never folded away: it is the point of the screen. -->
@@ -637,5 +771,20 @@ function editProfile(): void {
 
 .skeleton-form {
   height: 420px;
+}
+/*
+ * Amount and direction read as one control, because they are one fact: an
+ * amount without its direction is meaningless, and putting them on separate
+ * rows invites filling in one and not the other.
+ */
+.opening-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.opening-row input {
+  flex: 1 1 8rem;
+  min-width: 0;
 }
 </style>

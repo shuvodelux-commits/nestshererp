@@ -505,6 +505,17 @@ export const parties = pgTable('parties', {
   deletedBy: char('deleted_by', { length: 26 }),
 });
 
+/** Class B — the opening receivable/payable document (§5.6, migration 0015). */
+export const partyOpenings = pgTable('party_openings', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), openingNumber: text('opening_number').notNull(),
+  partyId: char('party_id', { length: 26 }).notNull(), role: text('role').notNull(),
+  direction: text('direction').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(), status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
 /** Class A — D-04's role flags as rows (§5.6, migration 0009). */
 export const partyRoles = pgTable('party_roles', {
   id: char('id', { length: 26 }).primaryKey(),

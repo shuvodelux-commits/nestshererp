@@ -25,6 +25,63 @@ export interface PartyRow {
   readonly status: PartyStatus;
   readonly isSystemReserved: boolean;
   readonly version: number;
+  /**
+   * The INV-06 rollup of this party's journal lines, computed in the same query
+   * as the row (§2.7.I) so a list column and the ledger under it cannot
+   * disagree. Signed: positive means the party owes the shop.
+   *
+   * Not a stored column — see `migrations/0015_party_openings.sql` for why a
+   * cached balance is refused.
+   */
+  readonly balanceNetMinor: number;
+}
+
+/**
+ * An opening balance document, as the repository stores it (migration 0015).
+ *
+ * The journal entry travels with it for the same reason `OpeningStockRecord`
+ * carries its lines: the document and the posting it produced are written in
+ * one transaction or neither, or a balance would exist with no document to
+ * explain it (or worse, the reverse).
+ */
+export interface NewPartyOpening {
+  readonly id: string;
+  readonly number: string;
+  readonly partyId: string;
+  readonly role: PartyRole;
+  readonly direction: 'RECEIVABLE' | 'PAYABLE';
+  readonly amountMinor: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly operationId: string;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+}
+
+/** One journal line of a party's statement, joined to its document. */
+export interface PartyLedgerLineRow {
+  readonly journalEntryId: string;
+  readonly journalLineId: string;
+  readonly businessDate: string;
+  readonly sourceDocumentType: string;
+  readonly sourceDocumentId: string;
+  readonly sourceNumber: string;
+  readonly account: string;
+  readonly amountMinor: number;
+}
+
+export interface PartyLedgerFilter {
+  readonly partyId: string;
+  /** Inclusive. `null` means unbounded on that end. */
+  readonly fromDate: string | null;
+  readonly toDate: string | null;
+  readonly cursor: string | null;
+  readonly limit: number;
 }
 
 /**
@@ -72,6 +129,10 @@ export interface PartyCounts {
   readonly active: number;
   readonly inactive: number;
   readonly ungrouped: number;
+  /** Unsigned money totals over the same filter — see `partySummarySchema`. */
+  readonly totalOutstandingMinor: number;
+  readonly totalAdvanceMinor: number;
+  readonly overCreditLimit: number;
 }
 
 /** A customer group (§5.6). */
@@ -121,6 +182,37 @@ export interface PartyRepository {
   setStatus(tx: Tx, ctx: TenantContext, id: string, status: PartyStatus): Promise<void>;
   /** Hard delete, only ever called for a party nothing refers to (§3.6). */
   deleteUnused(tx: Tx, ctx: TenantContext, id: string): Promise<void>;
+
+  /**
+   * Writes an opening balance document and its journal entry together.
+   *
+   * One call rather than a document write plus a posting write, because the two
+   * must be atomic and a port that let them be issued separately would make the
+   * non-atomic case expressible.
+   */
+  insertOpening(tx: Tx, ctx: TenantContext, opening: NewPartyOpening): Promise<void>;
+  /** The opening already posted for this party and role, if any (0015's unique). */
+  findOpening(
+    tx: Tx,
+    ctx: TenantContext,
+    partyId: string,
+    role: PartyRole,
+  ): Promise<{ readonly id: string; readonly amountMinor: number } | null>;
+
+  /** One page of a party's statement, in business-date then created-at then id order. */
+  listLedgerLines(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PartyLedgerFilter,
+  ): Promise<readonly PartyLedgerLineRow[]>;
+  /**
+   * The net of every line strictly before the page `filter` describes.
+   *
+   * Separate from `listLedgerLines` because a running balance must start from
+   * the true earlier sum, not from zero — a date-filtered or second-page
+   * statement that began at zero would be wrong and still look right.
+   */
+  sumLedgerBefore(tx: Tx, ctx: TenantContext, filter: PartyLedgerFilter): Promise<number>;
 
   listGroups(tx: Tx, ctx: TenantContext): Promise<readonly CustomerGroupEntry[]>;
   findGroup(tx: Tx, ctx: TenantContext, id: string): Promise<CustomerGroupEntry | null>;

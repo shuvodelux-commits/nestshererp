@@ -3,12 +3,18 @@ import type {
   AccessControl,
   AuditWriter,
   IdempotencyStore,
+  NumberingService,
   Outbox,
   PartyRepository,
+  PeriodGuard,
   SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
-import { ManagePartiesService, ManagePartyGroupsService } from '@sher/core-application';
+import {
+  ManagePartiesService,
+  ManagePartyGroupsService,
+  PartyLedgerService,
+} from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
 import {
@@ -16,14 +22,20 @@ import {
   AUDIT_WRITER,
   CLOCK,
   IDEMPOTENCY_STORE,
+  NUMBERING_SERVICE,
   OUTBOX,
   PARTY_REPOSITORY,
+  PERIOD_GUARD,
   SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
 import { PartiesController } from './parties.controller';
 import { PartyGroupsController } from './party-groups.controller';
-import { MANAGE_PARTIES_SERVICE, MANAGE_PARTY_GROUPS_SERVICE } from './tokens';
+import {
+  MANAGE_PARTIES_SERVICE,
+  MANAGE_PARTY_GROUPS_SERVICE,
+  PARTY_LEDGER_SERVICE,
+} from './tokens';
 
 @Module({
   controllers: [PartyGroupsController, PartiesController],
@@ -39,6 +51,8 @@ import { MANAGE_PARTIES_SERVICE, MANAGE_PARTY_GROUPS_SERVICE } from './tokens';
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        numbering: NumberingService,
+        periods: PeriodGuard,
       ): ManagePartiesService =>
         new ManagePartiesService(
           uow,
@@ -49,6 +63,8 @@ import { MANAGE_PARTIES_SERVICE, MANAGE_PARTY_GROUPS_SERVICE } from './tokens';
           audit,
           outbox,
           clock,
+          numbering,
+          periods,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -59,7 +75,18 @@ import { MANAGE_PARTIES_SERVICE, MANAGE_PARTY_GROUPS_SERVICE } from './tokens';
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        NUMBERING_SERVICE,
+        PERIOD_GUARD,
       ],
+    },
+    {
+      provide: PARTY_LEDGER_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        parties: PartyRepository,
+      ): PartyLedgerService => new PartyLedgerService(uow, accessControl, parties),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PARTY_REPOSITORY],
     },
     {
       provide: MANAGE_PARTY_GROUPS_SERVICE,
@@ -84,5 +111,6 @@ import { MANAGE_PARTIES_SERVICE, MANAGE_PARTY_GROUPS_SERVICE } from './tokens';
       ],
     },
   ],
+  exports: [MANAGE_PARTIES_SERVICE],
 })
 export class PartiesModule {}

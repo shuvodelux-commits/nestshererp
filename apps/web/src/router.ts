@@ -53,6 +53,11 @@ const router = createRouter({
     // 'new' and an id share one component: adding and editing a party are the
     // same form, and a second one would be the same fields written twice.
     { path: '/parties/:id', name: 'party', component: () => import('./pages/PartyFormPage.vue') },
+    {
+      path: '/parties/:id/ledger',
+      name: 'party-ledger',
+      component: () => import('./pages/PartyLedgerPage.vue'),
+    },
     { path: '/settings', name: 'settings', component: () => import('./pages/SettingsPage.vue') },
     {
       path: '/settings/security',

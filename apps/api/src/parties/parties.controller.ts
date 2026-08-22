@@ -12,11 +12,20 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { ManagePartiesService, TenantContext } from '@sher/core-application';
-import type { PartyListResponse, PartyResponse } from '@sher/core-contracts';
+import type {
+  ManagePartiesService,
+  PartyLedgerService,
+  TenantContext,
+} from '@sher/core-application';
+import type {
+  PartyLedgerResponse,
+  PartyListResponse,
+  PartyResponse,
+} from '@sher/core-contracts';
 import {
   AppError,
   ErrorCode,
+  partyLedgerQuerySchema,
   partyQuerySchema,
   savePartyRequestSchema,
   setPartyStatusRequestSchema,
@@ -24,7 +33,7 @@ import {
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
-import { MANAGE_PARTIES_SERVICE } from './tokens';
+import { MANAGE_PARTIES_SERVICE, PARTY_LEDGER_SERVICE } from './tokens';
 
 /**
  * Parties — customers, suppliers and vendors (Phase 2, §5.6, D-04).
@@ -39,7 +48,10 @@ import { MANAGE_PARTIES_SERVICE } from './tokens';
 @Controller('api/v1/parties')
 @UseGuards(TenantContextGuard)
 export class PartiesController {
-  constructor(@Inject(MANAGE_PARTIES_SERVICE) private readonly parties: ManagePartiesService) {}
+  constructor(
+    @Inject(MANAGE_PARTIES_SERVICE) private readonly parties: ManagePartiesService,
+    @Inject(PARTY_LEDGER_SERVICE) private readonly ledgers: PartyLedgerService,
+  ) {}
 
   @Get()
   async list(@Query() query: unknown, @Ctx() ctx: TenantContext): Promise<PartyListResponse> {
@@ -52,6 +64,25 @@ export class PartiesController {
   @Get(':id')
   async get(@Param('id') id: string, @Ctx() ctx: TenantContext): Promise<{ data: PartyResponse }> {
     return { data: await this.parties.get({ ctx, partyId: id }) };
+  }
+
+  /**
+   * A party's statement (§2.4, INV-06).
+   *
+   * Read-only and permission-checked against the party's own roles in the use
+   * case — the trust that shows a customer is the trust that shows their
+   * ledger.
+   */
+  @Get(':id/ledger')
+  async ledger(
+    @Param('id') id: string,
+    @Query() query: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<PartyLedgerResponse> {
+    const parsed = partyLedgerQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+
+    return this.ledgers.ledger({ ctx, partyId: id, ...parsed.data });
   }
 
   @Post()

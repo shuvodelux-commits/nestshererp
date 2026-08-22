@@ -160,7 +160,11 @@ export type {
   UpdateProductRequest,
 } from './products';
 export {
+  balanceDirectionSchema,
+  balanceSchema,
   customerGroupResponseSchema,
+  openingBalanceRequestSchema,
+  openingDirectionSchema,
   partyFieldVisibilitySchema,
   partyListResponseSchema,
   partyQuerySchema,
@@ -176,7 +180,11 @@ export {
   WALK_IN_PARTY_NAME,
 } from './parties';
 export type {
+  BalanceDirectionValue,
+  BalanceResponse,
   CustomerGroupResponse,
+  OpeningBalanceRequest,
+  OpeningDirectionValue,
   PartyFieldVisibility,
   PartyListResponse,
   PartyQuery,
@@ -190,6 +198,16 @@ export type {
   SetPartyStatusRequest,
   UpdatePartyRequest,
 } from './parties';
+export {
+  partyLedgerQuerySchema,
+  partyLedgerResponseSchema,
+  partyLedgerRowSchema,
+} from './party-ledger';
+export type {
+  PartyLedgerQuery,
+  PartyLedgerResponse,
+  PartyLedgerRow,
+} from './party-ledger';
 
 /**
  * Caller-selected list sorting (UI-46, §3.9). The allow-lists live in one place

@@ -25,6 +25,65 @@ export type PartyRoleValue = z.infer<typeof partyRoleSchema>;
 export const partyStatusSchema = z.union([z.literal('ACTIVE'), z.literal('INACTIVE')]);
 export type PartyStatusValue = z.infer<typeof partyStatusSchema>;
 
+export const openingDirectionSchema = z.union([
+  z.literal('RECEIVABLE'),
+  z.literal('PAYABLE'),
+]);
+export type OpeningDirectionValue = z.infer<typeof openingDirectionSchema>;
+
+/**
+ * The opening balance a migrating shop enters with a party (§5.0, §5.6).
+ *
+ * `amountMinor` is always positive and `direction` carries the sign, so a
+ * typo cannot silently flip a receivable into a payable — the two are separate
+ * inputs on the form, and the server checks the pair against the party's role.
+ *
+ * `role` is required rather than inferred, because D-04 lets one party be both
+ * a customer and a supplier, and "opening balance 5,000" against such a party
+ * is ambiguous until someone says which side of the relationship it belongs to.
+ */
+export const openingBalanceRequestSchema = z
+  .object({
+    role: partyRoleSchema,
+    direction: openingDirectionSchema,
+    amountMinor: z.number().int().positive(),
+    /** ISO date. The shop's go-live date, not necessarily today. */
+    businessDate: z.string().date(),
+  })
+  .strict();
+
+export type OpeningBalanceRequest = z.infer<typeof openingBalanceRequestSchema>;
+
+export const balanceDirectionSchema = z.union([
+  z.literal('RECEIVABLE'),
+  z.literal('PAYABLE'),
+  z.literal('SETTLED'),
+]);
+export type BalanceDirectionValue = z.infer<typeof balanceDirectionSchema>;
+
+/**
+ * A party balance as the wire carries it (INV-06, §5.26).
+ *
+ * All three figures ship together even though `netMinor` determines the other
+ * two, because the split is a domain decision (`partyBalanceOf`) and a client
+ * re-deriving it is a client that can get the sign backwards — which on this
+ * particular screen means telling a shopkeeper to collect money from someone
+ * who is owed it.
+ */
+export const balanceSchema = z
+  .object({
+    /** Positive: the party owes the shop. Negative: the shop owes the party. */
+    netMinor: z.number().int(),
+    direction: balanceDirectionSchema,
+    /** পাবো — unsigned. Zero unless `direction` is RECEIVABLE. */
+    outstandingMinor: z.number().int().min(0),
+    /** দিব — unsigned. Zero unless `direction` is PAYABLE. */
+    advanceMinor: z.number().int().min(0),
+  })
+  .strict();
+
+export type BalanceResponse = z.infer<typeof balanceSchema>;
+
 export const partyResponseSchema = z
   .object({
     id: ULID,
@@ -48,6 +107,16 @@ export const partyResponseSchema = z
     isSystemReserved: z.boolean(),
     /** Optimistic lock (D-32). Sent back on edit; a stale one is a 409. */
     version: z.number().int(),
+    /**
+     * The party's balance, on the row (§5.0's "a list shows what you came to
+     * see"). Nobody should have to open a ledger to find out whether a customer
+     * owes money — that is the one fact a counter actually needs from a list.
+     *
+     * Not a stored column: this is the INV-06 rollup of their journal lines,
+     * computed in the same query as the row, so the list and the ledger cannot
+     * disagree. See `balanceSchema` for what the three figures mean.
+     */
+    balance: balanceSchema,
   })
   .strict();
 
@@ -64,6 +133,19 @@ export const partySummarySchema = z
     inactive: z.number().int(),
     /** Customers with no group yet, while customer groups are switched on. */
     ungrouped: z.number().int(),
+    /**
+     * What the whole filtered set is worth, so the tiles answer "how much is
+     * out there?" without anyone exporting the list and summing a column.
+     *
+     * Both are unsigned and both can be non-zero at once: across a set of
+     * parties some owe and some are owed, and netting them into one figure
+     * would hide a shop that is carrying 200,000 of receivables *and* 180,000
+     * of advances behind a comfortable-looking 20,000.
+     */
+    totalOutstandingMinor: z.number().int().min(0),
+    totalAdvanceMinor: z.number().int().min(0),
+    /** Customers over their §5.6 credit limit. Zero when none has a limit set. */
+    overCreditLimit: z.number().int(),
   })
   .strict();
 
@@ -108,11 +190,17 @@ export type PartyQuery = z.infer<typeof partyQuerySchema>;
  * optional, and G2.2 forbids making an optional field mandatory because a column
  * exists.
  *
- * Opening receivable/payable is **not** here. §5.0 requires opening balances and
- * §5.6 imports them, but a balance is the sum of journal lines (INV-06) — the
- * opening entry goes through the posting service in Phase 4, exactly as opening
- * stock goes through Phase 3's. A number typed here would be a balance with no
- * journal behind it.
+ * Opening receivable/payable is accepted here as `opening`, but it is **not** a
+ * field on the party — it is a document. The service posts it through
+ * `openingBalancePosting` against `OPENING_EQUITY`, exactly as opening stock
+ * goes through Phase 3's, so INV-06 stays true: the balance the list shows is
+ * still the sum of journal lines, and this is simply how the first of those
+ * lines gets written. A plain `openingBalanceMinor` column would be a balance
+ * with no journal behind it, which is what §5.6 forbids.
+ *
+ * Create-only. On an edit `opening` must be absent: changing a posted opening
+ * is a correction, and §2.5 says a correction reverses and reposts rather than
+ * rewriting history in place.
  */
 export const savePartyRequestSchema = z
   .object({
@@ -126,12 +214,22 @@ export const savePartyRequestSchema = z
     notes: z.string().trim().max(2000).nullable(),
     customerGroupId: ULID.nullable(),
     creditLimitMinor: z.number().int().min(0).nullable(),
+    opening: openingBalanceRequestSchema.nullable().optional(),
   })
   .strict();
 
 export type SavePartyRequest = z.infer<typeof savePartyRequestSchema>;
 
+/**
+ * An edit. `opening` is dropped rather than made optional: §2.5 corrects a
+ * posted document by reversing and reposting it, never by rewriting it, so a
+ * PATCH carrying an opening balance is a request the server has no honest way
+ * to satisfy. `.strict()` then makes sending one a 400 rather than a silent
+ * no-op — a shopkeeper who retypes an opening on the edit form must be told it
+ * did not take, not left believing it did.
+ */
 export const updatePartyRequestSchema = savePartyRequestSchema
+  .omit({ opening: true })
   .extend({ version: z.number().int().positive() })
   .strict();
 

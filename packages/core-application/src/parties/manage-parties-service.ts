@@ -3,17 +3,29 @@ import {
   customerPhoneKey,
   normalizePartyName,
   normalizePhone,
+  openingBalancePosting,
+  partyBalanceOf,
   rejectParty,
+  rejectOpeningBalance,
 } from '@sher/core-domain';
-import type { PartyRejection, PartyRole, PartyStatus } from '@sher/core-domain';
+import type {
+  OpeningBalanceDirection,
+  OpeningBalanceRejection,
+  PartyRejection,
+  PartyRole,
+  PartyStatus,
+} from '@sher/core-domain';
 import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type { PartyListResponse, PartyResponse, PartySort, SortDirection } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 
+import { entryModeFor } from '../notes/create-note-service';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { IdempotencyStore } from '../ports/idempotency-store';
+import type { NumberingService } from '../ports/numbering-service';
+import type { PeriodGuard } from '../ports/period-guard';
 import type { Outbox } from '../ports/outbox';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
@@ -30,12 +42,19 @@ import type { PartyEdit, PartyFilter, PartyRepository, PartyRow } from './party-
  * outbox → commit, in one transaction. No period guard, no journal entry and no
  * stock movement — a party is not a document.
  *
- * **No opening balance is written here.** §5.0 requires opening receivables and
- * payables and §5.6 imports them, but a party's balance is the sum of its
- * journal lines (INV-06). The opening entry goes through the posting service in
- * Phase 4, exactly as opening stock goes through Phase 3's. A figure typed on
- * this form would be a balance with nothing behind it, and INV-06 would be false
- * the moment it was saved.
+ * **An opening balance is a document, not a field.** §5.0 requires opening
+ * receivables and payables and §5.6 imports them, and both arrive on this form —
+ * but a party's balance is the sum of its journal lines (INV-06), so what the
+ * form supplies is posted as a balanced entry against `OPENING_EQUITY` through
+ * `openingBalancePosting`, exactly as opening stock is. That makes this one
+ * write two classes at once: Class M for the party, Class B for the opening,
+ * which is why the period guard and the numbering service appear below on a
+ * path that is otherwise master data. A plain `openingBalanceMinor` column
+ * would be a balance with nothing behind it, and INV-06 would be false the
+ * moment it was saved.
+ *
+ * **Create-only.** An edit never carries an opening: §2.5 corrects a posted
+ * document by reversing and reposting it, never by rewriting it in place.
  *
  * **Three role permissions over one table.** A cashier who may add a customer at
  * the counter has no business adding a supplier, so every role named on a write
@@ -72,6 +91,22 @@ export interface PartyInput {
   readonly notes: string | null;
   readonly customerGroupId: string | null;
   readonly creditLimitMinor: number | null;
+  /**
+   * The opening receivable or payable this party starts with, if any.
+   *
+   * Optional and create-only. `null` and absent both mean "no opening", which
+   * is the normal case for a party added after go-live.
+   */
+  readonly opening?: OpeningBalanceInput | null | undefined;
+}
+
+/** §5.6's opening balance, as the form or a CSV row supplies it. */
+export interface OpeningBalanceInput {
+  readonly role: PartyRole;
+  readonly direction: OpeningBalanceDirection;
+  /** Always positive; `direction` carries the sign. */
+  readonly amountMinor: number;
+  readonly businessDate: string;
 }
 
 export interface CreatePartyCommand {
@@ -135,6 +170,12 @@ const REJECTION_MESSAGES: Record<PartyRejection, string> = {
   CREDIT_LIMIT_WITHOUT_CUSTOMER_ROLE: 'Only a customer can have a credit limit',
 };
 
+const OPENING_REJECTION_MESSAGES: Record<OpeningBalanceRejection, string> = {
+  OPENING_AMOUNT_NOT_INTEGER_MINOR: 'Enter the opening balance as whole poisha',
+  OPENING_AMOUNT_NOT_POSITIVE: 'An opening balance must be more than zero',
+  OPENING_DIRECTION_NOT_VALID_FOR_ROLE: 'A vendor opening balance can only be money you owe',
+};
+
 export class ManagePartiesService {
   constructor(
     private readonly uow: UnitOfWork,
@@ -145,6 +186,14 @@ export class ManagePartiesService {
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
+    /**
+     * Only the opening-balance path uses these — a party itself is not a
+     * document and needs neither. They are constructor dependencies rather
+     * than a separate service because an opening is written in the same
+     * transaction as the party it belongs to (see `createWithin`).
+     */
+    private readonly numbering: NumberingService,
+    private readonly periods: PeriodGuard,
   ) {}
 
   async list(command: ListPartiesCommand): Promise<PartyListResponse> {
@@ -223,27 +272,7 @@ export class ManagePartiesService {
         return replayed.response as PartyResponse;
       }
 
-      const clean = await this.validate(tx, ctx, command.input, null);
-      const id = Ulid.generate(this.clock);
-
-      await this.parties.insert(tx, ctx, { id, ...clean, isSystemReserved: false });
-
-      await this.audit.append(tx, ctx, {
-        entityType: ENTITY_TYPE,
-        entityId: id,
-        action: 'CREATE',
-        before: null,
-        after: auditValues(clean),
-        source: 'API',
-      });
-      await this.outbox.append(tx, ctx, {
-        eventType: 'party.created',
-        aggregateType: ENTITY_TYPE,
-        aggregateId: id,
-        payload: { name: clean.name, roles: clean.roles.join(',') },
-      });
-
-      const response = toResponse(await this.requireParty(tx, ctx, id));
+      const response = await this.createWithin(tx, ctx, command.input, 'API');
 
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
@@ -252,6 +281,167 @@ export class ManagePartiesService {
       });
 
       return response;
+    });
+  }
+
+  /**
+   * Creating one party inside a transaction the **caller** owns.
+   *
+   * Split out for the guided CSV import (§5.6): a file posts all-or-nothing, and
+   * one file is one transaction (R-D5), so the importer cannot call `create`
+   * once per row. It calls this, and an imported customer passes exactly what a
+   * typed-in one passes — the same role permissions, the same `validate` with
+   * D-02's phone rule and the hidden-field rules, the same audit and outbox.
+   * There is one party writer (A11, A14).
+   */
+  async createWithin(
+    tx: Tx,
+    ctx: TenantContext,
+    input: PartyInput,
+    source: string,
+  ): Promise<PartyResponse> {
+    for (const role of unique(input.roles)) {
+      await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].create);
+    }
+
+    const clean = await this.validate(tx, ctx, input, null);
+    const id = Ulid.generate(this.clock);
+
+    await this.parties.insert(tx, ctx, { id, ...clean, isSystemReserved: false });
+
+    // `null` and absent both mean "no opening", so both are named here: the
+    // loose `!= null` that reads the same is what `eqeqeq` forbids.
+    if (input.opening !== null && input.opening !== undefined) {
+      await this.postOpening(tx, ctx, id, clean.roles, input.opening, source);
+    }
+
+    await this.audit.append(tx, ctx, {
+      entityType: ENTITY_TYPE,
+      entityId: id,
+      action: 'CREATE',
+      before: null,
+      after: auditValues(clean),
+      source,
+    });
+    await this.outbox.append(tx, ctx, {
+      eventType: 'party.created',
+      aggregateType: ENTITY_TYPE,
+      aggregateId: id,
+      payload: { name: clean.name, roles: clean.roles.join(',') },
+    });
+
+    return toResponse(await this.requireParty(tx, ctx, id));
+  }
+
+  /**
+   * Posts a party's opening balance: the document, its journal entry, its
+   * audit trail, in the caller's transaction.
+   *
+   * A Class B write (R-D), so unlike the party around it this one is period
+   * guarded and numbered. The guard matters more here than the phrase "opening
+   * balance" suggests — a shop that has closed its first month must not have
+   * new opening entries appearing behind the lock and silently changing a
+   * period that was already reported on.
+   */
+  private async postOpening(
+    tx: Tx,
+    ctx: TenantContext,
+    partyId: string,
+    roles: readonly PartyRole[],
+    opening: OpeningBalanceInput,
+    source: string,
+  ): Promise<void> {
+    // The role must be one this party actually holds. Otherwise an opening
+    // could post to `AP` for someone who is not a supplier, and their balance
+    // would appear on a report they belong to under no role.
+    if (!roles.includes(opening.role)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'The opening balance is for a role this party does not have',
+      );
+    }
+
+    const rejection = rejectOpeningBalance({
+      partyId,
+      role: opening.role,
+      direction: opening.direction,
+      amountMinor: opening.amountMinor,
+    });
+    if (rejection !== null) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, OPENING_REJECTION_MESSAGES[rejection]);
+    }
+
+    const today = this.clock.businessDate(ctx.timezone);
+    const { businessDate } = opening;
+
+    // The same refusal opening stock makes: an opening dated in the future is a
+    // typo, and posting it would put a balance on a list for money that is not
+    // owed yet.
+    if (businessDate > today) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'An opening balance cannot be dated in the future',
+      );
+    }
+
+    await this.periods.assertOpen(tx, ctx, businessDate);
+
+    // 0015's unique index would catch a second opening, but catching it here
+    // gives the shopkeeper the reason instead of a constraint violation.
+    const existing = await this.parties.findOpening(tx, ctx, partyId, opening.role);
+    if (existing !== null) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'This party already has an opening balance for that role',
+      );
+    }
+
+    const posting = openingBalancePosting({
+      partyId,
+      role: opening.role,
+      direction: opening.direction,
+      amountMinor: opening.amountMinor,
+    });
+
+    const openingId = Ulid.generate(this.clock);
+
+    await this.parties.insertOpening(tx, ctx, {
+      id: openingId,
+      number: await this.numbering.allocate(
+        tx,
+        ctx,
+        'OPENING_BALANCE',
+        Number(businessDate.slice(0, 4)),
+      ),
+      partyId,
+      role: opening.role,
+      direction: posting.direction,
+      amountMinor: posting.amountMinor,
+      businessDate,
+      entryMode: entryModeFor(businessDate, today),
+      operationId: openingId,
+      journalEntryId: Ulid.generate(this.clock),
+      journalLines: posting.journal.lines.map((line) => ({
+        id: Ulid.generate(this.clock),
+        account: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      })),
+    });
+
+    await this.audit.append(tx, ctx, {
+      entityType: 'party_opening',
+      entityId: openingId,
+      action: 'CREATE',
+      before: null,
+      after: {
+        partyId,
+        role: opening.role,
+        direction: posting.direction,
+        amountMinor: String(posting.amountMinor),
+        businessDate,
+      },
+      source,
     });
   }
 
@@ -645,5 +835,9 @@ function toResponse(row: PartyRow): PartyResponse {
     status: row.status,
     isSystemReserved: row.isSystemReserved,
     version: row.version,
+    // INV-06 applied in exactly one place: the repository sums the lines, this
+    // turns the sign into the two words the screen shows, and the ledger header
+    // calls the same function on the same number.
+    balance: partyBalanceOf(row.balanceNetMinor),
   };
 }

@@ -54,6 +54,23 @@ export {
   rejectParty,
 } from './parties/party';
 export type { PartyDraft, PartyRejection, PartyRole, PartyStatus } from './parties/party';
+export {
+  affectsPartyBalance,
+  exceedsCreditLimit,
+  PARTY_BALANCE_ACCOUNTS,
+  partyBalanceOf,
+  SETTLED_BALANCE,
+} from './parties/party-balance';
+export type { BalanceDirection, PartyBalance } from './parties/party-balance';
+export { openingBalancePosting, rejectOpeningBalance } from './parties/opening-balance';
+export type {
+  OpeningBalanceDirection,
+  OpeningBalanceDraft,
+  OpeningBalancePosting,
+  OpeningBalanceRejection,
+} from './parties/opening-balance';
+export { buildPartyLedger } from './parties/party-ledger';
+export type { PartyLedger, PartyLedgerLine, PartyLedgerRow } from './parties/party-ledger';
 
 /**
  * The posting kernel (§2.4). Every module that moves value posts through these

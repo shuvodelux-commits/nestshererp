@@ -184,9 +184,12 @@ export type { AdjustStockCommand, RecordOpeningStockCommand } from './inventory/
 export type {
   CustomerGroupEntry,
   NewParty,
+  NewPartyOpening,
   PartyCounts,
   PartyEdit,
   PartyFilter,
+  PartyLedgerFilter,
+  PartyLedgerLineRow,
   PartyRepository,
   PartyRow,
 } from './parties/party-repository';
@@ -194,11 +197,14 @@ export { ManagePartiesService } from './parties/manage-parties-service';
 export type {
   CreatePartyCommand,
   ListPartiesCommand,
+  OpeningBalanceInput,
   PartyIdCommand,
   PartyInput,
   SetPartyStatusCommand,
   UpdatePartyCommand,
 } from './parties/manage-parties-service';
+export { PartyLedgerService } from './parties/party-ledger-service';
+export type { PartyLedgerCommand } from './parties/party-ledger-service';
 export { ManagePartyGroupsService } from './parties/manage-party-groups-service';
 export type {
   CreateCustomerGroupCommand,

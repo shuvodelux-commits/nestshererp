@@ -8,7 +8,7 @@ import type {
   SortDirection,
 } from '@sher/core-contracts';
 import { defaultDirectionFor } from '@sher/core-contracts';
-import { parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
+import { Money, parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
@@ -100,7 +100,15 @@ const canManageGroups = computed(() => session.can('party.group.manage'));
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
 const parties = ref<PartyResponse[]>([]);
-const summary = ref<PartySummary>({ total: 0, active: 0, inactive: 0, ungrouped: 0 });
+const summary = ref<PartySummary>({
+  total: 0,
+  active: 0,
+  inactive: 0,
+  ungrouped: 0,
+  totalOutstandingMinor: 0,
+  totalAdvanceMinor: 0,
+  overCreditLimit: 0,
+});
 const nextCursor = ref<string | null>(null);
 
 /**
@@ -337,6 +345,45 @@ function openParty(party: PartyResponse): void {
   void router.push(`/parties/${party.id}?role=${role.value}`);
 }
 
+/* ------------------------------------------------------------------ balance */
+
+function openLedger(party: PartyResponse): void {
+  void router.push(`/parties/${party.id}/ledger?role=${role.value}`);
+}
+
+/**
+ * The balance in the words the shop uses (§2.4's display mapping).
+ *
+ * "Settled" rather than "৳0.00 পাবো": a zero with a direction on it invites a
+ * second look for the missing amount, and the whole point of this column is
+ * that a glance is enough.
+ */
+function balanceText(party: PartyResponse): string {
+  const { direction, outstandingMinor, advanceMinor } = party.balance;
+  if (direction === 'SETTLED') return 'Settled';
+  return direction === 'RECEIVABLE'
+    ? `৳${Money(outstandingMinor).format()} পাবো`
+    : `৳${Money(advanceMinor).format()} দিব`;
+}
+
+function balanceClass(party: PartyResponse): string {
+  return `balance-${party.balance.direction.toLowerCase()}`;
+}
+
+/**
+ * `exceedsCreditLimit` on the client, for the badge only.
+ *
+ * The real check runs server-side when a credit sale is posted — this is UI-09's
+ * "hide the control **and** enforce", and a client that got this wrong would
+ * show a missing badge, never let an over-limit sale through.
+ */
+function overLimit(party: PartyResponse): boolean {
+  return (
+    party.creditLimitMinor !== null &&
+    party.balance.outstandingMinor > party.creditLimitMinor
+  );
+}
+
 /* --------------------------------------------------- deactivate / reactivate */
 
 const confirming = ref<PartyResponse | null>(null);
@@ -433,6 +480,18 @@ async function removeGroup(id: string, name: string): Promise<void> {
         <i class="pi pi-tags" aria-hidden="true" />
         Customer groups
       </button>
+      <!-- §5.6: a shop with a list already written brings it in from a file.
+           Vendors have no import file of their own, so the action is absent
+           rather than offered and refused (UI-09). -->
+      <button
+        v-if="canCreate && role !== 'VENDOR'"
+        type="button"
+        class="btn btn-ghost"
+        @click="router.push(`/import?type=${role === 'CUSTOMER' ? 'CUSTOMERS' : 'SUPPLIERS'}`)"
+      >
+        <i class="pi pi-upload" aria-hidden="true" />
+        Import
+      </button>
       <button
         v-if="canCreate"
         type="button"
@@ -511,6 +570,27 @@ async function removeGroup(id: string, name: string): Promise<void> {
       </EmptyState>
 
       <template v-else>
+        <!--
+          What the whole filtered set is worth (§2.7.I — same query as the rows,
+          so a tile can never disagree with the table under it). Both totals show
+          at once: netting them would hide a shop carrying large receivables and
+          large advances behind a comfortable-looking difference.
+        -->
+        <div class="totals">
+          <span class="total">
+            <span class="total-label">Receivable <span class="sher-bn">পাবো</span></span>
+            <strong class="balance-receivable">৳{{ Money(summary.totalOutstandingMinor).format() }}</strong>
+          </span>
+          <span class="total">
+            <span class="total-label">Payable <span class="sher-bn">দিব</span></span>
+            <strong class="balance-payable">৳{{ Money(summary.totalAdvanceMinor).format() }}</strong>
+          </span>
+          <span v-if="summary.overCreditLimit > 0" class="total">
+            <span class="total-label">Over credit limit</span>
+            <strong class="balance-payable">{{ summary.overCreditLimit }}</strong>
+          </span>
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -555,6 +635,17 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   client, which would only order the page you can see.
                 -->
                 <th>Also</th>
+                <!--
+                  The reason this list exists for most people (§5.0). Nobody
+                  should have to open a ledger to learn whether a customer owes
+                  money, so the balance is on the row, colour-coded by which way
+                  it points and labelled in the words the shop uses.
+
+                  Not sortable: it is a rollup subquery, not a stored column,
+                  and UI-46 leaves such a column unsorted rather than sorting
+                  only the page you can see.
+                -->
+                <th class="num">Balance <span class="sher-bn header-bn">পাবো / দিব</span></th>
                 <SortableHeader
                   column="status"
                   label="Status"
@@ -594,6 +685,22 @@ async function removeGroup(id: string, name: string): Promise<void> {
                     {{ other === 'CUSTOMER' ? 'Customer' : other === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
                   </span>
                   <span v-if="party.roles.length === 1">—</span>
+                </td>
+                <td class="num">
+                  <button
+                    type="button"
+                    class="linkish balance"
+                    :class="balanceClass(party)"
+                    :title="`Open ${party.name}'s ledger`"
+                    @click="openLedger(party)"
+                  >
+                    {{ balanceText(party) }}
+                  </button>
+                  <!--
+                    §5.6's credit limit is only useful at the moment it is
+                    breached, so it is shown then and not otherwise.
+                  -->
+                  <span v-if="overLimit(party)" class="pill pill-bad limit-pill">Over limit</span>
                 </td>
                 <td>
                   <span v-if="party.status === 'ACTIVE'" class="pill pill-ok">Active</span>
@@ -822,6 +929,53 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
 .name {
   font-weight: 600;
+}
+
+/*
+ * Colour carries the direction, but never alone: the row also says পাবো or দিব
+ * in words, so the column still reads correctly for someone who cannot tell the
+ * two colours apart (UI accessibility, and print).
+ */
+.balance {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.balance-receivable {
+  color: var(--sher-ok-fg, #15803d);
+}
+
+.balance-payable {
+  color: var(--sher-bad-fg, #b91c1c);
+}
+
+.balance-settled {
+  color: var(--sher-muted-fg, #64748b);
+  font-weight: 400;
+}
+
+.limit-pill {
+  margin-inline-start: 0.375rem;
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 0.75rem 0.25rem;
+}
+
+.total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.total-label {
+  font-size: 0.8125rem;
+  color: var(--sher-muted-fg, #64748b);
 }
 
 .row-menu-trigger {

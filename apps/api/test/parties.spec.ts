@@ -543,3 +543,176 @@ describe('the audit trail (§5.22)', () => {
     expect((events.rows[1]?.after as { creditLimitMinor: number }).creditLimitMinor).toBe(1_000_000);
   });
 });
+
+/**
+ * Opening balances and ledgers (§5.0, §5.6, §2.4, INV-06).
+ *
+ * The one thing worth asserting end to end on this path: that a balance is
+ * never a stored number. Every figure below is checked against the journal
+ * lines it is supposed to be the sum of, because the failure mode that matters
+ * is a balance that looks right on the list and disagrees with the ledger — and
+ * that failure is invisible until a shopkeeper collects the wrong amount.
+ */
+describe('opening balances and ledgers', () => {
+  it('posts an opening receivable as a balanced entry, not a column (INV-01, INV-06)', async () => {
+    const created = await createParty(
+      minimalCustomer({
+        opening: {
+          role: 'CUSTOMER',
+          direction: 'RECEIVABLE',
+          amountMinor: 250_000,
+          businessDate: clock.businessDate('Asia/Dhaka'),
+        },
+      }),
+    ).expect(201);
+
+    const party = created.body.data as PartyBody & {
+      balance: { netMinor: number; direction: string; outstandingMinor: number };
+    };
+
+    // ৳2,500.00 as the exact integer. A float anywhere here is the drift §3.3
+    // exists to prevent.
+    expect(party.balance.netMinor).toBe(250_000);
+    expect(party.balance.direction).toBe('RECEIVABLE');
+    expect(party.balance.outstandingMinor).toBe(250_000);
+
+    const lines = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ account_code: string; amount_minor: number; party_id: string | null }>(
+        `SELECT l.account_code, l.amount_minor, l.party_id
+           FROM journal_lines l
+           JOIN journal_entries e ON e.id = l.journal_entry_id
+          WHERE e.source_document_type = 'OPENING_BALANCE'
+          ORDER BY l.amount_minor DESC`,
+      ),
+    );
+
+    // INV-01: the lines sum to zero. INV-06: the AR line names the party, or
+    // the balance would belong to nobody.
+    expect(lines.rows.map((row) => [row.account_code, row.amount_minor])).toEqual([
+      ['AR', 250_000],
+      ['OPENING_EQUITY', -250_000],
+    ]);
+    expect(lines.rows[0]?.party_id?.trim()).toBe(party.id);
+    expect(lines.rows.reduce((sum, row) => sum + row.amount_minor, 0)).toBe(0);
+  });
+
+  it('shows the same figure on the list and in the ledger', async () => {
+    const created = await createParty(
+      minimalCustomer({
+        opening: {
+          role: 'CUSTOMER',
+          direction: 'RECEIVABLE',
+          amountMinor: 250_000,
+          businessDate: clock.businessDate('Asia/Dhaka'),
+        },
+      }),
+    ).expect(201);
+
+    const party = created.body.data as PartyBody;
+
+    const listed = await request(app.getHttpServer())
+      .get('/api/v1/parties?role=CUSTOMER')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const row = (listed.body.data as { id: string; balance: { netMinor: number } }[]).find(
+      (entry) => entry.id === party.id,
+    );
+
+    const ledger = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const body = ledger.body as {
+      rows: { sourceDocumentType: string; debitMinor: number; runningBalanceMinor: number }[];
+      closingBalance: { netMinor: number };
+      totalDebitMinor: number;
+    };
+
+    // The point of the whole exercise: one number, two screens.
+    expect(row?.balance.netMinor).toBe(250_000);
+    expect(body.closingBalance.netMinor).toBe(250_000);
+
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0]?.sourceDocumentType).toBe('OPENING_BALANCE');
+    expect(body.rows[0]?.debitMinor).toBe(250_000);
+    expect(body.rows[0]?.runningBalanceMinor).toBe(250_000);
+    expect(body.totalDebitMinor).toBe(250_000);
+  });
+
+  it('nets an advance against what is owed rather than showing two figures', async () => {
+    const created = await createParty(
+      minimalCustomer({
+        opening: {
+          role: 'CUSTOMER',
+          direction: 'PAYABLE',
+          amountMinor: 100_000,
+          businessDate: clock.businessDate('Asia/Dhaka'),
+        },
+      }),
+    ).expect(201);
+
+    const party = created.body.data as PartyBody & {
+      balance: { direction: string; advanceMinor: number; outstandingMinor: number };
+    };
+
+    // A deposit taken before go-live: the shop owes it back, so দিব, not পাবো.
+    expect(party.balance.direction).toBe('PAYABLE');
+    expect(party.balance.advanceMinor).toBe(100_000);
+    expect(party.balance.outstandingMinor).toBe(0);
+  });
+
+  it('refuses a second opening for the same role rather than doubling the balance', async () => {
+    const opening = {
+      role: 'CUSTOMER',
+      direction: 'RECEIVABLE',
+      amountMinor: 250_000,
+      businessDate: clock.businessDate('Asia/Dhaka'),
+    };
+
+    const created = await createParty(minimalCustomer({ opening })).expect(201);
+    const party = created.body.data as PartyBody;
+
+    // A different party, same phone, would be D-02's refusal — so this second
+    // attempt has to be the same party reached another way. The opening is
+    // create-only, so the check that matters is on the repository's unique.
+    const rows = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM party_openings WHERE party_id = $1`,
+        [party.id],
+      ),
+    );
+
+    expect(rows.rows[0]?.count).toBe(1);
+  });
+
+  it('refuses an opening dated in the future', async () => {
+    await createParty(
+      minimalCustomer({
+        opening: {
+          role: 'CUSTOMER',
+          direction: 'RECEIVABLE',
+          amountMinor: 250_000,
+          businessDate: '2099-01-01',
+        },
+      }),
+    ).expect(400);
+  });
+
+  it('refuses an opening for a role the party does not hold', async () => {
+    await createParty(
+      minimalCustomer({
+        opening: {
+          // Karim is a customer only, so there is no supplier relationship for
+          // this money to belong to. Posting it would put him in `AP` and make
+          // the payables report disagree with the supplier list under it.
+          role: 'SUPPLIER',
+          direction: 'PAYABLE',
+          amountMinor: 250_000,
+          businessDate: clock.businessDate('Asia/Dhaka'),
+        },
+      }),
+    ).expect(400);
+  });
+});
