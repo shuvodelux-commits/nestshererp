@@ -4,7 +4,7 @@
 
 Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Focused tests run while each path is changed; full regression runs at the module gate.
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every module starts with the R-Q question round and the owner's `START`, and ends with one run of the existing `pnpm test` suite plus a manual owner checklist (R-E). `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
 
 ---
 
@@ -41,15 +41,37 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 | A7 | Before implementing any business module, read SRS `§5.0`, `§5.0A`, the **entire target module subsection**, its referenced decisions/invariants, and the task block sections. Do not implement from memory, an old prompt, an archived module document, or existing legacy code alone. |
 | A8 | Create a requirement trace **before writing code**: Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature/entitlement dependencies → Accounting effects → Inventory effects → correction/reversal rules → Search/filters → Edge cases → Acceptance tests. Every applicable item must have an implementation location and verification method. |
 | A9 | Existing code is evidence of current implementation, not authority over v4. If code, Google-Sheets-era behaviour, an archived document or an old test conflicts with v4, do not silently preserve it. Report the conflict and follow the finalized SRS after owner resolution. |
-| A10 | **Existing code is the first reuse candidate.** Before adding a use case, repository method, contract, API endpoint, composable, store action, dialog, list/hub helper or formatter, search the current codebase for the existing implementation and its callers. Reuse or extend the authoritative implementation when it already owns the business meaning. |
+| A10 | **Existing code is the first reuse candidate.** Before adding a use case, repository method, contract, API endpoint, composable, store action, dialog, list/hub helper or formatter, find the existing implementation and its callers — **`FUNCTION_MAP.md` first (R-T)**, then the codebase for whatever it does not answer. Reuse or extend the authoritative implementation when it already owns the business meaning. |
 | A11 | **Do not create a parallel implementation to make a new UI easier.** If Customer Hub, Counter, Daybook, Invoice, Search or another context needs Receive/Pay/Return/Correct/Void, route that UI into the existing owning use case. If the required owning use case is missing or materially wrong, change it once at its seam (within scope) rather than adding a context-specific copy. |
 | A12 | **UI migration is not a rewrite license.** Preserve conforming domain/application/database/API behaviour and existing tests. Replace or reorganise the Vue interaction layer only as needed to satisfy the final SRS. Reuse current routes, contracts, stores/composables and shared components where they fit; remove or retire obsolete UI entry points only after every caller has a replacement. |
-| A13 | Before changing existing code, build a **reuse map**: required SRS action → existing module/interface → current implementation/callers → decision (`REUSE`, `EXTEND`, `REPLACE`, `MISSING`) → verification. A new implementation is allowed only for `MISSING`, or for `REPLACE` where the current implementation violates the SRS/architecture and cannot be safely extended. |
+| A13 | Before changing existing code, build a **reuse map**, starting from `FUNCTION_MAP.md` (R-T2): required SRS action → existing module/interface → current implementation/callers → decision (`REUSE`, `EXTEND`, `REPLACE`, `MISSING`) → verification. A new implementation is allowed only for `MISSING`, or for `REPLACE` where the current implementation violates the SRS/architecture and cannot be safely extended. |
 | A14 | **Function reuse means business-action reuse across the entire ERP.** If one authoritative function/use case updates/corrects a Sales Invoice, Customer Ledger, Sales Invoice History, Invoice Detail and Daybook all call it. The same rule applies to Receive/Pay/Return/Void/Change-Date. Never create a screen-specific business function for the same intent. |
 | A15 | **Refactor the owning module first when necessary.** If the existing implementation is duplicated, structurally wrong, mixes business rules into Vue/controller code, or cannot support the final SRS safely, refactor/consolidate that affected module/seam before adding the next caller or starting the next business module. This is approved refactoring inside the current module scope, not permission for unrelated cleanup. |
 | A16 | **Known UI debt blocks module progression.** A currently built module with known final-v4.2 UI conflicts is not considered complete merely because its backend works. Finish its UI migration, reuse wiring and acceptance checks before starting the next module. |
 
 **A5 matters most.** An agent that silently changes a business rule can produce software that passes its own tests and computes wrong money. **A10–A13 are the next protection:** an agent that ignores working code and creates a second implementation can produce two individually-correct paths that later diverge. SherERP prefers one deep owning module with many UI entry points.
+
+---
+
+## R-Q — Pre-Build Clarification (mandatory, before any module)
+
+**No code is written for a module until the owner replies `START`.** The flow is fixed:
+
+```
+Questions → owner's answers → final module specification →
+what will be added / changed / reused → exact UI and workflow the owner will receive →
+files and modules expected to be affected → WAIT for START
+```
+
+| # | Rule |
+|---|---|
+| Q1 | Ask **10–20 concise questions**, and only about decisions that are genuinely unresolved. For a simple module ask fewer — if the important decisions are already clear, say so instead of padding the list. |
+| Q2 | **Never ask what is already answered** in the SRS, these instructions, `SKILL.md`, `FUNCTION_MAP.md`, existing code, or a previously confirmed requirement. Read first, then ask about the remainder. |
+| Q3 | Cover only real gaps: workflow, fields, business rules, permissions, edge cases, UI surface, mobile behaviour, and integrations with existing modules. |
+| Q4 | After the answers, restate the **final module specification**, then list added / changed / reused items, the exact UI and workflow the owner will get, and the files and modules expected to be affected. |
+| Q5 | Then stop and wait. `START` is the only signal that authorises code. Fixes to an already-approved module, and owner-reported defects, do not need a new round. |
+
+This replaces any earlier "ask before generating" phrasing in `SKILL.md` §29 — that section now points here.
 
 ---
 
@@ -63,7 +85,7 @@ Every module increment follows this order:
 
 ```
  1  Acceptance criteria + expected numbers   ← from the SRS/task block, never invented
- 2  Reuse map + requirement/UI trace         ← inspect existing code before designing new code
+ 2  Reuse map + requirement/UI trace         ← FUNCTION_MAP.md first, then the code it points at
  3  Domain/application delta                 ← reuse first; change only what the SRS requires
  4  Migration                               ← only if the module actually needs schema change
  5  Repository/adapter delta                ← reuse current business-specific seam
@@ -73,26 +95,47 @@ Every module increment follows this order:
  9  Real UI checkpoints                     ← desktop/tablet/phone for applicable daily paths
 10  Module regression                       ← lint · typecheck · test:boundaries · test
 11  End-to-end module scenario in the real UI
-12  Update the status ledger and report for owner acceptance
+12  Update the status ledger and FUNCTION_MAP.md, then report for owner acceptance
 ```
 
 | # | Rule |
 |---|---|
 | S1 | **Never** build all backend, then all database, then all frontend. Each internal path is connected domain → application → database → API → UI before the next path begins. |
-| S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, focused tests pass, full regression passes once at the module gate, and the owner confirms the pre-written numbers/workflow. |
+| S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, the existing `pnpm test` suite passes once on the finished module, and the owner confirms the numbers/workflow by manual testing. |
 | S3 | If a module has no user-visible outcome, say so before starting — it is either Phase 0 foundation work or it is mis-scoped. |
 | S4 | Do not start a second module while the current module is incomplete. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
 | S4b | At module completion, update the status ledger (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Set `CODE COMPLETE`; **only the owner sets `DONE`** after manual acceptance. The owner may record the accepted code commit in a small follow-up ledger commit; a commit is not required to contain its own hash. |
 | S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific current module path that is blocked without it. "We will need it later" is not that. |
 | S6 | Write migrations for **this module only**. Do not create tables for a later module. |
 | S7 | Every module UI must be real and reachable, reuse the shared shell/tokens/components, and include loading, empty, error and permission-denied behaviour. A stub or disconnected mock is not delivery. |
-| S8 | Full regression is run once when the complete module is ready for acceptance. During implementation run only the smallest relevant checks after each internal path. A failing focused check blocks further work just as a failing full suite would. |
+| S8 | **Build the whole module first, then run the existing full `pnpm test` suite once** (R-E1). Do not run it after every edit; a focused existing suite may be run while building when it saves a round trip, but no new tests are written to enable it (R-E2). |
 | S9 | **Existing-path rule:** when the current code already supports part of the required workflow, start from that path and migrate it forward. Do not rebuild the same capability in a second route/module merely because the old screen layout differs from v4.2. |
 | S10 | **Many entry points, one module interface:** Customer/Supplier/Vendor hubs, Counter, Daybook, source documents and search/history may launch the same action, but all callers cross the same owning module interface. The UI origin may be passed only as navigation/audit context; it must not change business rules. |
 | S11 | **Context restoration is part of completion.** A contextual action launched from a hub/Daybook/reconciliation must save/cancel and return to the originating record, selected date basis/tab/filter/search and practical scroll/page position as required by UI-64. |
 | S12 | **Current-module stabilization gate:** if the current codebase already contains the module being worked on, first make that module conform to v4.2 end to end. Consolidate duplicate business functions, repair architecture violations, migrate its UI, and pass focused + real-UI checks. Only then begin the next business module. |
 
 If a proposed module cannot be completed and accepted within roughly 3–5 working days, split it into two cohesive module increments before writing code. Do not return to one-screen micro-slices.
+
+---
+
+## R-T — Context economy and the function map
+
+**Owner decision, 2026-08-22.** An agent that re-reads the codebase to answer a question it answered last week spends the owner's budget re-learning what it already knew, and an agent that cannot find an existing function writes a second one. `FUNCTION_MAP.md` at the repository root exists so neither happens. It is a **reuse index, not a second architecture document**: what exists, where it lives, and when to call it.
+
+These rules reduce reading and re-running. **They never reduce correctness, security, tenant isolation, accounting/inventory integrity or maintainability** — a cheaper wrong answer is not cheaper (Principle Priority 1–5 still outrank everything here, and T7 says so explicitly).
+
+| # | Rule |
+|---|---|
+| T1 | **Read `FUNCTION_MAP.md` before searching the codebase.** It is the first lookup for every task, ahead of `grep`, directory listings and file reads. Search the source only for what the map does not answer, and then only in the area it points at. |
+| T2 | **The map is the reuse map's starting point (A13).** An action already listed there is `REUSE` or `EXTEND` by default; deciding `MISSING` for something the map lists requires opening that file and saying why it does not fit. |
+| T3 | **Do not run the full test suite after every change.** Finish the module, then run it once (R-E1). |
+| T4 | **Do not write new tests to fill the gap.** The testing policy is R-E: the existing suite plus the owner's manual checklist. |
+| T5 | **The four gates run once, when the module is complete** (`lint`, `typecheck`, `test:boundaries`, `test`), with real output pasted. A module reported as complete without them is not complete (F2). |
+| T6 | **Update `FUNCTION_MAP.md` at the end of every coding session**, in the same commit as the work. Record new and modified reusable functions, services, use cases, API endpoints, repository/database methods, shared UI components and the important business rules, each with its file path and one line on when to reuse it. Delete entries whose code is gone. A session that wrote no reusable code says so and changes nothing. |
+| T7 | **Token economy never buys a shortcut through quality.** Not reading a file is fine; not reading the file you are about to change is not. Skipping a test run is fine; skipping the test is not. Never skip the SRS sections A7 requires, the security/tenant checks, or the real-UI verification because they are expensive. |
+| T8 | **Do not restate architecture that is already written down.** Point at the section or the map entry instead of copying it into a report, a comment or a new document. Duplicated documentation drifts exactly like duplicated code. |
+
+`FUNCTION_MAP.md` is the **fourth** permitted markdown file, alongside `SRS_AND_BUILD_GUIDE.md`, `AI_CODING_INSTRUCTIONS.md` and `AGENTS.md`. The ban on new `.md` files is otherwise unchanged: still no task logs, decision logs, module docs, planning docs or scratch notes. It records **where code is and how to call it**; requirements stay in the SRS, rules stay here, and the delivery record stays in §6.1.1. If the map and the code disagree, **the code is right and the map is stale** — fix the map in that session.
 
 ---
 
@@ -362,6 +405,19 @@ The repository may contain working screens built before the final workflow decis
 - **Tooltip-first where visible Bangla harms density:** icon actions, compact table headers/rows and narrow toolbars use the shared PrimeVue tooltip/help pattern for Bangla/secondary guidance. Tooltip behavior must remain accessible to keyboard and touch where the information matters.
 - **Party ledger overview columns:** Name · Phone · Address · Current role balance · `⋯`. Put View Ledger/Edit/Delete-or-Deactivate/other permitted row actions in the menu. Do not reintroduce detail/configuration columns without an explicit SRS change.
 
+### Choosing the UI surface — binding
+
+| Surface | Use it for |
+|---|---|
+| **Full page** | Major or complex workflows. |
+| **Drawer / side panel** | Contextual work that must preserve the current page. |
+| **Small modal** | Short actions and confirmations only. |
+
+- **Do not nest modals** and do not add unnecessary temporary layers.
+- On mobile a drawer may become near-full-screen; it must stay keyboard-friendly.
+- Every surface preserves the current form, filter, tab, search and other useful page state.
+- Whatever the surface, it calls the existing authoritative business logic, API, service or function. A new UI entry point never justifies duplicated logic.
+
 ### UI reuse decision
 
 For every changed screen, explicitly classify each current element:
@@ -387,25 +443,21 @@ Before `CODE COMPLETE`, verify the real UI at the applicable desktop/tablet/phon
 
 ## R-E — Tests
 
+**Finish the complete module first, then verify.** New automated tests are not written by default; this section is the single project testing policy and replaces every earlier "tests ship with the module" instruction.
+
 | # | Rule |
 |---|---|
-| E1 | Tests ship with the module. During implementation run focused tests for the changed rule/path; run the complete suite once at the module gate. |
-| E2 | Never skip, disable, weaken, or delete an existing test. No `.skip`, no `.only`, no commented assertions. |
-| E3 | A module touching money or stock must run the applicable golden invariants at its module gate. While implementing, run the directly affected invariant tests only. |
-| E4 | Domain tests are pure and fast — no database, no HTTP. |
-| E5 | Cross-tenant tests are required once per new repository/query pattern and for every endpoint that bypasses that shared pattern. Do not repeat the identical isolation assertion for endpoints that use the already-proven path. Denial of a specific inaccessible record remains **404**, not 403. |
-| E6 | Every Class T creation has an idempotency test: same `operation_id` twice ⇒ one record. Class M creation needs one only when retry could duplicate data. Class S credential/token operations use their security replay/rotation tests instead. |
-| E7 | Assert **exact expected numbers** from the task block — never "greater than zero", never snapshot output. |
-| E8 | Test the permission matrix once per module: one allowed role, every materially different denied role group, step-up rejection for sensitive actions, and cost visibility against the serialized response body. Do not repeat identical role assertions on every endpoint when one shared application permission path is already proven. |
-| E9 | A module touching the journal asserts INV-01 and INV-09; stock asserts INV-02..INV-05; cash asserts INV-07 a/b/c; reports assert INV-10 against the equivalent journal/movement query. |
-| E10 | The completed Cash module runs the §5.16.6 worked example with the exact numbers, including all three Day-2 outcomes and proof that Day 1's shortage is unchanged. It is not rerun after unrelated internal cash-screen edits. |
-| E11 | UI tests are one smoke test per module workflow plus tests for any new shared state component. Reusing an already-tested loading/error/empty shell does not require repeating the same component test on every page. |
-| E12 | Do not test framework behaviour, trivial getters, DTO field copies or visual token values in multiple places. Test business rules, security boundaries, transaction rollback, serialization secrecy, and the user's critical workflow. |
-| E13 | When a new UI entry point reuses an existing mutation, add/adjust tests to prove both entry points reach the **same owning use case/result**, not duplicate posting logic. Do not copy the owning module's full business test suite into each caller. |
-| E14 | UI migration tests verify context preservation and action routing where those are new risks: preselected known party/source, return to origin state, correct source action, and absence of duplicate/unauthorized actions. |
-| E15 | For a repeated business action, test the owning module once for business correctness and add caller-routing tests proving every UI entry point reaches that same module/interface. Example: Customer Ledger and Sales Invoice History invoice edit both reach the same invoice edit/correction use case; do not duplicate accounting assertions in every caller. |
+| E1 | **The only mandatory automated check is the existing full `pnpm test` suite**, run once after the module is complete, together with the other gate commands (`pnpm lint`, `pnpm typecheck`, `pnpm test:boundaries`). |
+| E2 | **Do not create new test code by default.** No new domain, API, UI, E2E, mock, fixture or diagnostic tests unless the owner explicitly requests them. |
+| E3 | Never skip, disable, weaken or delete an existing test. No `.skip`, no `.only`, no commented assertions, and never change an expected number to match the output. |
+| E4 | If `pnpm test` fails because of unrelated pre-existing failures, **report them briefly and stop there**. Do not investigate or modify unrelated modules without the owner's explicit approval. |
+| E5 | After the suite, give the owner a **concise manual checklist** for testing the real UI, the calculations, the data flow and the business workflow. |
+| E6 | Additional permanent tests for critical logic — financial calculations, balances, FIFO/stock, payments, refunds, accounting, unit conversion, settlements and other data-critical rules — are **optional and need the owner's permission first**. Do not write or run them until the owner has manually tested the module and explicitly approved further testing. |
+| E7 | When the owner reports a problem, fix only the affected area and say exactly what they should manually retest. |
+| E8 | **Do not start the next module until the owner confirms the current one.** |
+| E9 | If the owner does approve extra tests, they assert **exact expected numbers** from the module specification — never "greater than zero", never snapshot output — and domain tests stay pure and fast: no database, no HTTP. |
 
-E8's cost-visibility check is what catches the leak where Vue hides a cost column while the API still sends it. Reducing repetition never means reducing accounting, inventory, security or tenant-isolation coverage.
+Manual owner acceptance in the real UI is this project's primary correctness gate. Writing fewer automated tests never means less care about money, stock, permissions or tenant isolation — it means the owner verifies them, and the agent does not spend the budget on tests nobody asked for.
 
 ---
 
@@ -422,7 +474,9 @@ When finished, report in exactly this format. Do not narrate outside it.
 ## Files intentionally NOT touched
 ## Database (PostgreSQL migration)
 ## UI (route, screen, what the owner should click)
-## Tests (paste the real runner output)
+## Tests (the existing `pnpm test` suite — paste the real runner output; note any unrelated pre-existing failures)
+## Manual checklist for the owner (real UI, calculations, data flow, business workflow)
+## FUNCTION_MAP.md updated (what was added, changed or removed)
 ## Not implemented
 ## Risks I noticed
 ```
@@ -435,6 +489,7 @@ When finished, report in exactly this format. Do not narrate outside it.
 | F4 | Report risks you noticed even if outside the current module. |
 | F5 | The UI section must tell the owner exactly what to click to accept the module workflow, including contextual entry and return path. A module they cannot find or complete is not accepted. |
 | F6 | Report the authoritative existing functions/modules reused, any function extended once for multiple callers, and any duplicate path removed. If `Reused existing functions/modules` is `none`, explain why the reuse map found no suitable implementation. |
+| F7 | Say what `FUNCTION_MAP.md` gained, lost or changed this session, or state plainly that no reusable code was written (R-T6). |
 
 ---
 
@@ -460,7 +515,7 @@ Stopping is always correct. A half-correct accounting system is worse than an un
 
 ## Definition of Done
 
-Four gates. **A module is not done because the code runs.** Focused checks protect work in progress; these full gates run once when the complete module increment is ready for acceptance.
+Four gates. **A module is not done because the code runs.** Focused checks protect work in progress (R-T3/R-T4); these full gates run once when the complete module increment is ready for acceptance and are never skipped for cost (R-T5, R-T7).
 
 ### Browser handoff after every coding turn
 
@@ -485,11 +540,8 @@ not replace the four automated gates or owner UI acceptance.
 - [ ] `pnpm lint` passes, zero warnings
 - [ ] `pnpm typecheck` passes, zero `any` introduced
 - [ ] `pnpm test:boundaries` passes, no layering violation
-- [ ] `pnpm test` passes, **no skipped tests**
-- [ ] Golden invariants relevant to the module pass (R-E9)
-- [ ] New repository/query patterns have cross-tenant proof; exceptional endpoints have their own isolation test
-- [ ] Class T creations and duplicate-prone Class M creations have idempotency proof
-- [ ] Module permission matrix passes; cost-visibility is checked on the serialized body
+- [ ] `pnpm test` passes, **no skipped tests** — the existing suite, run once on the complete module (R-E1). No new tests were added without the owner's request (R-E2)
+- [ ] A concise manual checklist was handed to the owner for real-UI, calculation, data-flow and workflow testing (R-E5)
 - [ ] v4.2 module trace checked: required fields, conditional fields, UI actions, search/filters, edge states, print/share behaviour (where applicable), accounting/stock effects, reversal/correction and acceptance tests are all implemented
 - [ ] Migration runs clean on an empty DB **and** on a seeded DB
 - [ ] OpenAPI regenerates with no manual edits
@@ -550,8 +602,8 @@ Any disagreement between two reports is a **blocking** defect, never a rounding 
 
 - [ ] The weekly module increment passes Gates 1–4
 - [ ] Every roadmap phase included in that module meets its exit criteria in `SRS_AND_BUILD_GUIDE.md` §6.1
-- [ ] Full regression green, including previous phases
-- [ ] The baseline scenario still passes end to end
+- [ ] The existing full `pnpm test` suite is green, including previous phases
+- [ ] The baseline scenario still passes end to end in the real UI
 
 ### Never Done If
 
@@ -578,18 +630,23 @@ You are implementing ONE MODULE-SCALE VERTICAL INCREMENT of SherERP against the 
 
 MANDATORY READING before writing any code:
 - AI_CODING_INSTRUCTIONS.md          <- binding rules; violations reject the whole change
+- FUNCTION_MAP.md                    <- what already exists and how to call it; read BEFORE searching the code
 - SRS_AND_BUILD_GUIDE.md, §2.7 + only the module/dependency/task sections named in the task block
 - the existing code paths that currently implement the same business actions
 
 WHAT A MODULE INCREMENT IS
 One coherent business area containing all related user actions needed to make it usable,
 built through every layer. Connect each internal path domain -> application -> database ->
-API -> Vue before starting the next path. Run focused tests while building. When the whole
-module is ready, run full regression once and perform the pre-written scenario in the real UI.
+API -> Vue before starting the next path. Write no new tests. When the whole module is ready,
+run the existing `pnpm test` suite once and hand the owner a manual checklist for the real UI.
 If the module cannot be completed in 3-5 working days, propose two cohesive increments.
 
+BEFORE ANY CODE (R-Q): ask 10-20 concise questions about unresolved decisions only, then give the
+final module specification, what is added/changed/reused, the exact UI and workflow, and the files
+and modules affected. Then WAIT. Only the owner's `START` authorises code.
+
 NON-NEGOTIABLE RULES:
-0. REUSE FIRST. Search the current codebase for the authoritative function/use case before creating a new one. Customer/Counter/Daybook/Invoice/etc. are entry points, not permission to duplicate Receive/Pay/Return/Correct/Void logic. Invoice edit/correction is the reference example: every screen calls the same owning module/interface.
+0. REUSE FIRST. Read FUNCTION_MAP.md, then search the codebase only for what it does not answer, to find the authoritative function/use case before creating a new one. Customer/Counter/Daybook/Invoice/etc. are entry points, not permission to duplicate Receive/Pay/Return/Correct/Void logic. Invoice edit/correction is the reference example: every screen calls the same owning module/interface.
 1. Business logic goes in packages/core-domain (pure TypeScript) and packages/core-application.
    NEVER in controllers, Vue components, SQL, or database triggers.
 2. core-domain must not import @nestjs/*, Drizzle, PostgreSQL, SQLite, express, or DOM types.
@@ -601,9 +658,10 @@ NON-NEGOTIABLE RULES:
 6. State WRITE CLASS T, S, M or READ ONLY for each mutation. Class T financial/stock writes
    follow the complete ten-step path in one transaction. Class S and M follow their defined paths.
 7. Never hard-delete a posted financial or stock record.
-8. Add only risk-based tests required by R-E. Never skip, disable or weaken an existing test.
-   Assert exact expected business numbers. Run focused tests during work and full regression
-   once when the module is complete.
+8. Do NOT write new tests (R-E2). Never skip, disable or weaken an existing test. Finish the module,
+   run the existing `pnpm test` suite once, report any unrelated pre-existing failures briefly
+   without touching those modules, and give the owner a manual checklist. Extra tests for critical
+   financial/stock logic require the owner's permission first.
 9. Do not modify anything outside the ALLOWED FILES list. If you believe you must, STOP and report.
 10. Do not change any requirement or decision. If one seems wrong or contradictory, STOP and
     report it - do not improvise a fix.
@@ -626,11 +684,14 @@ BEFORE YOU CODE: write the requirement/UI trace, reuse map, and a short plan (ex
 reused, files to add/change, migration, API, UI, tests) and wait
 for approval if the task block says PLAN FIRST.
 
-WHEN DONE, report in exactly this format:
+WHEN DONE, update FUNCTION_MAP.md with the reusable functions, services, endpoints, database
+methods, shared components and business rules this session added or changed, then report in
+exactly this format:
 ## Module increment / ## Acceptance criteria and the numbers I verified / ## Assumptions /
 ## Reused existing functions/modules / ## Files changed / ## Files intentionally NOT touched / ## Database (PostgreSQL migration) /
-## UI (route, screen, what the owner should click) / ## Tests (paste the real runner output) /
-## Not implemented / ## Risks I noticed
+## UI (route, screen, what the owner should click) / ## Tests (existing `pnpm test` suite, real output) /
+## Manual checklist for the owner /
+## FUNCTION_MAP.md updated / ## Not implemented / ## Risks I noticed
 ```
 
 ### Agent-specific wrappers
@@ -638,8 +699,8 @@ WHEN DONE, report in exactly this format:
 **Claude Code** — prepend:
 
 ```
-Work autonomously but incrementally. State your plan first, then implement the full module
-through every layer. Run focused tests while building. At the module gate run
+Follow R-Q first: questions, then the specification, then WAIT for `START`. After that work
+autonomously through every layer of the module, writing no new tests. When it is complete run
 `pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste the real output.
 Do not mark the module complete if any gate fails or if its UI workflow is missing.
 If you disagree with the spec, say so instead of improvising.
@@ -693,6 +754,7 @@ Check this diff against AI_CODING_INSTRUCTIONS.md.
 - Were existing conforming functions/routes/contracts unnecessarily rewritten instead of reused?
 - Does the same repeated business action resolve to one authoritative module/interface across every caller (especially invoice edit/correction)?
 - Did the agent leave known current-module UI/refactor debt and start another module anyway?
+- Was FUNCTION_MAP.md updated for the reusable code this change added or changed, and does every entry point at a file that exists?
 - Are Bangla helpers subtle inline/tooltip guidance rather than layout-expanding duplicate labels?
 - Are party ledger overview columns limited to Name, Phone, Address, Current Balance and one `⋯` menu?
 

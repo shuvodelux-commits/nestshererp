@@ -244,7 +244,13 @@ Apply this rule to:
 
 # 6. Reuse Existing Code Before Creating New Code
 
-When working in an existing or partially built codebase, search first.
+When working in an existing or partially built codebase, **read the function map first, then search**.
+
+A project maintained this way keeps a `FUNCTION_MAP.md` at its root: an index of the reusable
+functions, services, use cases, endpoints, database methods, shared components and important
+business rules that already exist, with file paths and when to call each one (section 31). Consult
+it before grepping, listing directories or opening files. Search the source only for what the map
+does not answer.
 
 Before creating a new:
 
@@ -712,6 +718,21 @@ Do not rebuild a working page from scratch without explaining why reuse is insuf
 
 ---
 
+# 17b. Choosing the UI Surface
+
+| Surface | Use it for |
+|---|---|
+| Full page | major or complex workflows |
+| Drawer / side panel | contextual work while preserving the current page |
+| Small modal | short actions and confirmations only |
+
+- Avoid nested modals and unnecessary temporary layers.
+- On mobile, drawers may become near-full-screen and must remain keyboard-friendly.
+- Preserve the current form, filter, tab, search and other useful page state across the surface.
+- Whatever the surface, reuse the existing authoritative business logic, API, service or function. Never duplicate logic for a different UI entry point.
+
+---
+
 # 18. Visual Simplicity Rules
 
 Prefer:
@@ -839,39 +860,20 @@ The UI may use familiar language such as `Edit` or `Delete` if that is easier fo
 
 ---
 
-# 23. Testing Reuse
+# 23. Testing Policy
 
-Do not duplicate the entire business test suite for every UI caller.
+Finish the complete module first. **Do not create new test code by default.**
 
-Test the authoritative module once for business correctness.
+- The only mandatory automated check is the existing **full `pnpm test` suite**, run once after the module is complete.
+- If it fails because of unrelated pre-existing failures, report them briefly. Do not investigate or modify unrelated modules without the owner's explicit approval.
+- Then give the owner a concise **manual checklist** covering the real UI, the calculations, the data flow and the business workflow.
+- Additional permanent tests for critical logic — financial calculations, balances, FIFO/stock, payments, refunds, accounting, unit conversion, settlements and other data-critical rules — are optional and **require the owner's permission first**, and only after they have manually tested the module.
+- No UI/E2E tests, mocks, fixtures or diagnostic tests unless the owner explicitly requests them.
+- Never skip, weaken or delete an existing test.
+- When the owner reports a problem, fix only the affected area and say what they should manually retest.
+- Do not start the next module until the owner confirms the current one.
 
-Then test each caller for routing/context.
-
-Example:
-
-```text
-InvoiceEditUseCase
-```
-
-business tests cover:
-
-- validation
-- correction rules
-- accounting
-- inventory
-- audit
-- permissions
-
-Caller tests cover:
-
-```text
-Customer Ledger → same InvoiceEditUseCase
-Sales History → same InvoiceEditUseCase
-Daybook → same InvoiceEditUseCase
-Invoice Detail → same InvoiceEditUseCase
-```
-
-This proves reuse without repeating the same accounting assertions four times.
+Binding version: `AI_CODING_INSTRUCTIONS.md` R-E.
 
 ---
 
@@ -897,7 +899,9 @@ A module is not complete until:
 - [ ] phone workflow works where required
 - [ ] helper/local-language text does not damage layout
 - [ ] tooltips are accessible where used
-- [ ] focused tests pass
+- [ ] the existing full `pnpm test` suite passes, run once on the completed module
+- [ ] the owner received a manual checklist and confirmed the module
+- [ ] FUNCTION_MAP.md records the reusable code this module added or changed
 - [ ] current module has no known architecture/UI defect being deferred to “later”
 
 Only then start the next module.
@@ -990,9 +994,19 @@ Use this sentence when starting a new product:
 
 # 29. Ask Before Generating
 
-If you face any software architecture, UI, or functional confusion, always ask the user first.
+**Before building any module, run the pre-build flow and wait for `START`:**
 
-Before starting to generate code in any step, tell the user what you are about to generate, then start generating.
+```text
+Questions → owner's answers → final module specification → what will be added/changed/reused →
+exact UI/workflow the owner will receive → files/modules expected to be affected → WAIT for START
+```
+
+- Ask **10–20 concise questions, only about unresolved decisions**. Fewer for a simple module.
+- Never ask what the SRS, the project instructions, `FUNCTION_MAP.md`, existing code or a previously confirmed requirement already answers.
+- Cover only real gaps: workflow, fields, business rules, permissions, edge cases, UI, mobile behaviour, integrations.
+- Do not write code until the owner explicitly replies **`START`**.
+
+Binding version: `AI_CODING_INSTRUCTIONS.md` R-Q.
 
 ---
 
@@ -1003,7 +1017,8 @@ Use this compact instruction when giving a coding agent a task:
 ```text
 Build this as a workflow hub, not isolated CRUD pages.
 
-First inspect the current code and map every required action to an existing authoritative
+Read FUNCTION_MAP.md before searching the codebase, and update it when you finish. Inspect the
+current code the map points at and map every required action to an existing authoritative
 function/use case. Reuse or extend that owner instead of creating screen-specific business logic.
 
 Keep related work in the current context. Never ask again for a customer, supplier, invoice,
@@ -1020,4 +1035,76 @@ next module.
 Keep lists compact, put secondary actions in a row menu/More menu, preserve origin tab/filter/search/
 scroll state after contextual actions, and use subtle inline helper text or accessible tooltips
 instead of allowing guidance text to make the UI noisy.
+
+Ask the unresolved questions and wait for START before writing code. Write no new tests: finish the
+module, run the existing full `pnpm test` suite once, report any unrelated pre-existing failures
+without touching those modules, and hand over a manual checklist for the real UI, calculations,
+data flow and business workflow.
 ```
+
+---
+
+# 31. Context Economy and the Function Map
+
+An agent — or a new engineer — starts each session knowing nothing about what the codebase already
+contains. Two habits follow from that, and both are expensive without making the software better:
+re-reading the repository to rediscover existing work, and re-running everything after every edit.
+
+Bound both. **Cheaper work must never mean weaker work**: the point is to stop paying twice for
+knowledge you already have, not to skip verification.
+
+## The function map
+
+Keep one file at the repository root, `FUNCTION_MAP.md`. It answers *what already exists, where it
+lives, and when to call it* — nothing else.
+
+Record, for each entry:
+
+```text
+Name            → what it is called in code
+Location        → file path
+What it does    → one line of business meaning
+When to reuse   → the situation that should call it instead of writing new code
+Notes           → constraints a caller must respect (transaction, permission, idempotency)
+```
+
+Cover:
+
+- reusable functions and pure business/domain helpers
+- application services and use cases
+- API endpoints
+- repository and database methods
+- shared UI components, composables and formatters
+- important business rules and where they are enforced
+
+## Rules
+
+1. **Read the map before searching the codebase.** It is the first lookup for any task. Search the
+   source only for what the map does not answer, and then only in the area it points at.
+2. **The map seeds the reuse map** (section 6). An action listed there is `REUSE` or `EXTEND` by
+   default; calling it `MISSING` requires opening the file and saying why it does not fit.
+3. **Update the map at the end of every coding session**, in the same commit as the work: new
+   entries, changed signatures and behaviour, deleted entries for code that is gone. A session that
+   produced nothing reusable says so and changes nothing.
+4. **The map is an index, not a second architecture document.** Do not restate requirements, design
+   rationale or architecture that is already written elsewhere; point at it. Duplicated
+   documentation drifts exactly like duplicated code.
+5. **If the map and the code disagree, the code is right.** Fix the map in that session rather than
+   trusting a stale entry.
+
+## Test cadence
+
+- While building: no new tests, and no full-suite runs after every edit.
+- Once the module is complete: the four gates (lint, types, architecture/boundary checks, the
+  existing full test suite), with real output.
+- Then the owner's manual checklist — real UI, calculations, data flow, business workflow.
+
+See §23 for the full testing policy.
+
+## What token economy never buys
+
+- not reading a file you are about to change
+- not reading the specification section the work depends on
+- an unverified number, or an assumption left unstated
+- a second implementation of a business action because searching felt expensive
+- weaker security, auditability, correctness or maintainability, in any amount

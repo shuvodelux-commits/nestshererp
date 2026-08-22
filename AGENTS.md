@@ -2,13 +2,14 @@
 
 Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith. Canonical delivery path: online-first → sync infrastructure → PWA Offline → Mobile → optional future Tauri packaging → MCP.
 
-## Documentation — exactly three files
+## Documentation — exactly four files
 
 | File | Contains | Read it for |
 |---|---|---|
 | `SRS_AND_BUILD_GUIDE.md` | **SherERP Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)**: requirements, final decisions, architecture, UI workflow, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
 | `AI_CODING_INSTRUCTIONS.md` | Module-scale vertical workflow, coding standards, anti-overengineering rules, layering, risk-based tests, Definition of Done, prompt kernel | **HOW** to build |
 | `AGENTS.md` | This file | Orientation |
+| `FUNCTION_MAP.md` | Reuse index: existing functions, services, endpoints, database methods, shared components and business rules, with file paths and when to call them | **WHAT already exists** — read before searching the codebase |
 
 `docs/archive/` holds superseded planning documents. **Do not read them** — they contradict the current spec.
 
@@ -18,7 +19,9 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 - Before coding, verify `SRS_AND_BUILD_GUIDE.md` begins with **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. If it does not, STOP: the repo has a stale SRS.
 - For every business module, read `§5.0` (cross-module consistency), `§5.0A` (binding AI module specification contract), the complete target module subsection, the task block sections, and direct dependencies. Do not rely on remembered requirements or old module documents.
 - Do not re-read large sections you already know and that have not changed.
-- **Do not create new `.md` files.** No task logs, decision logs, module docs, planning docs, READMEs or scratch notes. If information belongs somewhere, it belongs in one of the three files above — update the relevant section.
+- **Do not create new `.md` files.** No task logs, decision logs, module docs, planning docs, READMEs or scratch notes. If information belongs somewhere, it belongs in one of the four files above — update the relevant section.
+- **Read `FUNCTION_MAP.md` before searching the codebase, and update it at the end of every coding session** (owner decision 2026-08-22; rules in `AI_CODING_INSTRUCTIONS.md` R-T). It is an index of what exists and how to call it — never requirements, never a progress log.
+- **Do not run the full test suite after every change.** Build the complete module, then run the existing `pnpm test` suite once (`AI_CODING_INSTRUCTIONS.md` R-E). Saving tokens never justifies skipping the real-UI verification or care about money, stock, permissions and tenant isolation.
 - Decisions that change: edit the section **and** add one line to the change log at the end of `SRS_AND_BUILD_GUIDE.md`.
 - Source code, tests, schema and migrations are the source of truth for implementation detail.
 
@@ -32,17 +35,28 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 - Prefer **one deep owning module with many entry points**. Customer Hub, Supplier/Vendor Hub, Counter, Daybook, Invoice, Search and Reconciliation must reuse the same Receive/Pay/Return/Correct/Void use case where the business intent is the same.
 - UI migration should keep working domain/application/API logic and reshape the Vue interaction layer around the final SRS. Do not create a parallel route or `V2` business function just because an older screen is arranged differently.
 
+## Before building any module — questions first, `START` before code
+
+No code is written for a module until the owner replies **`START`**. The flow (binding; full rules in `AI_CODING_INSTRUCTIONS.md` R-Q):
+
+```
+Questions → owner's answers → final module specification → what will be added/changed/reused →
+exact UI/workflow the owner will receive → files/modules expected to be affected → WAIT for START
+```
+
+Ask **10–20 concise questions, only about unresolved decisions** — fewer for a simple module. Never ask what the SRS, these instructions, `FUNCTION_MAP.md`, existing code or a previously confirmed requirement already answers. Cover only real gaps: workflow, fields, business rules, permissions, edge cases, UI, mobile behaviour, integrations.
+
 ## Module-scale vertical increments — how work is organised
 
 One coherent business module at a time, normally 3–5 working days. Inside it, connect each user path top to bottom before starting the next path:
 
 ```
-module acceptance criteria → reuse map + requirement/UI trace → domain/application delta →
-module migration (if needed) → repositories/API/contracts delta → final-v4.2 Vue workflow → focused tests/checkpoints →
-one full module regression → manual UI acceptance → module-gate commit
+questions → START → module acceptance criteria → reuse map + requirement/UI trace → domain/application delta →
+module migration (if needed) → repositories/API/contracts delta → final-v4.2 Vue workflow →
+one run of the existing `pnpm test` suite → manual checklist for the owner → owner UI acceptance → module-gate commit
 ```
 
-Never all backend, then all database, then all frontend. Run focused risk-based tests while building; run the full four-command regression once when the complete module is ready. **A module is not done because the backend compiles or focused tests pass** — it is done when its whole workflow works in the UI and the owner confirms the numbers. Phase 0 is the only no-UI exception.
+Never all backend, then all database, then all frontend. Finish the module, then run the four gate commands once. **A module is not done because the backend compiles or the suite passes** — it is done when its whole workflow works in the UI and the owner confirms the numbers. Phase 0 is the only no-UI exception.
 
 ## Structure
 
@@ -93,7 +107,7 @@ pnpm db:migrate
 docker start sher-pg     # PostgreSQL 16; sher_dev + sher_test
 ```
 
-At a module gate, completion requires all four checks, pasted **real** output, and owner UI acceptance. Internal paths use the smallest relevant focused tests and checkpoint commits.
+At a module gate, completion requires all four checks, pasted **real** output, and owner UI acceptance. If `pnpm test` fails only on unrelated pre-existing failures, report them briefly — do not investigate or modify unrelated modules without the owner's approval. Do not start the next module until the owner confirms the current one.
 
 ## Critical rules
 
@@ -107,7 +121,7 @@ At a module gate, completion requires all four checks, pasted **real** output, a
 8. **Cash balances are moved, never assigned.** Opening cash differing from the previous counted close needs a posted movement with a declared source or destination. A stored expected amount is immutable — the drawer difference posts to `CASH_SHORT_OVER`, it never edits the expectation.
 9. **Reports derive monetary figures from journal lines and stock movements**, never from document fields (INV-10).
 10. **Choose the simplest thing that works.** No `BaseRepository`, `GenericRepository`, `RepositoryFactory`, generic CRUD, manager classes, single-implementation interfaces, or unrequested config flags.
-11. **Risk-based tests ship with the module.** Never skip, weaken or delete an existing test. Keep exact-number, journal/stock/cash, tenant, security, idempotency, reversal and transaction tests; avoid repeating identical framework, permission and UI-state assertions.
+11. **Do not write new tests by default.** The only mandatory automated check is the existing full `pnpm test` suite, run once on the finished module, followed by a concise manual checklist for the owner. Never skip, weaken or delete an existing test. Extra tests for critical financial/stock logic require the owner's explicit permission, and only after their manual testing. Full policy: `AI_CODING_INSTRUCTIONS.md` R-E.
 12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number, workflow, permission, stock state, invoice output, serial/barcode behaviour or user-visible action — **STOP and report.**
 13. **Implementation must be traceable to the v4.2 module contract.** Before coding a business module, map its Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature dependencies → Accounting effects → Inventory effects → Correction/reversal rules → Search/filters → Edge cases → Acceptance tests. A capability is not complete merely because its database field or endpoint exists.
 14. **Do not resurrect superseded requirements.** No LIFO. No current Loyalty/Premium feature. PWA Offline precedes Mobile; optional Tauri comes only later. Confirmed business/UI behaviours merged into v4.2 are binding even when older code or archived docs differ.
@@ -118,7 +132,8 @@ At a module gate, completion requires all four checks, pasted **real** output, a
 19. **One repeated action = one authoritative module/interface.** Invoice edit/correction is the reference example: every ERP entry point reuses it.
 20. **Fix the current module before the next.** Known duplicate functions, architecture violations or v4.2 UI defects in the module under work are blocking; consolidate/refactor and verify them before moving on.
 21. **Compact bilingual UI.** English is primary; Bangla is small/muted inline where it fits and otherwise delivered through the shared accessible tooltip/help pattern. Do not let helper text distort page density.
-22. **Compact ledger overviews.** Party overview columns are Name, Phone, Address, Current Balance and `⋯`; transaction detail belongs inside the selected ledger hub.
+22. **Match the UI surface to the work.** Full page for major or complex workflows · drawer/side panel for contextual work that preserves the current page · small modal only for short actions and confirmations. No nested modals, no unnecessary temporary layers. On mobile a drawer may go near-full-screen and must stay keyboard-friendly. Every surface preserves current form, filter, tab, search and page state, and calls the existing authoritative logic rather than a copy.
+23. **Compact ledger overviews.** Party overview columns are Name, Phone, Address, Current Balance and `⋯`; transaction detail belongs inside the selected ledger hub.
 
 Priority when rules conflict: SRS → security/tenant isolation → accounting/inventory correctness → architecture → transactions → tests → API compatibility → SOLID/KISS/YAGNI/DRY → preference. Never use a coding principle to override a business requirement.
 
@@ -128,7 +143,7 @@ Implement only the module increment in the task block. Do not touch files outsid
 
 For an existing-code UI migration, the task block's ALLOWED FILES should include the **current implementation files discovered by the reuse map**, not a guessed set of new files. If the authoritative use case sits outside the allowed set and must change, stop and propose that exact scope expansion instead of duplicating it locally. A necessary consolidation/refactor of the current owning module is valid work once its exact files are approved; unrelated refactoring remains out of scope.
 
-Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Reused existing functions/modules · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (focused plus module-gate real output) · Not implemented · Risks noticed.
+Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Reused existing functions/modules · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (existing `pnpm test` suite, real output) · Manual checklist for the owner · Not implemented · Risks noticed.
 
 ## Recording a finished module
 
