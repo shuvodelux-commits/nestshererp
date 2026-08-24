@@ -1,6 +1,8 @@
-import { AppError, ErrorCode } from '@sher/core-contracts';
+import { AppError, ErrorCode, TOGGLE_ON } from '@sher/core-contracts';
 import type { MyAccessResponse } from '@sher/core-contracts';
 
+import { effectiveSettings, settingValuesOf } from '../settings/feature-dependencies';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
@@ -29,6 +31,7 @@ export class GetMyAccessService {
     private readonly accessControl: AccessControl,
     private readonly users: UserRepository,
     private readonly tenants: TenantRepository,
+    private readonly settings: SettingsRepository,
   ) {}
 
   async execute(ctx: TenantContext): Promise<MyAccessResponse> {
@@ -40,10 +43,25 @@ export class GetMyAccessService {
         throw new AppError(ErrorCode.NOT_FOUND, 'User not found');
       }
 
-      const [businessName, permissions] = await Promise.all([
+      const [businessName, permissions, stored] = await Promise.all([
         this.tenants.findName(tx, ctx),
         this.accessControl.permissionsOf(tx, ctx),
+        this.settings.listStored(tx, ctx),
       ]);
+
+      /*
+       * Which §5.21 toggles are on, so the shell can leave Vendors and Customer
+       * Groups out of the navigation while their feature is off (§5.6).
+       *
+       * Read through `effectiveSettings` rather than off the stored rows, so a
+       * setting nobody has touched reports its catalogue default instead of
+       * being absent — otherwise a feature that defaults to on would be
+       * invisible until someone opened Settings and saved it.
+       */
+      const values = effectiveSettings(settingValuesOf(stored));
+      const features = [...values.entries()]
+        .filter(([, value]) => value === TOGGLE_ON)
+        .map(([key]) => key);
 
       return {
         user: {
@@ -54,6 +72,7 @@ export class GetMyAccessService {
         },
         businessName: businessName ?? '',
         permissions: [...permissions],
+        features,
       };
     });
   }

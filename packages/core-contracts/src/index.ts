@@ -162,9 +162,11 @@ export type {
 export {
   balanceDirectionSchema,
   balanceSchema,
+  correctOpeningBalanceRequestSchema,
   customerGroupResponseSchema,
   openingBalanceRequestSchema,
   openingDirectionSchema,
+  partyOpeningResponseSchema,
   partyFieldVisibilitySchema,
   partyListResponseSchema,
   partyQuerySchema,
@@ -182,9 +184,11 @@ export {
 export type {
   BalanceDirectionValue,
   BalanceResponse,
+  CorrectOpeningBalanceRequest,
   CustomerGroupResponse,
   OpeningBalanceRequest,
   OpeningDirectionValue,
+  PartyOpeningResponse,
   PartyFieldVisibility,
   PartyListResponse,
   PartyQuery,

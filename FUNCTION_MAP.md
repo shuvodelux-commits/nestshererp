@@ -72,11 +72,11 @@ its shape for a new Class T write. `entryModeFor` from the same file classifies 
 |---|---|---|---|
 | `ManageProductsService` | `catalog/manage-products-service.ts` | Product list/get/create/update/status/delete/barcode | `create` (own transaction, idempotent) · **`createWithin(tx, ctx, input, source)`** for a caller that already owns the transaction · `validate(tx, ctx, input, selfId)` is public and reusable for a dry run |
 | `ManageCatalogService` | `catalog/manage-catalog-service.ts` | Units, brands, categories: add/rename/remove with §3.6 delete-or-archive | Tells the caller which of delete/archive happened |
-| `ManagePartiesService` | `parties/manage-parties-service.ts` | Customers/suppliers/vendors over one `parties` table | `create` · **`createWithin(tx, ctx, input, source)`** · `validate(...)`. Enforces D-02, hidden-field rules, walk-in immutability |
+| `ManagePartiesService` | `parties/manage-parties-service.ts` | Customers/suppliers/vendors over one `parties` table, **and their opening balances** | `create` · **`createWithin(tx, ctx, input, source)`** · `validate(...)`. Enforces D-02, hidden-field rules, walk-in immutability. Openings: `getOpening` · **`setOpening`** (a party created without one; refuses a second opening for the same role) · **`correctOpening`** (§2.5 reversal-and-repost, D-32 version, both business dates period-guarded). Any later screen that opens or corrects a party balance calls these — never a second posting path |
 | `ManagePartyGroupsService` | `parties/manage-party-groups-service.ts` | Customer groups (§3.6 rules) | Behind the `customer_groups_enabled` setting |
 | `ManageInventoryService` | `inventory/manage-inventory-service.ts` | Opening stock, stock adjustment, stock/lot/movement/valuation reads | `recordOpening` · **`recordOpeningWithin(tx, ctx, input)`** (accepts an optional `unitCostMinor`; `null` = product purchase price) · `adjustStock` · `valuation()` proves INV-05 |
 | `ImportDataService` | `imports/import-data-service.ts` | Guided CSV import: `preview` (writes nothing) and `commit` (whole file, one transaction) | Creates nothing itself — routes every row to the three services above. Add an import type here plus a template in `core-domain/import/templates.ts` |
-| `ManageUsersService`, `ManageRolesService`, `GetMyAccessService` | `users/` | Staff accounts, roles, permission matrix | Class S/M paths; step-up is the caller's own password |
+| `ManageUsersService`, `ManageRolesService`, `GetMyAccessService` | `users/`, `auth/get-my-access-service.ts` | Staff accounts, roles, permission matrix | Class S/M paths; step-up is the caller's own password. `GetMyAccessService` also returns **`features`** — the §5.21 toggles that are on, read through `effectiveSettings` so an untouched setting reports its default — because the shell must hide Vendors/Customer Groups without `settings.setting.view` |
 | `ManageSettingsService` | `settings/manage-settings-service.ts` | §5.21 settings; `feature-dependencies.ts` holds `effectiveSettings`/`settingValuesOf`/`isFeatureOn` | **Use `isFeatureOn` for any feature gate** rather than reading a row |
 | `LoginService`, `CompleteRegistrationService`, `RegisterWithGoogleService`, `RequestSignupOtpService`, `VerifySignupOtpService`, `RequestPasswordResetService`, `ResetPasswordService`, `ChangeCredentialsService` | `auth/` | Signup, login, OTP, password/PIN (D-07) | Class S: no period guard, no journal, never audit a secret |
 | `provisionTenant` | `auth/tenant-provisioning.ts` | Everything a new tenant is seeded with (roles, units, walk-in customer) | Anything every tenant must own from day one goes here **and** into `backfill-seed-roles.ts` |
@@ -92,7 +92,7 @@ business rules (R-B6).
 |---|---|
 | `ProductRepository` | `list`/`count` (keyset, sort allow-list) · `findById` · `findIdBySku` · `findIdByBarcode` · **`findIdsByName`** (returns *every* match — two products may share a name) · `insert`/`update` (optimistic lock returns false on stale version) · `setStatus`/`setBarcode`/`deleteUnused` · `countUsingUnit|Brand|Category` |
 | `CatalogRepository` | `listUnits`/`listBrands`/`listCategories` (use these for name→id resolution, one query per import, not per row) · `find*` · `insert*`/`rename*`/`delete*`/`archive*` · `countSubcategories` |
-| `PartyRepository` | `list`/`count` · `findById` · `findCustomerIdByPhone` · `insert`/`update`/`setStatus`/`deleteUnused` · `listGroups`/`findGroup`/`insertGroup`/`renameGroup`/`archiveGroup`/`countInGroup` |
+| `PartyRepository` | `list`/`count` (rows carry the INV-06 `balanceNetMinor` **and `hasLedgerEntries`**, both from the journal in the row's own query; `balance` is a sort key ordered by that same subquery) · `findById` · `findCustomerIdByPhone` · `insert`/`update`/`setStatus`/`deleteUnused` · **`findOpening`** (returns `PartyOpeningRow` — id, number, direction, amount, business date, version) · **`correctOpening`** (`PartyOpeningCorrection`; document takes the new figure, one four-line journal entry reverses and reposts; returns `false` on a stale version) · `listLedgerLines` · `listGroups`/`findGroup`/`insertGroup`/`renameGroup`/`archiveGroup`/`countInGroup` |
 | `InventoryRepository` | `findDefaultLocation`/`createDefaultLocation` · `insertOpening`/`findOpeningBy{Id,Product,OperationId}` · `insertAdjustment`/`findAdjustmentByOperationId` · `findStockPosition` · `listCostLayers` · `listStock`/`listMovements`/`listLots`/`listCostStates`/`listValuationLots`/`listInventoryJournalAmounts`/`listCostAdjustments`/`listAdjustments` · `productHasStockHistory` |
 | `SettingsRepository`, `AuditQueryRepository`, `NoteRepository`, `OtpRepository`, `SessionRepository`, `RegistrationRepository` (tenants/users/roles/identifiers) | as named |
 
@@ -118,7 +118,8 @@ knowing: `TenantContextGuard` + `@Ctx()` (tenant from JWT, never from the body),
 
 Current routes — auth/registration `/api/v1/auth/*`, `/api/v1/me`, `/api/v1/dashboard/summary`,
 `/api/v1/users`, `/api/v1/roles`, `/api/v1/settings*`, `/api/v1/audit-events`, `/api/v1/catalog*`,
-`/api/v1/products*`, `/api/v1/parties*`, `/api/v1/party-setup*`, `/api/v1/inventory*` (overview,
+`/api/v1/products*`, `/api/v1/parties*` (including `/parties/:id/ledger` and
+`GET|POST|PATCH /parties/:id/opening`), `/api/v1/party-setup*`, `/api/v1/inventory*` (overview,
 adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `/imports/preview`,
 `/health`. Creates take the operation id from the `Idempotency-Key` header.
 
@@ -128,13 +129,14 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 |---|---|---|
 | `request()`, `ApiError`, `loadConfig()` | `api/client.ts` | Every call. Handles the runtime `/config.json` base URL (UI-07), token renewal and the error envelope |
 | Typed API modules | `api/{auth,users,roles,settings,audit,catalog,products,parties,inventory,imports}.ts` | One module per resource; add functions here, never `fetch` from a component |
-| `useSession()` | `auth/session.ts` | Token, username, `can(permission)` — the source for hiding actions (UI-09) |
+| `useSession()` | `auth/session.ts` | Token, username, `can(permission)` — the source for hiding actions (UI-09) — and **`featureEnabled(settingKey)`** / `setFeatures`, the same hint for a §5.21 feature. Both draw the screen; neither gates anything, because every endpoint re-checks |
 | `AppShell` / `AppLayout` / `AppSidebar` / `AppSidebarNav` / `AppTopBar` / `ModuleFeatureNav` | `components/shell/` | Every page. `AppShell` owns title, breadcrumb, Bangla helper line, actions slot **and page spacing** — never add page-level margins |
 | `navigation.ts` | `components/shell/` | The single navigation source (category → subcategory → feature), permission/feature filtered. A new route is registered here and in `router.ts` |
 | `AppCard`, `StatCard`, `EmptyState`, `ErrorNotice`, `SearchField`, `SortableHeader`, `HelpTip`, `DateOnlyPicker`, `QuickAddSelect`, `ManageListDialog` | `components/` | The four states, sortable headers (UI-46), inline quick-add (D-39/UI-45), picker management (UI-51) |
 | `ProductForm`, `StockAdjustDialog`, `StockLotsDialog` | `components/` | The product dialog is one component used by the list and `/products/:id` |
+| `PartyOpeningDialog` | `components/parties/` | Set or correct a party's opening balance. It reads the posted opening back before it opens, so a correction starts on the real figure, and it carries the D-32 version through — reuse it wherever an opening balance is edited |
 | Design system | `design/{tokens,components,preset,theme,tones}.ts/css` | Colours are tokens (`--sher-ok/warn/bad/info`, tile tones); PrimeVue 4 preset. Do not write page-specific control CSS |
-| Pages | `pages/` | Dashboard · Login/Register/ForgotPassword/GoogleCallback · Users · Roles · Audit · Catalog · Products · ProductForm · Parties · PartyForm · InventoryReport · **Import** · Settings · SettingsSecurity |
+| Pages | `pages/` | Dashboard · Login/Register/ForgotPassword/GoogleCallback · Users · Roles · Audit · Catalog · Products · ProductForm · Parties · PartyForm · **PartyLedger** (the party working hub: balance header, statement, opening, contextual actions) · InventoryReport · **Import** · Settings · SettingsSecurity |
 
 ## 9. Business rules worth knowing before writing code
 
@@ -149,6 +151,12 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 - **§3.6 delete-or-archive**: master data nothing refers to is deleted, anything in use is archived
   or refused, and the caller is told which happened.
 - **A product has exactly one opening**; later corrections are stock adjustments.
+- **A party has at most one opening per role**, and correcting it never edits the journal: one
+  entry reverses the old posting and posts the new one, so the statement shows what the figure was,
+  that it was corrected, and what it became (§2.5). Corrections are numbered `OBC-<year>-<seq>`.
+- **A party with any journal line cannot be hard-deleted** — `hasLedgerEntries`, not a settled
+  balance, is the §3.6 test, and the row menu and the server answer it the same way. Any later
+  module that refers to a party *without* posting must add its own check to `assertNeverUsed`.
 - **Golden invariants** INV-01…INV-05 are asserted in `apps/api/test/support/invariants.ts` via
   `assertGoldenInvariants(pool, tenantId)` — call it in an `afterEach` of any spec that posts money
   or stock.

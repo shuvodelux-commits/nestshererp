@@ -54,6 +54,44 @@ export const openingBalanceRequestSchema = z
 
 export type OpeningBalanceRequest = z.infer<typeof openingBalanceRequestSchema>;
 
+/**
+ * Correcting an opening already posted (§2.5).
+ *
+ * The same fields, plus D-32's optimistic lock. A correction never edits the
+ * journal — the posted lines stay exactly where they are and a second entry
+ * reverses them and posts the new figure, so the statement shows what the
+ * opening was, that it was corrected, and what it became. `version` is the
+ * document's, so two people correcting the same opening at once means the
+ * second is told rather than silently winning.
+ */
+export const correctOpeningBalanceRequestSchema = openingBalanceRequestSchema
+  .extend({ version: z.number().int().positive() })
+  .strict();
+
+export type CorrectOpeningBalanceRequest = z.infer<typeof correctOpeningBalanceRequestSchema>;
+
+/**
+ * An opening balance as the hub reads it back, so the correction dialog opens
+ * on the figure that is actually posted rather than an empty form.
+ *
+ * `null` from the endpoint means this party has no opening for that role —
+ * which is the common onboarding miss, and the reason the hub offers to set
+ * one at all.
+ */
+export const partyOpeningResponseSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    role: partyRoleSchema,
+    direction: openingDirectionSchema,
+    amountMinor: z.number().int().positive(),
+    businessDate: z.string().date(),
+    version: z.number().int(),
+  })
+  .strict();
+
+export type PartyOpeningResponse = z.infer<typeof partyOpeningResponseSchema>;
+
 export const balanceDirectionSchema = z.union([
   z.literal('RECEIVABLE'),
   z.literal('PAYABLE'),
@@ -117,6 +155,17 @@ export const partyResponseSchema = z
      * disagree. See `balanceSchema` for what the three figures mean.
      */
     balance: balanceSchema,
+    /**
+     * Whether anything has ever posted against this party (§3.6).
+     *
+     * The row carries it because the `⋯` menu has to decide between `Delete`
+     * and `Deactivate` before the shopkeeper opens anything, and a settled
+     * balance is not the same question: a customer who owed 500 and paid it
+     * nets to zero but has a statement, and hard-deleting them would orphan
+     * the journal lines that statement is made of. Computed in the same query
+     * as the row, so the menu and the server agree about the same party.
+     */
+    hasLedgerEntries: z.boolean(),
   })
   .strict();
 

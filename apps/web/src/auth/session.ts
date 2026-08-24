@@ -24,6 +24,17 @@ import { ref } from 'vue';
  */
 const permissions = ref<readonly string[]>([]);
 
+/**
+ * Which §5.21 features this shop has switched on, by setting key.
+ *
+ * Held beside the permissions and for the same reason: the shell has to decide
+ * whether Vendors and Customer Groups exist at all before it can draw itself
+ * (§5.6 — the tab is *absent* while the feature is off, not disabled). In
+ * memory only, so switching a feature on in Settings takes effect on the next
+ * shell mount rather than surviving in storage after it was switched off.
+ */
+const features = ref<readonly string[]>([]);
+
 const ACCESS_KEY = 'sher.accessToken';
 const REFRESH_KEY = 'sher.refreshToken';
 const BUSINESS_KEY = 'sher.businessName';
@@ -61,6 +72,15 @@ export function useSession() {
       permissions.value = [...granted];
     },
 
+    features,
+
+    /** Whether a §5.21 feature is on. Like `can`, a hint for drawing, never a gate. */
+    featureEnabled: (feature: string): boolean => features.value.includes(feature),
+
+    setFeatures(enabled: readonly string[]): void {
+      features.value = [...enabled];
+    },
+
     /**
      * True when this browser has been signed in before and can offer PIN entry.
      * The PIN is only ever accepted alongside this device's refresh token, so a
@@ -94,6 +114,7 @@ export function useSession() {
     /** A real sign-out: nothing about this account stays on the device. */
     clear(): void {
       permissions.value = [];
+      features.value = [];
       accessToken.value = null;
       refreshToken.value = null;
       businessName.value = null;

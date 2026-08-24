@@ -11,7 +11,7 @@ const route = useRoute();
 const session = useSession();
 
 const primary = computed(() =>
-  resolveNavigation({ can: session.can })
+  resolveNavigation({ can: session.can, featureEnabled: session.featureEnabled })
     .flatMap((category) => category.subcategories.map((subcategory) => ({
       id: subcategory.id,
       label: subcategory.label,

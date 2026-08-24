@@ -25,10 +25,12 @@ export async function loadMyAccess(force = false): Promise<void> {
   try {
     const me = await fetchMyAccess(session.accessToken.value);
     session.setPermissions(me.permissions);
+    session.setFeatures(me.features);
     if (me.businessName !== '') session.setBusinessName(me.businessName);
     loaded = true;
   } catch {
     session.setPermissions([]);
+    session.setFeatures([]);
   }
 }
 

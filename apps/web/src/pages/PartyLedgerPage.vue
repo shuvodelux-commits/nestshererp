@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import type { PartyLedgerResponse, PartyRoleValue } from '@sher/core-contracts';
+import type { PartyLedgerResponse, PartyResponse, PartyRoleValue } from '@sher/core-contracts';
 import { Money } from '@sher/shared-utils';
+import Dialog from 'primevue/dialog';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
-import { fetchPartyLedger } from '../api/parties';
+import { fetchParty, fetchPartyLedger, fetchPartyOpening } from '../api/parties';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
+import DateOnlyPicker from '../components/DateOnlyPicker.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
+import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
+import PartyFormPage from './PartyFormPage.vue';
 
 /**
  * A party's ledger (§2.4, INV-06) — a Detail screen (UI-22).
@@ -105,8 +109,16 @@ function balanceText(balance: PartyLedgerResponse['openingBalance']): string {
     : `${money(balance.advanceMinor)} দিব`;
 }
 
+/**
+ * Red for outstanding, green for an advance — the same rule the list applies,
+ * keyed on the role rather than the direction, so a supplier the shop owes is
+ * as red as a customer who owes the shop.
+ */
 function balanceClass(direction: string): string {
-  return `balance-${direction.toLowerCase()}`;
+  if (direction === 'SETTLED') return 'balance-settled';
+  const outstanding =
+    role.value === 'CUSTOMER' ? direction === 'RECEIVABLE' : direction === 'PAYABLE';
+  return outstanding ? 'balance-due' : 'balance-advance';
 }
 
 /**
@@ -116,6 +128,10 @@ function balanceClass(direction: string): string {
  */
 const DOCUMENT_LABELS: Record<string, string> = {
   OPENING_BALANCE: 'Opening balance',
+  // Named for what it is rather than left as the raw posting code, which was
+  // both unreadable and wide enough to push the statement into a horizontal
+  // scroll — on paper, off the edge of the page.
+  OPENING_BALANCE_CORRECTION: 'Opening correction',
   SALE: 'Sale',
   SALE_RETURN: 'Sale return',
   PURCHASE: 'Purchase',
@@ -132,12 +148,109 @@ function goBack(): void {
   void router.push(`/parties?role=${role.value}`);
 }
 
-onMounted(() => void load());
+/* ------------------------------------------------------------- the hub bits */
+
+/** The party themselves, for the header, the actions and the edit dialog. */
+const party = ref<PartyResponse | null>(null);
+const editing = ref(false);
+const openingOpen = ref(false);
+const hasOpening = ref(false);
+
+const RIGHTS: Record<PartyRoleValue, string> = {
+  CUSTOMER: 'party.customer.edit',
+  SUPPLIER: 'party.supplier.edit',
+  VENDOR: 'party.vendor.edit',
+};
+
+const canEdit = computed(() => session.can(RIGHTS[role.value]));
+
+/** §5.6: the same figure, named for the role reading it. */
+const closingLabel = computed(() => (role.value === 'CUSTOMER' ? 'Current Due' : 'Payable'));
+const closingLabelBn = computed(() => (role.value === 'CUSTOMER' ? 'পাবো' : 'দিব'));
+
+/** The closing balance split into its word and its amount, for the totals row. */
+const closingWord = computed(() => {
+  const direction = ledger.value?.closingBalance.direction;
+  if (direction === undefined || direction === 'SETTLED') return 'Settled';
+  return direction === 'RECEIVABLE' ? 'পাবো' : 'দিব';
+});
+
+const closingAmount = computed(() => {
+  const balance = ledger.value?.closingBalance;
+  if (balance === undefined || balance.direction === 'SETTLED') return money(0);
+  return money(
+    balance.direction === 'RECEIVABLE' ? balance.outstandingMinor : balance.advanceMinor,
+  );
+});
+
+/**
+ * §5.6's primary hub actions, none of which can post yet.
+ *
+ * Shown disabled rather than absent by owner decision (2026-08-22). UI-09 and
+ * §5.6 both say an unimplemented action stays absent, so this is a recorded
+ * deviation: the tooltip carries the reason so a disabled button is at least
+ * explained rather than merely dead.
+ */
+const futureActions = computed(() => {
+  if (role.value === 'SUPPLIER') {
+    return [
+      { label: 'Pay supplier', icon: 'pi-wallet', hint: 'Arrives with Purchases' },
+      { label: 'New purchase', icon: 'pi-shopping-cart', hint: 'Arrives with Purchases' },
+    ];
+  }
+  if (role.value === 'VENDOR') {
+    return [{ label: 'Pay vendor', icon: 'pi-wallet', hint: 'Arrives with Consignment' }];
+  }
+  return [
+    { label: 'Receive payment', icon: 'pi-wallet', hint: 'Arrives with Sales' },
+    { label: 'New sale', icon: 'pi-shopping-cart', hint: 'Arrives with Sales' },
+  ];
+});
+
+async function loadParty(): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null || partyId.value === '') return;
+  try {
+    party.value = await fetchParty(token, partyId.value);
+    hasOpening.value =
+      (await fetchPartyOpening(token, partyId.value, role.value)) !== null;
+  } catch (cause) {
+    failure.value = describe(cause);
+  }
+}
+
+async function onEdited(): Promise<void> {
+  editing.value = false;
+  await Promise.all([loadParty(), load()]);
+}
+
+async function onOpeningSaved(): Promise<void> {
+  openingOpen.value = false;
+  await Promise.all([loadParty(), load()]);
+}
+
+/**
+ * §5.6's "print/share a statement".
+ *
+ * The browser's own print dialog over a print stylesheet, rather than a PDF
+ * dependency: what a shop actually does with a statement is hand it over or
+ * photograph it, and the page already holds every figure it needs.
+ */
+function printStatement(): void {
+  window.print();
+}
+
+onMounted(() => {
+  void load();
+  void loadParty();
+});
 
 // A new party id means a different ledger, not another page of this one.
 watch(partyId, () => {
   ledger.value = null;
+  party.value = null;
   void load();
+  void loadParty();
 });
 </script>
 
@@ -151,11 +264,22 @@ watch(partyId, () => {
       <template #header>
         <div class="ledger-head">
           <div>
-            <button type="button" class="linkish" @click="goBack">← Back to list</button>
+            <button type="button" class="linkish no-print" @click="goBack">← Back to list</button>
             <h1>{{ ledger?.partyName ?? 'Ledger' }}</h1>
+            <!--
+              §5.6's hub: the party's own details sit above their statement, so
+              the operator can act on this person without leaving and searching
+              for them again.
+            -->
+            <p v-if="party !== null" class="party-contact">
+              <span v-if="party.phone !== null" class="mono">{{ party.phone }}</span>
+              <span v-if="party.address !== null">{{ party.address }}</span>
+            </p>
           </div>
           <div v-if="ledger !== null" class="closing">
-            <span class="closing-label">Balance <span class="sher-bn">পাবো / দিব</span></span>
+            <span class="closing-label">
+              {{ closingLabel }} <span class="sher-bn">{{ closingLabelBn }}</span>
+            </span>
             <strong :class="balanceClass(ledger.closingBalance.direction)">
               {{ balanceText(ledger.closingBalance) }}
             </strong>
@@ -163,16 +287,72 @@ watch(partyId, () => {
         </div>
       </template>
 
+      <!--
+        §5.6's hub actions. Receive Payment / New Sale (and the supplier and
+        vendor equivalents) belong to modules that do not exist yet, so they are
+        shown disabled with a tooltip saying when they arrive — the owner's
+        decision of 2026-08-22, recorded in the change log because UI-09 and
+        §5.6 would otherwise leave them out entirely until then.
+      -->
+      <div v-if="party !== null" class="hub-actions no-print">
+        <button
+          v-for="action in futureActions"
+          :key="action.label"
+          type="button"
+          class="btn btn-primary"
+          disabled
+          :title="action.hint"
+        >
+          <i :class="`pi ${action.icon}`" aria-hidden="true" /> {{ action.label }}
+        </button>
+
+        <button
+          v-if="canEdit && !party.isSystemReserved"
+          type="button"
+          class="btn btn-ghost"
+          @click="editing = true"
+        >
+          <i class="pi pi-pencil" aria-hidden="true" /> Edit details
+        </button>
+        <button
+          v-if="canEdit && !party.isSystemReserved"
+          type="button"
+          class="btn btn-ghost"
+          @click="openingOpen = true"
+        >
+          <i class="pi pi-wallet" aria-hidden="true" />
+          {{ hasOpening ? 'Correct opening balance' : 'Set opening balance' }}
+        </button>
+        <button type="button" class="btn btn-ghost" @click="printStatement">
+          <i class="pi pi-print" aria-hidden="true" /> Print statement
+        </button>
+      </div>
+
       <ErrorNotice v-if="failure !== null" :code="failure.code" :message="failure.message" />
 
-      <div class="filters">
-        <label>
-          From
-          <input v-model="fromDate" type="date" @change="load()" />
+      <!--
+        The shared picker, not a native `<input type="date">`: the native one
+        renders as `mm/dd/yyyy` in the browser's own locale, which is the wrong
+        order for a shop reading `2026-08-22` everywhere else on the screen.
+      -->
+      <div class="filters no-print">
+        <label class="filter">
+          <span>From <span class="sher-bn">শুরুর তারিখ</span></span>
+          <DateOnlyPicker
+            v-model="fromDate"
+            input-id="ledger-from"
+            placeholder="Any time"
+            @update:model-value="load()"
+          />
         </label>
-        <label>
-          To
-          <input v-model="toDate" type="date" @change="load()" />
+        <label class="filter">
+          <span>To <span class="sher-bn">শেষ তারিখ</span></span>
+          <DateOnlyPicker
+            v-model="toDate"
+            input-id="ledger-to"
+            placeholder="Today"
+            @update:model-value="load()"
+          />
         </label>
       </div>
 
@@ -218,13 +398,22 @@ watch(partyId, () => {
                 <td class="num">{{ money(Math.abs(row.runningBalanceMinor)) }}</td>
               </tr>
             </tbody>
+            <!--
+              The closing figure is the one thing anyone carries away from a
+              statement, so it is set as a labelled amount rather than run
+              together as "৳6,000.00 পাবো" in a bold colour — which read as a
+              stray phrase rather than a total.
+            -->
             <tfoot v-if="ledger !== null">
               <tr>
-                <td colspan="3">Totals for this period</td>
+                <td colspan="3" class="totals-label">Total for this period</td>
                 <td class="num">{{ money(ledger.totalDebitMinor) }}</td>
                 <td class="num">{{ money(ledger.totalCreditMinor) }}</td>
-                <td class="num" :class="balanceClass(ledger.closingBalance.direction)">
-                  {{ balanceText(ledger.closingBalance) }}
+                <td class="num closing-cell">
+                  <span class="closing-word">{{ closingWord }}</span>
+                  <strong :class="balanceClass(ledger.closingBalance.direction)">
+                    {{ closingAmount }}
+                  </strong>
                 </td>
               </tr>
             </tfoot>
@@ -243,10 +432,90 @@ watch(partyId, () => {
         </div>
       </template>
     </AppCard>
+
+    <!--
+      §5.6: edit party master data "without leaving and re-searching the party".
+      The same form the list and the route render, embedded over the hub, so the
+      statement is still underneath when the dialog closes.
+    -->
+    <Dialog
+      v-model:visible="editing"
+      modal
+      :header="party?.name ?? 'Edit'"
+      :style="{ width: 'min(48rem, 96vw)' }"
+      :draggable="false"
+    >
+      <PartyFormPage
+        v-if="editing && party !== null"
+        embedded
+        :embedded-party-id="party.id"
+        :embedded-role="role"
+        @saved="onEdited"
+        @close="editing = false"
+      />
+    </Dialog>
+
+    <PartyOpeningDialog
+      v-if="openingOpen && party !== null"
+      :party="party"
+      :role="role"
+      @saved="onOpeningSaved"
+      @close="openingOpen = false"
+    />
   </AppShell>
 </template>
 
 <style scoped>
+.party-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sher-space-3);
+  margin: 4px 0 0;
+  font-size: var(--sher-text-sm);
+  color: var(--sher-text-muted);
+}
+
+.hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sher-space-2);
+  margin-bottom: var(--sher-space-4);
+}
+
+/*
+ * §5.6's "print/share a statement", as the browser's own print.
+ *
+ * Everything that is a control disappears: a printed statement is handed to
+ * someone or filed, and a paper button is noise. What survives is the party,
+ * the period, the rows and the closing balance — which is what a statement is.
+ */
+@media print {
+  .no-print,
+  .hub-actions,
+  .filters,
+  .paging {
+    display: none !important;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  /* A statement runs over pages; a header that appears once is unreadable. */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+}
+
 .ledger-head {
   display: flex;
   align-items: flex-start;
@@ -308,16 +577,42 @@ tfoot tr {
   background: var(--sher-subtle-bg, rgb(0 0 0 / 3%));
 }
 
-.balance-receivable {
-  color: var(--sher-ok-fg, #15803d);
+.balance-due {
+  color: var(--sher-bad-fg, #b91c1c);
 }
 
-.balance-payable {
-  color: var(--sher-bad-fg, #b91c1c);
+.balance-advance {
+  color: var(--sher-ok-fg, #15803d);
 }
 
 .balance-settled {
   color: var(--sher-muted-fg, #64748b);
+}
+
+.totals-label {
+  font-weight: 600;
+}
+
+/* Word above, amount below — a total, not a sentence. */
+.closing-cell {
+  white-space: nowrap;
+}
+
+.closing-word {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--sher-muted-fg, #64748b);
+}
+
+/*
+ * Document numbers are long and monospaced. Letting the column shrink and the
+ * value wrap keeps the statement inside the page instead of pushing the
+ * balance column off the right edge — on screen and on paper.
+ */
+td.mono {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
 }
 
 .paging {

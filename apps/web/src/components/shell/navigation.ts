@@ -1,3 +1,5 @@
+import { SettingKey } from '@sher/core-contracts';
+
 export interface SherNavigationFeature {
   readonly id: string;
   readonly label: string;
@@ -97,17 +99,21 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     id: 'parties', label: 'Parties', icon: 'pi-users', alwaysGroup: true, subcategories: [
       { id: 'customers.management', label: 'Customers', icon: 'pi-user', features: [
         feature('parties.customers', 'Customers', 'কাস্টমারের তালিকা', 'Manage customers', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties']),
-        { ...feature('parties.customer_groups', 'Customer Groups', 'কাস্টমারের গ্রুপ', 'Manage customer groups', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false), featureFlag: 'customer_groups_enabled' },
-        planned('parties.customer_ledger', 'Customer Ledger', 'কাস্টমারের খতিয়ান', 'Review customer transactions and balance'),
+        { ...feature('parties.customer_groups', 'Customer Groups', 'কাস্টমারের গ্রুপ', 'Manage customer groups', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false), featureFlag: SettingKey.CUSTOMER_GROUPS_ENABLED },
+        // §5.6: a party's ledger is not a destination of its own. It opens from
+        // the party and lives on that party's hub, so it is a contextual leaf
+        // like stock adjustment on Products (UI-56) — named here because the
+        // capability now ships, with no route of its own.
+        feature('parties.customer_ledger', 'Customer Ledger', 'কাস্টমারের খতিয়ান', 'Review customer transactions and balance', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false),
       ] },
       { id: 'parties.suppliers', label: 'Suppliers', icon: 'pi-truck', features: [
         feature('parties.suppliers', 'Suppliers', 'সরবরাহকারীর তালিকা', 'Manage suppliers', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties']),
-        planned('parties.supplier_ledger', 'Supplier Ledger', 'সরবরাহকারীর খতিয়ান', 'Review supplier transactions and balance'),
+        feature('parties.supplier_ledger', 'Supplier Ledger', 'সরবরাহকারীর খতিয়ান', 'Review supplier transactions and balance', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties'], false),
       ] },
       { id: 'parties.vendors', label: 'Vendors', icon: 'pi-briefcase', features: [
-        { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: 'vendors_enabled' },
+        { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
         planned('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Review vendor-owned stock and sources'),
-        planned('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable'),
+        { ...feature('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties'], false), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
       ] },
     ],
   },

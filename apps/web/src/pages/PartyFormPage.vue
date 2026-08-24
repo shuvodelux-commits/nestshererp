@@ -36,12 +36,45 @@ import QuickAddSelect from '../components/QuickAddSelect.vue';
  * been hidden is kept untouched by the server — hiding a field never erases
  * history.
  */
+/**
+ * **The same form, hosted two ways** (UI-50).
+ *
+ * §5.6 and UI-50 both say master data is added and edited in a modal over its
+ * list, so the shopkeeper keeps their place and the new row appears behind the
+ * dialog as its own confirmation. But a party still needs a URL — a bookmark, a
+ * link in a message, a deep link from search — so the route survives too.
+ *
+ * Rather than write the form twice, it takes its identity from props when a
+ * dialog embeds it and from the route when it is the page. One write path, one
+ * set of validations, one place to fix a bug (R-D, DRY).
+ */
+const props = withDefaults(
+  defineProps<{
+    /** True when hosted inside a dialog: no shell, no chrome, emits instead of navigating. */
+    embedded?: boolean;
+    /** The party being edited, or `null`/absent to add one. Embedded mode only. */
+    embeddedPartyId?: string | null;
+    /** Which list opened it, so a new party is created under the right role. */
+    embeddedRole?: PartyRoleValue;
+    /** Embedded add/edit always opens ready to type; the page defers to `?mode=`. */
+    embeddedEditing?: boolean;
+  }>(),
+  { embedded: false, embeddedPartyId: null, embeddedRole: 'CUSTOMER', embeddedEditing: true },
+);
+
+const emit = defineEmits<{
+  /** A save landed. The host closes and refreshes its list from the server. */
+  (event: 'saved', party: PartyResponse): void;
+  (event: 'close'): void;
+}>();
+
 const clock = new SystemClock();
 const session = useSession();
 const route = useRoute();
 const router = useRouter();
 
 const partyId = computed(() => {
+  if (props.embedded) return props.embeddedPartyId;
   const id = route.params['id'];
   return typeof id === 'string' && id !== 'new' ? id : null;
 });
@@ -149,7 +182,9 @@ const canSave = computed(() =>
 const canDelete = computed(
   () => !isNew.value && roles.value.some((role) => session.can(RIGHTS[role].deactivate)),
 );
-const isEditing = computed(() => isNew.value || route.query['mode'] === 'edit');
+const isEditing = computed(() =>
+  props.embedded ? props.embeddedEditing : isNew.value || route.query['mode'] === 'edit',
+);
 const fieldsDisabled = computed(() => isSystemReserved.value || !isEditing.value);
 
 /*
@@ -203,7 +238,7 @@ onMounted(async () => {
       fill(await fetchParty(session.accessToken.value ?? '', partyId.value));
     } else {
       // The tab the person came from decides what they are adding (§5.6).
-      const wanted = route.query['role'];
+      const wanted = props.embedded ? props.embeddedRole : route.query['role'];
       const asRole =
         wanted === 'SUPPLIER' || wanted === 'VENDOR' ? (wanted as PartyRoleValue) : 'CUSTOMER';
       roles.value = [asRole];
@@ -322,6 +357,13 @@ async function save(): Promise<void> {
         payload,
         operationId.value,
       );
+      if (props.embedded) {
+        // UI-50: the dialog closes and the row appears behind it, which is the
+        // confirmation. Navigating away would be the thing the modal exists to
+        // avoid.
+        emit('saved', created);
+        return;
+      }
       // UI-36: land on the saved record, showing what the server actually stored.
       await router.push(`/parties/${created.id}`);
     } else {
@@ -334,6 +376,10 @@ async function save(): Promise<void> {
         version: version.value,
       });
       fill(saved);
+      if (props.embedded) {
+        emit('saved', saved);
+        return;
+      }
       notice.value = 'Changes saved.';
     }
   } catch (cause) {
@@ -351,6 +397,10 @@ async function remove(): Promise<void> {
   formError.value = null;
   try {
     await deleteParty(session.accessToken.value ?? '', partyId.value);
+    if (props.embedded) {
+      emit('close');
+      return;
+    }
     await router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
   } catch (cause) {
     formError.value = describe(cause);
@@ -361,6 +411,10 @@ async function remove(): Promise<void> {
 }
 
 function backToList(): void {
+  if (props.embedded) {
+    emit('close');
+    return;
+  }
   void router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
 }
 
@@ -370,12 +424,19 @@ function editProfile(): void {
 </script>
 
 <template>
-  <AppShell
+  <!--
+    Embedded (UI-50): the dialog already carries the title and the surrounding
+    list is still on screen, so a second shell, breadcrumb and page heading
+    inside it would be chrome about chrome.
+  -->
+  <component
+    :is="embedded ? 'div' : AppShell"
+    :class="embedded ? 'party-form-embedded' : undefined"
     :title="isNew ? 'Add a record' : name"
     :breadcrumb="['Dashboard', roles[0] === 'SUPPLIER' ? 'Suppliers' : roles[0] === 'VENDOR' ? 'Vendors' : 'Customers', isNew ? 'New' : name]"
     help-bn="নাম আর ফোন নম্বর দিলেই ক্রেতা যোগ হয়ে যাবে"
   >
-    <template v-if="!isNew && !isEditing && canSave && !isSystemReserved" #actions>
+    <template v-if="!embedded && !isNew && !isEditing && canSave && !isSystemReserved" #actions>
       <button type="button" class="btn btn-primary" @click="editProfile">
         <i class="pi pi-pencil" aria-hidden="true" /> Edit details
       </button>
@@ -578,9 +639,14 @@ function editProfile(): void {
             <!--
               §5.0's opening balance. Only on create: this posts a journal entry,
               and a posted entry is corrected by reversing and reposting it
-              (§2.5), never by retyping it on an edit form.
+              (§2.5), never by retyping it on an edit form. Correcting one
+              afterwards is `PartyOpeningDialog`, from the row menu or the hub.
+
+              `isNew`, not `!isEditing`: `isEditing` is true while adding, so the
+              earlier guard hid this field on the one screen it exists for, and
+              showed it — disabled and useless — when viewing a saved party.
             -->
-            <template v-if="!isEditing">
+            <template v-if="isNew">
               <div class="field">
                 <label for="party-opening">
                   Opening balance
@@ -694,7 +760,7 @@ function editProfile(): void {
         </div>
       </div>
     </div>
-  </AppShell>
+  </component>
 </template>
 
 <style scoped>

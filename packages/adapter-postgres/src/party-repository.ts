@@ -7,6 +7,8 @@ import type {
   PartyFilter,
   PartyLedgerFilter,
   PartyLedgerLineRow,
+  PartyOpeningCorrection,
+  PartyOpeningRow,
   PartyRepository,
   PartyRow,
   TenantContext,
@@ -45,6 +47,69 @@ import { txOf } from './unit-of-work';
 const ROLE_ORDER: readonly PartyRole[] = ['CUSTOMER', 'SUPPLIER', 'VENDOR'];
 
 /**
+ * The accounts a party's balance is made of, as a SQL list.
+ *
+ * Built from the domain's `PARTY_BALANCE_ACCOUNTS` rather than written out
+ * here, so adding an account to the closed chart in `account.ts` cannot leave
+ * this query summing an outdated set — which would show a balance that quietly
+ * disagreed with the ledger.
+ *
+ * All of them are fixed accounts with no `:` segment, so plain equality is
+ * enough; a parameterised account never belongs to a party.
+ */
+const BALANCE_ACCOUNTS = sql.join(
+  PARTY_BALANCE_ACCOUNTS.map((account) => sql`${account}`),
+  sql`, `,
+);
+
+/**
+ * INV-06 as a scalar subquery: a party's balance *is* the sum of their journal
+ * lines, so the list computes it rather than reading a cached column.
+ *
+ * Correlated per row, which sounds expensive and is not: migration 0015's
+ * partial index on `(tenant_id, party_id, …)` makes each one an index-only
+ * range scan, and a page is at most 200 rows.
+ *
+ * Parameterised by the table it reads, because the same expression has to be
+ * computed twice: once against the row being ordered, and once against the
+ * cursor's `anchor` row, which selects from `parties` alone.
+ *
+ * `COALESCE` to zero matters — a party who has never traded has no lines at
+ * all, and a NULL here would render as an empty balance cell rather than the
+ * "settled" the shopkeeper needs to see. It is also what keeps a never-traded
+ * party from vanishing after the first page when the list is sorted by balance.
+ */
+function balanceNetMinorOf(tenantId: SQL, partyId: SQL): SQL<number> {
+  return sql<number>`COALESCE((
+  SELECT SUM(jl.amount_minor)
+  FROM journal_lines jl
+  WHERE jl.tenant_id = ${tenantId}
+    AND jl.party_id = ${partyId}
+    AND jl.account_code IN (${BALANCE_ACCOUNTS})
+), 0)::bigint`;
+}
+
+const BALANCE_NET_MINOR = balanceNetMinorOf(sql`${parties.tenantId}`, sql`${parties.id}`);
+
+/**
+ * Whether anything has ever posted against this party (§3.6's "never used").
+ *
+ * `EXISTS` rather than a count or a sum: the delete guard and the row's `⋯`
+ * menu only need to know *whether*, and migration 0015's partial index answers
+ * it from the first matching row rather than reading them all.
+ *
+ * Deliberately every account, not just the six a balance is made of. A party
+ * named on any posted line has history worth keeping, and a delete would orphan
+ * that line just the same.
+ */
+const HAS_LEDGER_ENTRIES = sql<boolean>`EXISTS (
+  SELECT 1
+  FROM journal_lines jl
+  WHERE jl.tenant_id = ${parties.tenantId}
+    AND jl.party_id = ${parties.id}
+)`;
+
+/**
  * What each tappable header on the Customers / Suppliers / Vendors list orders
  * by (UI-46). This map is the allow-list at the database boundary: `PartySort` is
  * a closed enum, so no column name is ever built from a request.
@@ -69,43 +134,21 @@ const PARTY_SORTS: Record<PartySort, SortableColumn> = {
   // one option that is always wrong.
   creditLimit: ownColumn(sql`${parties.creditLimitMinor}`, sql`anchor.credit_limit_minor`, sql`-1`),
   status: ownColumn(sql`${parties.status}`, sql`anchor.status`),
+  /**
+   * "Current Due (High to Low)" — the INV-06 rollup, ordered by the very
+   * expression the row displays, so the sort and the figure cannot disagree.
+   *
+   * Both sides are spelled out because the anchor row is `anchor`, not
+   * `parties`: a keyset cursor looks the previous row's sort value up itself,
+   * and computing it from the wrong table would page through a different
+   * ordering than the one on screen. It is never NULL — `COALESCE(…, 0)` is
+   * inside the expression — so no party vanishes after the first page.
+   */
+  balance: ownColumn(
+    BALANCE_NET_MINOR,
+    balanceNetMinorOf(sql`anchor.tenant_id`, sql`anchor.id`),
+  ),
 };
-
-/**
- * The accounts a party's balance is made of, as a SQL list.
- *
- * Built from the domain's `PARTY_BALANCE_ACCOUNTS` rather than written out
- * here, so adding an account to the closed chart in `account.ts` cannot leave
- * this query summing an outdated set — which would show a balance that quietly
- * disagreed with the ledger.
- *
- * All of them are fixed accounts with no `:` segment, so plain equality is
- * enough; a parameterised account never belongs to a party.
- */
-const BALANCE_ACCOUNTS = sql.join(
-  PARTY_BALANCE_ACCOUNTS.map((account) => sql`${account}`),
-  sql`, `,
-);
-
-/**
- * INV-06 as a scalar subquery: a party's balance *is* the sum of their journal
- * lines, so the list computes it rather than reading a cached column.
- *
- * Correlated per row, which sounds expensive and is not: migration 0015's
- * partial index on `(tenant_id, party_id, …)` makes each one an index-only
- * range scan, and a page is at most 200 rows.
- *
- * `COALESCE` to zero matters — a party who has never traded has no lines at
- * all, and a NULL here would render as an empty balance cell rather than the
- * "settled" the shopkeeper needs to see.
- */
-const BALANCE_NET_MINOR = sql<number>`COALESCE((
-  SELECT SUM(jl.amount_minor)
-  FROM journal_lines jl
-  WHERE jl.tenant_id = ${parties.tenantId}
-    AND jl.party_id = ${parties.id}
-    AND jl.account_code IN (${BALANCE_ACCOUNTS})
-), 0)::bigint`;
 
 const PARTY_COLUMNS = {
   id: parties.id,
@@ -123,6 +166,7 @@ const PARTY_COLUMNS = {
   isSystemReserved: parties.isSystemReserved,
   version: parties.version,
   balanceNetMinor: BALANCE_NET_MINOR,
+  hasLedgerEntries: HAS_LEDGER_ENTRIES,
 };
 
 interface RawParty {
@@ -141,6 +185,7 @@ interface RawParty {
   readonly isSystemReserved: boolean;
   readonly version: number;
   readonly balanceNetMinor: number;
+  readonly hasLedgerEntries: boolean;
 }
 
 export class PostgresPartyRepository implements PartyRepository {
@@ -458,9 +503,17 @@ export class PostgresPartyRepository implements PartyRepository {
     ctx: TenantContext,
     partyId: string,
     role: PartyRole,
-  ): Promise<{ readonly id: string; readonly amountMinor: number } | null> {
+  ): Promise<PartyOpeningRow | null> {
     const rows = await txOf(tx)
-      .select({ id: partyOpenings.id, amountMinor: partyOpenings.amountMinor })
+      .select({
+        id: partyOpenings.id,
+        number: partyOpenings.openingNumber,
+        role: partyOpenings.role,
+        direction: partyOpenings.direction,
+        amountMinor: partyOpenings.amountMinor,
+        businessDate: partyOpenings.businessDate,
+        version: partyOpenings.version,
+      })
       .from(partyOpenings)
       .where(
         and(
@@ -473,7 +526,93 @@ export class PostgresPartyRepository implements PartyRepository {
       .limit(1);
 
     const row = rows[0];
-    return row === undefined ? null : { id: row.id.trim(), amountMinor: row.amountMinor };
+    if (row === undefined) return null;
+    return {
+      id: row.id.trim(),
+      number: row.number,
+      role: row.role as PartyRole,
+      direction: row.direction as 'RECEIVABLE' | 'PAYABLE',
+      amountMinor: row.amountMinor,
+      businessDate: row.businessDate,
+      version: row.version,
+    };
+  }
+
+  /**
+   * A §2.5 correction: the document takes the new figure, one journal entry
+   * carries the reversal and the repost, and the original posting is left
+   * untouched.
+   *
+   * The `WHERE … AND version = ?` is D-32's lock in the statement itself, so
+   * the loser of a simultaneous correction changes nothing and is told, rather
+   * than reading a version, being overtaken, and writing anyway. Returning
+   * early on a miss also matters: the journal must not gain a correction for a
+   * document that was not the one being corrected.
+   */
+  async correctOpening(
+    tx: Tx,
+    ctx: TenantContext,
+    correction: PartyOpeningCorrection,
+  ): Promise<boolean> {
+    const now = this.clock.now();
+
+    const updated = await txOf(tx)
+      .update(partyOpenings)
+      .set({
+        direction: correction.direction,
+        amountMinor: correction.amountMinor,
+        businessDate: correction.businessDate,
+        entryMode: correction.entryMode,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${partyOpenings.version} + 1`,
+      })
+      .where(
+        and(
+          eq(partyOpenings.tenantId, ctx.tenantId),
+          isNull(partyOpenings.deletedAt),
+          eq(partyOpenings.id, correction.openingId),
+          eq(partyOpenings.version, correction.expectedVersion),
+        ),
+      )
+      .returning({ id: partyOpenings.id });
+
+    if (updated.length === 0) return false;
+
+    const owner = { tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId };
+
+    /*
+     * Its own source type and id, because `journal_entries_source_unique` is on
+     * (tenant, source type, source id) and the opening's own entry already
+     * holds `OPENING_BALANCE` for this document. A correction is a second
+     * document event over the same opening, and the statement shows it as one.
+     */
+    await txOf(tx)
+      .insert(journalEntries)
+      .values({
+        id: correction.journalEntryId,
+        ...owner,
+        businessDate: correction.businessDate,
+        sourceDocumentType: 'OPENING_BALANCE_CORRECTION',
+        sourceDocumentId: correction.correctionId,
+        sourceNumber: correction.correctionNumber,
+        entryMode: correction.entryMode,
+      });
+
+    await txOf(tx)
+      .insert(journalLines)
+      .values(
+        correction.journalLines.map((line) => ({
+          id: line.id,
+          ...owner,
+          journalEntryId: correction.journalEntryId,
+          accountCode: line.account,
+          amountMinor: line.amountMinor,
+          partyId: line.partyId,
+        })),
+      );
+
+    return true;
   }
 
   async listLedgerLines(

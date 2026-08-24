@@ -1,9 +1,13 @@
 import type {
+  CorrectOpeningBalanceRequest,
+  OpeningBalanceRequest,
   PartyLedgerQuery,
   PartyLedgerResponse,
   PartyListResponse,
+  PartyOpeningResponse,
   PartyQuery,
   PartyResponse,
+  PartyRoleValue,
   PartySetupResponse,
   RemoveCatalogEntryResponse,
   SavePartyRequest,
@@ -69,6 +73,52 @@ export function fetchPartyLedger(
 
 export function fetchParty(token: string, id: string): Promise<PartyResponse> {
   return request(`/api/v1/parties/${id}`, { token });
+}
+
+/* ------------------------------------------------------- opening balances */
+
+/** The opening posted for a role, or `null` when the party has none (§5.6). */
+export function fetchPartyOpening(
+  token: string,
+  id: string,
+  role: PartyRoleValue,
+): Promise<PartyOpeningResponse | null> {
+  return request(`/api/v1/parties/${id}/opening?role=${role}`, { token });
+}
+
+/**
+ * Sets an opening balance on a party created without one.
+ *
+ * Idempotent like a party create, and for a stronger reason: this posts a
+ * journal entry, so a retry that slipped through would open the balance twice.
+ */
+export function setPartyOpening(
+  token: string,
+  id: string,
+  payload: OpeningBalanceRequest,
+  idempotencyKey: string,
+): Promise<PartyOpeningResponse> {
+  return request(`/api/v1/parties/${id}/opening`, {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+/** Corrects a posted opening: reversal and repost, never an edit (§2.5). */
+export function correctPartyOpening(
+  token: string,
+  id: string,
+  payload: CorrectOpeningBalanceRequest,
+  idempotencyKey: string,
+): Promise<PartyOpeningResponse> {
+  return request(`/api/v1/parties/${id}/opening`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
 }
 
 /**

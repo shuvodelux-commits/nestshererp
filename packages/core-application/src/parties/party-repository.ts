@@ -34,6 +34,61 @@ export interface PartyRow {
    * cached balance is refused.
    */
   readonly balanceNetMinor: number;
+  /**
+   * Whether any journal line has ever named this party (§3.6).
+   *
+   * The delete guard and the row's `⋯` menu both need it, and a settled
+   * balance does not answer it: a customer who owed 500 and paid it nets to
+   * zero and still has a statement. Deleting them would leave those lines
+   * pointing at a party that no longer exists, which is INV-06 broken in the
+   * one direction nothing would notice.
+   */
+  readonly hasLedgerEntries: boolean;
+}
+
+/**
+ * An opening balance document as it stands, for the correction dialog and the
+ * §2.5 correction path.
+ */
+export interface PartyOpeningRow {
+  readonly id: string;
+  readonly number: string;
+  readonly role: PartyRole;
+  readonly direction: 'RECEIVABLE' | 'PAYABLE';
+  readonly amountMinor: number;
+  readonly businessDate: string;
+  readonly version: number;
+}
+
+/**
+ * Correcting a posted opening (§2.5): the document takes the new figure, and
+ * **one** journal entry both reverses the old posting and posts the new one.
+ *
+ * A single entry rather than two, because `journal_entries_source_unique` is on
+ * (tenant, source type, source id) and a correction is one document event. Its
+ * four lines give the party two statement rows — the reversal and the repost —
+ * so a shopkeeper reading the ledger sees what the figure was, that it was
+ * corrected, and what it became. Nothing posted is ever edited or removed.
+ */
+export interface PartyOpeningCorrection {
+  readonly openingId: string;
+  /** D-32: the version the corrector was looking at. */
+  readonly expectedVersion: number;
+  readonly role: PartyRole;
+  readonly direction: 'RECEIVABLE' | 'PAYABLE';
+  readonly amountMinor: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly journalEntryId: string;
+  /** The correction document's own id and number, for the journal's source. */
+  readonly correctionId: string;
+  readonly correctionNumber: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
 }
 
 /**
@@ -197,7 +252,19 @@ export interface PartyRepository {
     ctx: TenantContext,
     partyId: string,
     role: PartyRole,
-  ): Promise<{ readonly id: string; readonly amountMinor: number } | null>;
+  ): Promise<PartyOpeningRow | null>;
+  /**
+   * Applies a §2.5 correction: the document takes the new figure and one
+   * journal entry reverses the old posting and posts the new one, atomically.
+   *
+   * Returns `false` when the version did not match, so the caller can raise
+   * D-32's conflict rather than overwrite whoever got there first.
+   */
+  correctOpening(
+    tx: Tx,
+    ctx: TenantContext,
+    correction: PartyOpeningCorrection,
+  ): Promise<boolean>;
 
   /** One page of a party's statement, in business-date then created-at then id order. */
   listLedgerLines(

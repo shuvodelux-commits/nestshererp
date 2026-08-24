@@ -16,7 +16,13 @@ import type {
   PartyStatus,
 } from '@sher/core-domain';
 import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
-import type { PartyListResponse, PartyResponse, PartySort, SortDirection } from '@sher/core-contracts';
+import type {
+  PartyListResponse,
+  PartyOpeningResponse,
+  PartyResponse,
+  PartySort,
+  SortDirection,
+} from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 
@@ -127,6 +133,27 @@ export interface SetPartyStatusCommand {
   readonly ctx: TenantContext;
   readonly partyId: string;
   readonly status: PartyStatus;
+}
+
+/** Setting an opening balance on a party that was created without one. */
+export interface SetPartyOpeningCommand {
+  readonly ctx: TenantContext;
+  readonly partyId: string;
+  readonly operationId: string;
+  readonly opening: OpeningBalanceInput;
+}
+
+/** Correcting an opening already posted (§2.5). */
+export interface CorrectPartyOpeningCommand extends SetPartyOpeningCommand {
+  /** D-32: the document version the corrector was looking at. */
+  readonly version: number;
+}
+
+/** Reading back the posted opening, so a correction dialog opens on the truth. */
+export interface GetPartyOpeningCommand {
+  readonly ctx: TenantContext;
+  readonly partyId: string;
+  readonly role: PartyRole;
 }
 
 const ENTITY_TYPE = 'party';
@@ -557,7 +584,7 @@ export class ManagePartiesService {
       // Deleting is the destructive end of deactivating, so it is gated on the
       // same code — §5.26 keeps destructive actions off the ordinary edit right.
       await this.requireAnyRole(tx, ctx, before.roles, 'deactivate');
-      await this.assertNeverUsed();
+      this.assertNeverUsed(before);
 
       await this.parties.deleteUnused(tx, ctx, command.partyId);
 
@@ -575,6 +602,235 @@ export class ManagePartiesService {
         aggregateId: command.partyId,
         payload: { name: before.name },
       });
+    });
+  }
+
+  /* ------------------------------------------------------ opening balances */
+
+  /** The opening posted for this party and role, or `null` if there is none. */
+  async getOpening(command: GetPartyOpeningCommand): Promise<PartyOpeningResponse | null> {
+    const { ctx } = command;
+
+    return this.uow.run(ctx, async (tx) => {
+      const party = await this.requireParty(tx, ctx, command.partyId);
+      await this.requireAnyRole(tx, ctx, party.roles, 'view');
+      return this.parties.findOpening(tx, ctx, command.partyId, command.role);
+    });
+  }
+
+  /**
+   * Sets an opening balance on a party created without one.
+   *
+   * §5.6 puts the figure on the create form, and a shop onboarding a hundred
+   * customers will miss it on some of them. The alternative was deleting the
+   * party and re-adding it, which stops being possible the moment anything
+   * else posts against them.
+   *
+   * Nothing new happens here: it is `postOpening` — the same document, journal
+   * entry, period guard, numbering and audit the create form goes through —
+   * reached from a second entry point. `postOpening` refuses a party that
+   * already has an opening for the role, which is what makes this *set* and
+   * not a silent second balance.
+   */
+  async setOpening(command: SetPartyOpeningCommand): Promise<PartyOpeningResponse> {
+    const { ctx } = command;
+    const fingerprint = JSON.stringify(command.opening);
+
+    return this.uow.run(ctx, async (tx) => {
+      const party = await this.requireParty(tx, ctx, command.partyId);
+      // The walk-in party is never owed anything and never owes: every fully
+      // paid guest sale points at it, and an opening on it would be a balance
+      // belonging to no one.
+      this.assertNotSystemReserved(party, 'change');
+      await this.requireAnyRole(tx, ctx, party.roles, 'edit');
+
+      const replayed = await this.idempotency.find(tx, ctx, command.operationId);
+      if (replayed !== null) {
+        if (replayed.requestFingerprint !== fingerprint) {
+          throw new AppError(
+            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            'This operation id was already used with a different opening balance',
+          );
+        }
+        return replayed.response as PartyOpeningResponse;
+      }
+
+      await this.postOpening(tx, ctx, command.partyId, party.roles, command.opening, 'API');
+
+      const saved = await this.parties.findOpening(tx, ctx, command.partyId, command.opening.role);
+      if (saved === null) throw new AppError(ErrorCode.NOT_FOUND, 'Record not found');
+
+      await this.idempotency.save(tx, ctx, {
+        operationId: command.operationId,
+        requestFingerprint: fingerprint,
+        response: saved,
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'party.opening.posted',
+        aggregateType: 'party_opening',
+        aggregateId: saved.id,
+        payload: { partyId: command.partyId, role: saved.role },
+      });
+
+      return saved;
+    });
+  }
+
+  /**
+   * Corrects an opening already posted (§2.5).
+   *
+   * **Nothing posted is edited.** The original journal lines stay exactly where
+   * they are, and one correction entry reverses them and posts the new figure,
+   * so the statement reads: opened at 3,000 · corrected −3,000 · +2,500. A
+   * shopkeeper who wonders why a balance changed can see it, which is the whole
+   * reason §2.5 forbids editing a line in place.
+   *
+   * The document itself does take the new figure and gains `CORRECTED` as its
+   * entry mode. That is deliberate: 0015 holds one opening per party per role,
+   * because a second row is not a correction but a doubled balance — so the
+   * correction lives in the journal, where history belongs, and the document
+   * keeps saying what the opening currently is.
+   */
+  async correctOpening(command: CorrectPartyOpeningCommand): Promise<PartyOpeningResponse> {
+    const { ctx } = command;
+    const { opening } = command;
+
+    return this.uow.run(ctx, async (tx) => {
+      const party = await this.requireParty(tx, ctx, command.partyId);
+      this.assertNotSystemReserved(party, 'change');
+      await this.requireAnyRole(tx, ctx, party.roles, 'edit');
+
+      const existing = await this.parties.findOpening(tx, ctx, command.partyId, opening.role);
+      if (existing === null) {
+        throw new AppError(
+          ErrorCode.NOT_FOUND,
+          'There is no opening balance for that role to correct',
+        );
+      }
+
+      const today = this.clock.businessDate(ctx.timezone);
+      if (opening.businessDate > today) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'An opening balance cannot be dated in the future',
+        );
+      }
+      if (!party.roles.includes(opening.role)) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'The opening balance is for a role this party does not have',
+        );
+      }
+
+      const rejection = rejectOpeningBalance({
+        partyId: command.partyId,
+        role: opening.role,
+        direction: opening.direction,
+        amountMinor: opening.amountMinor,
+      });
+      if (rejection !== null) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, OPENING_REJECTION_MESSAGES[rejection]);
+      }
+
+      /*
+       * Both dates are guarded, not just the new one. Moving an opening out of
+       * a closed period is as much a change to that period as posting into it,
+       * and a correction that only checked its destination could quietly empty
+       * a month that has already been reported on.
+       */
+      await this.periods.assertOpen(tx, ctx, existing.businessDate);
+      await this.periods.assertOpen(tx, ctx, opening.businessDate);
+
+      // The old posting, negated, and the new one — in one balanced entry.
+      const reversal = openingBalancePosting({
+        partyId: command.partyId,
+        role: existing.role,
+        direction: existing.direction,
+        amountMinor: existing.amountMinor,
+      });
+      const reposting = openingBalancePosting({
+        partyId: command.partyId,
+        role: opening.role,
+        direction: opening.direction,
+        amountMinor: opening.amountMinor,
+      });
+
+      const correctionId = Ulid.generate(this.clock);
+      const applied = await this.parties.correctOpening(tx, ctx, {
+        openingId: existing.id,
+        expectedVersion: command.version,
+        role: opening.role,
+        direction: opening.direction,
+        amountMinor: opening.amountMinor,
+        businessDate: opening.businessDate,
+        entryMode: 'CORRECTED',
+        journalEntryId: Ulid.generate(this.clock),
+        correctionId,
+        /*
+         * `OBC`, not the posting type's full name. The series name becomes the
+         * document number's prefix, and `OPENING_BALANCE_CORRECTION-2026-000001`
+         * was wide enough on its own to push a printed statement into a
+         * horizontal scroll. Short prefixes are the house style already — a
+         * generated product barcode is `P-2026-000001`.
+         */
+        correctionNumber: await this.numbering.allocate(
+          tx,
+          ctx,
+          'OBC',
+          Number(opening.businessDate.slice(0, 4)),
+        ),
+        journalLines: [
+          ...reversal.journal.lines.map((line) => ({
+            id: Ulid.generate(this.clock),
+            account: line.account,
+            amountMinor: -line.amountMinor,
+            partyId: line.partyId,
+          })),
+          ...reposting.journal.lines.map((line) => ({
+            id: Ulid.generate(this.clock),
+            account: line.account,
+            amountMinor: line.amountMinor,
+            partyId: line.partyId,
+          })),
+        ],
+      });
+
+      if (!applied) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this opening balance while you were editing it',
+        );
+      }
+
+      const saved = await this.parties.findOpening(tx, ctx, command.partyId, opening.role);
+      if (saved === null) throw new AppError(ErrorCode.NOT_FOUND, 'Record not found');
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'party_opening',
+        entityId: existing.id,
+        action: 'UPDATE',
+        before: {
+          role: existing.role,
+          direction: existing.direction,
+          amountMinor: String(existing.amountMinor),
+          businessDate: existing.businessDate,
+        },
+        after: {
+          role: saved.role,
+          direction: saved.direction,
+          amountMinor: String(saved.amountMinor),
+          businessDate: saved.businessDate,
+        },
+        source: 'API',
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'party.opening.corrected',
+        aggregateType: 'party_opening',
+        aggregateId: existing.id,
+        payload: { partyId: command.partyId, role: saved.role },
+      });
+
+      return saved;
     });
   }
 
@@ -786,12 +1042,28 @@ export class ManagePartiesService {
   }
 
   /**
-   * Nothing refers to a party yet. Phase 5 adds purchases, Phase 6 sales and
-   * receipts, Phase 7 expenses: each must add its count here, and each is a
-   * reason to refuse the delete and offer deactivation instead (§3.6).
+   * §3.6's "only if never used", enforced rather than assumed.
+   *
+   * This was a no-op stub written when nothing could refer to a party. Opening
+   * balances changed that: a party can now have journal lines, and deleting one
+   * left those lines pointing at a row that no longer existed — a statement
+   * made of orphans, and INV-06 false in the one direction nothing checks.
+   *
+   * A settled balance is deliberately **not** the test. A customer who owed 500
+   * and paid it nets to zero and still has a history worth keeping. The
+   * question is whether anything ever posted, not what it comes to now.
+   *
+   * Phase 5 adds purchases, Phase 6 sales and receipts, Phase 7 expenses. Each
+   * posts journal lines, so each is already covered here; anything that refers
+   * to a party *without* posting must add its own check to this method.
    */
-  private async assertNeverUsed(): Promise<void> {
-    return Promise.resolve();
+  private assertNeverUsed(party: PartyRow): void {
+    if (party.hasLedgerEntries) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'This party has posted history and cannot be deleted. Deactivate them instead.',
+      );
+    }
   }
 }
 
@@ -839,5 +1111,6 @@ function toResponse(row: PartyRow): PartyResponse {
     // turns the sign into the two words the screen shows, and the ledger header
     // calls the same function on the same number.
     balance: partyBalanceOf(row.balanceNetMinor),
+    hasLedgerEntries: row.hasLedgerEntries,
   };
 }

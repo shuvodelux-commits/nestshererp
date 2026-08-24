@@ -30,7 +30,10 @@ describe('navigation architecture', () => {
   it('hides empty subcategories and categories after permission and feature filtering', () => {
     const customerOnly = resolveNavigation({ can: (permission) => permission === 'party.customer.view' });
     expect(customerOnly.find((category) => category.id === 'parties')?.subcategories.map((item) => item.id)).toEqual(['customers.management']);
-    expect(customerOnly.find((category) => category.id === 'parties')?.subcategories[0]?.featureIds).toEqual(['parties.customers']);
+    // The customer ledger ships now, as a contextual leaf on the same hub
+    // (§5.6 — it opens from a party, so it is named here without a route of
+    // its own, exactly as stock adjustment is on Products).
+    expect(customerOnly.find((category) => category.id === 'parties')?.subcategories[0]?.featureIds).toEqual(['parties.customers', 'parties.customer_ledger']);
     expect(customerOnly.find((category) => category.id === 'administration')).toBeUndefined();
     expect(customerOnly.find((category) => category.id === 'overview')).toBeDefined();
   });
@@ -38,7 +41,10 @@ describe('navigation architecture', () => {
   it('requires both vendor permission and the vendor feature flag', () => {
     const denied = resolveNavigation({ can: () => true });
     expect(denied.find((category) => category.id === 'parties')?.subcategories.some((item) => item.id === 'parties.vendors')).toBe(false);
-    const allowed = resolveNavigation({ can: () => true, featureEnabled: (flag) => flag === 'vendors_enabled' });
+    // The real §5.21 setting key. It used to read `vendors_enabled`, which no
+    // setting has ever been called — so the tab could never appear however the
+    // shop configured itself, and this test passed against the invented name.
+    const allowed = resolveNavigation({ can: () => true, featureEnabled: (flag) => flag === 'vendor_management_enabled' });
     expect(allowed.find((category) => category.id === 'parties')?.subcategories.some((item) => item.id === 'parties.vendors')).toBe(true);
   });
 

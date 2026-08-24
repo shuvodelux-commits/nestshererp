@@ -20,13 +20,17 @@ import type {
 import type {
   PartyLedgerResponse,
   PartyListResponse,
+  PartyOpeningResponse,
   PartyResponse,
 } from '@sher/core-contracts';
 import {
   AppError,
+  correctOpeningBalanceRequestSchema,
   ErrorCode,
+  openingBalanceRequestSchema,
   partyLedgerQuerySchema,
   partyQuerySchema,
+  partyRoleSchema,
   savePartyRequestSchema,
   setPartyStatusRequestSchema,
   updatePartyRequestSchema,
@@ -102,6 +106,79 @@ export class PartiesController {
         ctx,
         operationId: idempotencyKey,
         input: { ...parsed.data },
+      }),
+    };
+  }
+
+  /**
+   * The opening balance posted for a role, or `null` when there is none.
+   *
+   * Its own call rather than a field on the party, because the list would then
+   * carry a join every page for a figure only the correction dialog reads.
+   */
+  @Get(':id/opening')
+  async opening(
+    @Param('id') id: string,
+    @Query('role') role: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: PartyOpeningResponse | null }> {
+    const parsed = partyRoleSchema.safeParse(role);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+
+    return { data: await this.parties.getOpening({ ctx, partyId: id, role: parsed.data }) };
+  }
+
+  /**
+   * Sets an opening balance on a party created without one (§5.6).
+   *
+   * Idempotent on the same header a party create uses: it posts a journal
+   * entry, and a retried request must not open the same balance twice.
+   */
+  @Post(':id/opening')
+  async setOpening(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: PartyOpeningResponse }> {
+    const parsed = openingBalanceRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    if (idempotencyKey === undefined || idempotencyKey.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Idempotency-Key header is required');
+    }
+
+    return {
+      data: await this.parties.setOpening({
+        ctx,
+        partyId: id,
+        operationId: idempotencyKey,
+        opening: { ...parsed.data },
+      }),
+    };
+  }
+
+  /** Corrects a posted opening: reversal and repost, never an edit (§2.5). */
+  @Patch(':id/opening')
+  async correctOpening(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: PartyOpeningResponse }> {
+    const parsed = correctOpeningBalanceRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    if (idempotencyKey === undefined || idempotencyKey.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Idempotency-Key header is required');
+    }
+
+    const { version, ...opening } = parsed.data;
+    return {
+      data: await this.parties.correctOpening({
+        ctx,
+        partyId: id,
+        operationId: idempotencyKey,
+        version,
+        opening,
       }),
     };
   }

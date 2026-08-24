@@ -32,7 +32,9 @@ const route = useRoute();
 const router = useRouter();
 const session = useSession();
 
-const navigation = computed(() => resolveNavigation({ can: session.can }));
+const navigation = computed(() =>
+  resolveNavigation({ can: session.can, featureEnabled: session.featureEnabled }),
+);
 
 const sections = computed(() =>
   navigation.value.map((category) => {

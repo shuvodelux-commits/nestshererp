@@ -190,16 +190,21 @@ export type {
   PartyFilter,
   PartyLedgerFilter,
   PartyLedgerLineRow,
+  PartyOpeningCorrection,
+  PartyOpeningRow,
   PartyRepository,
   PartyRow,
 } from './parties/party-repository';
 export { ManagePartiesService } from './parties/manage-parties-service';
 export type {
+  CorrectPartyOpeningCommand,
   CreatePartyCommand,
+  GetPartyOpeningCommand,
   ListPartiesCommand,
   OpeningBalanceInput,
   PartyIdCommand,
   PartyInput,
+  SetPartyOpeningCommand,
   SetPartyStatusCommand,
   UpdatePartyCommand,
 } from './parties/manage-parties-service';

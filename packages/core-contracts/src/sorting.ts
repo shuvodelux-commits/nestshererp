@@ -59,6 +59,14 @@ export const partySortSchema = z.enum([
   'groupName',
   'creditLimit',
   'status',
+  /**
+   * The INV-06 rollup, not a stored column — "who owes me most" is the first
+   * question anyone asks of a customer list, and answering it by exporting the
+   * page and sorting it by hand is how a shop loses track of its receivables.
+   * The repository orders by the same subquery the row displays, so the sort
+   * and the figure can never disagree.
+   */
+  'balance',
 ]);
 export type PartySort = z.infer<typeof partySortSchema>;
 
@@ -76,6 +84,8 @@ export function defaultDirectionFor(sort: ProductSort | PartySort): SortDirectio
     'purchasePrice',
     'minStockQty',
     'creditLimit',
+    // "Current Due (High to Low)" is the whole point of tapping it.
+    'balance',
   ];
   return numericOrRecency.includes(sort) ? 'DESC' : 'ASC';
 }

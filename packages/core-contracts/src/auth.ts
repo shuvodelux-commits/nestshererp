@@ -239,6 +239,18 @@ export const myAccessResponseSchema = z
       .strict(),
     businessName: z.string(),
     permissions: z.array(z.string()),
+    /**
+     * The §5.21 toggles that are on, by setting key.
+     *
+     * Here rather than behind `settings.setting.view`, because this is what
+     * the *shell* needs to draw itself: Vendors and Customer Groups are absent
+     * from the navigation while their feature is off (§5.6), and a cashier who
+     * may not open Settings still has to get a correct sidebar. It reveals
+     * which optional modules the shop uses and nothing else — the same fact
+     * the navigation itself reveals — and, like `permissions`, it decides
+     * nothing: every endpoint re-checks its own feature gate.
+     */
+    features: z.array(z.string()),
   })
   .strict();
 

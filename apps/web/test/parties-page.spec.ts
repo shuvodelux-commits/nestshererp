@@ -172,31 +172,31 @@ describe('PartiesPage', () => {
     expect(wrapper.find('.tabs').exists()).toBe(false);
   });
 
-  it('adds a customer in a modal through the existing party create API', async () => {
+  /**
+   * UI-50: Add opens a modal over the preserved list — and the form inside it
+   * is the real party form, not a second smaller one.
+   *
+   * This used to drive `#create-party-name`, a field belonging to a cut-down
+   * create form this page carried of its own. Two forms for one business action
+   * meant two `createParty` calls to keep in step, and the opening balance
+   * could only be entered on one of them. The dialog now embeds
+   * `PartyFormPage`, so the assertion is that its fields are what appear.
+   */
+  it('adds a customer in a modal hosting the one party form (UI-50)', async () => {
     create.mockResolvedValue({ ...KARIM, id: '01NEWCUSTOMERAAAAAAAAAAAA' });
     const wrapper = await mountLoaded();
 
     await wrapper.find('.page-actions .btn-primary').trigger('click');
     await flushPromises();
-    const name = document.querySelector<HTMLInputElement>('#create-party-name');
-    const phone = document.querySelector<HTMLInputElement>('#create-party-phone');
-    const form = document.querySelector<HTMLFormElement>('#create-party-form');
-    expect(name).not.toBeNull();
-    expect(phone).not.toBeNull();
-    expect(form).not.toBeNull();
-    name!.value = 'New Customer';
-    name!.dispatchEvent(new Event('input', { bubbles: true }));
-    phone!.value = '01812345678';
-    phone!.dispatchEvent(new Event('input', { bubbles: true }));
-    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await flushPromises();
 
-    expect(create).toHaveBeenCalledWith(
-      'test-access',
-      expect.objectContaining({ name: 'New Customer', phone: '01812345678', roles: ['CUSTOMER'] }),
-      expect.any(String),
-    );
-    expect(load).toHaveBeenCalledTimes(2);
+    // The real form's fields, which carry every §5.6 field and the opening
+    // balance — not the reduced set the removed dialog offered.
+    expect(document.querySelector('#party-name')).not.toBeNull();
+    expect(document.querySelector('#party-phone')).not.toBeNull();
+    expect(document.querySelector('#party-opening')).not.toBeNull();
+
+    // The list underneath is still mounted: a modal keeps the shopkeeper's place.
+    expect(wrapper.text()).toContain('Karim Uddin');
   });
 
   it('deactivates through a confirmation that names the consequence (UI-26)', async () => {

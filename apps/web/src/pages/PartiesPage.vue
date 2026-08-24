@@ -8,7 +8,7 @@ import type {
   SortDirection,
 } from '@sher/core-contracts';
 import { defaultDirectionFor } from '@sher/core-contracts';
-import { Money, parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
+import { Money } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
@@ -19,7 +19,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import {
   createCustomerGroup,
-  createParty,
+  deleteParty,
   EMPTY_PARTY_SETUP,
   fetchParties,
   fetchPartySetup,
@@ -34,6 +34,8 @@ import ErrorNotice from '../components/ErrorNotice.vue';
 import SearchField from '../components/SearchField.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import AppShell from '../components/shell/AppShell.vue';
+import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
+import PartyFormPage from './PartyFormPage.vue';
 
 /**
  * The Parties screen (Phase 2, §5.6, D-04) — a List screen (UI-22): role
@@ -49,7 +51,6 @@ import AppShell from '../components/shell/AppShell.vue';
 const session = useSession();
 const router = useRouter();
 const route = useRoute();
-const clock = new SystemClock();
 
 function roleFromQuery(value: unknown): PartyRoleValue | null {
   return value === 'CUSTOMER' || value === 'SUPPLIER' || value === 'VENDOR' ? value : null;
@@ -131,90 +132,52 @@ const groupOptions = computed(() => [{ id: ANY, name: 'All groups' }, ...setup.v
 const busy = ref(false);
 const notice = ref<string | null>(null);
 
-/* ----------------------------------------------- add party dialog (UI-50) */
-
-const createVisible = ref(false);
-const createName = ref('');
-const createPhone = ref('');
-const createAddress = ref('');
-const createGuardianName = ref('');
-const createNid = ref('');
-const createEmail = ref('');
-const createNotes = ref('');
-const createGroupId = ref('');
-const createCreditLimit = ref('');
-const createError = ref<{ code: string; message: string } | null>(null);
-const createOperationId = ref(Ulid.generate(clock));
-
-function openCreateDialog(): void {
-  createName.value = '';
-  createPhone.value = '';
-  createAddress.value = '';
-  createGuardianName.value = '';
-  createNid.value = '';
-  createEmail.value = '';
-  createNotes.value = '';
-  createGroupId.value = '';
-  createCreditLimit.value = '';
-  createError.value = null;
-  createOperationId.value = Ulid.generate(clock);
-  createVisible.value = true;
-}
-
-async function saveCreatedParty(): Promise<void> {
-  const isCustomer = role.value === 'CUSTOMER';
-  const limitMinor = createCreditLimit.value.trim() === '' ? null : parseMoney(createCreditLimit.value);
-  if (createName.value.trim() === '' || (isCustomer && createPhone.value.trim() === '')) {
-    createError.value = { code: 'VALIDATION_FAILED', message: isCustomer ? 'Enter the customer name and phone number' : 'Enter the name' };
-    return;
-  }
-  if (createCreditLimit.value.trim() !== '' && limitMinor === null) {
-    createError.value = { code: 'VALIDATION_FAILED', message: 'Enter the credit limit with at most two decimal places' };
-    return;
-  }
-  const blank = (value: string): string | null => value.trim() === '' ? null : value.trim();
-  busy.value = true;
-  createError.value = null;
-  try {
-    const created = await createParty(session.accessToken.value ?? '', {
-      name: createName.value.trim(),
-      roles: [role.value],
-      phone: blank(createPhone.value),
-      address: blank(createAddress.value),
-      guardianName: blank(createGuardianName.value),
-      nid: blank(createNid.value),
-      email: blank(createEmail.value),
-      notes: blank(createNotes.value),
-      customerGroupId: isCustomer && createGroupId.value !== '' ? createGroupId.value : null,
-      creditLimitMinor: isCustomer ? limitMinor : null,
-    }, createOperationId.value);
-    createVisible.value = false;
-    notice.value = `${created.name} was added.`;
-    await load();
-  } catch (cause) {
-    createError.value = describe(cause);
-  } finally {
-    busy.value = false;
-  }
-}
-
 /* --------------------------------------------------------- row action menu */
 
 const rowMenu = ref<InstanceType<typeof Menu> | null>(null);
 const actionParty = ref<PartyResponse | null>(null);
+/**
+ * §5.6's row menu: "only permitted contextual actions such as `View Ledger`,
+ * `Edit`, `Delete/Deactivate` and other source-module actions that are actually
+ * implemented", and "posted financial history is never hard-deleted".
+ *
+ * Unimplemented actions are absent, not disabled (UI-09). Sales, receipts and
+ * payments join this menu as their modules ship.
+ */
 const rowMenuItems = computed<MenuItem[]>(() => {
   const party = actionParty.value;
   if (party === null || party.isSystemReserved) return [];
   return [
+    {
+      label: 'View ledger',
+      icon: 'pi pi-book',
+      command: () => { openLedger(party); },
+    },
     ...(canEdit.value ? [{
-      label: 'Edit customer details',
+      label: `Edit ${NOUN[role.value]} details`,
       icon: 'pi pi-pencil',
-      command: () => void router.push(`/parties/${party.id}?role=${role.value}&mode=edit`),
+      command: () => { editing.value = party; },
+    }] : []),
+    ...(canEdit.value ? [{
+      label: party.hasLedgerEntries ? 'Correct opening balance' : 'Set opening balance',
+      icon: 'pi pi-wallet',
+      command: () => { openingFor.value = party; },
     }] : []),
     ...(canDeactivate.value ? [{
       label: party.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
       icon: party.status === 'ACTIVE' ? 'pi pi-ban' : 'pi pi-check-circle',
       command: () => { confirming.value = party; },
+    }] : []),
+    /*
+     * §3.6 and §5.6: a party nothing has ever posted against was a mistake and
+     * can go; one with a statement can only ever be deactivated, because
+     * deleting it would leave its journal lines pointing at nothing. The server
+     * refuses either way — this only keeps the menu from offering it.
+     */
+    ...(canDeactivate.value && !party.hasLedgerEntries ? [{
+      label: 'Delete',
+      icon: 'pi pi-trash',
+      command: () => { deleting.value = party; },
     }] : []),
   ];
 });
@@ -227,6 +190,19 @@ function openRowMenu(event: Event, party: PartyResponse): void {
 const showsGroups = computed(
   () => role.value === 'CUSTOMER' && setup.value.features.customerGroups,
 );
+
+/**
+ * §5.6: Supplier and Vendor use the same compact shape, "replacing the balance
+ * column with the role-relevant current Payable/Advance".
+ *
+ * Same figure, same sign, different word — a customer's positive balance is
+ * money coming in, a supplier's is money going out, and one heading reading
+ * "Balance" for both is how someone pays a customer.
+ */
+const balanceHeading = computed(() =>
+  role.value === 'CUSTOMER' ? 'Current Due' : 'Payable',
+);
+const balanceHeadingBn = computed(() => (role.value === 'CUSTOMER' ? 'পাবো' : 'দিব'));
 
 const filtersActive = computed(
   () => search.value !== '' || groupId.value !== ANY || status.value !== ANY,
@@ -341,8 +317,15 @@ function clearFilters(): void {
   void load();
 }
 
+/**
+ * §5.6: "clicking the customer name opens that customer's working ledger hub."
+ *
+ * The name used to open the edit form, which answered a question nobody was
+ * asking — someone tapping a customer wants to know what they owe and what
+ * happened, not to rename them. Editing is on the `⋯` menu and on the hub.
+ */
 function openParty(party: PartyResponse): void {
-  void router.push(`/parties/${party.id}?role=${role.value}`);
+  void router.push(`/parties/${party.id}/ledger?role=${role.value}`);
 }
 
 /* ------------------------------------------------------------------ balance */
@@ -366,8 +349,58 @@ function balanceText(party: PartyResponse): string {
     : `৳${Money(advanceMinor).format()} দিব`;
 }
 
+/**
+ * Red for what is outstanding, green for an advance (owner decision,
+ * 2026-08-22). Muted when settled.
+ *
+ * Keyed on the role, not the direction alone. "Outstanding" is a customer
+ * **owing** the shop and the shop **owing** a supplier — the same alarming
+ * colour for the two opposite directions, because what a shopkeeper wants to
+ * spot is the money still to be dealt with, whichever way it points. Colouring
+ * by direction would have made a supplier the shop owes look as comfortable as
+ * a customer who has paid.
+ */
+function isOutstanding(direction: string): boolean {
+  return role.value === 'CUSTOMER' ? direction === 'RECEIVABLE' : direction === 'PAYABLE';
+}
+
 function balanceClass(party: PartyResponse): string {
-  return `balance-${party.balance.direction.toLowerCase()}`;
+  const { direction } = party.balance;
+  if (direction === 'SETTLED') return 'balance-settled';
+  return isOutstanding(direction) ? 'balance-due' : 'balance-advance';
+}
+
+/**
+ * The card splits the same figure into a label and an amount.
+ *
+ * **One of the two, never both.** A party either owes the shop or is owed by
+ * it — `partyBalanceOf` has already netted an advance against a due, so a
+ * customer with 7,420 outstanding and 250 sitting as an advance is owed 7,170
+ * and nothing else. Showing "Due 7,420" beside "Advance 250" would invite
+ * collecting a figure that is not owed.
+ */
+function balanceLabelFor(party: PartyResponse): string {
+  const { direction } = party.balance;
+  if (direction === 'SETTLED') return 'Settled';
+  if (direction === 'RECEIVABLE') return role.value === 'CUSTOMER' ? 'Current Due' : 'Advance paid';
+  return role.value === 'CUSTOMER' ? 'Advance' : 'Payable';
+}
+
+function balanceAmountText(party: PartyResponse): string {
+  const { direction, outstandingMinor, advanceMinor } = party.balance;
+  if (direction === 'SETTLED') return '৳0.00';
+  return `৳${Money(direction === 'RECEIVABLE' ? outstandingMinor : advanceMinor).format()}`;
+}
+
+/**
+ * A name's initials for the card's avatar — a visual anchor while scanning, not
+ * information. Two letters at most, and it degrades to one for a single word
+ * and to nothing for a name with no letters in it.
+ */
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter((word) => word !== '');
+  const letters = words.slice(0, 2).map((word) => word.charAt(0).toUpperCase());
+  return letters.join('');
 }
 
 /**
@@ -387,6 +420,63 @@ function overLimit(party: PartyResponse): boolean {
 /* --------------------------------------------------- deactivate / reactivate */
 
 const confirming = ref<PartyResponse | null>(null);
+
+/* ------------------------------------------------------- add / edit dialog */
+
+/**
+ * UI-50: master data is added and edited in a modal over its list, so the
+ * shopkeeper keeps their place and the saved row appears behind the dialog as
+ * its own confirmation. `PartyFormPage` is the same form the route renders —
+ * embedded rather than copied, so both have one write path.
+ */
+const adding = ref(false);
+const editing = ref<PartyResponse | null>(null);
+const deleting = ref<PartyResponse | null>(null);
+const openingFor = ref<PartyResponse | null>(null);
+
+const formOpen = computed({
+  get: () => adding.value || editing.value !== null,
+  set: (open: boolean) => {
+    if (!open) closeForm();
+  },
+});
+
+function closeForm(): void {
+  adding.value = false;
+  editing.value = null;
+}
+
+/** The row is behind the dialog, so it has to be the saved one when it closes. */
+async function onFormSaved(party: PartyResponse): Promise<void> {
+  const added = adding.value;
+  closeForm();
+  notice.value = added ? `${party.name} added.` : `${party.name} saved.`;
+  await load();
+}
+
+async function onOpeningSaved(): Promise<void> {
+  openingFor.value = null;
+  notice.value = 'Opening balance posted.';
+  await load();
+}
+
+async function removeParty(): Promise<void> {
+  const party = deleting.value;
+  if (party === null) return;
+
+  busy.value = true;
+  try {
+    await deleteParty(session.accessToken.value ?? '', party.id);
+    notice.value = `${party.name} deleted.`;
+    deleting.value = null;
+    await load();
+  } catch (cause) {
+    loadError.value = describe(cause);
+    deleting.value = null;
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function toggleStatus(): Promise<void> {
   const party = confirming.value;
@@ -496,7 +586,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
         v-if="canCreate"
         type="button"
         class="btn btn-primary"
-        @click="openCreateDialog"
+        @click="adding = true"
       >
         <i class="pi pi-plus" aria-hidden="true" />
         Add {{ NOUN[role] }}
@@ -553,7 +643,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
             v-if="canCreate"
             type="button"
             class="btn btn-primary"
-            @click="router.push(`/parties/new?role=${role}`)"
+            @click="adding = true"
           >
             Add the first {{ NOUN[role] }}
           </button>
@@ -579,17 +669,82 @@ async function removeGroup(id: string, name: string): Promise<void> {
         <div class="totals">
           <span class="total">
             <span class="total-label">Receivable <span class="sher-bn">পাবো</span></span>
-            <strong class="balance-receivable">৳{{ Money(summary.totalOutstandingMinor).format() }}</strong>
+            <strong class="balance-due">৳{{ Money(summary.totalOutstandingMinor).format() }}</strong>
           </span>
           <span class="total">
             <span class="total-label">Payable <span class="sher-bn">দিব</span></span>
-            <strong class="balance-payable">৳{{ Money(summary.totalAdvanceMinor).format() }}</strong>
+            <strong class="balance-advance">৳{{ Money(summary.totalAdvanceMinor).format() }}</strong>
           </span>
           <span v-if="summary.overCreditLimit > 0" class="total">
             <span class="total-label">Over credit limit</span>
-            <strong class="balance-payable">{{ summary.overCreditLimit }}</strong>
+            <strong class="balance-due">{{ summary.overCreditLimit }}</strong>
           </span>
         </div>
+
+        <!--
+          The same five facts as a card, for a phone (§5.6's compact shape).
+          A table scrolled sideways puts the balance off-screen, and the balance
+          is what someone opened the list for — so on a narrow screen the row
+          becomes a card with the name and the figure both in the first glance.
+        -->
+        <ul class="party-cards">
+          <li
+            v-for="party in parties"
+            :key="party.id"
+            class="party-card"
+            :class="{ 'is-inactive': party.status === 'INACTIVE' }"
+          >
+            <span class="avatar" aria-hidden="true">{{ initials(party.name) }}</span>
+
+            <div class="card-main">
+              <button type="button" class="linkish name" @click="openParty(party)">
+                {{ party.name }}
+              </button>
+              <span v-if="party.isSystemReserved" class="pill pill-info">Walk-in</span>
+              <span
+                v-for="other in party.roles.filter((value) => value !== role)"
+                :key="other"
+                class="pill pill-info other-role"
+              >
+                {{ other === 'CUSTOMER' ? 'Customer' : other === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
+              </span>
+
+              <p v-if="party.phone !== null" class="card-line mono">
+                <i class="pi pi-phone" aria-hidden="true" /> {{ party.phone }}
+              </p>
+              <p v-if="party.address !== null" class="card-line">
+                <i class="pi pi-map-marker" aria-hidden="true" /> {{ party.address }}
+              </p>
+            </div>
+
+            <div class="card-balance">
+              <span class="card-balance-label">
+                {{ balanceLabelFor(party) }}
+              </span>
+              <button
+                type="button"
+                class="linkish balance"
+                :class="balanceClass(party)"
+                :title="`Open ${party.name}'s ledger`"
+                @click="openLedger(party)"
+              >
+                {{ balanceAmountText(party) }}
+              </button>
+              <span v-if="overLimit(party)" class="pill pill-bad limit-pill">Over limit</span>
+            </div>
+
+            <button
+              v-if="!party.isSystemReserved && (canEdit || canDeactivate)"
+              type="button"
+              class="row-menu-trigger card-menu"
+              :aria-label="`Actions for ${party.name}`"
+              aria-haspopup="menu"
+              @click="openRowMenu($event, party)"
+            >
+              <i class="pi pi-ellipsis-v" aria-hidden="true" />
+            </button>
+          </li>
+        </ul>
 
         <div class="table-wrap">
           <table>
@@ -619,42 +774,26 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   the page you can see.
                 -->
                 <th>Address <span class="sher-bn header-bn">ঠিকানা</span></th>
-                <SortableHeader
-                  v-if="showsGroups"
-                  column="groupName"
-                  label="Group"
-                  label-bn="কোন দলে রাখা আছে"
-                  :active="sort"
-                  :direction="direction"
-                  @sort="sortBy"
-                />
-                <!--
-                  `Also` is the other roles this party holds — badges built from
-                  `party_roles` rows, not a column the database can order by. UI-46
-                  says such a column is left unsortable rather than sorted in the
-                  client, which would only order the page you can see.
-                -->
-                <th>Also</th>
                 <!--
                   The reason this list exists for most people (§5.0). Nobody
                   should have to open a ledger to learn whether a customer owes
                   money, so the balance is on the row, colour-coded by which way
                   it points and labelled in the words the shop uses.
 
-                  Not sortable: it is a rollup subquery, not a stored column,
-                  and UI-46 leaves such a column unsorted rather than sorting
-                  only the page you can see.
+                  Sortable now: "Current Due (High to Low)" is the first thing
+                  anyone asks a customer list, and the repository orders by the
+                  same rollup the cell shows, so the two cannot disagree.
                 -->
-                <th class="num">Balance <span class="sher-bn header-bn">পাবো / দিব</span></th>
                 <SortableHeader
-                  column="status"
-                  label="Status"
-                  label-bn="চালু আছে কি না"
+                  class="num"
+                  column="balance"
+                  :label="balanceHeading"
+                  :label-bn="balanceHeadingBn"
                   :active="sort"
                   :direction="direction"
                   @sort="sortBy"
                 />
-                <th class="actions-col">Actions</th>
+                <th class="actions-col"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -672,20 +811,24 @@ async function removeGroup(id: string, name: string): Promise<void> {
                     action, because every fully paid counter sale points at it.
                   -->
                   <span v-if="party.isSystemReserved" class="pill pill-info">Walk-in</span>
-                </td>
-                <td class="mono">{{ party.phone ?? '—' }}</td>
-                <td class="address">{{ party.address ?? '—' }}</td>
-                <td v-if="showsGroups">{{ party.customerGroupName ?? '—' }}</td>
-                <td>
+                  <!--
+                    D-04's other roles, as a marker rather than the column they
+                    used to have: §5.6 fixes this grid at five columns, but "this
+                    supplier is also a customer" is the one fact that changes how
+                    a row is read, and losing it entirely would hide it until
+                    someone opened the party.
+                  -->
                   <span
                     v-for="other in party.roles.filter((value) => value !== role)"
                     :key="other"
                     class="pill pill-info other-role"
+                    :title="`Also a ${NOUN[other]}`"
                   >
                     {{ other === 'CUSTOMER' ? 'Customer' : other === 'SUPPLIER' ? 'Supplier' : 'Vendor' }}
                   </span>
-                  <span v-if="party.roles.length === 1">—</span>
                 </td>
+                <td class="mono">{{ party.phone ?? '—' }}</td>
+                <td class="address">{{ party.address ?? '—' }}</td>
                 <td class="num">
                   <button
                     type="button"
@@ -701,10 +844,6 @@ async function removeGroup(id: string, name: string): Promise<void> {
                     breached, so it is shown then and not otherwise.
                   -->
                   <span v-if="overLimit(party)" class="pill pill-bad limit-pill">Over limit</span>
-                </td>
-                <td>
-                  <span v-if="party.status === 'ACTIVE'" class="pill pill-ok">Active</span>
-                  <span v-else class="pill pill-bad">Inactive</span>
                 </td>
                 <td class="actions">
                   <button
@@ -742,64 +881,63 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
     <Menu ref="rowMenu" :model="rowMenuItems" popup />
 
+    <!--
+      UI-50 and §5.6: adding and editing a party happen in a modal over the
+      preserved list. The form inside is `PartyFormPage` itself, embedded — the
+      screen this dialog replaced was a second, smaller create form with its own
+      fields and its own call to `createParty`, which meant two write paths for
+      one business action and an opening balance that could only be entered on
+      one of them (R-D, DRY).
+    -->
     <Dialog
-      v-model:visible="createVisible"
+      v-model:visible="formOpen"
       modal
-      :header="`Add ${NOUN[role]}`"
-      :style="{ width: 'min(42rem, 96vw)' }"
+      :header="editing === null ? `Add ${NOUN[role]}` : editing.name"
+      :style="{ width: 'min(48rem, 96vw)' }"
       :draggable="false"
     >
-      <form id="create-party-form" class="create-party-form" @submit.prevent="saveCreatedParty">
-        <ErrorNotice v-if="createError" :code="createError.code" :message="createError.message" />
-        <div class="field">
-          <label for="create-party-name">Name <span class="label-bn">নাম</span></label>
-          <input id="create-party-name" v-model="createName" type="text" required autofocus />
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label for="create-party-phone">Phone <span class="label-bn">মোবাইল নম্বর</span></label>
-            <input id="create-party-phone" v-model="createPhone" type="tel" :required="role === 'CUSTOMER'" />
-          </div>
-          <div v-if="role === 'CUSTOMER'" class="field">
-            <label for="create-party-limit">Credit limit <span class="label-bn">বাকির সীমা</span></label>
-            <input id="create-party-limit" v-model="createCreditLimit" type="text" inputmode="decimal" placeholder="0.00" />
-          </div>
-        </div>
-        <div v-if="setup.fields.address" class="field">
-          <label for="create-party-address">Address <span class="label-bn">ঠিকানা</span></label>
-          <textarea id="create-party-address" v-model="createAddress" rows="2" />
-        </div>
-        <details class="more-fields">
-          <summary>More details <span class="label-bn">আরও তথ্য</span></summary>
-          <div v-if="setup.fields.guardianName" class="field">
-            <label for="create-party-guardian">Father's or guardian's name</label>
-            <input id="create-party-guardian" v-model="createGuardianName" type="text" />
-          </div>
-          <div v-if="setup.fields.nid" class="field">
-            <label for="create-party-nid">NID number</label>
-            <input id="create-party-nid" v-model="createNid" type="text" />
-          </div>
-          <div v-if="setup.fields.email" class="field">
-            <label for="create-party-email">Email</label>
-            <input id="create-party-email" v-model="createEmail" type="email" />
-          </div>
-          <div v-if="role === 'CUSTOMER' && setup.features.customerGroups" class="field">
-            <label for="create-party-group">Customer group</label>
-            <Select input-id="create-party-group" v-model="createGroupId" :options="groupOptions" option-label="name" option-value="id" fluid />
-          </div>
-          <div v-if="setup.fields.notes" class="field">
-            <label for="create-party-notes">Notes</label>
-            <textarea id="create-party-notes" v-model="createNotes" rows="2" />
-          </div>
-        </details>
-      </form>
-      <template #footer>
-        <button type="button" class="btn btn-ghost" :disabled="busy" @click="createVisible = false">Cancel</button>
-        <button type="submit" form="create-party-form" class="btn btn-primary" :disabled="busy">
-          {{ busy ? 'Saving…' : `Add ${NOUN[role]}` }}
-        </button>
-      </template>
+      <PartyFormPage
+        v-if="formOpen"
+        embedded
+        :embedded-party-id="editing?.id ?? null"
+        :embedded-role="role"
+        @saved="onFormSaved"
+        @close="closeForm"
+      />
     </Dialog>
+
+    <!--
+      Setting or correcting an opening balance from the row (§5.6, §2.5).
+      Correcting never edits the posted entry: the dialog explains that the
+      change is posted as a reversal and a repost, because a shopkeeper who
+      expects a silent edit would be surprised by two extra ledger rows.
+    -->
+    <PartyOpeningDialog
+      v-if="openingFor !== null"
+      :party="openingFor"
+      :role="role"
+      @saved="onOpeningSaved"
+      @close="openingFor = null"
+    />
+
+    <!-- ------------------------------------------------------------- delete -->
+    <div v-if="deleting !== null" class="scrim" @click.self="deleting = null">
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h2>Delete {{ deleting.name }}?</h2>
+        <p>
+          Nothing has been posted against this {{ NOUN[role] }}, so the record can be removed
+          completely. This cannot be undone.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" :disabled="busy" @click="deleting = null">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-danger" :disabled="busy" @click="removeParty">
+            {{ busy ? 'Deleting…' : 'Delete' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- --------------------------------------------- deactivate / reactivate -->
     <div v-if="confirming !== null" class="scrim" @click.self="confirming = null">
@@ -942,12 +1080,13 @@ async function removeGroup(id: string, name: string): Promise<void> {
   white-space: nowrap;
 }
 
-.balance-receivable {
-  color: var(--sher-ok-fg, #15803d);
+/* Outstanding is the one that needs attention, so it is the loud one. */
+.balance-due {
+  color: var(--sher-bad-fg, #b91c1c);
 }
 
-.balance-payable {
-  color: var(--sher-bad-fg, #b91c1c);
+.balance-advance {
+  color: var(--sher-ok-fg, #15803d);
 }
 
 .balance-settled {
@@ -1022,6 +1161,107 @@ async function removeGroup(id: string, name: string): Promise<void> {
 
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: 1fr; }
+}
+
+/*
+ * The list as cards on a phone (§5.6's compact shape).
+ *
+ * One or the other is in the document at a time — the table scrolls sideways on
+ * a narrow screen, which puts the balance out of sight, and the balance is the
+ * reason the list was opened. Both render the same five facts from the same
+ * data, so nothing is hidden on either.
+ */
+.party-cards {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Four columns for four children. With three, the `⋯` button had nowhere to go
+ * on the first row and grid placed it on a second one under the avatar, which
+ * is what put the menu dots adrift at the bottom-left of every card.
+ */
+.party-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: var(--sher-space-3);
+  align-items: start;
+  padding: var(--sher-space-3);
+  border: 1px solid var(--sher-border);
+  border-radius: var(--sher-radius-md);
+  background: var(--sher-surface);
+}
+
+.party-card + .party-card {
+  margin-top: var(--sher-space-2);
+}
+
+.party-card.is-inactive {
+  opacity: 0.65;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--sher-surface-muted);
+  color: var(--sher-text-muted);
+  font-weight: 600;
+  font-size: var(--sher-text-sm);
+}
+
+.card-main {
+  min-width: 0;
+}
+
+.card-main .name {
+  font-weight: 600;
+  text-align: left;
+  /* A long shop name wraps rather than pushing the balance off the card. */
+  overflow-wrap: anywhere;
+}
+
+.card-main .pill {
+  margin-left: 6px;
+}
+
+.card-line {
+  overflow-wrap: anywhere;
+}
+
+.card-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: var(--sher-text-sm);
+  color: var(--sher-text-muted);
+}
+
+.card-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.card-balance-label {
+  font-size: 0.75rem;
+  color: var(--sher-text-muted);
+}
+
+.card-menu {
+  align-self: start;
+}
+
+@media (max-width: 720px) {
+  .party-cards { display: block; }
+  .table-wrap { display: none; }
 }
 
 .muted {
