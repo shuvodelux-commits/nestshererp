@@ -1,6 +1,7 @@
 import 'primeicons/primeicons.css';
 import './design/tokens.css';
 import './design/components.css';
+import './design/print.css';
 
 import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';

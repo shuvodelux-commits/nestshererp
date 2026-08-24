@@ -1,0 +1,108 @@
+/*
+ * What a printed page is allowed to contain.
+ *
+ * A page's own `<style scoped>` cannot reach the shell around it — the sidebar,
+ * top bar, bottom navigation and footer belong to `AppLayout`, so a scoped
+ * `@media print` block in a page hides that page's buttons and leaves the whole
+ * application chrome on the paper. Owner-reported, 2026-08-24: a printed
+ * statement arrived with the hamburger, the breadcrumb, the dark-mode toggle
+ * and the bottom navigation around it.
+ *
+ * So the rule lives here, once, globally: printing shows the document and
+ * nothing that only exists to navigate or act. Every later print surface —
+ * invoice, receipt, purchase order, report — inherits it rather than writing
+ * its own, and a page adds `no-print` to whatever else is a control.
+ */
+@media print {
+  /* Navigation and chrome: none of it is part of any document. */
+  .sidebar,
+  .topbar,
+  .bottom-nav,
+  .foot,
+  .crumbs,
+  .page-actions,
+  .no-print {
+    display: none !important;
+  }
+
+  /*
+   * PrimeVue's overlays. A dialog open behind the print dialog would otherwise
+   * print its backdrop as a grey sheet over the document.
+   */
+  .p-dialog-mask,
+  .p-drawer-mask,
+  .p-toast,
+  .p-tooltip,
+  .p-confirmpopup {
+    display: none !important;
+  }
+
+  /*
+   * The shell is a fixed-height flex column with an inner scroller, which is
+   * right on screen and wrong on paper: it clips the document to one viewport
+   * and prints page one of a six-page statement. On paper the content is a
+   * plain block that flows for as many sheets as it needs.
+   */
+  html,
+  body,
+  #app,
+  .shell,
+  .main,
+  .scroll,
+  .content,
+  .page {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /*
+   * Ink. The screen palette is a dark-mode-aware token set; a card's tinted
+   * background and a light-grey rule cost toner and print as a smudge.
+   */
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+
+  .card,
+  .p-card {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* Tables are the document. Keep their rules, drop everything else's. */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid #ddd;
+  }
+
+  /* A statement runs over pages; a header that appears once is unreadable. */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+
+  /* A URL printed after every link is noise on a statement handed to a customer. */
+  a[href]::after {
+    content: none !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}

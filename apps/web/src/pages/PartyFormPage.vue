@@ -630,8 +630,8 @@ function editProfile(): void {
   
             <div v-if="setup.fields.notes" class="field">
               <label for="party-notes">
-                Notes
-                <span class="label-bn">নিজের জন্য কোনো মন্তব্য</span>
+                Description
+                <span class="label-bn">এই পক্ষ সম্পর্কে কোনো তথ্য</span>
               </label>
               <textarea id="party-notes" v-model="notes" rows="3" :disabled="fieldsDisabled" />
             </div>

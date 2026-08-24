@@ -2,6 +2,7 @@
 import type { PartyLedgerResponse, PartyResponse, PartyRoleValue } from '@sher/core-contracts';
 import { Money } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
+import Select from 'primevue/select';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -58,6 +59,18 @@ const failure = ref<{ code: string; message: string } | null>(null);
 const fromDate = ref('');
 const toDate = ref('');
 
+/**
+ * How many rows a page holds (owner decision, 2026-08-24).
+ *
+ * 50 by default, because that is what the server already returns when nothing asks
+ * for a size and it is a screenful for the common case. 100 and 200 are for
+ * reading or printing a long history in one go rather than tapping "Show more"
+ * down a year of trading. 200 is the ceiling the contract allows, so the
+ * selector cannot ask for a page the server would refuse.
+ */
+const PAGE_SIZE_OPTIONS = [50, 100, 200].map((value) => ({ label: String(value), value }));
+const pageSize = ref<number>(50);
+
 const rows = computed(() => ledger.value?.rows ?? []);
 
 async function load(cursor: string | null = null): Promise<void> {
@@ -72,6 +85,7 @@ async function load(cursor: string | null = null): Promise<void> {
       ...(fromDate.value === '' ? {} : { fromDate: fromDate.value }),
       ...(toDate.value === '' ? {} : { toDate: toDate.value }),
       ...(cursor === null ? {} : { cursor }),
+      limit: pageSize.value,
     });
 
     /*
@@ -261,31 +275,49 @@ watch(partyId, () => {
     help-bn="এই পক্ষের সব লেনদেন আর বকেয়ার হিসাব"
   >
     <AppCard>
-      <template #header>
-        <div class="ledger-head">
-          <div>
-            <button type="button" class="linkish no-print" @click="goBack">← Back to list</button>
-            <h1>{{ ledger?.partyName ?? 'Ledger' }}</h1>
-            <!--
-              §5.6's hub: the party's own details sit above their statement, so
-              the operator can act on this person without leaving and searching
-              for them again.
-            -->
-            <p v-if="party !== null" class="party-contact">
-              <span v-if="party.phone !== null" class="mono">{{ party.phone }}</span>
-              <span v-if="party.address !== null">{{ party.address }}</span>
-            </p>
-          </div>
-          <div v-if="ledger !== null" class="closing">
-            <span class="closing-label">
-              {{ closingLabel }} <span class="sher-bn">{{ closingLabelBn }}</span>
-            </span>
-            <strong :class="balanceClass(ledger.closingBalance.direction)">
-              {{ balanceText(ledger.closingBalance) }}
-            </strong>
-          </div>
+      <!--
+        Whose ledger this is, at the top of it.
+
+        This was written as `<template #header>`, and `AppCard` has no `header`
+        slot — only `actions` — so Vue discarded the whole block silently and
+        the screen opened on a table with no name and no balance above it
+        (owner-reported, 2026-08-24). It is ordinary content now, which is what
+        it always was: the identity and the one figure the statement is about.
+      -->
+      <div class="ledger-head">
+        <div>
+          <button type="button" class="linkish no-print" @click="goBack">← Back to list</button>
+          <!--
+            §5.6's hub: the party's own details sit above their statement, so
+            the operator can act on this person without leaving and searching
+            for them again. `partyName` comes from the ledger and `party` from
+            the record, so the name is there from whichever answers first.
+          -->
+          <h1>{{ ledger?.partyName ?? party?.name ?? 'Ledger' }}</h1>
+          <p v-if="party !== null" class="party-contact">
+            <span v-if="party.phone !== null" class="mono">{{ party.phone }}</span>
+            <span v-if="party.address !== null">{{ party.address }}</span>
+          </p>
+          <!--
+            Print only: a statement leaves the building, so it has to say which
+            shop issued it and over what period. On screen the shell already
+            says both.
+          -->
+          <p class="print-only statement-meta">
+            {{ session.businessName.value ?? '' }} ·
+            {{ fromDate === '' ? 'From the beginning' : `From ${fromDate}` }}
+            {{ toDate === '' ? 'to date' : `to ${toDate}` }}
+          </p>
         </div>
-      </template>
+        <div v-if="ledger !== null" class="closing">
+          <span class="closing-label">
+            {{ closingLabel }} <span class="sher-bn">{{ closingLabelBn }}</span>
+          </span>
+          <strong :class="balanceClass(ledger.closingBalance.direction)">
+            {{ balanceText(ledger.closingBalance) }}
+          </strong>
+        </div>
+      </div>
 
       <!--
         §5.6's hub actions. Receive Payment / New Sale (and the supplier and
@@ -352,6 +384,25 @@ watch(partyId, () => {
             input-id="ledger-to"
             placeholder="Today"
             @update:model-value="load()"
+          />
+        </label>
+
+        <!--
+          Page size. Changing it reloads from the first row rather than
+          appending — a cursor taken at 50 means nothing to a request asking
+          for 200, and continuing from it would silently skip rows.
+        -->
+        <label class="filter">
+          <span>Rows <span class="sher-bn">কত সারি</span></span>
+          <Select
+            v-model="pageSize"
+            input-id="ledger-page-size"
+            class="page-size"
+            :options="PAGE_SIZE_OPTIONS"
+            option-label="label"
+            option-value="value"
+            :disabled="busy"
+            @change="load()"
           />
         </label>
       </div>
@@ -483,36 +534,45 @@ watch(partyId, () => {
 }
 
 /*
+ * Only shown on paper: the shop's name and the period the statement covers.
+ * On screen the shell says both already.
+ */
+.print-only {
+  display: none;
+}
+
+.statement-meta {
+  margin: 4px 0 0;
+  font-size: var(--sher-text-sm);
+}
+
+/*
  * §5.6's "print/share a statement", as the browser's own print.
  *
- * Everything that is a control disappears: a printed statement is handed to
- * someone or filed, and a paper button is noise. What survives is the party,
- * the period, the rows and the closing balance — which is what a statement is.
+ * The application chrome around this page — sidebar, top bar, bottom
+ * navigation, footer, breadcrumb — is hidden by `design/print.css`, because a
+ * scoped block here cannot reach a parent component's markup and leaving it to
+ * this file is what put the whole interface on the paper. What is left below
+ * is this page's own: its controls go, its statement stays.
  */
 @media print {
-  .no-print,
   .hub-actions,
   .filters,
   .paging {
     display: none !important;
   }
 
+  .print-only {
+    display: block;
+  }
+
   .table-wrap {
     overflow: visible;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  /* A statement runs over pages; a header that appears once is unreadable. */
-  thead {
-    display: table-header-group;
-  }
-
-  tr {
-    break-inside: avoid;
+  /* The closing balance is the figure the statement is read for. */
+  .closing strong {
+    color: #000 !important;
   }
 }
 
@@ -554,6 +614,11 @@ watch(partyId, () => {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
+}
+
+/* Three short numbers: the control should not take a date picker's width. */
+.page-size {
+  min-width: 6rem;
 }
 
 /* Wide content scrolls in its own box; the page never scrolls sideways. */

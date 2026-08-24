@@ -346,10 +346,18 @@ export const SETTING_CATALOGUE: readonly SettingDescriptor[] = [
     key: SettingKey.CUSTOMER_FIELD_GUARDIAN_VISIBLE,
     group: 'Customer fields',
     label: "Ask for a father's or guardian's name",
-    detail: 'Show the father/guardian field when adding or editing a customer.',
+    detail:
+      'Show the father/guardian field when adding or editing a customer, supplier or vendor.',
     kind: 'TOGGLE',
     options: TOGGLE_OPTIONS,
-    defaultValue: TOGGLE_OFF,
+    /*
+     * On by default — owner decision, 2026-08-24. In Bangladesh a father's or
+     * guardian's name is how two people with the same common name are told
+     * apart, so a shop that cannot see the field on the form reads it as the
+     * field not existing. Switching it off is still one tap for a shop that
+     * does not want it, and §5.6 guarantees a stored value survives that.
+     */
+    defaultValue: TOGGLE_ON,
     requires: [],
     stepUp: false,
     consumedBy: 'Parties',
@@ -384,11 +392,13 @@ export const SETTING_CATALOGUE: readonly SettingDescriptor[] = [
   {
     key: SettingKey.CUSTOMER_FIELD_NOTES_VISIBLE,
     group: 'Customer fields',
-    label: 'Ask for notes',
-    detail: 'Show a free-text notes field when adding or editing a customer.',
+    label: 'Ask for a description',
+    detail:
+      'Show a free-text description/notes field when adding or editing a customer, supplier or vendor.',
     kind: 'TOGGLE',
     options: TOGGLE_OPTIONS,
-    defaultValue: TOGGLE_OFF,
+    /* On by default — owner decision, 2026-08-24, with the guardian field. */
+    defaultValue: TOGGLE_ON,
     requires: [],
     stepUp: false,
     consumedBy: 'Parties',

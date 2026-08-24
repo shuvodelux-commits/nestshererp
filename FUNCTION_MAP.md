@@ -136,6 +136,7 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 | `ProductForm`, `StockAdjustDialog`, `StockLotsDialog` | `components/` | The product dialog is one component used by the list and `/products/:id` |
 | `PartyOpeningDialog` | `components/parties/` | Set or correct a party's opening balance. It reads the posted opening back before it opens, so a correction starts on the real figure, and it carries the D-32 version through — reuse it wherever an opening balance is edited |
 | Design system | `design/{tokens,components,preset,theme,tones}.ts/css` | Colours are tokens (`--sher-ok/warn/bad/info`, tile tones); PrimeVue 4 preset. Do not write page-specific control CSS |
+| `design/print.css` | `design/` | **The global print rules** — hides the shell (sidebar, top bar, bottom nav, footer, breadcrumb), PrimeVue overlays and anything marked `no-print`, unclips the fixed-height scroller so a long document flows over pages, and drops to black on white. Any printable surface reuses it and marks its own controls `no-print`; a scoped `@media print` block in a page **cannot** reach the shell, which is the bug this file exists to prevent |
 | Pages | `pages/` | Dashboard · Login/Register/ForgotPassword/GoogleCallback · Users · Roles · Audit · Catalog · Products · ProductForm · Parties · PartyForm · **PartyLedger** (the party working hub: balance header, statement, opening, contextual actions) · InventoryReport · **Import** · Settings · SettingsSecurity |
 
 ## 9. Business rules worth knowing before writing code
@@ -154,6 +155,10 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 - **A party has at most one opening per role**, and correcting it never edits the journal: one
   entry reverses the old posting and posts the new one, so the statement shows what the figure was,
   that it was corrected, and what it became (§2.5). Corrections are numbered `OBC-<year>-<seq>`.
+- **The optional party fields are per-shop toggles, not per-role.** `guardianName`, `nid`, `email`
+  and `notes` (labelled **Description**) apply to customers, suppliers and vendors alike, gated by
+  the `customer_field_*_visible` settings; guardian and description default **on**, NID and email
+  **off**. A hidden field is never cleared — supplying one is refused on create and ignored on edit.
 - **A party with any journal line cannot be hard-deleted** — `hasLedgerEntries`, not a settled
   balance, is the §3.6 test, and the row menu and the server answer it the same way. Any later
   module that refers to a party *without* posting must add its own check to `assertNeverUsed`.
