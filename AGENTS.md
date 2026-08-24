@@ -2,12 +2,145 @@
 
 Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith. Canonical delivery path: online-first → sync infrastructure → PWA Offline → Mobile → optional future Tauri packaging → MCP.
 
+---
+
+# ⛔ R-0 — THE OWNER'S WORKING PROTOCOL — READ BEFORE ANYTHING ELSE
+
+**This applies to EVERY agent on this repo — Codex CLI, Claude Code, and any
+other.** Owner instruction of 2026-08-24, written down after it was broken
+twice. It **outranks every other rule in every file**, including this one's own
+token-efficiency and workflow sections. Work that breaks any of these
+steps is rejected even when the code is correct. Full text:
+`AI_CODING_INSTRUCTIONS.md` → **R-0**.
+
+### 0. START THE DEV SERVER — every session, before anything else
+
+**Mandatory.** Postgres up, API built and running, web server running, at the
+beginning of **every** session — before reporting status, before asking
+anything, before writing a line. If it will not start, say so in one line with
+the error and stop there.
+
+```bash
+sudo service docker start && docker start sher-pg     # WSL2 does not start Docker itself
+pnpm --filter "@sher/api..." build                    # the API runs from dist, not source
+cd apps/api && node --env-file=.env dist/main.js &    # :3000 — .env is NOT auto-loaded
+cd ../web && pnpm dev &                               # :5173
+```
+
+### 1. NEVER write test files — and NEVER run test suites
+
+No `*.spec.ts`, no vitest suite, no test helper, no "quick verification"
+script — **for any module, for any reason**. And **do not run `pnpm test`**
+either. The owner tests the software himself, in the running UI, and reports
+what is wrong. The only exception is the owner explicitly asking for tests **in
+the current conversation**.
+
+"It would catch bugs", "this is financial logic", "there are tests elsewhere in
+this repo" and "a test would prove the fix" are **not** exceptions — each has
+been used to justify breaking this rule.
+
+What **is** still run every time: `pnpm build`, `pnpm typecheck`, `pnpm lint`,
+`pnpm test:boundaries`. Those are static checks that make the app compile and
+keep the layering honest, not test suites.
+
+### 2. A new or cleared chat starts with orientation, not work
+
+Find the last end position — git log, working tree, the SRS change log, the
+unfinished module — then **say what it is in one short message and ask what to
+do next**. Do not assume the next obvious task is the wanted task. Do not start
+coding on the strength of a fresh context window.
+
+### 3. A new module starts with the questions — ONE AT A TIME
+
+Ask the unresolved requirements **one question per message**, up to about
+**20** where the module needs them, fewer when it is already well defined.
+Each question carries **3–4 suggested answers**:
+
+```
+**When X happens, what should the system do?**
+
+1. **Option A (Recommended)** — short, practical effect.
+2. **Option B** — short, practical effect.
+3. **Option C** — short, practical effect.
+4. **Type your own answer**
+```
+
+The owner picks one or writes his own. **Record the decision, then ask the next
+question.** Never ask what the SRS, these files, a confirmed decision or an
+earlier part of the conversation already answers. Aim at real workflow,
+permissions, accounting behaviour, edge cases and UI/UX — and remember the
+users may have **low literacy**, so prefer simple workflows, Bangla-friendly
+labels, minimal steps and clear actions.
+
+When every question is answered, show a short **Final Module Specification** —
+confirmed workflow · permissions · accounting/business rules · UI behaviour ·
+important edge cases · files and modules expected to change — then **wait for
+`START`. No code before `START`.**
+
+### 4. Then write the code — and only the code
+
+Implement **only the confirmed module**: the full vertical slice (domain →
+application → adapter → API → UI), reusing existing SherERP components,
+patterns, APIs, functions and `--sher-*` tokens. **No new visual style. No
+tests. No unrelated cleanup, no adjacent-module changes, no extra tooling
+unless required and approved.**
+
+### 5. Then build it, run it, and write the UI manual
+
+Run `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries` — **not `pnpm
+test`** — make the feature actually reachable, restart the app, and hand over a
+**step-by-step manual for testing it in the UI**: what to click, in what order,
+what should appear, which refusals to try.
+
+### 6. The owner reports bugs; fix them narrowly
+
+He reviews the running UI and says what is wrong. Then **inspect only the
+implementation and dependencies needed to diagnose that bug**, fix it, rebuild
+so he can verify again. No test to "prove" the fix, no refactor of code the bug
+did not touch.
+
+Making it reachable, or the owner opens the browser and sees nothing:
+
+```bash
+pnpm --filter "@sher/api..." build                  # the API runs from dist
+cd apps/api && node --env-file=.env dist/migrate.js
+node --env-file=.env dist/backfill-seed-roles.js    # NEW PERMISSIONS — easy to forget, hides the whole module
+# restart node --env-file=.env dist/main.js
+```
+
+### ⛔ AND: USE THE UI DESIGN THAT ALREADY EXISTS — NEVER INVENT A NEW ONE
+
+**This repo is built from more than one AI tool, and nothing wrecks a product
+faster than each tool bringing its own design ideas.** Before writing any
+screen, open two or three existing screens that do something similar and follow
+them exactly.
+
+- **Reuse the shared components** — `AppCard`, `StatCard`, `EmptyState`,
+  `ErrorNotice`, `HelpTip`, `SortableHeader`, `DateOnlyPicker`, `SearchField`,
+  `QuickAddSelect`, and the shared PrimeVue controls. Never re-implement one
+  locally; extend the shared one where it lives.
+- **Use the `--sher-*` design tokens** for every colour, space, radius and font
+  size. A hardcoded hex or magic pixel value is a defect.
+- **Do not invent an interaction pattern** the app already has — lists, hubs,
+  dialogs, confirmations, row menus, filters and paging all have an established
+  shape in §2.7 (UI-01…UI-75) and in the built screens.
+- **Do not restyle a working screen** to match a new one. If the existing
+  pattern truly cannot serve the requirement, **STOP and report**.
+- **Language:** English-primary with Bangla helpers (UI-14…UI-21), **except
+  counter surfaces, which are Bangla-first** (UI-74/UI-75). Digits always
+  Western (UI-47).
+
+A screen that is beautiful on its own and unlike every other SherERP screen is
+a **rejected** screen.
+
+---
+
 ## Documentation — exactly four files
 
 | File | Contains | Read it for |
 |---|---|---|
 | `SRS_AND_BUILD_GUIDE.md` | **SherERP Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)**: requirements, final decisions, architecture, UI workflow, data rules, module specs, module/phase plan, acceptance criteria, risks | **WHAT** to build |
-| `AI_CODING_INSTRUCTIONS.md` | Module-scale vertical workflow, coding standards, anti-overengineering rules, layering, risk-based tests, Definition of Done, prompt kernel | **HOW** to build |
+| `AI_CODING_INSTRUCTIONS.md` | **R-0 (the owner's working protocol — read first)**, module-scale vertical workflow, coding standards, anti-overengineering rules, layering, Definition of Done, prompt kernel | **HOW** to build |
 | `AGENTS.md` | This file | Orientation |
 | `FUNCTION_MAP.md` | Reuse index: existing functions, services, endpoints, database methods, shared components and business rules, with file paths and when to call them | **WHAT already exists** — read before searching the codebase |
 
@@ -21,7 +154,7 @@ Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreS
 - Do not re-read large sections you already know and that have not changed.
 - **Do not create new `.md` files.** No task logs, decision logs, module docs, planning docs, READMEs or scratch notes. If information belongs somewhere, it belongs in one of the four files above — update the relevant section.
 - **Read `FUNCTION_MAP.md` before searching the codebase, and update it at the end of every coding session** (owner decision 2026-08-22; rules in `AI_CODING_INSTRUCTIONS.md` R-T). It is an index of what exists and how to call it — never requirements, never a progress log.
-- **Do not run the full test suite after every change.** Build the complete module, then run the existing `pnpm test` suite once (`AI_CODING_INSTRUCTIONS.md` R-E). Saving tokens never justifies skipping the real-UI verification or care about money, stock, permissions and tenant isolation.
+- **Never write tests and never run test suites (R-0 step 1, R-E1).** Build the complete module, build and start the app, and hand the owner a UI manual. `pnpm build`, `pnpm typecheck`, `pnpm lint` and `pnpm test:boundaries` still run. Saving tokens never justifies skipping the real-UI verification or care about money, stock, permissions and tenant isolation.
 - Decisions that change: edit the section **and** add one line to the change log at the end of `SRS_AND_BUILD_GUIDE.md`.
 - Source code, tests, schema and migrations are the source of truth for implementation detail.
 
@@ -53,7 +186,7 @@ One coherent business module at a time, normally 3–5 working days. Inside it, 
 ```
 questions → START → module acceptance criteria → reuse map + requirement/UI trace → domain/application delta →
 module migration (if needed) → repositories/API/contracts delta → final-v4.2 Vue workflow →
-one run of the existing `pnpm test` suite → manual checklist for the owner → owner UI acceptance → module-gate commit
+build and start the app → step-by-step UI manual for the owner → owner UI acceptance → he reports bugs → narrow fixes → module-gate commit
 ```
 
 Never all backend, then all database, then all frontend. Finish the module, then run the four gate commands once. **A module is not done because the backend compiles or the suite passes** — it is done when its whole workflow works in the UI and the owner confirms the numbers. Phase 0 is the only no-UI exception.
@@ -99,15 +232,15 @@ Daily
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test:boundaries     # layering enforcement — never bypass
-pnpm test
+pnpm test:boundaries     # layering enforcement — never bypass (a static check, not a suite)
+# pnpm test              # DO NOT RUN unless the owner asks (R-0 step 1, R-E1)
 pnpm dev
 pnpm db:migrate
 
 docker start sher-pg     # PostgreSQL 16; sher_dev + sher_test
 ```
 
-At a module gate, completion requires all four checks, pasted **real** output, and owner UI acceptance. If `pnpm test` fails only on unrelated pre-existing failures, report them briefly — do not investigate or modify unrelated modules without the owner's approval. Do not start the next module until the owner confirms the current one.
+At a module gate, completion requires those checks with pasted **real** output, the app running, and owner UI acceptance. If a check fails only for unrelated pre-existing reasons, report it briefly — do not investigate or modify unrelated modules without the owner's approval. Do not start the next module until the owner confirms the current one.
 
 ## Critical rules
 
@@ -121,7 +254,7 @@ At a module gate, completion requires all four checks, pasted **real** output, a
 8. **Cash balances are moved, never assigned.** Opening cash differing from the previous counted close needs a posted movement with a declared source or destination. A stored expected amount is immutable — the drawer difference posts to `CASH_SHORT_OVER`, it never edits the expectation.
 9. **Reports derive monetary figures from journal lines and stock movements**, never from document fields (INV-10).
 10. **Choose the simplest thing that works.** No `BaseRepository`, `GenericRepository`, `RepositoryFactory`, generic CRUD, manager classes, single-implementation interfaces, or unrequested config flags.
-11. **Do not write new tests by default.** The only mandatory automated check is the existing full `pnpm test` suite, run once on the finished module, followed by a concise manual checklist for the owner. Never skip, weaken or delete an existing test. Extra tests for critical financial/stock logic require the owner's explicit permission, and only after their manual testing. Full policy: `AI_CODING_INSTRUCTIONS.md` R-E.
+11. **Never write tests, and never run test suites** (R-0 step 1). The owner tests the finished module himself in the running UI, from the step-by-step manual the agent writes, and reports the bugs. Never skip, weaken or delete an existing test. Tests for critical financial/stock logic require his explicit permission, and only after he has manually tested the module. Full policy: `AI_CODING_INSTRUCTIONS.md` R-E.
 12. **Never change a requirement or decision.** If the spec seems wrong, contradictory, or silent on something that changes a stored number, workflow, permission, stock state, invoice output, serial/barcode behaviour or user-visible action — **STOP and report.**
 13. **Implementation must be traceable to the v4.2 module contract.** Before coding a business module, map its Purpose → Fields → UI behaviour → Workflow → Business rules → Permissions → Feature dependencies → Accounting effects → Inventory effects → Correction/reversal rules → Search/filters → Edge cases → Acceptance tests. A capability is not complete merely because its database field or endpoint exists.
 14. **Do not resurrect superseded requirements.** No LIFO. No current Loyalty/Premium feature. PWA Offline precedes Mobile; optional Tauri comes only later. Confirmed business/UI behaviours merged into v4.2 are binding even when older code or archived docs differ.
@@ -143,7 +276,7 @@ Implement only the module increment in the task block. Do not touch files outsid
 
 For an existing-code UI migration, the task block's ALLOWED FILES should include the **current implementation files discovered by the reuse map**, not a guessed set of new files. If the authoritative use case sits outside the allowed set and must change, stop and propose that exact scope expansion instead of duplicating it locally. A necessary consolidation/refactor of the current owning module is valid work once its exact files are approved; unrelated refactoring remains out of scope.
 
-Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Reused existing functions/modules · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · Tests (existing `pnpm test` suite, real output) · Manual checklist for the owner · Not implemented · Risks noticed.
+Report as: Module increment · Acceptance criteria and numbers verified · Assumptions · Reused existing functions/modules · Files changed · Files intentionally NOT touched · Database · UI workflow (what to click) · How to test it in the UI (step by step) · Not implemented · Risks noticed.
 
 ## Recording a finished module
 

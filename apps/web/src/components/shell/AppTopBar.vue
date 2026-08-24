@@ -10,6 +10,7 @@ import { logout } from '../../api/auth';
 import { forgetMyAccess } from '../../auth/access';
 import { useSession } from '../../auth/session';
 import { useTheme } from '../../design/theme';
+import DayStatusChip from '../money/DayStatusChip.vue';
 
 defineProps<{ collapsed: boolean }>();
 const emit = defineEmits<{ toggleSidebar: [] }>();
@@ -85,6 +86,14 @@ const accountItems = computed<MenuItem[]>(() => [
     </label>
 
     <div class="topbar-right">
+      <!--
+        The day chip (owner decision 2026-08-24). On every screen because
+        whether the day is open is what a cashier most often needs to know and
+        most easily forgets — and the fix is the chip itself, so nobody leaves
+        the counter to start or close the day.
+      -->
+      <DayStatusChip />
+
       <div class="bizdate">
         <i class="pi pi-calendar" aria-hidden="true" />
         <span class="bizdate-text">

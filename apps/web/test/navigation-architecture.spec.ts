@@ -50,10 +50,13 @@ describe('navigation architecture', () => {
 
   it('preserves every current signed-in route through a hub and does not resurrect LIFO or V1 tax', () => {
     const routes = new Set(allFeatures().flatMap((feature) => feature.route === undefined ? [] : [feature.route.split('?')[0]]));
-    // `/import` is §5.6's guided onboarding import, added with path 2.4. The
-    // list grows only when a real implemented route ships; nothing is ever
-    // removed from it, which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/parties', '/users', '/roles', '/audit', '/settings', '/settings/security']));
+    // `/import` is §5.6's guided onboarding import, added with path 2.4.
+    // `/daily-cash` and `/settings/accounts` are Phase 4's money screens —
+    // Daily Cash under `Daily` per UI-67, the account setup under Settings per
+    // the owner's decision of 2026-08-24. The list grows only when a real
+    // implemented route ships; nothing is ever removed from it, which is what
+    // makes a lost route fail here.
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/parties', '/daily-cash', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

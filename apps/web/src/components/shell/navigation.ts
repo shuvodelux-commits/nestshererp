@@ -96,6 +96,17 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     ],
   },
   {
+    // UI-67: `Daily` is the first operational category. It resolves POS,
+    // Counter, Daybook and Daily Cash as each one ships — only Daily Cash does
+    // today, and an entry for the others would be the speculative placeholder
+    // UI-09 refuses.
+    id: 'daily', label: 'Daily', icon: 'pi-calendar', subcategories: [
+      { id: 'daily.cash', label: 'Daily Cash', icon: 'pi-wallet', features: [
+        feature('daily.cash.page', 'Daily Cash', 'দিনের নগদ হিসাব', 'Expected against counted, day by day', '/daily-cash', ['cash.daily.view'], ['/daily-cash']),
+      ] },
+    ],
+  },
+  {
     id: 'parties', label: 'Parties', icon: 'pi-users', alwaysGroup: true, subcategories: [
       { id: 'customers.management', label: 'Customers', icon: 'pi-user', features: [
         feature('parties.customers', 'Customers', 'কাস্টমারের তালিকা', 'Manage customers', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties']),
@@ -132,6 +143,10 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     id: 'settings', label: 'Settings', icon: 'pi-cog', subcategories: [
       { id: 'settings.business', label: 'Business', icon: 'pi-building', features: [
         feature('settings.business.page', 'Settings', 'ব্যবসার সেটিংস', 'Business details and approved feature controls', '/settings', ['settings.setting.view'], ['/settings']),
+      ] },
+      { id: 'settings.money', label: 'Money Accounts', icon: 'pi-wallet', features: [
+        feature('settings.money.cash', 'Cash Accounts', 'ক্যাশ ও সিন্দুক', 'The till, the safe and any other cash box', '/settings/accounts', ['cash.account.view'], ['/settings/accounts']),
+        { ...feature('settings.money.bank', 'Bank & bKash Accounts', 'ব্যাংক ও বিকাশ', 'Bank, bKash and Nagad accounts with their statements', '/settings/accounts', ['bank.account.view'], ['/settings/accounts'], false), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
       ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),

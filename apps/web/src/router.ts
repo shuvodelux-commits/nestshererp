@@ -50,6 +50,24 @@ const router = createRouter({
     // same form, and a second one would be the same fields written twice.
     { path: '/products/:id', name: 'product', component: () => import('./pages/ProductFormPage.vue') },
     { path: '/parties', name: 'parties', component: () => import('./pages/PartiesPage.vue') },
+    // Phase 4 — §5.16.8's Daily Cash sits under `Daily` (UI-67); the account
+    // setup screens sit under Settings (owner decision 2026-08-24), because a
+    // till is configured once and the cashier's menu stays short.
+    {
+      path: '/daily-cash',
+      name: 'daily-cash',
+      component: () => import('./pages/DailyCashPage.vue'),
+    },
+    {
+      path: '/settings/accounts',
+      name: 'money-accounts',
+      component: () => import('./pages/MoneyAccountsPage.vue'),
+    },
+    {
+      path: '/settings/accounts/:id/statement',
+      name: 'account-statement',
+      component: () => import('./pages/AccountStatementPage.vue'),
+    },
     // §5.6's guided onboarding import, one screen for every file type.
     { path: '/import', name: 'import', component: () => import('./pages/ImportPage.vue') },
     // 'new' and an id share one component: adding and editing a party are the

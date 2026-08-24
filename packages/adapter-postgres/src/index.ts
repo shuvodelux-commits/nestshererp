@@ -29,3 +29,4 @@ export { PostgresCatalogRepository } from './catalog-repository';
 export { PostgresProductRepository } from './product-repository';
 export { PostgresPartyRepository } from './party-repository';
 export { PostgresInventoryRepository } from './inventory-repository';
+export { PostgresMoneyRepository } from './money-repository';

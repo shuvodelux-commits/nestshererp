@@ -7,6 +7,14 @@ import type pg from 'pg';
 const clock = new SystemClock();
 
 const TENANT_SCOPED_TABLES = [
+  // Phase 4 money (migration 0016). Before the journal tables and `tenants`,
+  // like everything else here; movements and closes precede the sessions and
+  // accounts they reference.
+  'cash_movements',
+  'cash_session_closes',
+  'cash_sessions',
+  'account_openings',
+  'accounts',
   'cost_adjustments',
   'lot_consumptions',
   'journal_lines',

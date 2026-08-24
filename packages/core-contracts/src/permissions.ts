@@ -122,6 +122,31 @@ export const Permission = {
    * and it is a migration/onboarding action rather than daily work.
    */
   IMPORT_RUN: 'data.import.run',
+
+  /**
+   * Money accounts and the business day (Phase 4, §5.16, §5.17).
+   *
+   * **Seeing an account and creating one are far apart**, which is why they are
+   * separate codes: a cashier must know how much is in the drawer to do their
+   * job, and creating a bank account is the shop's banking arrangement.
+   *
+   * `CASH_SESSION_REOPEN` is its own code because it is the one action that
+   * undoes a posted count. Owner decision 2026-08-24 gives it to the Owner and,
+   * separately from any role, to whoever performed that close — the second half
+   * is a rule the use case applies on top of this code, not a permission a role
+   * can hold, since "the person who did it" is not knowable from a role.
+   */
+  CASH_ACCOUNT_VIEW: 'cash.account.view',
+  CASH_ACCOUNT_MANAGE: 'cash.account.manage',
+  CASH_SESSION_START: 'cash.session.start',
+  CASH_SESSION_CLOSE: 'cash.session.close',
+  CASH_SESSION_REOPEN: 'cash.session.reopen',
+  CASH_MOVEMENT_RECORD: 'cash.movement.record',
+  CASH_DAILY_VIEW: 'cash.daily.view',
+  CASH_DAILY_INVESTIGATE: 'cash.daily.investigate',
+
+  BANK_ACCOUNT_VIEW: 'bank.account.view',
+  BANK_ACCOUNT_MANAGE: 'bank.account.manage',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -365,6 +390,70 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     detail:
       'Post a whole CSV file at once. Still needs permission to add the kind of record being imported.',
   },
+  {
+    code: Permission.CASH_ACCOUNT_VIEW,
+    group: 'Money',
+    label: 'See cash accounts and their balances',
+    detail: 'Open the till, the safe and any other cash box, and see how much is in each.',
+  },
+  {
+    code: Permission.CASH_ACCOUNT_MANAGE,
+    group: 'Money',
+    label: 'Set up cash accounts',
+    detail:
+      'Add a till or a safe, change its details and opening balance, or take one out of use once it is empty.',
+  },
+  {
+    code: Permission.CASH_SESSION_START,
+    group: 'Money',
+    label: 'Start the day',
+    detail: 'Count the cash going into the drawer and open the day so selling can begin.',
+  },
+  {
+    code: Permission.CASH_SESSION_CLOSE,
+    group: 'Money',
+    label: 'Close the day',
+    detail: 'Count the drawer at the end of the day and record what was actually in it.',
+  },
+  {
+    code: Permission.CASH_SESSION_REOPEN,
+    group: 'Money',
+    label: 'Reopen a day closed by mistake',
+    detail:
+      'Undo today’s close and carry on trading. The mistaken count and its effect stay visible in the day’s history.',
+  },
+  {
+    code: Permission.CASH_MOVEMENT_RECORD,
+    group: 'Money',
+    label: 'Move money between accounts',
+    detail:
+      'Record cash moved to the safe or the bank, and money the owner puts in or takes out.',
+  },
+  {
+    code: Permission.CASH_DAILY_VIEW,
+    group: 'Money',
+    label: 'See the day’s cash position and history',
+    detail: 'Open Daily Cash: what each day expected, what was counted and where they differed.',
+  },
+  {
+    code: Permission.CASH_DAILY_INVESTIGATE,
+    group: 'Money',
+    label: 'Investigate a day that did not match',
+    detail:
+      'Open the day’s transactions from Daily Cash to find the difference. Correcting anything still needs that module’s own permission.',
+  },
+  {
+    code: Permission.BANK_ACCOUNT_VIEW,
+    group: 'Money',
+    label: 'See bank and bKash accounts',
+    detail: 'Open the shop’s bank, bKash and Nagad accounts and read their statements.',
+  },
+  {
+    code: Permission.BANK_ACCOUNT_MANAGE,
+    group: 'Money',
+    label: 'Set up bank and bKash accounts',
+    detail: 'Add a bank, bKash or Nagad account, change its details, or take one out of use.',
+  },
 ];
 
 /**
@@ -432,6 +521,22 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.VENDOR_DEACTIVATE,
       Permission.PARTY_GROUP_MANAGE,
       Permission.IMPORT_RUN,
+      /*
+       * "All operations" includes running the day and moving money — a manager
+       * closes up when the cashier has gone home. Deliberately **not**
+       * `*.account.manage`: opening a bank account is the shop's banking
+       * arrangement, not an operation. Deliberately not `cash.session.reopen`
+       * either (owner decision 2026-08-24) — a manager who did not perform the
+       * close does not undo it; the manager who *did* close may still reopen
+       * their own, through the rule the use case applies on top of the code.
+       */
+      Permission.CASH_ACCOUNT_VIEW,
+      Permission.BANK_ACCOUNT_VIEW,
+      Permission.CASH_SESSION_START,
+      Permission.CASH_SESSION_CLOSE,
+      Permission.CASH_MOVEMENT_RECORD,
+      Permission.CASH_DAILY_VIEW,
+      Permission.CASH_DAILY_INVESTIGATE,
     ],
   },
   {
@@ -451,6 +556,23 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CUSTOMER_VIEW,
       Permission.CUSTOMER_CREATE,
       Permission.CUSTOMER_EDIT,
+      /*
+       * The day, and today's cash position — owner decision 2026-08-24. The
+       * cashier opens the day, counts it and closes it, and can see what the
+       * drawer holds, which is what §5.26 already promises them.
+       *
+       * Deliberately **not** `cash.movement.record`: moving money to the safe
+       * or recording what the owner took is the act of deciding where cash
+       * goes, and the person counting the drawer is not the person who should
+       * also be able to explain a shortage by declaring a transfer. Not
+       * `cash.session.reopen` either as a role grant — but a cashier who closed
+       * by mistake can still undo their own close, because the use case admits
+       * the person who performed it.
+       */
+      Permission.CASH_SESSION_START,
+      Permission.CASH_SESSION_CLOSE,
+      Permission.CASH_DAILY_VIEW,
+      Permission.CASH_ACCOUNT_VIEW,
     ],
   },
   {
@@ -487,17 +609,34 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CUSTOMER_VIEW,
       Permission.SUPPLIER_VIEW,
       Permission.VENDOR_VIEW,
+      /*
+       * "Ledgers, payments, expenses, bank, reports." The accountant sets up
+       * and reads the money accounts and investigates a day that did not
+       * balance — but does not start or close the day, because they are not at
+       * the counter and did not count the drawer.
+       */
+      Permission.CASH_ACCOUNT_VIEW,
+      Permission.CASH_ACCOUNT_MANAGE,
+      Permission.BANK_ACCOUNT_VIEW,
+      Permission.BANK_ACCOUNT_MANAGE,
+      Permission.CASH_MOVEMENT_RECORD,
+      Permission.CASH_DAILY_VIEW,
+      Permission.CASH_DAILY_INVESTIGATE,
     ],
   },
   {
     code: 'VIEWER',
     name: 'Viewer',
-    // "Read-only, no cost, no profit."
+    // "Read-only, no cost, no profit." Money is read-only too: the balances and
+    // the day's history, and nothing that starts, closes or moves anything.
     permissions: [
       Permission.PRODUCT_VIEW,
       Permission.INVENTORY_LOT_VIEW,
       Permission.CUSTOMER_VIEW,
       Permission.SUPPLIER_VIEW,
+      Permission.CASH_ACCOUNT_VIEW,
+      Permission.BANK_ACCOUNT_VIEW,
+      Permission.CASH_DAILY_VIEW,
     ],
   },
 ];

@@ -12,6 +12,7 @@ import {
   PostgresNoteRepository,
   PostgresNumberingService,
   PostgresOtpRepository,
+  PostgresMoneyRepository,
   PostgresPartyRepository,
   PostgresProductRepository,
   PostgresOutbox,
@@ -59,6 +60,7 @@ import {
   OUTBOX,
   PASSWORD_HASHER,
   PERIOD_GUARD,
+  MONEY_REPOSITORY,
   PARTY_REPOSITORY,
   PRODUCT_REPOSITORY,
   ROLE_REPOSITORY,
@@ -248,6 +250,11 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [CLOCK],
     },
     {
+      provide: MONEY_REPOSITORY,
+      useFactory: (clock: Clock): PostgresMoneyRepository => new PostgresMoneyRepository(clock),
+      inject: [CLOCK],
+    },
+    {
       provide: INVENTORY_REPOSITORY,
       useFactory: (clock: Clock): PostgresInventoryRepository => new PostgresInventoryRepository(clock),
       inject: [CLOCK],
@@ -284,6 +291,7 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     CATALOG_REPOSITORY,
     PRODUCT_REPOSITORY,
     PARTY_REPOSITORY,
+    MONEY_REPOSITORY,
   ],
 })
 export class PersistenceModule {}

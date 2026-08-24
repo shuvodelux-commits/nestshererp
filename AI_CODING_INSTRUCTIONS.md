@@ -4,7 +4,118 @@
 
 Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every module starts with the R-Q question round and the owner's `START`, and ends with one run of the existing `pnpm test` suite plus a manual owner checklist (R-E). `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
+> ## ⛔ READ THIS FIRST — R-0, THE OWNER'S WORKING PROTOCOL
+>
+> **Owner instruction, 2026-08-24, after it was broken twice. This overrides every
+> habit, every convention in this file, and anything an agent believes is good
+> practice.** Applies to **every** agent on this repo — Claude Code, Codex CLI,
+> and any other. Violating any of the five steps means the work is rejected even
+> if the code is perfect. The full text is [R-0 below](#r-0--the-owners-working-protocol-very-important).
+>
+> 0. **START THE DEV SERVER AT THE BEGINNING OF EVERY SESSION** — mandatory,
+>    before anything else. Postgres, API, web. See Step 5 in practice for the
+>    exact commands.
+> 1. **NEVER write test files.** Not `*.spec.ts`, not a vitest suite, not a
+>    "quick check" — **not for any reason** until the owner says, in that
+>    conversation, that he wants tests. He verifies the work himself in the UI.
+> 2. **On a new or cleared chat: do not start work.** Find the last end
+>    position, state it in one short message, and **ask before continuing**.
+> 3. **A new module starts with the questions asked ONE AT A TIME** — up to ~20,
+>    each with 3–4 suggested answers, one marked **(Recommended)**, plus "type
+>    your own". Record each answer, ask the next. Then the Final Module
+>    Specification, then **wait for START**. No code until then.
+> 4. **Then write the code** for that module — implementation only, **no tests**.
+> 5. **Then**: build and start the app and hand over a **step-by-step manual for
+>    testing it in the UI**. **Never run automated test suites either** unless
+>    asked — the owner finds the bugs by using it, and reports them.
+>
+> **And: use the UI design that already exists. Never invent a new design rule,
+> a new component style, or a new layout pattern.** Reuse the shared PrimeVue
+> controls, the design tokens and the patterns the existing screens already use.
+
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every module starts at the R-0 step 0 dev server, runs the R-Q question round one question at a time, waits for the owner's `START`, and ends with the app built and running plus a step-by-step manual for the owner to test it in the UI (R-0, R-E). Automated test suites are neither written nor run unless the owner asks. `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
+
+---
+
+## R-0 — The Owner's Working Protocol (**VERY IMPORTANT**)
+
+**Status: BINDING, and above every other rule in this file.** Owner instruction
+of 2026-08-24, written down because it was given verbally and then broken twice
+in the same week — once by writing tests that were not asked for, once by
+starting work in a fresh chat without checking where the last one stopped.
+
+**This section outranks the Principle Priority list below.** No principle, no
+convention, no "best practice" and no judgement about what would be helpful
+overrides it. An agent that produces excellent code while breaking one of these
+steps has produced work the owner will reject.
+
+### Q0 — Why this exists
+
+The owner is not a programmer. He verifies each module by **using the running
+application himself**, click by click. That is the acceptance gate. Anything an
+agent does that is not code he can run, or instructions he can follow, is not
+help — it is unrequested work he then has to review, understand and clean up.
+
+### The steps, in order
+
+| # | Step | Rule |
+|---|---|---|
+| **0** | **Start the dev server, every session** | **Mandatory, at the beginning of every session, before anything else** (owner instruction 2026-08-24). Postgres up, the API built and running, the web server running — so the owner can open the app at any moment without asking, and so the agent never reports work it has not seen run. Do this on a fresh chat *before* reporting the last end position (step 1), and after any change that needs a rebuild (see **Step 5 in practice** below). If it will not start, say so in one line with the error before doing anything else — a session spent coding against a broken environment is a session wasted. |
+| **1** | **No tests** | **NEVER write a test file.** No `*.spec.ts`, no vitest suite, no test helper, no "temporary" test script — **for any module, for any reason**, however useful it seems. The only exception is an explicit instruction from the owner **in the current conversation** saying he wants tests. "It would catch bugs", "it proves the accounting", "the codebase has tests elsewhere" and "it found a real defect" are **not** exceptions; the first two were the exact arguments used when this rule was broken. |
+| **2** | **New chat = orient, then ask** | On a new or cleared conversation, **do not begin work.** First find where the last session stopped — the git log, the working tree, `SRS_AND_BUILD_GUIDE.md`'s changelog, the unfinished module. Then say, briefly, what the last end position is and what would come next, and **wait for the owner to tell you to start.** Do not assume the obvious next task is wanted. |
+| **3** | **One question at a time** | A new module begins with the R-Q round asked **one question per message** — up to about **20** where the module needs them, fewer when it is already well defined. Each question carries **3–4 suggested answers**, the best marked **(Recommended)**, each option short and stated as its practical effect, plus a final **“Type your own answer”**. The owner picks one or writes his own; **record the decision, then ask the next question.** Never ask what the SRS, these instructions, an existing decision or an earlier part of the conversation already answers. Aim the questions at real workflow, permissions, accounting behaviour, edge cases and UI/UX — and remember the users may have **low literacy**, so prefer simple flows, Bangla-friendly labels, few steps and clear actions. When every question is answered, show the **Final Module Specification** (R-Q Q4) and **wait for `START`.** |
+| **4** | **Code only** | Implement **only the confirmed module** — every layer, top to bottom (R-S), reusing existing SherERP components, patterns, APIs, functions and `--sher-*` tokens (R-A10…A15). **Do not invent a new visual style.** No tests (step 1), no unrelated cleanup, no adjacent-module changes, no extra tooling unless required **and approved**. |
+| **5** | **Build it, then write the manual** | When the code is finished: **build and start the app** so the owner can use it, then hand over a **step-by-step manual for testing the module in the UI** — what to click, in what order, what should appear, which refusals to try. **Do not run automated test suites** (`pnpm test`) unless the owner asks. The gates that make the app runnable and enforce architecture — `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries` — are still run; they are static checks, not test suites. |
+| **6** | **Bugs come from the owner, and are fixed narrowly** | The owner reviews the running UI and reports what is wrong. Then: **inspect only the implementation and dependencies needed to diagnose that bug**, fix it, rebuild so he can verify again. No test written to "prove" the fix, no opportunistic refactor of code the bug did not touch. |
+
+### Steps 0 and 5 in practice — the app runs, and the change is reachable
+
+**At the start of every session (step 0)** bring the whole stack up, in this
+order. Full guide: `DEV_SERVER_START_GUIDE.md`.
+
+```bash
+sudo service docker start && docker start sher-pg     # WSL2 does not start Docker itself
+pnpm --filter "@sher/api..." build                    # the API runs from dist, not from source
+cd apps/api && node --env-file=.env dist/main.js &    # API on :3000 — .env is NOT auto-loaded
+cd ../web && pnpm dev &                               # Vite on :5173
+```
+
+**After writing code (step 5)**, make the change actually reachable, or the
+owner opens the browser and sees nothing — this happened on 2026-08-24:
+
+```bash
+pnpm --filter "@sher/api..." build                 # rebuild the packages, not just apps/api
+cd apps/api
+node --env-file=.env dist/migrate.js               # new tables
+node --env-file=.env dist/backfill-seed-roles.js   # NEW PERMISSION CODES — the easy one to forget
+# then restart: node --env-file=.env dist/main.js
+```
+
+**The backfill is the one that hides a finished module.** A new permission code
+is not on any existing tenant's roles until it runs, and the sidebar hides every
+entry whose permission is missing (UI-09) — so a correctly built module looks
+like it was never built. Full guide: `DEV_SERVER_START_GUIDE.md`.
+
+### The design rule — for every agent, Codex CLI included
+
+**USE THE UI DESIGN THAT ALREADY EXISTS. NEVER INVENT A NEW ONE.**
+
+This repo is worked on from more than one tool — Claude Code and **Codex CLI** —
+and the fastest way to ruin a consistent product is for each of them to arrive
+with its own idea of how a screen should look. So, before implementing any
+screen:
+
+| # | Rule |
+|---|---|
+| D1 | **Look at the existing screens first.** Open two or three that already do something similar and follow them — the same page header shape, the same card, the same table, the same dialog, the same empty state, the same row-action menu. |
+| D2 | **Reuse the shared components**, never a local re-implementation: `AppCard`, `StatCard`, `EmptyState`, `ErrorNotice`, `HelpTip`, `SortableHeader`, `DateOnlyPicker`, `SearchField`, `QuickAddSelect`, and the shared PrimeVue controls. If one nearly fits, extend it where it lives — do not copy it into a new component. |
+| D3 | **Use the design tokens** (`--sher-*`) for every colour, space, radius and font size. A hardcoded hex, a magic pixel value or a page-specific font scale is a defect. |
+| D4 | **Do not invent a new interaction pattern** for something the app already does. Lists, hubs, dialogs, confirmations, row menus, filters and paging all have an established shape — §2.7 (UI-01…UI-75) states it and the built screens demonstrate it. |
+| D5 | **Do not restyle a working screen** because the new one looks different. If the existing pattern genuinely cannot serve the requirement, **STOP and report** (R-H) rather than introducing a second visual language. |
+| D6 | **Follow the language rules exactly**: English-primary with Bangla helpers everywhere (UI-14…UI-21), **except counter surfaces, which are Bangla-first** (UI-74/UI-75). Digits are always Western (UI-47). |
+
+A screen that is individually beautiful and unlike every other screen in
+SherERP is a **rejected** screen.
 
 ---
 
@@ -70,6 +181,9 @@ files and modules expected to be affected → WAIT for START
 | Q3 | Cover only real gaps: workflow, fields, business rules, permissions, edge cases, UI surface, mobile behaviour, and integrations with existing modules. |
 | Q4 | After the answers, restate the **final module specification**, then list added / changed / reused items, the exact UI and workflow the owner will get, and the files and modules expected to be affected. |
 | Q5 | Then stop and wait. `START` is the only signal that authorises code. Fixes to an already-approved module, and owner-reported defects, do not need a new round. |
+| Q6 | **ONE question per message, each with 3–4 suggested answers** (owner instruction 2026-08-24, final — R-0 step 3 is the authority; a briefly-tried "all questions in one message" variant is withdrawn). Ask up to about **20** where the module needs them, fewer when it is already well defined. Format: the question in bold, then **3–4 numbered options** — the best marked **(Recommended)**, each one short and stated as its practical effect on the shop's daily work rather than on the code — and a final option **“Type your own answer”**. The owner picks one or writes his own; **record the decision, then ask the next question.** Never send a question with no suggested answers, and never ask the owner to reply with a bare list of exception numbers. Write for users who may have **low literacy**: prefer simple workflows, Bangla-friendly labels, minimal steps and clear actions, and let the options reflect that. |
+| Q7 | A question the SRS, the code or a shipped setting already answers is **not asked** — it is stated as settled, in one line, with where it is settled (Q2). Only genuinely open decisions reach the owner. |
+| Q8 | **No test code is written and no test suite is run for the module** — not during the question round, not after `START`, not to prove an accounting rule, not to prove a bug fix. R-0 step 1, R-E1. Acceptance is the owner's own UI walkthrough (R-0 step 5), and the bugs he reports from it are diagnosed narrowly and fixed (R-0 step 6). |
 
 This replaces any earlier "ask before generating" phrasing in `SKILL.md` §29 — that section now points here.
 
@@ -101,14 +215,14 @@ Every module increment follows this order:
 | # | Rule |
 |---|---|
 | S1 | **Never** build all backend, then all database, then all frontend. Each internal path is connected domain → application → database → API → UI before the next path begins. |
-| S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, the existing `pnpm test` suite passes once on the finished module, and the owner confirms the numbers/workflow by manual testing. |
+| S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, the app builds and runs, and the owner confirms the numbers/workflow by testing it himself in the UI (R-E). |
 | S3 | If a module has no user-visible outcome, say so before starting — it is either Phase 0 foundation work or it is mis-scoped. |
 | S4 | Do not start a second module while the current module is incomplete. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
 | S4b | At module completion, update the status ledger (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Set `CODE COMPLETE`; **only the owner sets `DONE`** after manual acceptance. The owner may record the accepted code commit in a small follow-up ledger commit; a commit is not required to contain its own hash. |
 | S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific current module path that is blocked without it. "We will need it later" is not that. |
 | S6 | Write migrations for **this module only**. Do not create tables for a later module. |
 | S7 | Every module UI must be real and reachable, reuse the shared shell/tokens/components, and include loading, empty, error and permission-denied behaviour. A stub or disconnected mock is not delivery. |
-| S8 | **Build the whole module first, then run the existing full `pnpm test` suite once** (R-E1). Do not run it after every edit; a focused existing suite may be run while building when it saves a round trip, but no new tests are written to enable it (R-E2). |
+| S8 | **Build the whole module, then build and start the app for the owner** (R-0 step 5). Automated test suites are not run (R-E1) and no new tests are written (R-E2); `pnpm build`, `pnpm typecheck`, `pnpm lint` and `pnpm test:boundaries` still run. |
 | S9 | **Existing-path rule:** when the current code already supports part of the required workflow, start from that path and migrate it forward. Do not rebuild the same capability in a second route/module merely because the old screen layout differs from v4.2. |
 | S10 | **Many entry points, one module interface:** Customer/Supplier/Vendor hubs, Counter, Daybook, source documents and search/history may launch the same action, but all callers cross the same owning module interface. The UI origin may be passed only as navigation/audit context; it must not change business rules. |
 | S11 | **Context restoration is part of completion.** A contextual action launched from a hub/Daybook/reconciliation must save/cancel and return to the originating record, selected date basis/tab/filter/search and practical scroll/page position as required by UI-64. |
@@ -129,7 +243,7 @@ These rules reduce reading and re-running. **They never reduce correctness, secu
 | T1 | **Read `FUNCTION_MAP.md` before searching the codebase.** It is the first lookup for every task, ahead of `grep`, directory listings and file reads. Search the source only for what the map does not answer, and then only in the area it points at. |
 | T2 | **The map is the reuse map's starting point (A13).** An action already listed there is `REUSE` or `EXTEND` by default; deciding `MISSING` for something the map lists requires opening that file and saying why it does not fit. |
 | T3 | **Do not run the full test suite after every change.** Finish the module, then run it once (R-E1). |
-| T4 | **Do not write new tests to fill the gap.** The testing policy is R-E: the existing suite plus the owner's manual checklist. |
+| T4 | **Do not write new tests to fill the gap.** The testing policy is R-E: the owner tests the running UI and reports what is wrong. |
 | T5 | **The four gates run once, when the module is complete** (`lint`, `typecheck`, `test:boundaries`, `test`), with real output pasted. A module reported as complete without them is not complete (F2). |
 | T6 | **Update `FUNCTION_MAP.md` at the end of every coding session**, in the same commit as the work. Record new and modified reusable functions, services, use cases, API endpoints, repository/database methods, shared UI components and the important business rules, each with its file path and one line on when to reuse it. Delete entries whose code is gone. A session that wrote no reusable code says so and changes nothing. |
 | T7 | **Token economy never buys a shortcut through quality.** Not reading a file is fine; not reading the file you are about to change is not. Skipping a test run is fine; skipping the test is not. Never skip the SRS sections A7 requires, the security/tenant checks, or the real-UI verification because they are expensive. |
@@ -402,6 +516,12 @@ The repository may contain working screens built before the final workflow decis
 - **Progressive disclosure:** one or two primary actions visible; frequent views/actions nearby; rare/sensitive actions under More/row menu.
 - **PrimeVue 4 first:** reuse existing shared PrimeVue controls/preset/tokens; do not replace a working shared control with page-specific CSS/native controls.
 - **Bangla helper styling:** prefer compact inline `English — বাংলা`; English keeps normal label size/weight and Bangla uses the shared 11px muted helper style. Do not add a second full helper line under every control.
+- **Counter surfaces are Bangla-first (UI-74/UI-75, owner decision 2026-08-24) — applies to every module from here on.** Decide first *who acts on this screen*. If it is the cashier doing a job at the counter — starting or ending the day, taking cash in or out, a POS payment, an owner's withdrawal — the **Bangla is the visible label** at normal size and weight, and the English is the subordinate helper or absent. If it is the Owner/Manager reading, configuring or reconciling, keep English-primary per UI-14…UI-21. The inversion is per surface, never per module: one module normally has both kinds of screen.
+  - Write the label as the sentence spoken across the counter (`ড্রয়ারে এখন কত টাকা আছে?`), not a translated field name (`গণনাকৃত নগদ`).
+  - One primary action per counter screen, large, with an icon that means the same thing as the words.
+  - A choice from a known set is a row of large preset buttons, not a dropdown; typing is for the amount and a genuinely open note.
+  - Accounting vocabulary — session, reversal, shortage/overage, reconciliation, journal, opening equity — stays in the spec, the schema, the API and the audit trail. The counter reads `টাকা কম` / `টাকা বেশি`. The **domain and API names do not change**: `cashSession`, `differenceMinor`, `REOPENED` stay exactly as they are, because the ledger and the screen are different languages on purpose.
+  - UI-47 still holds: digits are Western inside Bangla labels — `৳64,500`, never `৬৪,৫০০`.
 - **Tooltip-first where visible Bangla harms density:** icon actions, compact table headers/rows and narrow toolbars use the shared PrimeVue tooltip/help pattern for Bangla/secondary guidance. Tooltip behavior must remain accessible to keyboard and touch where the information matters.
 - **Party ledger overview columns:** Name · Phone · Address · Current role balance · `⋯`. Put View Ledger/Edit/Delete-or-Deactivate/other permitted row actions in the menu. Do not reintroduce detail/configuration columns without an explicit SRS change.
 
@@ -443,17 +563,19 @@ Before `CODE COMPLETE`, verify the real UI at the applicable desktop/tablet/phon
 
 ## R-E — Tests
 
-**Finish the complete module first, then verify.** New automated tests are not written by default; this section is the single project testing policy and replaces every earlier "tests ship with the module" instruction.
+**The owner tests the software. The agent does not.** This section is the single project testing policy and replaces every earlier "tests ship with the module" and "run the suite once" instruction anywhere in this file. The required sequence is **R-0**'s: questions → final specification → `START` → code → build and run the app → **the owner reviews the UI** → he reports bugs → the agent inspects and fixes them.
+
+**Arguments that are not exceptions:** "tests may catch bugs", "this is financial logic", "other modules already have tests", "a test would prove the fix". Each has been used to justify breaking this rule.
 
 | # | Rule |
 |---|---|
-| E1 | **The only mandatory automated check is the existing full `pnpm test` suite**, run once after the module is complete, together with the other gate commands (`pnpm lint`, `pnpm typecheck`, `pnpm test:boundaries`). |
-| E2 | **Do not create new test code by default.** No new domain, API, UI, E2E, mock, fixture or diagnostic tests unless the owner explicitly requests them. |
+| E1 | **Do not run automated test suites** (owner instruction 2026-08-24, R-0 step 5). `pnpm test` is run **only when the owner asks for it in that conversation**. The gates that still run every time are the ones that make the app compile, run and stay architecturally sound: **`pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries`** — static checks, not test suites, despite the name of the last one. |
+| E2 | **Do not create new test code.** No new domain, API, UI, E2E, mock, fixture or diagnostic tests, and no throwaway verification script, unless the owner explicitly requests them. |
 | E3 | Never skip, disable, weaken or delete an existing test. No `.skip`, no `.only`, no commented assertions, and never change an expected number to match the output. |
-| E4 | If `pnpm test` fails because of unrelated pre-existing failures, **report them briefly and stop there**. Do not investigate or modify unrelated modules without the owner's explicit approval. |
-| E5 | After the suite, give the owner a **concise manual checklist** for testing the real UI, the calculations, the data flow and the business workflow. |
+| E4 | If a gate command fails for unrelated pre-existing reasons, **report it briefly and stop there**. Do not investigate or modify unrelated modules without the owner's explicit approval. |
+| E5 | When the code is finished, **build and start the app**, then give the owner a **step-by-step manual** for testing the real UI, the calculations, the data flow and the business workflow: what to click, in what order, what should appear, which refusals to try. This is the acceptance gate. |
 | E6 | Additional permanent tests for critical logic — financial calculations, balances, FIFO/stock, payments, refunds, accounting, unit conversion, settlements and other data-critical rules — are **optional and need the owner's permission first**. Do not write or run them until the owner has manually tested the module and explicitly approved further testing. |
-| E7 | When the owner reports a problem, fix only the affected area and say exactly what they should manually retest. |
+| E7 | **When the owner reports a bug: inspect only the implementation and dependencies needed to diagnose it**, fix it, rebuild so he can verify again, and say exactly what to retest. No test written to prove the fix (E2), no refactor of code the bug did not touch. |
 | E8 | **Do not start the next module until the owner confirms the current one.** |
 | E9 | If the owner does approve extra tests, they assert **exact expected numbers** from the module specification — never "greater than zero", never snapshot output — and domain tests stay pure and fast: no database, no HTTP. |
 
@@ -474,7 +596,7 @@ When finished, report in exactly this format. Do not narrate outside it.
 ## Files intentionally NOT touched
 ## Database (PostgreSQL migration)
 ## UI (route, screen, what the owner should click)
-## Tests (the existing `pnpm test` suite — paste the real runner output; note any unrelated pre-existing failures)
+## How to test it in the UI (step by step: what to click, in what order, what should appear)
 ## Manual checklist for the owner (real UI, calculations, data flow, business workflow)
 ## FUNCTION_MAP.md updated (what was added, changed or removed)
 ## Not implemented
@@ -540,7 +662,7 @@ not replace the four automated gates or owner UI acceptance.
 - [ ] `pnpm lint` passes, zero warnings
 - [ ] `pnpm typecheck` passes, zero `any` introduced
 - [ ] `pnpm test:boundaries` passes, no layering violation
-- [ ] `pnpm test` passes, **no skipped tests** — the existing suite, run once on the complete module (R-E1). No new tests were added without the owner's request (R-E2)
+- [ ] The app **builds and runs**, and the owner has a step-by-step UI manual (R-0 step 5). No test suite was run and no test file was written without the owner's request (R-E1, R-E2)
 - [ ] A concise manual checklist was handed to the owner for real-UI, calculation, data-flow and workflow testing (R-E5)
 - [ ] v4.2 module trace checked: required fields, conditional fields, UI actions, search/filters, edge states, print/share behaviour (where applicable), accounting/stock effects, reversal/correction and acceptance tests are all implemented
 - [ ] Migration runs clean on an empty DB **and** on a seeded DB
@@ -602,7 +724,7 @@ Any disagreement between two reports is a **blocking** defect, never a rounding 
 
 - [ ] The weekly module increment passes Gates 1–4
 - [ ] Every roadmap phase included in that module meets its exit criteria in `SRS_AND_BUILD_GUIDE.md` §6.1
-- [ ] The existing full `pnpm test` suite is green, including previous phases
+- [ ] The app builds and runs, and the owner has confirmed the module in the UI
 - [ ] The baseline scenario still passes end to end in the real UI
 
 ### Never Done If
@@ -638,7 +760,7 @@ WHAT A MODULE INCREMENT IS
 One coherent business area containing all related user actions needed to make it usable,
 built through every layer. Connect each internal path domain -> application -> database ->
 API -> Vue before starting the next path. Write no new tests. When the whole module is ready,
-run the existing `pnpm test` suite once and hand the owner a manual checklist for the real UI.
+build and start the app, and hand the owner a step-by-step manual for testing it in the real UI.
 If the module cannot be completed in 3-5 working days, propose two cohesive increments.
 
 BEFORE ANY CODE (R-Q): ask 10-20 concise questions about unresolved decisions only, then give the
@@ -659,7 +781,7 @@ NON-NEGOTIABLE RULES:
    follow the complete ten-step path in one transaction. Class S and M follow their defined paths.
 7. Never hard-delete a posted financial or stock record.
 8. Do NOT write new tests (R-E2). Never skip, disable or weaken an existing test. Finish the module,
-   run the existing `pnpm test` suite once, report any unrelated pre-existing failures briefly
+   build and start the app; do not run automated test suites unless asked (R-E1)
    without touching those modules, and give the owner a manual checklist. Extra tests for critical
    financial/stock logic require the owner's permission first.
 9. Do not modify anything outside the ALLOWED FILES list. If you believe you must, STOP and report.
@@ -689,7 +811,7 @@ methods, shared components and business rules this session added or changed, the
 exactly this format:
 ## Module increment / ## Acceptance criteria and the numbers I verified / ## Assumptions /
 ## Reused existing functions/modules / ## Files changed / ## Files intentionally NOT touched / ## Database (PostgreSQL migration) /
-## UI (route, screen, what the owner should click) / ## Tests (existing `pnpm test` suite, real output) /
+## UI (route, screen, what the owner should click) / ## How to test it in the UI (step by step) /
 ## Manual checklist for the owner /
 ## FUNCTION_MAP.md updated / ## Not implemented / ## Risks I noticed
 ```
@@ -701,7 +823,7 @@ exactly this format:
 ```
 Follow R-Q first: questions, then the specification, then WAIT for `START`. After that work
 autonomously through every layer of the module, writing no new tests. When it is complete run
-`pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste the real output.
+`pnpm lint && pnpm typecheck && pnpm test:boundaries` and paste the real output. Do **not** run `pnpm test` (R-E1).
 Do not mark the module complete if any gate fails or if its UI workflow is missing.
 If you disagree with the spec, say so instead of improvising.
 ```
@@ -834,7 +956,7 @@ TESTS
 - One test proving it PASSES on the real source
 
 DONE WHEN
-pnpm install && pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test all pass,
+pnpm install && pnpm lint && pnpm typecheck && pnpm test:boundaries all pass,
 GET /health returns 200, and the real output of all four commands is pasted.
 ```
 
@@ -966,7 +1088,7 @@ Do not start Phase 1 until every box is ticked.
 
 **At the module gate always say:**
 
-> Run `pnpm lint && pnpm typecheck && pnpm test:boundaries && pnpm test` and paste the real output with pass/fail counts. If any command fails, the task is not complete.
+> Run `pnpm lint && pnpm typecheck && pnpm test:boundaries` and paste the real output. **Do not run `pnpm test`** unless the owner asked for it (R-E1). If any command fails, the task is not complete. Then build and start the app and write the UI manual (R-0 step 5).
 
 **Never say** "make sure tests pass" — that is what an agent says back when it has not run them.
 

@@ -219,3 +219,42 @@ export type {
 } from './parties/manage-party-groups-service';
 export { ImportDataService } from './imports/import-data-service';
 export type { CommitImportCommand, ImportCommand } from './imports/import-data-service';
+export { CashMovementService } from './money/cash-movement-service';
+export type { RecordMovementCommand } from './money/cash-movement-service';
+export { CashSessionService } from './money/cash-session-service';
+export type {
+  CloseDayCommand,
+  DayStatusCommand,
+  ReopenDayCommand,
+  StartDayCommand,
+} from './money/cash-session-service';
+export { DailyCashService } from './money/daily-cash-service';
+export type { AccountStatementCommand, DailyCashCommand } from './money/daily-cash-service';
+export { ManageAccountsService } from './money/manage-accounts-service';
+export type {
+  AccountInput,
+  CreateAccountCommand,
+  DeactivateAccountCommand,
+  ListAccountsCommand,
+  UpdateAccountCommand,
+} from './money/manage-accounts-service';
+export type {
+  AccountOpeningCorrection,
+  CashMovementRow,
+  CashSessionCloseRow,
+  CashSessionRow,
+  CashSessionTotalsRow,
+  DailyCashFilter,
+  MoneyAccountEdit,
+  MoneyAccountRow,
+  MoneyRepository,
+  NewAccountOpening,
+  NewCashMovement,
+  NewCashSession,
+  NewCashSessionClose,
+  NewJournalEntry,
+  NewMoneyAccount,
+  StatementFilter,
+  StatementLineRow,
+} from './money/money-repository';
+export type { CashSessionReopen } from './money/money-repository';

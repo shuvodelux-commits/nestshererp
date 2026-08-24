@@ -530,3 +530,115 @@ export const partyRoles = pgTable('party_roles', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: char('deleted_by', { length: 26 }),
 });
+
+/* ------------------------------------------- Phase 4 money (migration 0016) */
+
+/** Class A — where money sits: the drawer, the safe, a bank, bKash (§2.4). */
+export const accounts = pgTable('accounts', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  holderName: text('holder_name'),
+  reference: text('reference'),
+  isDrawer: boolean('is_drawer').notNull(),
+  status: text('status').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class B — the balance a migrating shop starts an account with (§5.16). */
+export const accountOpenings = pgTable('account_openings', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  openingNumber: text('opening_number').notNull(),
+  accountId: char('account_id', { length: 26 }).notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class B — one trading day at the drawer (§5.16.1). */
+export const cashSessions = pgTable('cash_sessions', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  sessionNumber: text('session_number').notNull(),
+  accountId: char('account_id', { length: 26 }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  status: text('status').notNull(),
+  openingAmountMinor: bigint('opening_amount_minor', { mode: 'number' }).notNull(),
+  previousClosingMinor: bigint('previous_closing_minor', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/**
+ * Class B — one attempt to close a day (§5.16.4 and the 2026-08-24 reopen
+ * amendment). A day closed by mistake has two rows, and both stay.
+ */
+export const cashSessionCloses = pgTable('cash_session_closes', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  sessionId: char('session_id', { length: 26 }).notNull(),
+  status: text('status').notNull(),
+  openingAmountMinor: bigint('opening_amount_minor', { mode: 'number' }).notNull(),
+  cashInMinor: bigint('cash_in_minor', { mode: 'number' }).notNull(),
+  cashOutMinor: bigint('cash_out_minor', { mode: 'number' }).notNull(),
+  expectedClosingMinor: bigint('expected_closing_minor', { mode: 'number' }).notNull(),
+  countedClosingMinor: bigint('counted_closing_minor', { mode: 'number' }).notNull(),
+  differenceMinor: bigint('difference_minor', { mode: 'number' }).notNull(),
+  differenceReason: text('difference_reason'),
+  reopenReason: text('reopen_reason'),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }),
+  supersededBy: char('superseded_by', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Class B — money crossing between two named places (§5.16.3, §5.16.5). */
+export const cashMovements = pgTable('cash_movements', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  movementNumber: text('movement_number').notNull(),
+  kind: text('kind').notNull(),
+  fromAccountCode: text('from_account_code').notNull(),
+  toAccountCode: text('to_account_code').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  note: text('note'),
+  sessionId: char('session_id', { length: 26 }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
