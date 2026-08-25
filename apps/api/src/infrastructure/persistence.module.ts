@@ -17,6 +17,7 @@ import {
   PostgresProductRepository,
   PostgresPurchaseRepository,
   PostgresSaleRepository,
+  PostgresSalesReturnRepository,
   PostgresOutbox,
   PostgresPeriodGuard,
   PostgresRoleRepository,
@@ -65,6 +66,7 @@ import {
   MONEY_REPOSITORY,
   PURCHASE_REPOSITORY,
   SALE_REPOSITORY,
+  SALES_RETURN_REPOSITORY,
   PARTY_REPOSITORY,
   PRODUCT_REPOSITORY,
   ROLE_REPOSITORY,
@@ -273,6 +275,12 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       useFactory: (clock: Clock): PostgresSaleRepository => new PostgresSaleRepository(clock),
       inject: [CLOCK],
     },
+    {
+      provide: SALES_RETURN_REPOSITORY,
+      useFactory: (clock: Clock): PostgresSalesReturnRepository =>
+        new PostgresSalesReturnRepository(clock),
+      inject: [CLOCK],
+    },
   ],
   exports: [
     API_CONFIG,
@@ -308,6 +316,7 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     MONEY_REPOSITORY,
     PURCHASE_REPOSITORY,
     SALE_REPOSITORY,
+    SALES_RETURN_REPOSITORY,
   ],
 })
 export class PersistenceModule {}

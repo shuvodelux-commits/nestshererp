@@ -183,6 +183,28 @@ export const Permission = {
   SALE_PRESENTATION_EDIT: 'invoice.presentation.edit',
   SALE_QUOTATION_MANAGE: 'sale.quotation.manage',
   SALE_ORDER_MANAGE: 'sale.order.manage',
+
+  /**
+   * Corrections and adjustments (Phase 7, owner decisions 2026-08-26).
+   *
+   * One code per action, because a shop must be able to let a cashier take a
+   * customer's goods back without also letting them void a supplier's bill or
+   * close a month. **How much cash a return may hand back is not a permission
+   * but a number on the role** — `cashRefundPerReturnMinor` and
+   * `cashRefundPerDayMinor` — because the answer is an amount, not a yes or no,
+   * and a permission per bracket would be a permission per shop.
+   */
+  SALES_RETURN_VIEW: 'sales.return.view',
+  SALES_RETURN_CREATE: 'sales.return.create',
+  PURCHASE_RETURN_VIEW: 'purchase.return.view',
+  PURCHASE_RETURN_CREATE: 'purchase.return.create',
+  PURCHASE_EDIT: 'purchase.bill.edit',
+  PURCHASE_VOID: 'purchase.bill.void',
+  EXPENSE_VIEW: 'expense.view',
+  EXPENSE_RECORD: 'expense.record',
+  STOCK_COUNT_POST: 'stock.count.post',
+  PERIOD_CLOSE: 'period.close',
+  PERIOD_BACKDATE: 'period.backdate',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -510,6 +532,78 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     detail: 'Record an order a customer placed, to be invoiced when the goods go out.',
   },
   {
+    code: Permission.SALES_RETURN_VIEW,
+    group: 'Sales',
+    label: 'See customer returns',
+    detail: 'Open the Sales Returns list and read what customers have brought back.',
+  },
+  {
+    code: Permission.SALES_RETURN_CREATE,
+    group: 'Sales',
+    label: 'Take goods back from a customer',
+    detail:
+      'Accept a return against an invoice: the goods go back on the shelf and the value is refunded or left on the customer’s account. How much cash may be handed back is set on the role.',
+  },
+  {
+    code: Permission.PURCHASE_RETURN_VIEW,
+    group: 'Purchasing',
+    label: 'See supplier returns',
+    detail: 'Open the Purchase Returns list and read what went back to suppliers.',
+  },
+  {
+    code: Permission.PURCHASE_RETURN_CREATE,
+    group: 'Purchasing',
+    label: 'Send goods back to a supplier',
+    detail:
+      'Return goods against a bill: stock leaves the shelf and the value comes back as money or as credit with the supplier.',
+  },
+  {
+    code: Permission.PURCHASE_EDIT,
+    group: 'Purchasing',
+    label: 'Correct a posted bill',
+    detail:
+      'Fix a bill that was entered wrongly. The original is reversed and the corrected bill replaces it under the same number — refused once its goods have been sold.',
+  },
+  {
+    code: Permission.PURCHASE_VOID,
+    group: 'Purchasing',
+    label: 'Cancel a bill',
+    detail: 'Reverse a whole purchase: the goods come off the shelf and the supplier is no longer owed.',
+  },
+  {
+    code: Permission.EXPENSE_VIEW,
+    group: 'Money',
+    label: 'See expenses',
+    detail: 'Open the Expenses list and read what the shop has spent.',
+  },
+  {
+    code: Permission.EXPENSE_RECORD,
+    group: 'Money',
+    label: 'Record an expense',
+    detail: 'Enter rent, salary, electricity or any other cost, and the account it was paid from.',
+  },
+  {
+    code: Permission.STOCK_COUNT_POST,
+    group: 'Inventory',
+    label: 'Post a stock count',
+    detail:
+      'Count the shelf against the system and post the difference — stock found is added, stock missing is written off.',
+  },
+  {
+    code: Permission.PERIOD_CLOSE,
+    group: 'Settings',
+    label: 'Close a month',
+    detail:
+      'Close an accounting month so nothing more can post into it. A closed month is final; later corrections post in the open month.',
+  },
+  {
+    code: Permission.PERIOD_BACKDATE,
+    group: 'Settings',
+    label: 'Enter an earlier date',
+    detail:
+      'Record a return, expense or count against a business date in the past, inside a month that is still open. A reason is required and the real entry time is kept.',
+  },
+  {
     code: Permission.CASH_ACCOUNT_VIEW,
     group: 'Money',
     label: 'See cash accounts and their balances',
@@ -589,6 +683,14 @@ export interface SeedRole {
   readonly code: string;
   readonly name: string;
   readonly permissions: readonly Permission[];
+  /**
+   * How much cash this role may hand back on a return before a senior PIN is
+   * needed (owner decision 2026-08-26). Absent means unlimited, which is what
+   * every role but the Cashier ships with — the shop edits it on the Roles
+   * screen the first time it disagrees.
+   */
+  readonly cashRefundPerReturnMinor?: number;
+  readonly cashRefundPerDayMinor?: number;
 }
 
 export const SEED_ROLES: readonly SeedRole[] = [
@@ -679,11 +781,32 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.SALE_PRESENTATION_EDIT,
       Permission.SALE_QUOTATION_MANAGE,
       Permission.SALE_ORDER_MANAGE,
+      /*
+       * Corrections are operations: the manager takes returns both ways, fixes
+       * a bill that was typed wrongly, records what the shop spends and counts
+       * the shelf. Deliberately **not** `period.close` — §5.26 keeps the
+       * period out of this role, and a month is closed by the person who owns
+       * the books, not the person who ran the day.
+       */
+      Permission.SALES_RETURN_VIEW,
+      Permission.SALES_RETURN_CREATE,
+      Permission.PURCHASE_RETURN_VIEW,
+      Permission.PURCHASE_RETURN_CREATE,
+      Permission.PURCHASE_EDIT,
+      Permission.PURCHASE_VOID,
+      Permission.EXPENSE_VIEW,
+      Permission.EXPENSE_RECORD,
+      Permission.STOCK_COUNT_POST,
+      Permission.PERIOD_BACKDATE,
     ],
   },
   {
     code: 'CASHIER',
     name: 'Cashier',
+    // ৳5,000 for one return and ৳10,000 across a day, as the shop's starting
+    // point. Over either, the screen asks for an owner or manager PIN.
+    cashRefundPerReturnMinor: 500_000,
+    cashRefundPerDayMinor: 1_000_000,
     /*
      * "POS sell, receive payment, view the day's cash position. **No cost, no
      * profit, no purchase**."
@@ -730,6 +853,15 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.SALE_CREATE,
       Permission.SALE_RECEIVE_PAYMENT,
       Permission.SALE_PRESENTATION_EDIT,
+      /*
+       * A customer who brings goods back at eight in the evening is served by
+       * whoever is at the counter, so the cashier takes returns — but how much
+       * cash may leave the drawer for one is the role's refund limit, and over
+       * it the screen asks for a senior PIN (owner decision 2026-08-26).
+       * Deliberately **not** `period.backdate`: §5.26 excludes it by name.
+       */
+      Permission.SALES_RETURN_VIEW,
+      Permission.SALES_RETURN_CREATE,
     ],
   },
   {
@@ -759,6 +891,17 @@ export const SEED_ROLES: readonly SeedRole[] = [
        * (UI-40), which is exactly the reading a storekeeper should get.
        */
       Permission.PURCHASE_VIEW,
+      /*
+       * "Stock in/out, reconciliation, lots" is this role in one line, so the
+       * count sheet is theirs. They send goods back to a supplier as well —
+       * that is the storeroom rejecting a delivery — and read the sales-return
+       * list to know what has come back onto their shelves. No money: the
+       * refund and the credit are somebody else's decision.
+       */
+      Permission.STOCK_COUNT_POST,
+      Permission.PURCHASE_RETURN_VIEW,
+      Permission.PURCHASE_RETURN_CREATE,
+      Permission.SALES_RETURN_VIEW,
     ],
   },
   {
@@ -793,6 +936,21 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.SALE_RECEIVE_PAYMENT,
       Permission.PURCHASE_CREATE,
       Permission.PURCHASE_PAY,
+      /*
+       * "Expenses ... period lock" — §5.26 names both. The accountant records
+       * what the shop spends, closes the month when the books are right, and
+       * may date an entry back inside a month still open. Corrections to bills
+       * are theirs too, because they are the ones who find the wrong figure.
+       * No stock movement: the count belongs to the storekeeper.
+       */
+      Permission.EXPENSE_VIEW,
+      Permission.EXPENSE_RECORD,
+      Permission.PURCHASE_EDIT,
+      Permission.PURCHASE_VOID,
+      Permission.SALES_RETURN_VIEW,
+      Permission.PURCHASE_RETURN_VIEW,
+      Permission.PERIOD_CLOSE,
+      Permission.PERIOD_BACKDATE,
     ],
   },
   {

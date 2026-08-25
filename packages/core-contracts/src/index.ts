@@ -67,6 +67,7 @@ export {
   createRoleRequestSchema,
   deleteRoleRequestSchema,
   permissionDescriptorSchema,
+  refundLimitsSchema,
   roleDetailSchema,
   roleListResponseSchema,
   updateRoleRequestSchema,
@@ -75,6 +76,7 @@ export type {
   CreateRoleRequest,
   DeleteRoleRequest,
   PermissionDescriptorResponse,
+  RefundLimits,
   RoleDetailResponse,
   RoleListResponse,
   UpdateRoleRequest,
@@ -416,3 +418,19 @@ export type {
   SaleSource,
   UpdateInvoiceSettingsRequest,
 } from './sales';
+export {
+  createSalesReturnRequestSchema,
+  returnLineRequestSchema,
+  returnReasonSchema,
+  returnableInvoiceSchema,
+  returnableLineSchema,
+  salesReturnListSchema,
+  salesReturnSchema,
+} from './returns';
+export type {
+  CreateSalesReturnRequest,
+  ReturnReason,
+  ReturnableInvoiceResponse,
+  SalesReturnListResponse,
+  SalesReturnResponse,
+} from './returns';

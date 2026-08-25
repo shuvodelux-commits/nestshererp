@@ -47,6 +47,9 @@ export interface CreateRoleCommand {
   readonly ctx: TenantContext;
   readonly name: string;
   readonly permissions: readonly string[];
+  /** How much cash this role may refund on a return; null is unlimited. */
+  readonly cashRefundPerReturnMinor: number | null;
+  readonly cashRefundPerDayMinor: number | null;
   readonly confirmPassword: string;
 }
 
@@ -55,6 +58,8 @@ export interface UpdateRoleCommand {
   readonly roleId: string;
   readonly name: string;
   readonly permissions: readonly string[];
+  readonly cashRefundPerReturnMinor: number | null;
+  readonly cashRefundPerDayMinor: number | null;
   readonly confirmPassword: string;
 }
 
@@ -112,6 +117,10 @@ export class ManageRolesService {
 
       const roleId = Ulid.generate(this.clock);
       await this.roles.insertCustomRole(tx, ctx, { id: roleId, code, name });
+      await this.roles.setRefundCaps(tx, ctx, roleId, {
+        perReturnMinor: command.cashRefundPerReturnMinor,
+        perDayMinor: command.cashRefundPerDayMinor,
+      });
       for (const permission of permissions) {
         await this.roles.grant(tx, ctx, roleId, permission);
       }
@@ -154,6 +163,15 @@ export class ManageRolesService {
 
       if (name !== before.name) await this.roles.rename(tx, ctx, command.roleId, name);
       await this.applyPermissions(tx, ctx, command.roleId, before.permissions, permissions);
+      /*
+       * The caps travel with the role, not with the permission list: a shop
+       * raising the cashier's limit is not re-privileging anybody, and the
+       * Owner's frozen permissions do not freeze what the owner may refund.
+       */
+      await this.roles.setRefundCaps(tx, ctx, command.roleId, {
+        perReturnMinor: command.cashRefundPerReturnMinor,
+        perDayMinor: command.cashRefundPerDayMinor,
+      });
 
       await this.audit.append(tx, ctx, {
         entityType: 'role',
@@ -297,6 +315,8 @@ function toResponse(role: RoleDetail): RoleDetailResponse {
     isSystem: role.isSystem,
     locked: role.code === OWNER_ROLE_CODE,
     permissions: [...role.permissions],
+    cashRefundPerReturnMinor: role.cashRefundPerReturnMinor,
+    cashRefundPerDayMinor: role.cashRefundPerDayMinor,
     userCount: role.userCount,
   };
 }

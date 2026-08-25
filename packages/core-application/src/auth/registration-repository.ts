@@ -61,6 +61,9 @@ export interface RoleDetail extends RoleSummary {
   readonly isSystem: boolean;
   readonly permissions: readonly string[];
   readonly userCount: number;
+  /** How much cash this role may refund (Phase 7). Null is unlimited. */
+  readonly cashRefundPerReturnMinor: number | null;
+  readonly cashRefundPerDayMinor: number | null;
 }
 
 export interface RoleRepository {
@@ -75,6 +78,14 @@ export interface RoleRepository {
   listDetailed(tx: Tx, ctx: TenantContext): Promise<readonly RoleDetail[]>;
   findDetail(tx: Tx, ctx: TenantContext, roleId: string): Promise<RoleDetail | null>;
   findByCode(tx: Tx, ctx: TenantContext, code: string): Promise<RoleSummary | null>;
+  /** Soft delete (§3.6) — a role that was used stays readable in the audit trail. */
+  /** The two refund caps, set from the Roles screen (owner decision 2026-08-26). */
+  setRefundCaps(
+    tx: Tx,
+    ctx: TenantContext,
+    roleId: string,
+    caps: { readonly perReturnMinor: number | null; readonly perDayMinor: number | null },
+  ): Promise<void>;
   /** Soft delete (§3.6) — a role that was used stays readable in the audit trail. */
   softDelete(tx: Tx, ctx: TenantContext, roleId: string): Promise<void>;
 }

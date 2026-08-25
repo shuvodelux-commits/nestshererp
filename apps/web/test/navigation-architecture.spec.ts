@@ -53,10 +53,12 @@ describe('navigation architecture', () => {
     // `/import` is §5.6's guided onboarding import, added with path 2.4.
     // `/daily-cash` and `/settings/accounts` are Phase 4's money screens —
     // Daily Cash under `Daily` per UI-67, the account setup under Settings per
-    // the owner's decision of 2026-08-24. The list grows only when a real
-    // implemented route ships; nothing is ever removed from it, which is what
-    // makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
+    // the owner's decision of 2026-08-24. `/pos` and `/sales` arrived with
+    // Phase 6, and `/sales-returns` with Phase 7 — a history page, because a
+    // return is always taken from the invoice it comes off. The list grows only
+    // when a real implemented route ships; nothing is ever removed from it,
+    // which is what makes a lost route fail here.
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

@@ -21,6 +21,16 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   CUSTOMER_RECEIPT: 'RCV',
   QUOTATION: 'QTN',
   SALES_ORDER: 'SO',
+  /*
+   * Phase 7 (owner decision 2026-08-26): each corrective document counts on its
+   * own short series. Short because the number is printed — spelling one out as
+   * SALES_RETURN-2026-000001 was what pushed a statement into a horizontal
+   * scroll when the opening correction tried it.
+   */
+  SALES_RETURN: 'SR',
+  PURCHASE_RETURN: 'PR',
+  EXPENSE: 'EXP',
+  STOCK_COUNT: 'SC',
 };
 
 /**

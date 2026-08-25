@@ -108,14 +108,16 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
   },
   {
     // §5.7, §5.8: Sales is one business module — the counter, the invoices it
-    // produced, and how those invoices are printed. `Sales Return` is not
-    // listed, because the capability does not ship yet and UI-09 refuses a
-    // dead page.
+    // produced, how those invoices are printed, and what came back. `Sales
+    // Return` is a **history** entry: a return is always taken from the invoice
+    // it comes off (owner decision 2026-08-26), so this route reads and prints
+    // them rather than offering a second way to create one.
     id: 'sales', label: 'Sales (POS)', icon: 'pi-shopping-bag', subcategories: [
       { id: 'sales.counter', label: 'Sales', icon: 'pi-receipt', features: [
         feature('sales.pos', 'POS — New Sale', 'নতুন বিক্রি', 'Sell at the counter and print the invoice', '/pos', ['sale.invoice.create'], ['/pos']),
         feature('sales.list', 'Sales Invoice', 'বিক্রির তালিকা', 'Every invoice, what is paid and what is owed', '/sales', ['sale.invoice.view'], ['/sales']),
         feature('sales.receive', 'Receive Payment', 'কাস্টমারের টাকা নিন', 'Take money against what a customer owes', '/sales', ['sale.payment.record'], ['/sales'], false),
+        feature('sales.returns', 'Sales Return', 'বিক্রি ফেরত', 'What customers brought back, and where the money went', '/sales-returns', ['sales.return.view'], ['/sales-returns']),
       ] },
     ],
   },

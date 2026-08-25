@@ -100,6 +100,29 @@ export class PostgresRoleRepository implements RoleRepository {
       .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.id, roleId)));
   }
 
+  /**
+   * The refund caps (owner decision 2026-08-26). Null is unlimited and 0 is a
+   * role that may take a return without opening the drawer — so both are stored
+   * as given, and neither is coerced into the other.
+   */
+  async setRefundCaps(
+    tx: Tx,
+    ctx: TenantContext,
+    roleId: string,
+    caps: { readonly perReturnMinor: number | null; readonly perDayMinor: number | null },
+  ): Promise<void> {
+    const now = this.clock.now();
+    await txOf(tx)
+      .update(roles)
+      .set({
+        cashRefundPerReturnMinor: caps.perReturnMinor,
+        cashRefundPerDayMinor: caps.perDayMinor,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+      })
+      .where(and(eq(roles.tenantId, ctx.tenantId), eq(roles.id, roleId)));
+  }
+
   async softDelete(tx: Tx, ctx: TenantContext, roleId: string): Promise<void> {
     const now = this.clock.now();
     await txOf(tx)
@@ -147,15 +170,22 @@ export class PostgresRoleRepository implements RoleRepository {
       .where(and(eq(users.tenantId, ctx.tenantId), isNull(users.deletedAt)));
 
     const flags = await txOf(tx)
-      .select({ id: roles.id, isSystem: roles.isSystem })
+      .select({
+        id: roles.id,
+        isSystem: roles.isSystem,
+        perReturn: roles.cashRefundPerReturnMinor,
+        perDay: roles.cashRefundPerDayMinor,
+      })
       .from(roles)
       .where(and(eq(roles.tenantId, ctx.tenantId), isNull(roles.deletedAt)));
 
-    const systemById = new Map(flags.map((row) => [row.id.trim(), row.isSystem]));
+    const flagsById = new Map(flags.map((row) => [row.id.trim(), row]));
 
     return summaries.map((role) => ({
       ...role,
-      isSystem: systemById.get(role.id) ?? false,
+      isSystem: flagsById.get(role.id)?.isSystem ?? false,
+      cashRefundPerReturnMinor: flagsById.get(role.id)?.perReturn ?? null,
+      cashRefundPerDayMinor: flagsById.get(role.id)?.perDay ?? null,
       permissions: grants
         .filter((grant) => grant.roleId.trim() === role.id)
         .map((grant) => grant.code),

@@ -1,0 +1,158 @@
+import { z } from 'zod';
+
+const ULID = z.string().length(26);
+const BUSINESS_DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * Goods coming back — from a customer, or to a supplier (Phase 7, §5.11).
+ *
+ * **A return is always against its document.** There is no free-standing return
+ * request: the invoice or the bill is named, the lines are its lines, and the
+ * server re-derives every figure from what that document actually sold or
+ * bought. Nothing the screen computes is posted (DR13.12) — the amounts below
+ * travel only so the shopkeeper's choices arrive, never the arithmetic.
+ */
+
+/** Why the goods came back. Closed, because free text cannot be counted. */
+export const returnReasonSchema = z.enum([
+  'DAMAGED',
+  'WRONG_ITEM',
+  'CHANGED_MIND',
+  'EXTRA_QUANTITY',
+  'OTHER',
+]);
+export type ReturnReason = z.infer<typeof returnReasonSchema>;
+
+export const returnLineRequestSchema = z
+  .object({
+    /** The line of the original document this quantity is coming back from. */
+    sourceLineId: ULID,
+    /** Scale 3, as every quantity is. Zero lines are simply left out. */
+    qty: z.number().int().positive(),
+  })
+  .strict();
+
+export const createSalesReturnRequestSchema = z
+  .object({
+    saleId: ULID,
+    lines: z.array(returnLineRequestSchema).min(1).max(200),
+    reason: returnReasonSchema,
+    note: z.string().trim().max(500).nullable().default(null),
+    /**
+     * What is handed back in cash or bank. `0` leaves the whole value on the
+     * customer's account — their dues first, the rest as an advance.
+     */
+    refundMinor: z.number().int().nonnegative().default(0),
+    /** Where a refund comes out of. Required only when `refundMinor > 0`. */
+    refundAccountCode: z.string().max(60).nullable().default(null),
+    /**
+     * The approver's PIN, when the refund is over the caller's role limit
+     * (owner decision 2026-08-26). The server checks it belongs to a live user
+     * whose own role allows the amount, and stores who approved.
+     */
+    approvalPin: z.string().min(4).max(12).nullable().default(null),
+    /** Backdating (§5.19): today unless the caller holds `period.backdate`. */
+    businessDate: BUSINESS_DATE.optional(),
+    backdateReason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CreateSalesReturnRequest = z.infer<typeof createSalesReturnRequestSchema>;
+
+/**
+ * One line of an invoice as the return modal sees it: what was sold, what has
+ * already come back, and what a unit is worth returning.
+ */
+export const returnableLineSchema = z
+  .object({
+    saleLineId: ULID,
+    productId: ULID,
+    productName: z.string(),
+    unitName: z.string(),
+    qtySold: z.number().int(),
+    qtyReturned: z.number().int(),
+    qtyReturnable: z.number().int(),
+    unitPriceMinor: z.number().int(),
+    /** What the customer paid for the whole line, after both discounts. */
+    netAmountMinor: z.number().int(),
+    /**
+     * False for consignment goods: they were never the shop's stock, so the
+     * modal shows the line but cannot take it back (INV-04).
+     */
+    returnable: z.boolean(),
+  })
+  .strict();
+
+export const returnableInvoiceSchema = z
+  .object({
+    saleId: ULID,
+    number: z.string(),
+    businessDate: BUSINESS_DATE,
+    customerName: z.string(),
+    partyId: ULID,
+    isWalkIn: z.boolean(),
+    grandTotalMinor: z.number().int(),
+    dueMinor: z.number().int(),
+    lines: z.array(returnableLineSchema),
+    /**
+     * What this caller may refund in cash before a PIN is needed — the role's
+     * two caps, with what today has already used. `null` is unlimited.
+     */
+    refundLimit: z
+      .object({
+        perReturnMinor: z.number().int().nullable(),
+        perDayMinor: z.number().int().nullable(),
+        usedTodayMinor: z.number().int(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ReturnableInvoiceResponse = z.infer<typeof returnableInvoiceSchema>;
+
+export const salesReturnLineSchema = z
+  .object({
+    id: ULID,
+    saleLineId: ULID,
+    productId: ULID,
+    productName: z.string(),
+    unitName: z.string(),
+    qty: z.number().int(),
+    valueMinor: z.number().int(),
+  })
+  .strict();
+
+export const salesReturnSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    saleId: ULID,
+    saleNumber: z.string(),
+    partyId: ULID,
+    customerName: z.string(),
+    businessDate: BUSINESS_DATE,
+    reason: returnReasonSchema,
+    note: z.string().nullable(),
+    returnValueMinor: z.number().int(),
+    refundMinor: z.number().int(),
+    creditMinor: z.number().int(),
+    refundAccountCode: z.string().nullable(),
+    refundAccountName: z.string().nullable(),
+    approvedByName: z.string().nullable(),
+    lines: z.array(salesReturnLineSchema),
+    createdAt: z.string(),
+  })
+  .strict();
+
+export type SalesReturnResponse = z.infer<typeof salesReturnSchema>;
+
+export const salesReturnListSchema = z
+  .object({
+    returns: z.array(salesReturnSchema),
+    nextCursor: z.string().nullable(),
+    totalValueMinor: z.number().int(),
+    totalRefundMinor: z.number().int(),
+  })
+  .strict();
+
+export type SalesReturnListResponse = z.infer<typeof salesReturnListSchema>;

@@ -9,6 +9,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { MoneyModule } from './money/money.module';
 import { PartiesModule } from './parties/parties.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
+import { ReturnsModule } from './returns/returns.module';
 import { SalesModule } from './sales/sales.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
 import { ReadOnlyLicenseGuard } from './deployment/read-only.guard';
@@ -40,6 +41,7 @@ import { UsersModule } from './users/users.module';
     ImportsModule,
     PurchasingModule,
     SalesModule,
+    ReturnsModule,
   ],
   controllers: [HealthController],
   providers: [

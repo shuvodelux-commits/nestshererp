@@ -7,12 +7,13 @@ import { useRouter } from 'vue-router';
 
 import { ApiError } from '../../api/client';
 import { fetchImageDataUrl } from '../../api/images';
-import { cancelSale, fetchInvoiceSettings } from '../../api/sales';
+import { cancelSale, fetchInvoiceSettings, fetchSale } from '../../api/sales';
 import { useSession } from '../../auth/session';
 import ConfirmDialog from '../ConfirmDialog.vue';
 import ErrorNotice from '../ErrorNotice.vue';
 import { taka } from '../money/money-text';
 import InvoiceDocument from './InvoiceDocument.vue';
+import SalesReturnDialog from './SalesReturnDialog.vue';
 import { printNode, saveNodeAsImage, shareNodeAsImage } from './invoice-output';
 
 /**
@@ -72,6 +73,13 @@ const failure = ref<{ code: string; message: string } | null>(null);
 const previewSale = computed(() => props.sale);
 const canEditSale = ref(session.can('sale.invoice.edit'));
 const canVoid = ref(session.can('sale.invoice.void'));
+/*
+ * A return starts from the invoice it comes back from (owner decision
+ * 2026-08-26) — there is no free-standing return screen. The list page under
+ * Sales is where past returns are read, not where one is taken.
+ */
+const canReturn = ref(session.can('sales.return.create'));
+const returning = ref(false);
 
 onMounted(async () => {
   const token = session.accessToken.value;
@@ -100,6 +108,22 @@ async function cancelThisSale(): Promise<void> {
     failure.value = describe(cause, 'Could not cancel this sale');
   } finally {
     saving.value = false;
+  }
+}
+
+/**
+ * The invoice is re-read after a return: its due has moved, and a preview still
+ * showing the old figure is the thing that gets printed and handed over.
+ */
+async function onReturned(): Promise<void> {
+  returning.value = false;
+  const token = session.accessToken.value;
+  if (token === null) return;
+  try {
+    emit('updated', await fetchSale(token, props.sale.id));
+  } catch {
+    // The return posted; only the refresh failed. The list behind this dialog
+    // re-reads on its own through `onDataChanged`.
   }
 }
 
@@ -240,6 +264,12 @@ function describe(cause: unknown, fallback: string): { code: string; message: st
       <div class="preview__actions">
         <Button v-if="canEditSale" label="Edit Sale" text @click="editSale" />
         <Button
+          v-if="canReturn && sale.status === 'POSTED'"
+          label="Return"
+          text
+          @click="returning = true"
+        />
+        <Button
           v-if="canVoid && sale.status === 'POSTED'"
           label="Cancel Sale"
           text
@@ -256,6 +286,13 @@ function describe(cause: unknown, fallback: string): { code: string; message: st
       </div>
     </template>
   </Dialog>
+
+  <SalesReturnDialog
+    v-if="returning"
+    :sale-id="sale.id"
+    @close="returning = false"
+    @returned="onReturned"
+  />
 
   <ConfirmDialog
     v-if="confirmingCancel"

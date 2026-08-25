@@ -144,6 +144,10 @@ async function save(): Promise<void> {
       const created = await createRole(session.accessToken.value ?? '', {
         name: draftName.value.trim(),
         permissions: draftPermissions.value,
+        // A new role starts unlimited; the caps get their own control in the
+        // Phase 7 Roles pass.
+        cashRefundPerReturnMinor: null,
+        cashRefundPerDayMinor: null,
         confirmPassword: confirmPassword.value,
       });
       notice.value = `${created.name} was created.`;
@@ -151,6 +155,11 @@ async function save(): Promise<void> {
       const saved = await updateRole(session.accessToken.value ?? '', editing.value.id, {
         name: draftName.value.trim(),
         permissions: draftPermissions.value,
+        // Carried back as they are: this form has no control for them yet, and
+        // sending null would quietly remove the Cashier's refund limit the first
+        // time anybody renamed the role.
+        cashRefundPerReturnMinor: editing.value.cashRefundPerReturnMinor,
+        cashRefundPerDayMinor: editing.value.cashRefundPerDayMinor,
         confirmPassword: confirmPassword.value,
       });
       notice.value = `${saved.name} was updated. Everyone holding it is affected straight away.`;

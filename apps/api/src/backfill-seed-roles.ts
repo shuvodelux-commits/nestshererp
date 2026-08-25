@@ -94,6 +94,24 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
           roles += 1;
           touched = true;
         }
+        /*
+         * The refund caps a seed role ships with (Phase 7). Applied only where
+         * the shop has never set one — both columns still NULL — so a tenant
+         * that raised the cashier's limit keeps it, and a tenant that has never
+         * seen the setting gets the sensible default rather than "unlimited".
+         */
+        if (
+          seed.cashRefundPerReturnMinor !== undefined &&
+          (await ensureRefundCaps(
+            client,
+            tenantId,
+            roleId.id,
+            seed.cashRefundPerReturnMinor,
+            seed.cashRefundPerDayMinor ?? null,
+          ))
+        ) {
+          touched = true;
+        }
         for (const permission of seed.permissions) {
           const granted = await ensurePermission(
             client,
@@ -183,6 +201,32 @@ async function ensureRole(
     [id, tenantId, code, name, now, actorId],
   );
   return { id, created: true };
+}
+
+/**
+ * Sets a seed role's refund caps, but only if neither has ever been set.
+ *
+ * Returns whether anything changed, so the run's summary counts the tenant as
+ * touched — the same reporting every other step here does.
+ */
+async function ensureRefundCaps(
+  client: { query: QueryFn },
+  tenantId: string,
+  roleId: string,
+  perReturnMinor: number,
+  perDayMinor: number | null,
+): Promise<boolean> {
+  const updated = await client.query<{ id: string }>(
+    `UPDATE roles
+        SET cash_refund_per_return_minor = $3, cash_refund_per_day_minor = $4,
+            updated_at = $5
+      WHERE tenant_id = $1 AND id = $2
+        AND cash_refund_per_return_minor IS NULL
+        AND cash_refund_per_day_minor IS NULL
+      RETURNING id`,
+    [tenantId, roleId, perReturnMinor, perDayMinor, clock.now()],
+  );
+  return updated.rows.length > 0;
 }
 
 async function ensurePermission(

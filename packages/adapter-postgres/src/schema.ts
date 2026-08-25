@@ -42,6 +42,9 @@ export const roles = pgTable('roles', {
   code: text('code').notNull(),
   name: text('name').notNull(),
   isSystem: boolean('is_system').notNull(),
+  /** How much cash this role may refund; null is unlimited (Phase 7). */
+  cashRefundPerReturnMinor: bigint('cash_refund_per_return_minor', { mode: 'number' }),
+  cashRefundPerDayMinor: bigint('cash_refund_per_day_minor', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -932,4 +935,37 @@ export const saleDrafts = pgTable('sale_drafts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(),
+});
+
+export const salesReturns = pgTable('sales_returns', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnNumber: text('return_number').notNull(), saleId: char('sale_id', { length: 26 }).notNull(),
+  partyId: char('party_id', { length: 26 }).notNull(),
+  customerNameSnapshot: text('customer_name_snapshot').notNull(),
+  locationId: char('location_id', { length: 26 }).notNull(),
+  reason: text('reason').notNull(), note: text('note'),
+  returnValueMinor: bigint('return_value_minor', { mode: 'number' }).notNull(),
+  refundMinor: bigint('refund_minor', { mode: 'number' }).notNull(),
+  creditMinor: bigint('credit_minor', { mode: 'number' }).notNull(),
+  settledMinor: bigint('settled_minor', { mode: 'number' }).notNull(),
+  cogsMinor: bigint('cogs_minor', { mode: 'number' }).notNull(),
+  refundAccountCode: text('refund_account_code'),
+  approvedBy: char('approved_by', { length: 26 }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  backdateReason: text('backdate_reason'),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const salesReturnLines = pgTable('sales_return_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnId: char('return_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  saleLineId: char('sale_line_id', { length: 26 }).notNull(), productId: char('product_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
+  costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });

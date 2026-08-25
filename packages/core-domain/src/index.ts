@@ -256,6 +256,24 @@ export type {
   SaleTotals,
 } from './sales/sale';
 export {
+  refillLots,
+  rejectSalesReturn,
+  returnableQty,
+  salesReturnPosting,
+  salesReturnTotals,
+} from './sales/sales-return';
+export type {
+  LotConsumed,
+  LotRefill,
+  ReturnableLine,
+  SalesReturnDraft,
+  SalesReturnLineDraft,
+  SalesReturnLineTotals,
+  SalesReturnPostingSides,
+  SalesReturnRejection,
+  SalesReturnTotals,
+} from './sales/sales-return';
+export {
   buildProductSearchText,
   normalizeSearchText,
   rankProduct,

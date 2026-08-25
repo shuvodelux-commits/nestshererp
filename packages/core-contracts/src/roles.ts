@@ -7,10 +7,33 @@ import { z } from 'zod';
  * do re-privileges everyone holding it in one move — a wider act than editing
  * one person — so §5.3's step-up rule applies at least as strongly here.
  */
+/**
+ * How much cash a role may hand back on a return (owner decision 2026-08-26).
+ *
+ * **A number on the role, not a permission.** The question a shop asks is "how
+ * much can the boy at the counter give back", and the answer is an amount; a
+ * permission per bracket would be a permission per shop. `null` is unlimited,
+ * which is what Owner and Manager ship with. `0` is a role that may take
+ * returns but never open the drawer for one — a real setting, not a mistake.
+ *
+ * Two caps, because they catch different things: one refund of ৳৫,০০০, and ten
+ * of ৳৫০০ across the afternoon. Over either, the screen asks for a senior PIN.
+ */
+export const refundLimitsSchema = z
+  .object({
+    cashRefundPerReturnMinor: z.number().int().nonnegative().nullable(),
+    cashRefundPerDayMinor: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+export type RefundLimits = z.infer<typeof refundLimitsSchema>;
+
 export const createRoleRequestSchema = z
   .object({
     name: z.string().min(2).max(60),
     permissions: z.array(z.string().max(80)).max(200),
+    cashRefundPerReturnMinor: z.number().int().nonnegative().nullable().default(null),
+    cashRefundPerDayMinor: z.number().int().nonnegative().nullable().default(null),
     confirmPassword: z.string().min(1).max(200),
   })
   .strict();
@@ -21,6 +44,8 @@ export const updateRoleRequestSchema = z
   .object({
     name: z.string().min(2).max(60),
     permissions: z.array(z.string().max(80)).max(200),
+    cashRefundPerReturnMinor: z.number().int().nonnegative().nullable().default(null),
+    cashRefundPerDayMinor: z.number().int().nonnegative().nullable().default(null),
     confirmPassword: z.string().min(1).max(200),
   })
   .strict();
@@ -46,6 +71,8 @@ export const roleDetailSchema = z
      */
     locked: z.boolean(),
     permissions: z.array(z.string()),
+    cashRefundPerReturnMinor: z.number().int().nullable(),
+    cashRefundPerDayMinor: z.number().int().nullable(),
     /** How many active people hold it — a role in use cannot be deleted. */
     userCount: z.number().int(),
   })

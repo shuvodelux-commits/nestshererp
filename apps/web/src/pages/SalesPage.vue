@@ -16,6 +16,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import InvoicePreviewDialog from '../components/sales/InvoicePreviewDialog.vue';
 import ReceivePaymentDialog from '../components/sales/ReceivePaymentDialog.vue';
+import SalesReturnDialog from '../components/sales/SalesReturnDialog.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import { taka } from '../components/money/money-text';
 
@@ -43,6 +44,7 @@ const canSell = computed(() => session.can('sale.invoice.create'));
 const canReceive = computed(() => session.can('sale.payment.record'));
 const canEditSale = computed(() => session.can('sale.invoice.edit'));
 const canVoid = computed(() => session.can('sale.invoice.void'));
+const canReturn = computed(() => session.can('sales.return.create'));
 
 /*
  * Everything an invoice can have done to it lives on its own row (owner
@@ -55,6 +57,8 @@ const menuFor = ref<SaleListItem | null>(null);
 const opened = ref<SaleResponse | null>(null);
 const receivingFrom = ref<SaleListItem | null>(null);
 const cancelling = ref<SaleResponse | null>(null);
+/** A return is taken from the invoice it comes off (owner decision 2026-08-26). */
+const returningFrom = ref<SaleListItem | null>(null);
 const working = ref(false);
 
 const rowMenuItems = computed<MenuItem[]>(() => {
@@ -78,6 +82,15 @@ const rowMenuItems = computed<MenuItem[]>(() => {
           icon: 'pi pi-pencil',
           command: (): void => {
             void router.push({ name: 'pos', query: { edit: sale.id } });
+          },
+        }]
+      : []),
+    ...(canReturn.value && live
+      ? [{
+          label: 'Return goods',
+          icon: 'pi pi-reply',
+          command: (): void => {
+            returningFrom.value = sale;
           },
         }]
       : []),
@@ -266,6 +279,13 @@ onDataChanged(load);
       :sale="opened"
       @close="opened = null"
       @updated="(sale: SaleResponse) => (opened = sale)"
+    />
+
+    <SalesReturnDialog
+      v-if="returningFrom"
+      :sale-id="returningFrom.id"
+      @close="returningFrom = null"
+      @returned="() => { returningFrom = null; void load(); }"
     />
 
     <ReceivePaymentDialog

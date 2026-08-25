@@ -330,3 +330,23 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { CreateSalesReturnService } from './returns/create-sales-return-service';
+export type {
+  CreateSalesReturnCommand,
+  SalesReturnLineInput,
+} from './returns/create-sales-return-service';
+export { SalesReturnQueryService } from './returns/sales-return-query-service';
+export { toSalesReturnResponse } from './returns/sales-return-view';
+export type {
+  ApprovalCandidate,
+  LineConsumptionRow,
+  NewSalesReturn,
+  NewSalesReturnLine,
+  RefundCaps,
+  ReturnableInvoiceRow,
+  ReturnableLineRow,
+  SalesReturnFilter,
+  SalesReturnLineRow,
+  SalesReturnRepository,
+  SalesReturnRow,
+} from './returns/sales-return-repository';

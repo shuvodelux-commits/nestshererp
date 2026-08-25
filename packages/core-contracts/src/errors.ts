@@ -58,6 +58,14 @@ export const ErrorCode = {
    */
   INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
   FEATURE_DISABLED: 'FEATURE_DISABLED',
+  /**
+   * 402-shaped in spirit, 403 in fact: the caller may take this return, but the
+   * cash they want to hand back is over their role's refund limit (owner
+   * decision 2026-08-26). Its own code because the screen's answer is neither
+   * "fix the form" nor "you may not" — it is to ask somebody senior for a PIN,
+   * and no other refusal opens that dialog.
+   */
+  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -83,6 +91,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   LICENSE_READ_ONLY: 423,
   INSUFFICIENT_STOCK: 422,
   FEATURE_DISABLED: 403,
+  APPROVAL_REQUIRED: 403,
 };
 
 export function httpStatusFor(code: ErrorCode): number {
