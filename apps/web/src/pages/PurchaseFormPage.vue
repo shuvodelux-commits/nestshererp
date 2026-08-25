@@ -14,14 +14,14 @@ import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import { computed, nextTick, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
 import { EMPTY_CATALOG, fetchCatalog } from '../api/catalog';
 import { fetchAccounts, fetchDayStatus } from '../api/money';
 import { fetchParties } from '../api/parties';
 import { fetchProducts } from '../api/products';
-import { createPurchase } from '../api/purchasing';
+import { createPurchase, fetchPurchase } from '../api/purchasing';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
@@ -55,6 +55,7 @@ import PartyFormPage from './PartyFormPage.vue';
  */
 const session = useSession();
 const router = useRouter();
+const route = useRoute();
 const clock = new SystemClock();
 
 interface Line {
@@ -83,6 +84,17 @@ const discount = ref(0);
 const extraCost = ref(0);
 const paid = ref(0);
 const paidAccountId = ref('');
+
+/**
+ * The bill this form is correcting (§2.5, owner decision 2026-08-26).
+ *
+ * `/purchases/new?correct=<id>` opens the form on a posted bill: the same
+ * screen, the same writer, the same rules — the only difference is that saving
+ * reverses the original first and keeps its number. A posted bill is never
+ * edited in place, so there is no second form and no second code path.
+ */
+const correctionOf = ref<string | null>(null);
+const correctingNumber = ref("");
 
 const suppliers = ref<readonly PartyResponse[]>([]);
 const accounts = ref<readonly MoneyAccountResponse[]>([]);
@@ -184,9 +196,65 @@ async function loadSetup(): Promise<void> {
     catalog.value = catalogResponse;
     const drawer = accounts.value.find((account) => account.isDrawer);
     if (drawer !== undefined && paidAccountId.value === '') paidAccountId.value = drawer.id;
+
+    const correcting = route.query['correct'];
+    if (typeof correcting === 'string' && correcting !== '') {
+      await loadForCorrection(token, correcting);
+    }
   } catch (cause) {
     failure.value = describe(cause, 'Could not load suppliers and accounts');
   }
+}
+
+/**
+ * Fill the form from the bill being corrected.
+ *
+ * Every figure comes back as it was entered — quantity, rate, discount, extra
+ * cost, what was paid — so the shopkeeper changes the one thing that was wrong
+ * rather than typing the bill again. `tracksExpiry` is read from the catalog
+ * the form already loaded, because the stored line knows the date but not
+ * whether the product still asks for one.
+ */
+async function loadForCorrection(token: string, purchaseId: string): Promise<void> {
+  const bill = await fetchPurchase(token, purchaseId);
+
+  /*
+   * Cost is omitted from the response for anyone without `inventory.cost.view`
+   * (UI-40, R-E8). Prefilling from that would put zero rates into the form and
+   * a corrected bill worth nothing, so the correction is refused outright
+   * rather than half-filled.
+   */
+  if (bill.paidMinor === undefined || bill.lines.some((line) => line.unitPriceMinor === undefined)) {
+    failure.value = {
+      code: 'PERMISSION_DENIED',
+      message: 'Correcting a bill needs permission to see cost prices',
+    };
+    return;
+  }
+
+  correctionOf.value = bill.id;
+  correctingNumber.value = bill.number;
+
+  supplierId.value = bill.supplierPartyId;
+  billRef.value = bill.supplierBillRef ?? '';
+  businessDate.value = bill.businessDate;
+  dueDate.value = bill.dueDate ?? '';
+  discount.value = (bill.discountMinor ?? 0) / 100;
+  extraCost.value = (bill.extraCostMinor ?? 0) / 100;
+  paid.value = (bill.paidMinor ?? 0) / 100;
+  notes.value = bill.notes ?? '';
+
+  lines.value = bill.lines.map((line) => ({
+    productId: line.productId,
+    productName: line.productName,
+    productCode: '',
+    unitName: line.unitName,
+    tracksExpiry: line.expiryDate !== null,
+    qty: line.qty / 1000,
+    rate: (line.unitPriceMinor ?? 0) / 100,
+    expiryDate: line.expiryDate ?? '',
+    showDetail: false,
+  }));
 }
 
 /**
@@ -319,6 +387,7 @@ async function save(): Promise<void> {
         paidMinor: minor(paid.value),
         paidAccountCode: minor(paid.value) === 0 ? null : accountCode.value,
         notes: notes.value.trim() === '' ? null : notes.value.trim(),
+        correctionOf: correctionOf.value,
       },
       operationId.value,
     );

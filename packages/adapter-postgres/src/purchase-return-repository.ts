@@ -202,7 +202,8 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         sourceDocumentType: 'PURCHASE_RETURN',
         sourceDocumentId: draft.id,
         sourceNumber: draft.number,
-        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 1000) / line.qty),
+        // Taka at scale 4, matching what the purchase wrote onto this lot.
+        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
       });
 
       await db

@@ -45,6 +45,12 @@ export const createPurchaseRequestSchema = z
     paidMinor: z.number().int().nonnegative().default(0),
     paidAccountCode: ACCOUNT_CODE.nullable().default(null),
     notes: z.string().trim().max(500).nullable().default(null),
+    /**
+     * The bill this one replaces (§2.5, Phase 7). Set by `Edit` on a posted
+     * bill: the original is reversed and this one takes its number. Null is an
+     * ordinary new purchase, which is what every existing caller sends.
+     */
+    correctionOf: ULID.nullable().default(null),
   })
   .strict();
 export type CreatePurchaseRequest = z.infer<typeof createPurchaseRequestSchema>;
@@ -72,6 +78,8 @@ export const purchaseResponseSchema = z
   .object({
     id: ULID,
     number: z.string(),
+    /** D-32 optimistic locking: what a cancel or correction must send back. */
+    version: z.number().int(),
     supplierPartyId: ULID,
     supplierName: z.string(),
     supplierBillRef: z.string().nullable(),
@@ -226,3 +234,13 @@ export const supplierDueResponseSchema = z.object({
   ),
 });
 export type SupplierDueResponse = z.infer<typeof supplierDueResponseSchema>;
+
+/** Cancelling a posted bill (§2.5). The version is D-32 optimistic locking. */
+export const voidPurchaseRequestSchema = z
+  .object({
+    version: z.number().int().positive(),
+    reason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type VoidPurchaseRequest = z.infer<typeof voidPurchaseRequestSchema>;

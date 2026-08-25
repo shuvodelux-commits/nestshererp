@@ -2,12 +2,14 @@ import {
   averageAfterReceipt,
   purchaseCosts,
   purchasePosting,
+  rejectEntry,
   rejectPurchase,
+  stockValueMinor,
 } from '@sher/core-domain';
-import type { PurchaseRejection } from '@sher/core-domain';
+import type { AccountCode, PurchaseRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { PurchaseResponse } from '@sher/core-contracts';
-import { Money, Ulid } from '@sher/shared-utils';
+import { Money, Qty, Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { ProductRepository } from '../catalog/product-repository';
@@ -61,6 +63,31 @@ export interface CreatePurchaseCommand {
   readonly paidMinor: number;
   readonly paidAccountCode: string | null;
   readonly notes: string | null;
+  /**
+   * The bill this one replaces (Phase 7, §2.5, owner decision 2026-08-26).
+   *
+   * A posted purchase is never edited in place. Naming it here makes this call
+   * a **correction**: the original is reversed in full inside this same
+   * transaction, the corrected bill takes its number, and any money already
+   * allocated to it follows. There is one purchase writer, so a corrected bill
+   * obeys exactly the costing, permissions, audit and outbox rules a typed one
+   * does — which is the whole reason this is a field rather than a second
+   * service.
+   */
+  readonly correctionOf: string | null;
+}
+
+/**
+ * The unit cost (scale 4) that a value in poisha spread over a quantity comes
+ * to, rounded half-up once — the inverse of `stockValueMinor`.
+ *
+ * Used when a receipt is reversed: the average is what is left after this
+ * bill's contribution is taken back out, and rounding it any other way would
+ * leave the cache disagreeing with the lots it is a cache of.
+ */
+function averageOf(valueMinor: number, qtyRaw: number): number {
+  const scaled = (BigInt(valueMinor) * 100_000n * 2n) / BigInt(qtyRaw);
+  return Number((scaled + 1n) / 2n);
 }
 
 /** Domain refusal → the sentence a shopkeeper reads. The rule stays in the domain. */
@@ -94,6 +121,146 @@ export class CreatePurchaseService {
     private readonly clock: Clock,
   ) {}
 
+  /**
+   * Undo the bill being corrected (§2.5, owner decision 2026-08-26).
+   *
+   * **Refused once the goods have been sold.** A bill's lots are what its goods
+   * live in; if any of one has been drawn down, un-receiving it would take
+   * stock that belongs to somebody else's sale and drive the lot negative. The
+   * shop is told to use a purchase return instead — the document that exists
+   * for goods which really did move.
+   *
+   * A later supplier payment allocated to the bill is fine: it follows the
+   * number onto the corrected bill. The reversal is built from the entry that
+   * was posted, read back from the journal rather than recomputed, because
+   * costs move and a rebuilt entry would not cancel out.
+   */
+  private async reverseForCorrection(
+    tx: Tx,
+    ctx: TenantContext,
+    purchaseId: string,
+    businessDate: string,
+    today: string,
+  ): Promise<{ readonly id: string; readonly number: string }> {
+    const original = await this.purchases.findPurchaseForReversal(tx, ctx, purchaseId);
+    if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That bill was not found');
+    if (original.status !== 'POSTED') {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'That bill has already been cancelled');
+    }
+
+    for (const line of original.lines) {
+      if (line.qtyRemainingInLot < line.qty) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Some of these goods have already been sold — use a purchase return instead',
+        );
+      }
+    }
+
+    // Both dates are guarded: moving a bill out of a closed period changes that
+    // period as much as posting into it.
+    await this.periods.assertOpen(tx, ctx, original.businessDate);
+    await this.periods.assertOpen(tx, ctx, businessDate);
+
+    const reversal = original.journalLines.map((line) => ({
+      id: Ulid.generate(this.clock),
+      account: line.account as AccountCode,
+      amountMinor: -line.amountMinor,
+      partyId: line.partyId,
+    }));
+    if (rejectEntry({ lines: reversal }) !== null) {
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'That bill cannot be reversed cleanly');
+    }
+
+    const positions = new Map<
+      string,
+      {
+        qtyOnHand: number;
+        avgUnitCost: number;
+        costStateId: string;
+        exists: boolean;
+        locationId: string;
+      }
+    >();
+    const movements = [];
+    for (const line of original.lines) {
+      if (!positions.has(line.productId)) {
+        const stored = await this.inventory.findStockPosition(tx, ctx, line.productId);
+        positions.set(line.productId, {
+          qtyOnHand: stored?.qtyOnHand ?? 0,
+          avgUnitCost: stored?.avgUnitCost ?? 0,
+          costStateId: stored?.costStateId ?? Ulid.generate(this.clock),
+          exists: stored?.costStateId !== null && stored?.costStateId !== undefined,
+          locationId: stored?.locationId ?? line.locationId,
+        });
+      }
+      const position = positions.get(line.productId);
+      if (position !== undefined) {
+        /*
+         * The average this receipt created is taken back out of it: the value
+         * on hand, less what this line put in, over the quantity that is left.
+         * Reversing the quantity alone would leave the shop's average holding a
+         * price it never paid.
+         */
+        const qtyLeft = Qty(position.qtyOnHand).subtract(Qty(line.qty)).raw;
+        const valueLeft = stockValueMinor(position.qtyOnHand, position.avgUnitCost) - line.costMinor;
+        positions.set(line.productId, {
+          ...position,
+          qtyOnHand: qtyLeft,
+          avgUnitCost: qtyLeft <= 0 || valueLeft <= 0 ? 0 : averageOf(valueLeft, qtyLeft),
+        });
+      }
+
+      movements.push({
+        id: Ulid.generate(this.clock),
+        productId: line.productId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        qty: line.qty,
+        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
+      });
+    }
+
+    const ok = await this.purchases.reversePurchase(tx, ctx, {
+      purchaseId: original.id,
+      expectedVersion: original.version,
+      businessDate,
+      entryMode: entryModeFor(businessDate, today),
+      journalEntryId: Ulid.generate(this.clock),
+      journalLines: reversal,
+      movements,
+      costStates: [...positions].map(([productId, position]) => ({
+        id: position.costStateId,
+        exists: position.exists,
+        productId,
+        locationId: position.locationId,
+        avgUnitCost: position.avgUnitCost,
+        qtyOnHand: position.qtyOnHand,
+      })),
+    });
+    if (!ok) {
+      throw new AppError(
+        ErrorCode.CONFLICT_STALE_VERSION,
+        'Someone else changed this bill — reload and try again',
+      );
+    }
+
+    await this.audit.append(tx, ctx, {
+      entityType: 'purchase',
+      entityId: original.id,
+      action: 'CORRECT',
+      before: {
+        number: original.number,
+        status: 'POSTED',
+        grandTotalMinor: String(original.grandTotalMinor),
+      },
+      after: { number: original.number, status: 'VOIDED', reason: 'CORRECTED' },
+      source: 'API',
+    });
+
+    return { id: original.id, number: original.number };
+  }
+
   async create(command: CreatePurchaseCommand): Promise<PurchaseResponse> {
     const draft = {
       lines: command.lines.map((line) => ({
@@ -121,7 +288,11 @@ export class CreatePurchaseService {
 
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
-      await this.access.require(tx, ctx, Permission.PURCHASE_CREATE);
+      await this.access.require(
+        tx,
+        ctx,
+        command.correctionOf === null ? Permission.PURCHASE_CREATE : Permission.PURCHASE_EDIT,
+      );
 
       const replay = await this.idempotency.find(tx, ctx, command.operationId);
       if (replay !== null) {
@@ -148,6 +319,17 @@ export class CreatePurchaseService {
           'The due date cannot be before the purchase date',
         );
       }
+
+      /*
+       * The correction happens first, inside this same transaction: the old
+       * bill is undone before the new one lands, so stock and the ledger never
+       * hold both at once, and anything that refuses below rolls the reversal
+       * back with it.
+       */
+      const replaced =
+        command.correctionOf === null
+          ? null
+          : await this.reverseForCorrection(tx, ctx, command.correctionOf, businessDate, today);
 
       const supplier = await this.parties.findById(tx, ctx, command.supplierPartyId);
       if (supplier === null) throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
@@ -283,12 +465,16 @@ export class CreatePurchaseService {
       });
 
       const purchaseId = Ulid.generate(this.clock);
-      const number = await this.numbering.allocate(
-        tx,
-        ctx,
-        'PURCHASE',
-        Number(businessDate.slice(0, 4)),
-      );
+      /*
+       * A correction keeps the number it is correcting. A shopkeeper holding a
+       * bill and the shop holding two different numbers for it is the confusion
+       * §2.5 exists to prevent — and a gap in the series would look like a
+       * missing document rather than a fixed one.
+       */
+      const number =
+        replaced === null
+          ? await this.numbering.allocate(tx, ctx, 'PURCHASE', Number(businessDate.slice(0, 4)))
+          : replaced.number;
 
       await this.purchases.insertPurchase(tx, ctx, {
         id: purchaseId,
@@ -307,11 +493,21 @@ export class CreatePurchaseService {
         sessionId: paidAccount?.sessionId ?? null,
         notes: command.notes,
         businessDate,
-        entryMode: entryModeFor(businessDate, today),
+        entryMode: replaced === null ? entryModeFor(businessDate, today) : 'CORRECTED',
         journalEntryId: Ulid.generate(this.clock),
         journalLines: posting.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
         lines: purchaseLines,
       });
+
+      /*
+       * Money handed over was handed over for this bill number, so it follows
+       * the number rather than being unallocated and typed again. The reversal
+       * above has already put the original cash line back, so only *later*
+       * payments are moved here.
+       */
+      if (replaced !== null) {
+        await this.purchases.movePaymentAllocations(tx, ctx, replaced.id, purchaseId);
+      }
 
       for (const update of priceUpdates) {
         await this.products.setPurchasePrice(tx, ctx, update.productId, update.purchasePriceMinor);

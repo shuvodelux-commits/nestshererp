@@ -119,6 +119,8 @@ export interface PurchaseRow {
 export interface PurchaseDetail extends PurchaseRow {
   readonly lines: readonly PurchaseLineRow[];
   readonly payments: readonly PurchasePaymentRow[];
+  /** D-32: sent back on a cancel or a correction, so two writers cannot race. */
+  readonly version: number;
 }
 
 export interface PurchaseListRowData {
@@ -240,4 +242,97 @@ export interface PurchaseRepository {
     operationId: string,
   ): Promise<string | null>;
   findPaymentById(tx: Tx, ctx: TenantContext, id: string): Promise<SupplierPaymentDetail | null>;
+  /** A posted bill with everything needed to undo it (§2.5). */
+  findPurchaseForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<PurchaseForReversal | null>;
+  /**
+   * Undo a posted bill: the reversing entry, the goods back off the shelf, the
+   * lots emptied and closed, and the document marked VOIDED. Returns false when
+   * the version moved under it, so two people cannot reverse the same bill.
+   */
+  reversePurchase(tx: Tx, ctx: TenantContext, reversal: PurchaseReversal): Promise<boolean>;
+  /**
+   * Point a bill's payment allocations at its replacement.
+   *
+   * A correction reverses the original and posts the corrected bill under the
+   * same number; money already handed over was handed over for *that* bill, so
+   * it follows the number rather than being unallocated and re-entered by hand.
+   */
+  movePaymentAllocations(
+    tx: Tx,
+    ctx: TenantContext,
+    fromPurchaseId: string,
+    toPurchaseId: string,
+  ): Promise<void>;
+}
+
+/**
+ * A posted bill, read for correction or cancellation (Phase 7, §2.5).
+ *
+ * Everything needed to undo what it did, and nothing else: the entry it posted
+ * (read back, never recomputed), the lot each line created with what is left in
+ * it, and whether money has been allocated to it since.
+ */
+export interface PurchaseForReversal {
+  readonly id: string;
+  readonly number: string;
+  readonly businessDate: string;
+  readonly status: 'POSTED' | 'VOIDED';
+  readonly supplierPartyId: string;
+  readonly locationId: string;
+  readonly grandTotalMinor: number;
+  readonly paidMinor: number;
+  /** Later supplier payments pointed at this bill. */
+  readonly allocatedMinor: number;
+  readonly version: number;
+  readonly journalLines: readonly {
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly lines: readonly {
+    readonly id: string;
+    readonly productId: string;
+    readonly lotId: string;
+    readonly locationId: string;
+    readonly qty: number;
+    /** Still in the lot this line created. Less means some of it has gone. */
+    readonly qtyRemainingInLot: number;
+    /** What this line put into INVENTORY: qty × actual_unit_cost. */
+    readonly costMinor: number;
+  }[];
+}
+
+export interface PurchaseReversal {
+  readonly purchaseId: string;
+  readonly expectedVersion: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  /** One OUT movement per line, taking the goods off the shelf again. */
+  readonly movements: readonly {
+    readonly id: string;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly lotId: string;
+    readonly qty: number;
+    readonly unitCost: number;
+  }[];
+  readonly costStates: readonly {
+    readonly id: string;
+    readonly exists: boolean;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly avgUnitCost: number;
+    readonly qtyOnHand: number;
+  }[];
 }

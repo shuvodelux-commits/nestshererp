@@ -17,6 +17,7 @@ import {
   CreatePurchaseService,
   PaySupplierService,
   PurchaseQueryService,
+  VoidPurchaseService,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
@@ -39,6 +40,7 @@ import { PurchasesController } from './purchases.controller';
 import { SupplierPaymentsController } from './supplier-payments.controller';
 import {
   CREATE_PURCHASE_SERVICE,
+  VOID_PURCHASE_SERVICE,
   PAY_SUPPLIER_SERVICE,
   PURCHASE_QUERY_SERVICE,
 } from './tokens';
@@ -146,6 +148,39 @@ import {
         clock: Clock,
       ): PurchaseQueryService => new PurchaseQueryService(uow, accessControl, purchases, clock),
       inject: [UNIT_OF_WORK, ACCESS_CONTROL, PURCHASE_REPOSITORY, CLOCK],
+    },
+    {
+      provide: VOID_PURCHASE_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        periods: PeriodGuard,
+        inventory: InventoryRepository,
+        purchases: PurchaseRepository,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): VoidPurchaseService =>
+        new VoidPurchaseService(
+          uow,
+          accessControl,
+          periods,
+          inventory,
+          purchases,
+          audit,
+          outbox,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        PERIOD_GUARD,
+        INVENTORY_REPOSITORY,
+        PURCHASE_REPOSITORY,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
     },
   ],
 })

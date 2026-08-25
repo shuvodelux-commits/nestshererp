@@ -27,6 +27,7 @@ export function toPurchaseResponse(
     status: detail.status,
     notes: detail.notes,
     warnings: [...warnings],
+    version: detail.version,
     createdAt: detail.createdAt.toISOString(),
   };
 

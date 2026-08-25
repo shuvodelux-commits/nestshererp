@@ -330,6 +330,12 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { VoidPurchaseService } from './purchasing/void-purchase-service';
+export type { VoidPurchaseCommand } from './purchasing/void-purchase-service';
+export type {
+  PurchaseForReversal,
+  PurchaseReversal,
+} from './purchasing/purchase-repository';
 export { CreatePurchaseReturnService } from './returns/create-purchase-return-service';
 export type {
   CreatePurchaseReturnCommand,

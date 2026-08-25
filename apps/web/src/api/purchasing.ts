@@ -51,6 +51,19 @@ export function createPurchase(
   return request('/api/v1/purchases', { method: 'POST', token, body: payload, idempotencyKey });
 }
 
+/**
+ * Cancelling a posted bill (§2.5). A **correction** is not here: it is
+ * `createPurchase` with `correctionOf` set, because there is one purchase
+ * writer and a corrected bill must obey exactly the rules a typed one does.
+ */
+export function voidPurchase(
+  token: string,
+  purchaseId: string,
+  payload: { version: number; reason: string | null },
+): Promise<PurchaseResponse> {
+  return request(`/api/v1/purchases/${purchaseId}/void`, { method: 'POST', token, body: payload });
+}
+
 /** What the Pay Supplier dialog opens on: the debt, and the bills behind it. */
 export function fetchSupplierDue(token: string, supplierId: string): Promise<SupplierDueResponse> {
   return request(`/api/v1/suppliers/${supplierId}/due`, { token });

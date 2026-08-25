@@ -387,7 +387,9 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         sourceDocumentType: 'SALES_RETURN',
         sourceDocumentId: draft.id,
         sourceNumber: draft.number,
-        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 1000) / line.qty),
+        // `stock_movements.unit_cost` is taka at scale 4, as `actualUnitCost` is:
+        // poisha per unit × 100, and the quantity is scale 3.
+        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
       });
 
       /*

@@ -351,6 +351,7 @@ export {
   purchaseResponseSchema,
   supplierDueResponseSchema,
   supplierPaymentResponseSchema,
+  voidPurchaseRequestSchema,
 } from './purchasing';
 export type {
   CreatePurchaseRequest,
@@ -363,6 +364,7 @@ export type {
   PurchaseResponse,
   SupplierDueResponse,
   SupplierPaymentResponse,
+  VoidPurchaseRequest,
 } from './purchasing';
 export {
   createQuotationRequestSchema,

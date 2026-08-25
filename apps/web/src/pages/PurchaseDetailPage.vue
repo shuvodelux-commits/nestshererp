@@ -6,13 +6,14 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
-import { fetchPurchase } from '../api/purchasing';
+import { fetchPurchase, voidPurchase } from '../api/purchasing';
 import { useSession } from '../auth/session';
 import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import { taka } from '../components/money/money-text';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import PaySupplierDialog from '../components/purchasing/PaySupplierDialog.vue';
 import PurchaseReturnDialog from '../components/purchasing/PurchaseReturnDialog.vue';
 
@@ -41,7 +42,11 @@ const justSaved = computed(() => route.query['saved'] === '1');
 const canPay = computed(() => session.can('purchase.payment.record'));
 /* A return is sent from the bill the goods arrived on (owner decision). */
 const canReturn = computed(() => session.can('purchase.return.create'));
+const canEdit = computed(() => session.can('purchase.bill.edit'));
+const canVoid = computed(() => session.can('purchase.bill.void'));
 const returning = ref(false);
+const cancelling = ref(false);
+const working = ref(false);
 const canCreate = computed(() => session.can('purchase.bill.create'));
 const showCost = computed(() => purchase.value?.grandTotalMinor !== undefined);
 const dueMinor = computed(() => purchase.value?.dueMinor ?? 0);
@@ -62,6 +67,34 @@ async function load(): Promise<void> {
         : { code: 'UNKNOWN', message: 'Could not open this purchase' };
   } finally {
     loading.value = false;
+  }
+}
+
+/**
+ * Cancelling the bill (§2.5). The version travels with it, so two people
+ * cancelling the same bill means the second is told rather than silently
+ * winning (D-32).
+ */
+function describeFailure(cause: unknown, fallback: string): { code: string; message: string } {
+  return cause instanceof ApiError
+    ? { code: cause.code, message: cause.message }
+    : { code: 'UNKNOWN', message: fallback };
+}
+
+async function onVoid(): Promise<void> {
+  const token = session.accessToken.value;
+  const current = purchase.value;
+  if (token === null || current === null) return;
+  working.value = true;
+  failure.value = null;
+  try {
+    await voidPurchase(token, current.id, { version: current.version, reason: null });
+    cancelling.value = false;
+    await load();
+  } catch (cause) {
+    failure.value = describeFailure(cause, 'Could not cancel this bill');
+  } finally {
+    working.value = false;
   }
 }
 
@@ -157,7 +190,7 @@ onDataChanged(load);
           </div>
         </div>
 
-        <div v-if="(canPay && dueMinor > 0) || canReturn" class="bill-actions no-print">
+        <div v-if="(canPay && dueMinor > 0) || canReturn || canEdit || canVoid" class="bill-actions no-print">
           <!-- Deliberately the small, secondary actions (owner decision). -->
           <Button
             v-if="canPay && dueMinor > 0"
@@ -174,6 +207,23 @@ onDataChanged(load);
             size="small"
             outlined
             @click="returning = true"
+          />
+          <Button
+            v-if="canEdit && purchase.status === 'POSTED'"
+            icon="pi pi-pencil"
+            label="Edit bill"
+            size="small"
+            outlined
+            @click="router.push({ path: '/purchases/new', query: { correct: purchase.id } })"
+          />
+          <Button
+            v-if="canVoid && purchase.status === 'POSTED'"
+            icon="pi pi-times-circle"
+            label="Cancel bill"
+            size="small"
+            outlined
+            severity="danger"
+            @click="cancelling = true"
           />
         </div>
       </AppCard>
@@ -249,6 +299,20 @@ onDataChanged(load);
       <AppCard v-if="purchase.notes" title="Notes">
         <p class="notes">{{ purchase.notes }}</p>
       </AppCard>
+
+      <ConfirmDialog
+        v-if="cancelling && purchase"
+        :title="`Cancel bill ${purchase.number}?`"
+        message="The goods come off the shelf, the lots close, and the supplier is no longer owed. The bill keeps its number and stays visible, marked cancelled."
+        :amount-minor="purchase.grandTotalMinor ?? 0"
+        danger
+        confirm-label="Cancel the bill"
+        confirm-label-bn="বিল বাতিল করুন"
+        :busy="working"
+        :error="failure"
+        @cancel="cancelling = false"
+        @confirm="onVoid"
+      />
 
       <PurchaseReturnDialog
         v-if="returning"

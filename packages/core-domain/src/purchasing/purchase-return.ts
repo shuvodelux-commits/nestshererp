@@ -190,8 +190,8 @@ function billedShare(line: ReturnableBillLine, qty: number): number {
  * a permanent difference nobody could explain.
  */
 function lotCost(actualUnitCost: number, qty: number): number {
-  const scaled = BigInt(actualUnitCost) * BigInt(Qty(qty).raw) * 2n;
-  return Number((scaled / 10_000_000n + 1n) / 2n);
+  const scaled = (BigInt(actualUnitCost) * BigInt(Qty(qty).raw) * 2n) / 100_000n;
+  return Number((scaled + 1n) / 2n);
 }
 
 /** `amountMinor × qty ÷ qtyTotal`, rounded half-up once, in poisha. */

@@ -1,5 +1,7 @@
 import type {
   NewPurchase,
+  PurchaseForReversal,
+  PurchaseReversal,
   NewSupplierPayment,
   OpenBillRow,
   PurchaseDetail,
@@ -12,7 +14,7 @@ import type {
   Tx,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import {
@@ -240,6 +242,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         allocatedMinor: allocatedMinor(sql`${purchases.id}`),
         paidAccountCode: purchases.paidAccountCode,
         createdAt: purchases.createdAt,
+        version: purchases.version,
       })
       .from(purchases)
       .innerJoin(
@@ -314,6 +317,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     return {
       id: row.id.trim(),
       number: row.number,
+      version: row.version,
       supplierPartyId: row.supplierPartyId.trim(),
       supplierName: row.supplierName,
       supplierBillRef: row.supplierBillRef,
@@ -730,5 +734,244 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         partyId: line.partyId,
       })),
     );
+  }
+  /**
+   * A posted bill with everything needed to undo it (§2.5).
+   *
+   * `qty_remaining` on each line's lot is the fact that decides whether it may
+   * be undone at all: less than what came in means some of it has gone, and the
+   * service refuses rather than driving a lot negative. `allocated_minor` is
+   * money pointed at this bill by a *later* payment — a correction moves it,
+   * a cancellation refuses because of it.
+   */
+  async findPurchaseForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<PurchaseForReversal | null> {
+    const db = txOf(tx);
+
+    const heads = await db
+      .select({
+        id: purchases.id,
+        number: purchases.purchaseNumber,
+        businessDate: purchases.businessDate,
+        status: purchases.status,
+        supplierPartyId: purchases.supplierPartyId,
+        locationId: purchases.locationId,
+        grandTotalMinor: purchases.grandTotalMinor,
+        paidMinor: purchases.paidMinor,
+        allocatedMinor: allocatedMinor(sql`${purchases.id}`),
+        version: purchases.version,
+      })
+      .from(purchases)
+      .where(and(eq(purchases.tenantId, ctx.tenantId), eq(purchases.id, id), isNull(purchases.deletedAt)))
+      .limit(1);
+
+    const head = heads[0];
+    if (head === undefined) return null;
+
+    const entryLines = await db
+      .select({
+        account: journalLines.accountCode,
+        amountMinor: journalLines.amountMinor,
+        partyId: journalLines.partyId,
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+      .where(
+        and(
+          eq(journalLines.tenantId, ctx.tenantId),
+          eq(journalEntries.sourceDocumentType, 'PURCHASE'),
+          eq(journalEntries.sourceDocumentId, id),
+        ),
+      );
+
+    const lines = await db
+      .select({
+        id: purchaseLines.id,
+        productId: purchaseLines.productId,
+        lotId: purchaseLines.lotId,
+        locationId: purchases.locationId,
+        qty: purchaseLines.qty,
+        qtyRemainingInLot: inventoryLots.qtyRemaining,
+        actualUnitCost: purchaseLines.actualUnitCost,
+      })
+      .from(purchaseLines)
+      .innerJoin(purchases, eq(purchases.id, purchaseLines.purchaseId))
+      .innerJoin(inventoryLots, eq(inventoryLots.id, purchaseLines.lotId))
+      .where(and(eq(purchaseLines.tenantId, ctx.tenantId), eq(purchaseLines.purchaseId, id)))
+      .orderBy(asc(purchaseLines.lineNo));
+
+    return {
+      id: head.id.trim(),
+      number: head.number,
+      businessDate: head.businessDate,
+      status: head.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
+      supplierPartyId: head.supplierPartyId.trim(),
+      locationId: head.locationId.trim(),
+      grandTotalMinor: Number(head.grandTotalMinor),
+      paidMinor: Number(head.paidMinor),
+      allocatedMinor: Number(head.allocatedMinor),
+      version: head.version,
+      journalLines: entryLines.map((line) => ({
+        account: line.account,
+        amountMinor: Number(line.amountMinor),
+        partyId: line.partyId === null ? null : line.partyId.trim(),
+      })),
+      lines: lines.map((line) => ({
+        id: line.id.trim(),
+        productId: line.productId.trim(),
+        lotId: line.lotId.trim(),
+        locationId: line.locationId.trim(),
+        qty: Number(line.qty),
+        qtyRemainingInLot: Number(line.qtyRemainingInLot),
+        // What this line put into INVENTORY: quantity (scale 3) × the lot's own
+        // unit cost (scale 4), the same product the posting formed.
+        costMinor: Number(
+          ((BigInt(line.qty) * BigInt(line.actualUnitCost) * 2n) / 100_000n + 1n) / 2n,
+        ),
+      })),
+    };
+  }
+
+  /**
+   * Undo a posted bill in one statement each: the document marked VOIDED, the
+   * goods off the shelf, the lots emptied and closed, the cache corrected and
+   * the reversing entry written.
+   *
+   * The version is checked in the UPDATE itself, so two people reversing the
+   * same bill cannot both win — the loser is told to reload.
+   */
+  async reversePurchase(tx: Tx, ctx: TenantContext, reversal: PurchaseReversal): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    const updated = await db
+      .update(purchases)
+      .set({
+        status: 'VOIDED',
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${purchases.version} + 1`,
+      })
+      .where(
+        and(
+          eq(purchases.tenantId, ctx.tenantId),
+          eq(purchases.id, reversal.purchaseId),
+          eq(purchases.version, reversal.expectedVersion),
+          eq(purchases.status, 'POSTED'),
+        ),
+      )
+      .returning({ id: purchases.id });
+    if (updated.length === 0) return false;
+
+    for (const movement of reversal.movements) {
+      await db.insert(stockMovements).values({
+        id: movement.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        productId: movement.productId,
+        locationId: movement.locationId,
+        lotId: movement.lotId,
+        qty: movement.qty,
+        direction: 'OUT',
+        businessDate: reversal.businessDate,
+        sourceDocumentType: 'PURCHASE_REVERSAL',
+        sourceDocumentId: reversal.purchaseId,
+        sourceNumber: reversal.purchaseId,
+        unitCost: movement.unitCost,
+      });
+
+      await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${movement.qty}`,
+          // The lot this bill created has nothing left in it and never will:
+          // the service has already refused if any of it had gone.
+          status: 'CLOSED',
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, movement.lotId)));
+    }
+
+    for (const state of reversal.costStates) {
+      if (state.exists) {
+        await db
+          .update(productCostState)
+          .set({
+            qtyOnHand: state.qtyOnHand,
+            avgUnitCost: state.avgUnitCost,
+            lastRecomputedAt: now,
+            updatedAt: now,
+            updatedBy: ctx.userId,
+            version: sql`${productCostState.version} + 1`,
+          })
+          .where(and(eq(productCostState.tenantId, ctx.tenantId), eq(productCostState.id, state.id)));
+      } else {
+        await db.insert(productCostState).values({
+          id: state.id,
+          tenantId: ctx.tenantId,
+          productId: state.productId,
+          locationId: state.locationId,
+          avgUnitCost: state.avgUnitCost,
+          qtyOnHand: state.qtyOnHand,
+          lastRecomputedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: ctx.userId,
+          updatedBy: ctx.userId,
+          version: 1,
+        });
+      }
+    }
+
+    await db.insert(journalEntries).values({
+      id: reversal.journalEntryId,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+      businessDate: reversal.businessDate,
+      sourceDocumentType: 'PURCHASE_REVERSAL',
+      sourceDocumentId: reversal.purchaseId,
+      sourceNumber: reversal.purchaseId,
+      entryMode: reversal.entryMode,
+    });
+
+    for (const line of reversal.journalLines) {
+      await db.insert(journalLines).values({
+        id: line.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        journalEntryId: reversal.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      });
+    }
+
+    return true;
+  }
+
+  /** Money follows the bill number onto its replacement (§2.5). */
+  async movePaymentAllocations(
+    tx: Tx,
+    ctx: TenantContext,
+    fromPurchaseId: string,
+    toPurchaseId: string,
+  ): Promise<void> {
+    await txOf(tx)
+      .update(paymentAllocations)
+      .set({ purchaseId: toPurchaseId })
+      .where(
+        and(
+          eq(paymentAllocations.tenantId, ctx.tenantId),
+          eq(paymentAllocations.purchaseId, fromPurchaseId),
+        ),
+      );
   }
 }
