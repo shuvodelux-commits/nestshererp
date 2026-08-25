@@ -212,3 +212,65 @@ export const inventoryValuationResponseSchema = z.object({
   reconciled: z.boolean(),
 }).strict();
 export type InventoryValuationResponse = z.infer<typeof inventoryValuationResponseSchema>;
+
+/* ------------------------------------------------------ the count sheet */
+
+/**
+ * Counting the shelf against the system (§5.13, Phase 7).
+ *
+ * `systemQty` on a request line is what the sheet was drawn with; the server
+ * re-reads live stock when Post is pressed and refuses anything that moved in
+ * between, so the two figures together are what makes a recount possible.
+ */
+export const countLineRequestSchema = z
+  .object({
+    productId: ULID,
+    countedQty: z.number().int().nonnegative(),
+    systemQty: z.number().int(),
+  })
+  .strict();
+
+export const postStockCountRequestSchema = z
+  .object({
+    scopeLabel: z.string().trim().max(120).default('All products'),
+    note: z.string().trim().max(500).nullable().default(null),
+    lines: z.array(countLineRequestSchema).min(1).max(2000),
+    businessDate: BUSINESS_DATE.optional(),
+    backdateReason: z.string().trim().max(300).nullable().default(null),
+    /** Post against live stock for products that moved while counting. */
+    acceptMoved: z.boolean().default(false),
+  })
+  .strict();
+
+export type PostStockCountRequest = z.infer<typeof postStockCountRequestSchema>;
+
+export const stockCountLineSchema = z
+  .object({
+    id: ULID,
+    productId: ULID,
+    productName: z.string(),
+    unitName: z.string(),
+    countedQty: z.number().int(),
+    systemQty: z.number().int(),
+    qtyDelta: z.number().int(),
+    valueMinor: z.number().int(),
+  })
+  .strict();
+
+export const stockCountSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    scopeLabel: z.string(),
+    note: z.string().nullable(),
+    businessDate: BUSINESS_DATE,
+    lineCount: z.number().int(),
+    differenceCount: z.number().int(),
+    shortageValueMinor: z.number().int(),
+    surplusValueMinor: z.number().int(),
+    createdAt: z.string(),
+    lines: z.array(stockCountLineSchema),
+  })
+  .strict();
+
+export type StockCountResponse = z.infer<typeof stockCountSchema>;

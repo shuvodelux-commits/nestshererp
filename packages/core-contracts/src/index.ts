@@ -422,6 +422,13 @@ export type {
 } from './sales';
 export { SEED_EXPENSE_CATEGORIES } from './permissions';
 export {
+  countLineRequestSchema,
+  postStockCountRequestSchema,
+  stockCountLineSchema,
+  stockCountSchema,
+} from './inventory';
+export type { PostStockCountRequest, StockCountResponse } from './inventory';
+export {
   expenseCategorySchema,
   expenseListResponseSchema,
   expenseSchema,

@@ -1029,3 +1029,31 @@ export const expenses = pgTable('expenses', {
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
 });
+
+export const stockCounts = pgTable('stock_counts', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  countNumber: text('count_number').notNull(), locationId: char('location_id', { length: 26 }).notNull(),
+  scopeLabel: text('scope_label').notNull(), note: text('note'),
+  lineCount: integer('line_count').notNull(), differenceCount: integer('difference_count').notNull(),
+  shortageValueMinor: bigint('shortage_value_minor', { mode: 'number' }).notNull(),
+  surplusValueMinor: bigint('surplus_value_minor', { mode: 'number' }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  backdateReason: text('backdate_reason'),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const stockCountLines = pgTable('stock_count_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  countId: char('count_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  countedQty: bigint('counted_qty', { mode: 'number' }).notNull(),
+  systemQty: bigint('system_qty', { mode: 'number' }).notNull(),
+  postedSystemQty: bigint('posted_system_qty', { mode: 'number' }).notNull(),
+  qtyDelta: bigint('qty_delta', { mode: 'number' }).notNull(),
+  valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
+  adjustmentId: char('adjustment_id', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});

@@ -91,6 +91,12 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       ] },
       { id: 'inventory.reporting', label: 'Reports', icon: 'pi-chart-bar', features: [
         feature('inventory.report.page', 'Inventory Report', 'স্টকের হিসাব', 'Stock, low stock, movements, write-offs and valuation', '/inventory-report', ['catalog.product.view'], ['/inventory-report']),
+        /*
+         * The count sheet is a page of its own, not a dialog on the product:
+         * one product at a time is Stock Adjustment, and the whole shelf is
+         * this (§5.13, Phase 7).
+         */
+        feature('inventory.count', 'Stock Count', 'মাল গণনা', 'Count the shelf against the system and post the difference', '/stock-count', ['stock.count.post'], ['/stock-count']),
         feature('inventory.valuation', 'Stock Valuation', 'স্টকের হিসাব করা মূল্য', 'Reconcile stock value to the journal', '/inventory-report', ['inventory.cost.view'], ['/inventory-report'], false),
       ] },
     ],

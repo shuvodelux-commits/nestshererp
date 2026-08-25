@@ -71,6 +71,11 @@ const router = createRouter({
     { path: '/sales', name: 'sales', component: () => import('./pages/SalesPage.vue') },
     { path: '/expenses', name: 'expenses', component: () => import('./pages/ExpensesPage.vue') },
     {
+      path: '/stock-count',
+      name: 'stock-count',
+      component: () => import('./pages/StockCountPage.vue'),
+    },
+    {
       path: '/purchase-returns',
       name: 'purchase-returns',
       component: () => import('./pages/PurchaseReturnsPage.vue'),

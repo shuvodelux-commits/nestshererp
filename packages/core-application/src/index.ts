@@ -330,6 +330,15 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { StockCountService } from './inventory/stock-count-service';
+export type { CountLineInput, PostStockCountCommand } from './inventory/stock-count-service';
+export type {
+  NewStockCount,
+  NewStockCountLine,
+  StockCountLineRow,
+  StockCountRepository,
+  StockCountRow,
+} from './inventory/stock-count-repository';
 export { ManageExpensesService, toExpenseResponse } from './expenses/manage-expenses-service';
 export type {
   RecordExpenseCommand,

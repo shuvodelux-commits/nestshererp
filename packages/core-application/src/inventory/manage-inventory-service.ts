@@ -212,6 +212,26 @@ export class ManageInventoryService {
       const posted = await this.inventory.findAdjustmentByOperationId(tx, command.ctx, command.operationId);
       if (posted !== null) return this.adjustmentResponse(tx, command.ctx, posted);
 
+      const response = await this.adjustStockWithin(tx, command);
+      await this.idempotency.save(tx, command.ctx, { operationId: command.operationId, requestFingerprint: fingerprint, response });
+      return response;
+    });
+  }
+
+  /**
+   * One stock change, **inside somebody else's transaction** (R-D5).
+   *
+   * The stock count posts a difference per product and must be all-or-nothing
+   * across the whole sheet, so it cannot call `adjustStock` once per line —
+   * each call would commit separately and a sheet that half-posted is the state
+   * a correction must never end in. This is the same split the importer made
+   * with `createWithin` and `recordOpeningWithin`, and for the same reason:
+   * one writer, two entry points.
+   *
+   * Idempotency belongs to the caller. A form is idempotent on its own row; a
+   * count is idempotent on the whole sheet.
+   */
+  async adjustStockWithin(tx: Tx, command: AdjustStockCommand): Promise<StockAdjustmentResponse> {
       const today = this.clock.businessDate(command.ctx.timezone);
       const businessDate = command.businessDate ?? today;
       await this.periods.assertOpen(tx, command.ctx, businessDate);
@@ -276,10 +296,7 @@ export class ManageInventoryService {
         payload: { productId: adjustment.productId, movementId: adjustment.movementId },
       });
 
-      const response = await this.adjustmentResponse(tx, command.ctx, adjustment);
-      await this.idempotency.save(tx, command.ctx, { operationId: command.operationId, requestFingerprint: fingerprint, response });
-      return response;
-    });
+      return this.adjustmentResponse(tx, command.ctx, adjustment);
   }
 
   /**

@@ -149,6 +149,8 @@ export type {
   ProductImportDraft,
   ReadRowResult,
 } from './import/templates';
+export { countTotals } from './inventory/stock-count';
+export type { CountLineDraft, CountLineTotals, CountTotals } from './inventory/stock-count';
 export { stockStatus } from './inventory/stock-status';
 export type { StockStatus } from './inventory/stock-status';
 export type {
