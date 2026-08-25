@@ -330,6 +330,23 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { CreatePurchaseReturnService } from './returns/create-purchase-return-service';
+export type {
+  CreatePurchaseReturnCommand,
+  PurchaseReturnLineInput,
+} from './returns/create-purchase-return-service';
+export { PurchaseReturnQueryService } from './returns/purchase-return-query-service';
+export { toPurchaseReturnResponse } from './returns/purchase-return-view';
+export type {
+  NewPurchaseReturn,
+  NewPurchaseReturnLine,
+  PurchaseReturnFilter,
+  PurchaseReturnLineRow,
+  PurchaseReturnRepository,
+  PurchaseReturnRow,
+  ReturnableBillLineRow,
+  ReturnableBillRow,
+} from './returns/purchase-return-repository';
 export { CreateSalesReturnService } from './returns/create-sales-return-service';
 export type {
   CreateSalesReturnCommand,

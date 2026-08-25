@@ -419,6 +419,10 @@ export type {
   UpdateInvoiceSettingsRequest,
 } from './sales';
 export {
+  createPurchaseReturnRequestSchema,
+  purchaseReturnListSchema,
+  purchaseReturnSchema,
+  returnableBillSchema,
   createSalesReturnRequestSchema,
   returnLineRequestSchema,
   returnReasonSchema,
@@ -428,6 +432,10 @@ export {
   salesReturnSchema,
 } from './returns';
 export type {
+  CreatePurchaseReturnRequest,
+  PurchaseReturnListResponse,
+  PurchaseReturnResponse,
+  ReturnableBillResponse,
   CreateSalesReturnRequest,
   ReturnReason,
   ReturnableInvoiceResponse,

@@ -969,3 +969,36 @@ export const salesReturnLines = pgTable('sales_return_lines', {
   movementId: char('movement_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });
+
+export const purchaseReturns = pgTable('purchase_returns', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnNumber: text('return_number').notNull(), purchaseId: char('purchase_id', { length: 26 }).notNull(),
+  supplierPartyId: char('supplier_party_id', { length: 26 }).notNull(),
+  supplierNameSnapshot: text('supplier_name_snapshot').notNull(),
+  locationId: char('location_id', { length: 26 }).notNull(),
+  reason: text('reason').notNull(), note: text('note'),
+  returnValueMinor: bigint('return_value_minor', { mode: 'number' }).notNull(),
+  inventoryMinor: bigint('inventory_minor', { mode: 'number' }).notNull(),
+  receivedMinor: bigint('received_minor', { mode: 'number' }).notNull(),
+  creditMinor: bigint('credit_minor', { mode: 'number' }).notNull(),
+  settledMinor: bigint('settled_minor', { mode: 'number' }).notNull(),
+  receiptAccountCode: text('receipt_account_code'),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  backdateReason: text('backdate_reason'),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const purchaseReturnLines = pgTable('purchase_return_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnId: char('return_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  purchaseLineId: char('purchase_line_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), lotId: char('lot_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
+  costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});

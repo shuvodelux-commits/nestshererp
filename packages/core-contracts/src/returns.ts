@@ -156,3 +156,103 @@ export const salesReturnListSchema = z
   .strict();
 
 export type SalesReturnListResponse = z.infer<typeof salesReturnListSchema>;
+
+/* ------------------------------------------------- goods back to a supplier */
+
+export const createPurchaseReturnRequestSchema = z
+  .object({
+    purchaseId: ULID,
+    lines: z.array(returnLineRequestSchema).min(1).max(200),
+    reason: returnReasonSchema,
+    note: z.string().trim().max(500).nullable().default(null),
+    /**
+     * What the supplier hands back in cash or bank. `0` leaves the whole value
+     * against what the shop still owes them — their bills first, the rest as a
+     * credit the next purchase spends.
+     */
+    receivedMinor: z.number().int().nonnegative().default(0),
+    receiptAccountCode: z.string().max(60).nullable().default(null),
+    businessDate: BUSINESS_DATE.optional(),
+    backdateReason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CreatePurchaseReturnRequest = z.infer<typeof createPurchaseReturnRequestSchema>;
+
+export const returnableBillLineSchema = z
+  .object({
+    purchaseLineId: ULID,
+    productId: ULID,
+    productName: z.string(),
+    unitName: z.string(),
+    lotId: ULID,
+    qtyReceived: z.number().int(),
+    qtyReturned: z.number().int(),
+    qtyReturnable: z.number().int(),
+    /** Still in the lot: goods already sold cannot go back to the supplier. */
+    qtyRemainingInLot: z.number().int(),
+    billedNetMinor: z.number().int(),
+    actualUnitCost: z.number().int(),
+  })
+  .strict();
+
+export const returnableBillSchema = z
+  .object({
+    purchaseId: ULID,
+    number: z.string(),
+    businessDate: BUSINESS_DATE,
+    supplierName: z.string(),
+    supplierPartyId: ULID,
+    grandTotalMinor: z.number().int(),
+    outstandingMinor: z.number().int(),
+    lines: z.array(returnableBillLineSchema),
+  })
+  .strict();
+
+export type ReturnableBillResponse = z.infer<typeof returnableBillSchema>;
+
+export const purchaseReturnLineSchema = z
+  .object({
+    id: ULID,
+    purchaseLineId: ULID,
+    productId: ULID,
+    productName: z.string(),
+    unitName: z.string(),
+    qty: z.number().int(),
+    valueMinor: z.number().int(),
+  })
+  .strict();
+
+export const purchaseReturnSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    purchaseId: ULID,
+    purchaseNumber: z.string(),
+    supplierPartyId: ULID,
+    supplierName: z.string(),
+    businessDate: BUSINESS_DATE,
+    reason: returnReasonSchema,
+    note: z.string().nullable(),
+    returnValueMinor: z.number().int(),
+    receivedMinor: z.number().int(),
+    creditMinor: z.number().int(),
+    receiptAccountCode: z.string().nullable(),
+    receiptAccountName: z.string().nullable(),
+    lines: z.array(purchaseReturnLineSchema),
+    createdAt: z.string(),
+  })
+  .strict();
+
+export type PurchaseReturnResponse = z.infer<typeof purchaseReturnSchema>;
+
+export const purchaseReturnListSchema = z
+  .object({
+    returns: z.array(purchaseReturnSchema),
+    nextCursor: z.string().nullable(),
+    totalValueMinor: z.number().int(),
+    totalReceivedMinor: z.number().int(),
+  })
+  .strict();
+
+export type PurchaseReturnListResponse = z.infer<typeof purchaseReturnListSchema>;

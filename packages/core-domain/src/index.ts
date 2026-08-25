@@ -225,6 +225,21 @@ export type {
   PurchaseRejection,
 } from './purchasing/purchase';
 export {
+  purchaseReturnPosting,
+  purchaseReturnTotals,
+  rejectPurchaseReturn,
+  returnableBillQty,
+} from './purchasing/purchase-return';
+export type {
+  PurchaseReturnDraft,
+  PurchaseReturnLineDraft,
+  PurchaseReturnLineTotals,
+  PurchaseReturnPostingSides,
+  PurchaseReturnRejection,
+  PurchaseReturnTotals,
+  ReturnableBillLine,
+} from './purchasing/purchase-return';
+export {
   allocateOldestFirst,
   rejectSupplierPayment,
   supplierPaymentPosting,

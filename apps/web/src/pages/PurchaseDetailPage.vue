@@ -14,6 +14,7 @@ import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import { taka } from '../components/money/money-text';
 import PaySupplierDialog from '../components/purchasing/PaySupplierDialog.vue';
+import PurchaseReturnDialog from '../components/purchasing/PurchaseReturnDialog.vue';
 
 /**
  * One posted bill (§5.9) — a Detail screen (UI-22).
@@ -38,6 +39,9 @@ const paying = ref(false);
 
 const justSaved = computed(() => route.query['saved'] === '1');
 const canPay = computed(() => session.can('purchase.payment.record'));
+/* A return is sent from the bill the goods arrived on (owner decision). */
+const canReturn = computed(() => session.can('purchase.return.create'));
+const returning = ref(false);
 const canCreate = computed(() => session.can('purchase.bill.create'));
 const showCost = computed(() => purchase.value?.grandTotalMinor !== undefined);
 const dueMinor = computed(() => purchase.value?.dueMinor ?? 0);
@@ -59,6 +63,12 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+/** The bill is re-read after a return: what it owes and what it holds have moved. */
+async function onReturned(): Promise<void> {
+  returning.value = false;
+  await load();
 }
 
 async function onPaid(): Promise<void> {
@@ -147,14 +157,23 @@ onDataChanged(load);
           </div>
         </div>
 
-        <div v-if="canPay && dueMinor > 0" class="bill-actions no-print">
-          <!-- Deliberately the small, secondary action (owner decision). -->
+        <div v-if="(canPay && dueMinor > 0) || canReturn" class="bill-actions no-print">
+          <!-- Deliberately the small, secondary actions (owner decision). -->
           <Button
+            v-if="canPay && dueMinor > 0"
             icon="pi pi-wallet"
             label="Pay this bill"
             size="small"
             outlined
             @click="paying = true"
+          />
+          <Button
+            v-if="canReturn"
+            icon="pi pi-reply"
+            label="Return to supplier"
+            size="small"
+            outlined
+            @click="returning = true"
           />
         </div>
       </AppCard>
@@ -230,6 +249,13 @@ onDataChanged(load);
       <AppCard v-if="purchase.notes" title="Notes">
         <p class="notes">{{ purchase.notes }}</p>
       </AppCard>
+
+      <PurchaseReturnDialog
+        v-if="returning"
+        :purchase-id="purchase.id"
+        @close="returning = false"
+        @returned="onReturned"
+      />
 
       <PaySupplierDialog
         v-if="paying"

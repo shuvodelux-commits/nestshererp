@@ -58,7 +58,7 @@ describe('navigation architecture', () => {
     // return is always taken from the invoice it comes off. The list grows only
     // when a real implemented route ships; nothing is ever removed from it,
     // which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

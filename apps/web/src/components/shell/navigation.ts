@@ -122,14 +122,15 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     ],
   },
   {
-    // §5.9: Purchase is one business module with its own feature navigation —
-    // `New Purchase` and `Purchase Invoice` today. `Purchase Return` is not
-    // listed, because the capability does not ship yet and UI-09 refuses a
-    // dead page.
+    // §5.9: Purchase is one business module with its own feature navigation.
+    // `Purchase Return` is a **history** entry, like its sales twin: a return
+    // is always sent from the bill the goods arrived on (owner decision
+    // 2026-08-26), so this route reads and prints them.
     id: 'purchases', label: 'Purchases', icon: 'pi-shopping-cart', subcategories: [
       { id: 'purchases.bills', label: 'Purchases', icon: 'pi-receipt', features: [
         feature('purchases.list', 'Purchase Invoice', 'কেনার তালিকা', 'Every supplier bill, what is paid and what is owed', '/purchases', ['purchase.bill.view'], ['/purchases']),
         feature('purchases.new', 'New Purchase', 'নতুন মাল কেনা', 'Record goods received from a supplier', '/purchases/new', ['purchase.bill.create'], ['/purchases/new']),
+        feature('purchases.returns', 'Purchase Return', 'কেনা ফেরত', 'What went back to suppliers, and what they credited', '/purchase-returns', ['purchase.return.view'], ['/purchase-returns']),
         feature('purchases.pay', 'Pay Supplier', 'সরবরাহকারীকে টাকা দিন', 'Settle a supplier from cash or bank', '/purchases', ['purchase.payment.record'], ['/purchases'], false),
       ] },
     ],
