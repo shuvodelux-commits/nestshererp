@@ -139,6 +139,30 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 | `design/print.css` | `design/` | **The global print rules** — hides the shell (sidebar, top bar, bottom nav, footer, breadcrumb), PrimeVue overlays and anything marked `no-print`, unclips the fixed-height scroller so a long document flows over pages, and drops to black on white. Any printable surface reuses it and marks its own controls `no-print`; a scoped `@media print` block in a page **cannot** reach the shell, which is the bug this file exists to prevent |
 | Pages | `pages/` | Dashboard · Login/Register/ForgotPassword/GoogleCallback · Users · Roles · Audit · Catalog · Products · ProductForm · Parties · PartyForm · **PartyLedger** (the party working hub: balance header, statement, opening, contextual actions) · InventoryReport · **Import** · Settings · SettingsSecurity |
 
+### Selling (Phase 6, §5.7 · §5.8)
+
+**Domain — `core-domain/src/sales/sale.ts`.** `saleTotals(draft)` totals a cart (line discount, bill discount spread by value per §3.3, grand total, due, change) and is called **from the browser too**, which is what keeps the POS and the posting service arithmetically identical. Also `rejectSale`, `salePosting` (one entry: cash/bank per account, AR, SALES, COGS/INVENTORY, CUSTOMER_ADVANCE, VENDOR_PAYABLE), `receiptPosting`, `allocateReceipt` (delegates to `allocateOldestFirst`; the remainder becomes an advance), `ageingBucket`.
+
+**shared-utils.** `amountInWords(minor, 'EN' | 'BN')`, `toBengaliDigits(text)` — the printed invoice only; the app stays in Western digits (UI-47).
+
+**Application — `core-application/src/sales/`.** `CreateSaleService` (WRITE CLASS T), `ReceiveCustomerPaymentService` (both entry points, oldest-first), `CancelSaleService` (§2.5 reversal, never a delete), `InvoicePresentationService` (display-only overrides + invoice settings + logo), `SaleQueryService` (list, detail, customer standing, POS grid), `QuotationService`.
+`ManagePartiesService.createWithin` is what a due sale calls to create the customer inside its own transaction — there is one party writer.
+`PartyRepository.findWalkInCustomer` — the party a fully paid guest sale posts against.
+`ManageProductsService.saveImage` / `.image` — the product thumbnail.
+`resolvePaymentAccount` (in `purchasing/payment-account.ts`) is shared by every money path and refuses a cash payment on a day nobody started with `reason: CASH_DAY_NOT_STARTED`.
+
+**Repository.** `SaleRepository` / `PostgresSaleRepository` — what an invoice still owes is always `grand_total − paid_minor − Σ receipt_allocations`, computed in the same statement as the row.
+
+**Contracts.** `core-contracts/src/sales.ts`; `ErrorCode.INSUFFICIENT_STOCK` (422) carries `NEGATIVE_STOCK_BLOCKED` or `NEGATIVE_STOCK_CONFIRM`.
+
+**API.** `/api/v1/sales` (+ `pos-products`, `invoice-settings`, `invoice-logo`, `:id/presentation`, `:id/cancel`), `/api/v1/customer-payments`, `/api/v1/customers/:id/standing`, `/api/v1/quotations`, `/api/v1/products/:id/image`.
+
+**Web.** Pages `PosPage`, `SalesPage`, `InvoiceDetailPage`, `InvoiceSettingsPage`.
+`components/sales/`: `InvoiceDocument.vue` (one renderer for preview, A4, 80mm and the shared JPG; bilingual by `settings.language`), `InvoicePreviewDialog.vue`, `ReceivePaymentDialog.vue`, `cart.ts` (`cartTotals`), `invoice-output.ts` (`printNode`, `saveNodeAsImage`, `shareNodeAsImage` — no PDF library), `image-upload.ts` (`resizeImage`, shrinks in the browser, never on the server).
+`components/fields/AmountInput.vue` — the number box that emits on **every keystroke**; PrimeVue's `InputNumber` commits on blur, which is why totals lagged.
+`components/ConfirmDialog.vue` — the last look before money posts, showing the amount in Bangla words.
+`state/data-freshness.ts` — `markDataChanged()` is raised by `request` after every non-GET, and `onDataChanged(fn)` re-reads any screen showing a journal-derived figure.
+
 ## 9. Business rules worth knowing before writing code
 
 - **Ten-step write path** for money/stock/document writes, in one transaction (R-D). Master data and

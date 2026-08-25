@@ -8,6 +8,7 @@ import {
   rejectPricing,
   stockStatus,
   stockValueMinor,
+  searchProducts,
 } from '@sher/core-domain';
 import type { ConversionRejection, PricingRejection, ProductStatus } from '@sher/core-domain';
 import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
@@ -212,8 +213,15 @@ export class ManageProductsService {
         this.products.count(tx, ctx, filter),
       ]);
 
-      const hasMore = rows.length > limit;
-      const page = hasMore ? rows.slice(0, limit) : rows;
+      /*
+       * The same ranking the counter uses (`searchProducts`), so a shopkeeper
+       * who learns what `sam a15` finds at the till finds the same thing, in
+       * the same order, on the Products screen. Without a search term it is a
+       * no-op and the caller's own sort stands.
+       */
+      const ranked = searchProducts(command.search ?? '', rows);
+      const hasMore = ranked.length > limit;
+      const page = hasMore ? ranked.slice(0, limit) : ranked;
       const now = this.clock.now();
       const method = await this.valuationMethod(tx, ctx);
 
@@ -436,6 +444,75 @@ export class ManageProductsService {
    * Scanners read it as keyboard input terminated by Enter (UI-38), which any
    * Code 128 label satisfies.
    */
+  /**
+   * A product's thumbnail (owner decision 2026-08-25): upload, replace, remove.
+   *
+   * **WRITE CLASS: M.** Deliberately not a media library — no gallery, no
+   * variants, no alt text. The bytes arrive already resized by the browser and
+   * are stored with the tenant's own data, so a backup carries them and an
+   * on-prem install needs no object store.
+   */
+  async saveImage(command: {
+    readonly ctx: TenantContext;
+    readonly productId: string;
+    readonly image: { readonly mime: string; readonly dataBase64: string } | null;
+  }): Promise<ProductResponse> {
+    const { ctx } = command;
+    return this.uow.run(ctx, async (tx) => {
+      await this.accessControl.require(tx, ctx, Permission.PRODUCT_EDIT);
+      const before = await this.products.findById(tx, ctx, command.productId);
+      if (before === null) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+
+      const bytes =
+        command.image === null ? null : Buffer.from(command.image.dataBase64, 'base64');
+      // The migration's CHECK is the last word on size; refusing here means the
+      // shopkeeper is told rather than shown a database error.
+      if (bytes !== null && bytes.length > 262144) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'That picture is too large');
+      }
+
+      await this.products.setImage(
+        tx,
+        ctx,
+        command.productId,
+        command.image === null || bytes === null
+          ? null
+          : { mime: command.image.mime, bytes },
+      );
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'product',
+        entityId: command.productId,
+        action: 'UPDATE',
+        before: null,
+        after: { image: command.image === null ? 'removed' : 'set' },
+        source: 'API',
+      });
+
+      const updated = await this.requireProduct(tx, ctx, command.productId);
+      return this.toResponse(
+        ctx,
+        updated,
+        await this.maySeeCost(tx, ctx),
+        this.clock.now(),
+        await this.valuationMethod(tx, ctx),
+      );
+    });
+  }
+
+  /** The bytes themselves, for the tag on the POS grid and the product form. */
+  async image(
+    ctx: TenantContext,
+    productId: string,
+  ): Promise<{ readonly mime: string; readonly bytes: Uint8Array }> {
+    return this.uow.run(ctx, async (tx) => {
+      await this.accessControl.require(tx, ctx, Permission.PRODUCT_VIEW);
+      const image = await this.products.findImage(tx, ctx, productId);
+      if (image === null) throw new AppError(ErrorCode.NOT_FOUND, 'This product has no picture');
+      return image;
+    });
+  }
+
   async generateBarcode(command: ProductIdCommand): Promise<GeneratedBarcodeResponse> {
     const { ctx } = command;
 
@@ -778,6 +855,7 @@ export class ManageProductsService {
         },
         now,
       ),
+      hasImage: row.hasImage,
       tracksExpiry: row.tracksExpiry,
       tracksSerial: row.tracksSerial,
       stockQty: row.stockQty,

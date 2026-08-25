@@ -50,6 +50,35 @@ const router = createRouter({
     // same form, and a second one would be the same fields written twice.
     { path: '/products/:id', name: 'product', component: () => import('./pages/ProductFormPage.vue') },
     { path: '/parties', name: 'parties', component: () => import('./pages/PartiesPage.vue') },
+    // Phase 5 — §5.9. `new` is its own path rather than `/purchases/:id`
+    // with a magic id: a bill being typed is not a bill that exists, and the
+    // detail page loads by id the moment it is opened.
+    { path: '/purchases', name: 'purchases', component: () => import('./pages/PurchasesPage.vue') },
+    {
+      path: '/purchases/new',
+      name: 'purchase-new',
+      component: () => import('./pages/PurchaseFormPage.vue'),
+    },
+    {
+      path: '/purchases/:id',
+      name: 'purchase',
+      component: () => import('./pages/PurchaseDetailPage.vue'),
+    },
+    // Phase 6 — §5.7, §5.8. The POS is its own full-screen path: a sale being
+    // rung up is not a sale that exists, and the counter must not sit inside a
+    // list it can navigate away from by accident.
+    { path: '/pos', name: 'pos', component: () => import('./pages/PosPage.vue') },
+    { path: '/sales', name: 'sales', component: () => import('./pages/SalesPage.vue') },
+    {
+      path: '/sales/:id',
+      name: 'sale-detail',
+      component: () => import('./pages/InvoiceDetailPage.vue'),
+    },
+    {
+      path: '/settings/invoice-design',
+      name: 'invoice-design',
+      component: () => import('./pages/InvoiceSettingsPage.vue'),
+    },
     // Phase 4 — §5.16.8's Daily Cash sits under `Daily` (UI-67); the account
     // setup screens sit under Settings (owner decision 2026-08-24), because a
     // till is configured once and the cashier's menu stays short.

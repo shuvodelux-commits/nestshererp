@@ -26,9 +26,12 @@ import {
   fetchProduct,
   generateProductBarcode,
   updateProduct,
+  removeProductImage,
+  saveProductImage,
 } from '../api/products';
 import { useSession } from '../auth/session';
 import AppCard from './AppCard.vue';
+import { resizeImage } from './sales/image-upload';
 import DateOnlyPicker from './DateOnlyPicker.vue';
 import ErrorNotice from './ErrorNotice.vue';
 import HelpTip from './HelpTip.vue';
@@ -359,6 +362,13 @@ const removeBrand = removeIn('brands');
 const renameUnit = renameIn('units');
 const removeUnit = removeIn('units');
 
+/** A picture's own failure, said in words a shopkeeper can act on. */
+function describeWith(cause: unknown, fallback: string): { code: string; message: string } {
+  return cause instanceof ApiError
+    ? { code: cause.code, message: cause.message }
+    : { code: 'UNEXPECTED', message: fallback };
+}
+
 function describe(cause: unknown): { code: string; message: string } {
   return cause instanceof ApiError
     ? { code: cause.code, message: cause.message }
@@ -371,6 +381,7 @@ function moneyText(minor: number | null | undefined): string {
 }
 
 function fill(product: ProductResponse): void {
+  hasPicture.value = product.hasImage;
   name.value = product.name;
   baseUnitId.value = product.baseUnitId;
   purchasePrice.value = moneyText(product.purchasePriceMinor);
@@ -636,6 +647,51 @@ async function generateBarcode(): Promise<void> {
 }
 
 const confirmingDelete = ref(false);
+
+/* The picture, saved the moment it is chosen (see the card's comment). */
+const hasPicture = ref(false);
+const pickedPicture = ref<string | null>(null);
+const pictureVersion = ref(0);
+const pictureUrl = computed(() =>
+  pickedPicture.value ??
+  (hasPicture.value && productId.value !== null
+    ? `/api/v1/products/${productId.value}/image?v=${String(pictureVersion.value)}`
+    : null),
+);
+
+async function onPicturePicked(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const token = session.accessToken.value;
+  if (file === undefined || token === null || productId.value === null) return;
+  try {
+    const resized = await resizeImage(file, 320);
+    pickedPicture.value = resized.previewUrl;
+    await saveProductImage(token, productId.value, {
+      mime: resized.mime,
+      dataBase64: resized.dataBase64,
+    });
+    hasPicture.value = true;
+    pictureVersion.value += 1;
+  } catch (cause) {
+    formError.value = describeWith(cause, 'Could not save that picture');
+  } finally {
+    input.value = '';
+  }
+}
+
+async function dropPicture(): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null || productId.value === null) return;
+  try {
+    await removeProductImage(token, productId.value);
+    hasPicture.value = false;
+    pickedPicture.value = null;
+    pictureVersion.value += 1;
+  } catch (cause) {
+    formError.value = describeWith(cause, 'Could not remove the picture');
+  }
+}
 
 async function remove(): Promise<void> {
   if (productId.value === null) return;
@@ -909,6 +965,45 @@ const baseUnitName = computed(
             placeholder="Size, colour, what it fits — anything worth remembering."
             :disabled="!canSave"
           />
+        </div>
+      </AppCard>
+
+      <!--
+        The picture (owner decision 2026-08-25). Only offered once the product
+        exists: it is saved on the spot rather than with the form, because a
+        photo is not a field somebody edits and reverts — they choose it and
+        expect to see it. A shop that never uploads one loses nothing; the POS
+        grid draws the product's letters instead.
+      -->
+      <AppCard
+        v-if="productId !== null"
+        collapsible
+        icon="pi-image"
+        title="Picture"
+        subtitle="Optional. It shows on the POS grid."
+        subtitle-bn="বিক্রির পর্দায় ছবি দেখা যাবে"
+      >
+        <div class="picture">
+          <div class="picture__box">
+            <img v-if="pictureUrl" :src="pictureUrl" :alt="name" />
+            <span v-else>No picture</span>
+          </div>
+          <div class="picture__actions">
+            <input type="file" accept="image/*" :disabled="!canSave" @change="onPicturePicked" />
+            <button
+              v-if="hasPicture"
+              type="button"
+              class="btn btn-danger"
+              :disabled="!canSave || busy"
+              @click="dropPicture"
+            >
+              Remove picture
+            </button>
+            <p class="help">
+              Resized to 320px before it is saved, so a phone photo becomes a few
+              kilobytes rather than four megabytes.
+            </p>
+          </div>
         </div>
       </AppCard>
 
@@ -1218,6 +1313,39 @@ const baseUnitName = computed(
 </template>
 
 <style scoped>
+.picture {
+  display: flex;
+  gap: var(--sher-space-4, 16px);
+  align-items: flex-start;
+}
+
+.picture__box {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  flex: none;
+  border: 1px dashed var(--sher-line-strong);
+  border-radius: var(--sher-radius-md, 10px);
+  background: var(--sher-sunken);
+  color: var(--sher-text-faint);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.picture__box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.picture__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
 /* Fields, cards, callouts, buttons and dialogs come from `design/components.css`. */
 .form {
   display: flex;

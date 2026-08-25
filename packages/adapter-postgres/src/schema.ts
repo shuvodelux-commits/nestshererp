@@ -1,5 +1,6 @@
 import {
   bigint,
+  customType,
   boolean,
   char,
   date,
@@ -10,6 +11,9 @@ import {
   timestamp,
   unique,
 } from 'drizzle-orm/pg-core';
+
+/** Raw bytes, for the one column that stores a file: a product thumbnail. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
 
 /**
  * Drizzle mirror of migrations/0001_foundation.sql.
@@ -352,6 +356,14 @@ export const products = pgTable('products', {
   // neither — the CHECK constraint in the migration enforces the pair.
   conversionUnitId: char('conversion_unit_id', { length: 26 }),
   conversionFactorQty: bigint('conversion_factor_qty', { mode: 'number' }),
+  // One optional thumbnail (migration 0018), stored with the tenant's own data
+  // so a backup carries it and an on-prem install needs no object store.
+  // One precomputed, normalised line per product (migration 0026) — what the
+  // counter's search actually matches against.
+  aliases: text('aliases'),
+  searchText: text('search_text').notNull(),
+  imageMime: text('image_mime'),
+  imageBytes: bytea('image_bytes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -641,4 +653,283 @@ export const cashMovements = pgTable('cash_movements', {
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/**
+ * Class B — one supplier bill (migration 0017, §5.9).
+ *
+ * `paid_minor` is only what was handed over **with the bill**; everything paid
+ * later lives in `payment_allocations`, and what is still owed is derived from
+ * the two. There is deliberately no outstanding column.
+ */
+export const purchases = pgTable('purchases', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  purchaseNumber: text('purchase_number').notNull(),
+  supplierPartyId: char('supplier_party_id', { length: 26 }).notNull(),
+  supplierBillRef: text('supplier_bill_ref'),
+  locationId: char('location_id', { length: 26 }).notNull(),
+  dueDate: date('due_date', { mode: 'string' }),
+  itemsTotalMinor: bigint('items_total_minor', { mode: 'number' }).notNull(),
+  discountMinor: bigint('discount_minor', { mode: 'number' }).notNull(),
+  extraCostMinor: bigint('extra_cost_minor', { mode: 'number' }).notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  paidMinor: bigint('paid_minor', { mode: 'number' }).notNull(),
+  paidAccountCode: text('paid_account_code'),
+  sessionId: char('session_id', { length: 26 }),
+  notes: text('notes'),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const purchaseLines = pgTable('purchase_lines', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  purchaseId: char('purchase_id', { length: 26 }).notNull(),
+  lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  unitPriceMinor: bigint('unit_price_minor', { mode: 'number' }).notNull(),
+  lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
+  discountShareMinor: bigint('discount_share_minor', { mode: 'number' }).notNull(),
+  extraCostShareMinor: bigint('extra_cost_share_minor', { mode: 'number' }).notNull(),
+  actualUnitCost: bigint('actual_unit_cost', { mode: 'number' }).notNull(),
+  expiryDate: date('expiry_date', { mode: 'string' }),
+  lotId: char('lot_id', { length: 26 }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+/** Class B — money handed to a supplier after the goods arrived (§5.9). */
+export const supplierPayments = pgTable('supplier_payments', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  paymentNumber: text('payment_number').notNull(),
+  supplierPartyId: char('supplier_party_id', { length: 26 }).notNull(),
+  accountCode: text('account_code').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  note: text('note'),
+  sessionId: char('session_id', { length: 26 }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
+/** Which bills a payment settled. Allocation moves no money (§5.9). */
+export const paymentAllocations = pgTable('payment_allocations', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  paymentId: char('payment_id', { length: 26 }).notNull(),
+  purchaseId: char('purchase_id', { length: 26 }).notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+// ---------------------------------------------------------------- selling
+// Phase 6 (migration 0018). What is still owed on an invoice is never a column
+// here: it is `grand_total − Σ sale_payments − Σ receipt_allocations`, computed
+// in the same statement as the row it belongs to.
+export const sales = pgTable('sales', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  saleNumber: text('sale_number').notNull(), partyId: char('party_id', { length: 26 }).notNull(),
+  customerNameSnapshot: text('customer_name_snapshot').notNull(),
+  customerPhoneSnapshot: text('customer_phone_snapshot'),
+  customerGuardianNameSnapshot: text('customer_guardian_name_snapshot'),
+  customerAddressSnapshot: text('customer_address_snapshot'),
+  locationId: char('location_id', { length: 26 }).notNull(), dueDate: date('due_date', { mode: 'string' }),
+  itemsTotalMinor: bigint('items_total_minor', { mode: 'number' }).notNull(),
+  discountMinor: bigint('discount_minor', { mode: 'number' }).notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  cogsMinor: bigint('cogs_minor', { mode: 'number' }).notNull(),
+  paidMinor: bigint('paid_minor', { mode: 'number' }).notNull(),
+  sessionId: char('session_id', { length: 26 }), notes: text('notes'),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const saleLines = pgTable('sale_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  saleId: char('sale_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), qty: bigint('qty', { mode: 'number' }).notNull(),
+  unitPriceMinor: bigint('unit_price_minor', { mode: 'number' }).notNull(),
+  lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
+  lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
+  discountShareMinor: bigint('discount_share_minor', { mode: 'number' }).notNull(),
+  netAmountMinor: bigint('net_amount_minor', { mode: 'number' }).notNull(),
+  costMinor: bigint('cost_minor', { mode: 'number' }).notNull(), source: text('source').notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }), vendorUnitCost: bigint('vendor_unit_cost', { mode: 'number' }),
+  movementId: char('movement_id', { length: 26 }).notNull(), vendorLotId: char('vendor_lot_id', { length: 26 }),
+  isProvisionalCost: boolean('is_provisional_cost').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const salePayments = pgTable('sale_payments', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  saleId: char('sale_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  accountCode: text('account_code').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  sessionId: char('session_id', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const customerReceipts = pgTable('customer_receipts', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  receiptNumber: text('receipt_number').notNull(), customerPartyId: char('customer_party_id', { length: 26 }).notNull(),
+  accountCode: text('account_code').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  note: text('note'), sessionId: char('session_id', { length: 26 }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const receiptAllocations = pgTable('receipt_allocations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  receiptId: char('receipt_id', { length: 26 }).notNull(), saleId: char('sale_id', { length: 26 }).notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const invoicePresentation = pgTable('invoice_presentation', {
+  saleId: char('sale_id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  customerDisplayName: text('customer_display_name'), customerPhone: text('customer_phone'),
+  customerGuardianName: text('customer_guardian_name'),
+  customerAddress: text('customer_address'), deliveryAddress: text('delivery_address'),
+  courierName: text('courier_name'), deliveryInstruction: text('delivery_instruction'),
+  paymentNote: text('payment_note'),
+  customLabel1: text('custom_label_1'), customValue1: text('custom_value_1'),
+  customLabel2: text('custom_label_2'), customValue2: text('custom_value_2'),
+  customLabel3: text('custom_label_3'), customValue3: text('custom_value_3'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+export const invoiceLinePresentation = pgTable('invoice_line_presentation', {
+  saleLineId: char('sale_line_id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  saleId: char('sale_id', { length: 26 }).notNull(), displayName: text('display_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+export const invoiceSettings = pgTable('invoice_settings', {
+  tenantId: char('tenant_id', { length: 26 }).primaryKey(),
+  language: text('language').notNull(), defaultTemplate: text('default_template').notNull(),
+  showLogo: boolean('show_logo').notNull(), showBusinessBlock: boolean('show_business_block').notNull(),
+  showCustomerBlock: boolean('show_customer_block').notNull(), showSku: boolean('show_sku').notNull(),
+  showBarcode: boolean('show_barcode').notNull(), showDiscount: boolean('show_discount').notNull(),
+  showPaymentBreakdown: boolean('show_payment_breakdown').notNull(), showDue: boolean('show_due').notNull(),
+  showAmountInWords: boolean('show_amount_in_words').notNull(),
+  headerText: text('header_text'), showHeaderText: boolean('show_header_text').notNull(),
+  invoiceTitle: text('invoice_title'),
+  businessNameEn: text('business_name_en'), proprietorName: text('proprietor_name'), proprietorNote: text('proprietor_note'),
+  businessDescription: text('business_description'), businessPhone2: text('business_phone_2'),
+  contactPhones: jsonb('contact_phones').notNull(),
+  mfsNumbers: jsonb('mfs_numbers').notNull(), terms: jsonb('terms').notNull(),
+  paymentTermsDays: integer('payment_terms_days').notNull(), paymentTermsLabel: text('payment_terms_label'),
+  thermalPaper: text('thermal_paper').notNull(), showSignatureLines: boolean('show_signature_lines').notNull(),
+  logoMime: text('logo_mime'), logoBytes: bytea('logo_bytes'),
+  businessName: text('business_name'), businessAddress: text('business_address'),
+  businessPhone: text('business_phone'),
+  footerText: text('footer_text'), termsText: text('terms_text'),
+  businessPadEnabled: boolean('business_pad_enabled').notNull(),
+  businessPadTopMm: integer('business_pad_top_mm').notNull(), pageMarginMm: integer('page_margin_mm').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+export const productGroupPrices = pgTable('product_group_prices', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), customerGroupId: char('customer_group_id', { length: 26 }).notNull(),
+  priceMinor: bigint('price_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+export const quotations = pgTable('quotations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  quotationNumber: text('quotation_number').notNull(), partyId: char('party_id', { length: 26 }),
+  customerNameSnapshot: text('customer_name_snapshot').notNull(), customerPhoneSnapshot: text('customer_phone_snapshot'),
+  validUntil: date('valid_until', { mode: 'string' }),
+  itemsTotalMinor: bigint('items_total_minor', { mode: 'number' }).notNull(),
+  discountMinor: bigint('discount_minor', { mode: 'number' }).notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  notes: text('notes'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const quotationLines = pgTable('quotation_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  quotationId: char('quotation_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), qty: bigint('qty', { mode: 'number' }).notNull(),
+  unitPriceMinor: bigint('unit_price_minor', { mode: 'number' }).notNull(),
+  lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
+  lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
+  qtyConverted: bigint('qty_converted', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const salesOrders = pgTable('sales_orders', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  orderNumber: text('order_number').notNull(), partyId: char('party_id', { length: 26 }),
+  customerNameSnapshot: text('customer_name_snapshot').notNull(), customerPhoneSnapshot: text('customer_phone_snapshot'),
+  sourceQuotationId: char('source_quotation_id', { length: 26 }), expectedDate: date('expected_date', { mode: 'string' }),
+  itemsTotalMinor: bigint('items_total_minor', { mode: 'number' }).notNull(),
+  discountMinor: bigint('discount_minor', { mode: 'number' }).notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  notes: text('notes'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const salesOrderLines = pgTable('sales_order_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  salesOrderId: char('sales_order_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), qty: bigint('qty', { mode: 'number' }).notNull(),
+  unitPriceMinor: bigint('unit_price_minor', { mode: 'number' }).notNull(),
+  lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
+  lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
+  qtyConverted: bigint('qty_converted', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const saleDrafts = pgTable('sale_drafts', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  label: text('label').notNull(), customerName: text('customer_name'),
+  itemCount: integer('item_count').notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  cart: jsonb('cart').notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
 });

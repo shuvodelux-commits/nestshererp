@@ -238,6 +238,16 @@ export const dayStatusResponseSchema = z.object({
    */
   todaySession: cashSessionResponseSchema.nullable(),
   blockedByDate: z.string().nullable(),
+  /**
+   * The still-open session `blockedByDate` names.
+   *
+   * The date alone was not enough: the chip could say "close the previous day"
+   * and had nothing to close it *with*, so pressing it did nothing at all
+   * (owner-reported, 2026-08-25). End Day needs the session — its id, its
+   * opening and its expected closing — and this is that session, whatever date
+   * it is on.
+   */
+  blockedSession: cashSessionResponseSchema.nullable(),
   /** The previous day's counted close, which Start Day suggests as the opening. */
   previousClosingMinor: z.number().int().nullable(),
   /**

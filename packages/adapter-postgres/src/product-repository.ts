@@ -9,6 +9,7 @@ import type {
   Tx,
 } from '@sher/core-application';
 import type { ProductSort } from '@sher/core-contracts';
+import { buildProductSearchText, searchTokens } from '@sher/core-domain';
 import type { DiscountType, ProductStatus } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
@@ -86,6 +87,9 @@ const PRODUCT_COLUMNS = {
   offerPriceMinor: products.offerPriceMinor,
   offerStartAt: products.offerStartAt,
   offerEndAt: products.offerEndAt,
+  hasImage: sql<boolean>`(${products.imageMime} IS NOT NULL)`,
+  aliases: products.aliases,
+  searchText: products.searchText,
   tracksExpiry: products.tracksExpiry,
   tracksSerial: products.tracksSerial,
   conversionUnitId: products.conversionUnitId,
@@ -136,6 +140,9 @@ const PRODUCT_COLUMNS = {
 
 interface RawProduct {
   readonly id: string;
+  readonly hasImage?: boolean;
+  readonly aliases?: string | null;
+  readonly searchText?: string;
   readonly name: string;
   readonly brandId: string | null;
   readonly brandName: string | null;
@@ -272,6 +279,7 @@ export class PostgresProductRepository implements ProductRepository {
       .values({
         ...product,
         status: 'ACTIVE',
+        searchText: '',
         tenantId: ctx.tenantId,
         createdAt: now,
         updatedAt: now,
@@ -279,6 +287,49 @@ export class PostgresProductRepository implements ProductRepository {
         updatedBy: ctx.userId,
         version: 1,
       });
+
+    await this.refreshSearchText(tx, ctx, product.id);
+  }
+
+  /**
+   * Rebuilds the product's searchable line (migration 0026).
+   *
+   * Done here, after every write, rather than asked of each caller: an importer,
+   * a barcode generator and the product form all change what a product can be
+   * found by, and one of them forgetting would leave a product invisible to the
+   * counter with nothing on screen to explain it. The text itself comes from
+   * `buildProductSearchText` — the same normaliser the search ranks with, so a
+   * row can never be stored in a form the query cannot match.
+   */
+  private async refreshSearchText(tx: Tx, ctx: TenantContext, id: string): Promise<void> {
+    const db = txOf(tx);
+    const rows = await db
+      .select({
+        name: products.name,
+        sku: products.sku,
+        barcode: products.barcode,
+        aliases: products.aliases,
+        brandName: brands.name,
+        categoryName: categories.name,
+        unitName: units.name,
+      })
+      .from(products)
+      .leftJoin(brands, and(eq(brands.tenantId, ctx.tenantId), eq(brands.id, products.brandId)))
+      .leftJoin(
+        categories,
+        and(eq(categories.tenantId, ctx.tenantId), eq(categories.id, products.categoryId)),
+      )
+      .leftJoin(units, and(eq(units.tenantId, ctx.tenantId), eq(units.id, products.baseUnitId)))
+      .where(and(eq(products.tenantId, ctx.tenantId), eq(products.id, id)))
+      .limit(1);
+
+    const row = rows[0];
+    if (row === undefined) return;
+
+    await db
+      .update(products)
+      .set({ searchText: buildProductSearchText(row) })
+      .where(and(eq(products.tenantId, ctx.tenantId), eq(products.id, id)));
   }
 
   /**
@@ -307,6 +358,7 @@ export class PostgresProductRepository implements ProductRepository {
       )
       .returning({ id: products.id });
 
+    if (updated.length > 0) await this.refreshSearchText(tx, ctx, id);
     return updated.length > 0;
   }
 
@@ -337,6 +389,59 @@ export class PostgresProductRepository implements ProductRepository {
         version: sql`${products.version} + 1`,
       })
       .where(and(this.liveInTenant(ctx), eq(products.id, id)));
+
+    // A generated barcode is one more thing the counter can scan for.
+    await this.refreshSearchText(tx, ctx, id);
+  }
+
+  async setPurchasePrice(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+    purchasePriceMinor: number,
+  ): Promise<void> {
+    await txOf(tx)
+      .update(products)
+      .set({
+        purchasePriceMinor,
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+        version: sql`${products.version} + 1`,
+      })
+      .where(and(this.liveInTenant(ctx), eq(products.id, id)));
+  }
+
+  async setImage(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+    image: { readonly mime: string; readonly bytes: Uint8Array } | null,
+  ): Promise<void> {
+    await txOf(tx)
+      .update(products)
+      .set({
+        imageMime: image?.mime ?? null,
+        imageBytes: image === null ? null : Buffer.from(image.bytes),
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+      })
+      .where(and(eq(products.tenantId, ctx.tenantId), eq(products.id, id)));
+  }
+
+  async findImage(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<{ readonly mime: string; readonly bytes: Uint8Array } | null> {
+    const rows = await txOf(tx)
+      .select({ mime: products.imageMime, bytes: products.imageBytes })
+      .from(products)
+      .where(and(eq(products.tenantId, ctx.tenantId), eq(products.id, id)))
+      .limit(1);
+
+    const row = rows[0];
+    if (row === undefined || row.mime === null || row.bytes === null) return null;
+    return { mime: row.mime, bytes: row.bytes };
   }
 
   async deleteUnused(tx: Tx, ctx: TenantContext, id: string): Promise<void> {
@@ -412,17 +517,18 @@ export class PostgresProductRepository implements ProductRepository {
     const conditions = [];
 
     if (filter.search !== null && filter.search !== '') {
-      // The four things a shopkeeper types: the product, its code, its barcode,
-      // or the brand. `products_name_trgm_idx` is what keeps this off a full scan.
-      const pattern = `%${filter.search}%`;
-      conditions.push(
-        or(
-          sql`${products.name} ILIKE ${pattern}`,
-          sql`${products.sku} ILIKE ${pattern}`,
-          sql`${products.barcode} ILIKE ${pattern}`,
-          sql`${brands.name} ILIKE ${pattern}`,
-        ),
-      );
+      /*
+       * Every fragment, anywhere in the product's one searchable line, in any
+       * order — `salt aci` and `aci salt` are the same question (migration
+       * 0026). Each token is its own `LIKE`, ANDed, which is what lets the
+       * order stop mattering; `products_search_text_trgm_idx` keeps it off a
+       * full scan. Ranking is not attempted here: SQL would need a second copy
+       * of a rule that already exists in the domain, so the use case orders
+       * what comes back.
+       */
+      for (const token of searchTokens(filter.search)) {
+        conditions.push(sql`${products.searchText} LIKE ${`%${token}%`}`);
+      }
     }
 
     if (filter.brandId !== null) conditions.push(eq(products.brandId, filter.brandId));
@@ -480,6 +586,9 @@ function toRow(raw: RawProduct): ProductRow {
     ...raw,
     // CHAR(26) columns come back blank-padded; the join names never are.
     baseUnitName: raw.baseUnitName ?? '',
+    hasImage: raw.hasImage === true,
+    aliases: raw.aliases ?? null,
+    searchText: raw.searchText ?? '',
     status: raw.status as ProductStatus,
     defaultDiscountType: raw.defaultDiscountType as DiscountType | null,
     // A product with no cost-state row has never been stocked, which is zero —

@@ -5,7 +5,13 @@ export { parseQty, Qty, QTY_SCALE } from './qty';
 // The integer arithmetic `core-domain` needs for unit conversion (D-10). Exported
 // rather than reimplemented: D-31's rounding rule lives in scaled.ts and nowhere
 // else, and a second half-up implementation is exactly how two of them drift.
-export { divideRoundHalfUp, formatScaled, multiplyScaled, parseScaled } from './scaled';
+export {
+  allocateLargestRemainder,
+  divideRoundHalfUp,
+  formatScaled,
+  multiplyScaled,
+  parseScaled,
+} from './scaled';
 export { UnitCost, UNIT_COST_SCALE } from './unit-cost';
 export { Ulid } from './ulid';
 export {
@@ -18,3 +24,5 @@ export {
   FixedClock,
 } from './clock';
 export type { Clock } from './clock';
+export { amountInWords, toBengaliDigits } from './amount-in-words';
+export type { AmountWordsLanguage } from './amount-in-words';

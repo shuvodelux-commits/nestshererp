@@ -215,6 +215,16 @@ export interface PartyRepository {
 
   findById(tx: Tx, ctx: TenantContext, id: string): Promise<PartyRow | null>;
   /**
+   * The shop's system walk-in customer, seeded with the tenant (§5.6, §5.8).
+   *
+   * Every fully paid guest sale posts against it, so the POS asks for it on
+   * each sale rather than caching an id that would be wrong for the next
+   * tenant. Matched on `is_system_reserved` rather than on the name, because
+   * the name is a display string and a shop that renames anything must not end
+   * up with two walk-in parties.
+   */
+  findWalkInCustomer(tx: Tx, ctx: TenantContext): Promise<PartyRow | null>;
+  /**
    * D-02's duplicate check: the id of the party that already holds this phone
    * **as a customer**, if any. A supplier with the same number is not a clash.
    */

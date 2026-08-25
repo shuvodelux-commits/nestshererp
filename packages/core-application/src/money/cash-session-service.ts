@@ -142,6 +142,7 @@ export class CashSessionService {
           businessDate,
           todaySession: null,
           blockedByDate: null,
+          blockedSession: null,
           previousClosingMinor: null,
           drawerBalanceMinor: drawer?.balanceMinor ?? 0,
           canReopenToday: false,
@@ -175,6 +176,8 @@ export class CashSessionService {
         todaySession:
           todaySession === null ? null : await this.toResponse(tx, ctx, todaySession),
         blockedByDate,
+        blockedSession:
+          blockedByDate === null || open === null ? null : await this.toResponse(tx, ctx, open),
         previousClosingMinor: previousClose?.countedClosingMinor ?? null,
         drawerBalanceMinor: drawer.balanceMinor,
         canReopenToday: await this.canReopenToday(tx, ctx, businessDate),

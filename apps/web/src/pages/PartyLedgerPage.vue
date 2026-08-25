@@ -9,12 +9,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import { fetchParty, fetchPartyLedger, fetchPartyOpening } from '../api/parties';
 import { useSession } from '../auth/session';
+import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
+import PaySupplierDialog from '../components/purchasing/PaySupplierDialog.vue';
 import PartyFormPage from './PartyFormPage.vue';
 
 /**
@@ -206,12 +208,13 @@ const closingAmount = computed(() => {
  * explained rather than merely dead.
  */
 const futureActions = computed(() => {
-  if (role.value === 'SUPPLIER') {
-    return [
-      { label: 'Pay supplier', icon: 'pi-wallet', hint: 'Arrives with Purchases' },
-      { label: 'New purchase', icon: 'pi-shopping-cart', hint: 'Arrives with Purchases' },
-    ];
-  }
+  /*
+   * Phase 5 landed, so a supplier's two actions are no longer among these:
+   * `Pay supplier` is the large primary button below and `New purchase` opens
+   * the purchase form with this supplier already chosen. What remains here is
+   * still-unbuilt work for the other roles.
+   */
+  if (role.value === 'SUPPLIER') return [];
   if (role.value === 'VENDOR') {
     return [{ label: 'Pay vendor', icon: 'pi-wallet', hint: 'Arrives with Consignment' }];
   }
@@ -220,6 +223,25 @@ const futureActions = computed(() => {
     { label: 'New sale', icon: 'pi-shopping-cart', hint: 'Arrives with Sales' },
   ];
 });
+
+/**
+ * §5.6's hub, now that Phase 5 exists: the large primary way to settle a
+ * supplier is here, on the page that already shows what they are owed and every
+ * line behind it. `Pay this bill` on a purchase is the small secondary route to
+ * the same use case (owner decision 2026-08-24).
+ */
+const canPaySupplier = computed(
+  () => role.value === 'SUPPLIER' && session.can('purchase.payment.record'),
+);
+const canBuy = computed(() => role.value === 'SUPPLIER' && session.can('purchase.bill.create'));
+const paying = ref(false);
+
+async function onSupplierPaid(): Promise<void> {
+  paying.value = false;
+  // The balance above and the statement below both move — they are two readings
+  // of the lines this payment just wrote.
+  await Promise.all([loadParty(), load()]);
+}
 
 async function loadParty(): Promise<void> {
   const token = session.accessToken.value;
@@ -255,6 +277,12 @@ function printStatement(): void {
 }
 
 onMounted(() => {
+  void load();
+  void loadParty();
+});
+
+// Receiving money or posting a sale changes this balance and this statement.
+onDataChanged(() => {
   void load();
   void loadParty();
 });
@@ -336,6 +364,24 @@ watch(partyId, () => {
           :title="action.hint"
         >
           <i :class="`pi ${action.icon}`" aria-hidden="true" /> {{ action.label }}
+        </button>
+
+        <button
+          v-if="canPaySupplier"
+          type="button"
+          class="btn btn-primary"
+          @click="paying = true"
+        >
+          <i class="pi pi-wallet" aria-hidden="true" /> Pay supplier
+          <span class="sher-bn">টাকা দিন</span>
+        </button>
+        <button
+          v-if="canBuy"
+          type="button"
+          class="btn btn-ghost"
+          @click="router.push('/purchases/new')"
+        >
+          <i class="pi pi-shopping-cart" aria-hidden="true" /> New purchase
         </button>
 
         <button
@@ -512,6 +558,13 @@ watch(partyId, () => {
       :role="role"
       @saved="onOpeningSaved"
       @close="openingOpen = false"
+    />
+    <PaySupplierDialog
+      v-if="paying && party !== null"
+      :supplier-id="party.id"
+      :supplier-name="party.name"
+      @paid="onSupplierPaid"
+      @close="paying = false"
     />
   </AppShell>
 </template>

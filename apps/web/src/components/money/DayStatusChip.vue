@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 
 import { fetchDayStatus } from '../../api/money';
 import { useSession } from '../../auth/session';
+import { onDataChanged } from '../../state/data-freshness';
 import EndDayDialog from './EndDayDialog.vue';
 import MoveMoneyDialog from './MoveMoneyDialog.vue';
 import ReopenDayDialog from './ReopenDayDialog.vue';
@@ -35,6 +36,13 @@ const today = computed(() => status.value?.todaySession ?? null);
 const open = computed(() => (today.value?.status === 'OPEN' ? today.value : null));
 const closedToday = computed(() => (today.value?.status === 'CLOSED' ? today.value : null));
 const blocked = computed(() => status.value?.blockedByDate ?? null);
+/*
+ * The day the chip is asking for. Pressing "আগের দিন আগে শেষ করুন" used to do
+ * nothing, because the press handler only knew how to open Start Day — so the
+ * one screen telling the shopkeeper what to do was the one place they could not
+ * do it (owner-reported, 2026-08-25).
+ */
+const blockedSession = computed(() => status.value?.blockedSession ?? null);
 
 /** Hidden outright when the shop has no drawer, or the feature is off. */
 const visible = computed(
@@ -58,7 +66,9 @@ const tone = computed(() => {
 
 /** The one thing this chip's press should do right now. */
 const action = computed<'START' | 'END' | 'REOPEN' | 'BLOCKED' | null>(() => {
-  if (blocked.value !== null) return 'BLOCKED';
+  if (blocked.value !== null) {
+    return blockedSession.value !== null && session.can('cash.session.close') ? 'END' : null;
+  }
   if (open.value !== null) return session.can('cash.session.close') ? 'END' : null;
   if (status.value?.canReopenToday === true) return 'REOPEN';
   return session.can('cash.session.start') ? 'START' : null;
@@ -78,10 +88,13 @@ async function refresh(): Promise<void> {
 
 function press(): void {
   const next = action.value;
-  if (next === 'START' || next === 'BLOCKED') showStart.value = next === 'START';
+  if (next === 'START') showStart.value = true;
   if (next === 'END') showEnd.value = true;
   if (next === 'REOPEN') showReopen.value = true;
 }
+
+/** Today's open day, or the earlier one still waiting to be counted. */
+const dayToClose = computed(() => blockedSession.value ?? open.value);
 
 async function done(): Promise<void> {
   showStart.value = false;
@@ -91,7 +104,10 @@ async function done(): Promise<void> {
   await refresh();
 }
 
+// A sale, a purchase or a payment anywhere moves the drawer, so the chip
+// re-reads the day rather than waiting for the next navigation.
 onMounted(refresh);
+onDataChanged(refresh);
 defineExpose({ refresh });
 </script>
 
@@ -123,7 +139,12 @@ defineExpose({ refresh });
     />
 
     <StartDayDialog v-if="showStart" :status="status" @started="done" @close="showStart = false" />
-    <EndDayDialog v-if="showEnd && open" :day="open" @closed="done" @close="showEnd = false" />
+    <EndDayDialog
+      v-if="showEnd && dayToClose"
+      :day="dayToClose"
+      @closed="done"
+      @close="showEnd = false"
+    />
     <ReopenDayDialog
       v-if="showReopen && closedToday"
       :day="closedToday"

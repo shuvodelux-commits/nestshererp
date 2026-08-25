@@ -15,6 +15,12 @@ const SEQUENCE_WIDTH = 6;
 const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   NOTE: 'NOTE',
   PRODUCT_BARCODE: 'P',
+  PURCHASE: 'PUR',
+  SUPPLIER_PAYMENT: 'SPY',
+  SALE: 'INV',
+  CUSTOMER_RECEIPT: 'RCV',
+  QUOTATION: 'QTN',
+  SALES_ORDER: 'SO',
 };
 
 /**

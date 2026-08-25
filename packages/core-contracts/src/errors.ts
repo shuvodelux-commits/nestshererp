@@ -46,6 +46,17 @@ export const ErrorCode = {
    * one is a role change, the other is a setting — and because the UI must not
    * offer a control that would raise either (UI-09).
    */
+  /**
+   * §5.26's 422: the sale asks for more of something than the shop has, and
+   * the negative-stock policy will not let it post (§5.7).
+   *
+   * Its own code rather than a validation failure, because the counter's answer
+   * is neither "fix the form" nor "you may not" — it is a decision about
+   * whether to sell goods that are not on the shelf, and `details.reason`
+   * carries which of `BLOCK` or `WARN` produced it so the POS can offer the
+   * right control.
+   */
+  INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
   FEATURE_DISABLED: 'FEATURE_DISABLED',
 } as const;
 
@@ -70,6 +81,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   // 423 Locked (§5.26). Not 403: the caller has every permission they need,
   // and nothing about their account is wrong — the deployment is out of term.
   LICENSE_READ_ONLY: 423,
+  INSUFFICIENT_STOCK: 422,
   FEATURE_DISABLED: 403,
 };
 

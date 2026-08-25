@@ -36,6 +36,11 @@ export interface ProductRow {
   readonly offerPriceMinor: number | null;
   readonly offerStartAt: Date | null;
   readonly offerEndAt: Date | null;
+  readonly hasImage: boolean;
+  /** What the shop also calls this product, free text (migration 0026). */
+  readonly aliases: string | null;
+  /** The precomputed line the search matches and ranks against (0026). */
+  readonly searchText: string;
   readonly tracksExpiry: boolean;
   readonly tracksSerial: boolean;
   /**
@@ -163,6 +168,33 @@ export interface ProductRepository {
   ): Promise<boolean>;
   setStatus(tx: Tx, ctx: TenantContext, id: string, status: ProductStatus): Promise<void>;
   setBarcode(tx: Tx, ctx: TenantContext, id: string, barcode: string): Promise<void>;
+  /**
+   * What this product last cost, refreshed by a posted purchase (§5.5).
+   *
+   * A narrow setter rather than `update`, for the same reason `setBarcode` is
+   * one: recording a delivery is not editing the product, so it must not need
+   * `catalog.product.edit`, must not carry the whole row, and must not lose a
+   * D-32 version race against somebody genuinely editing the product.
+   */
+  setPurchasePrice(tx: Tx, ctx: TenantContext, id: string, purchasePriceMinor: number): Promise<void>;
+  /**
+   * The product's thumbnail (migration 0018). Narrow setters like
+   * `setBarcode`, and for the same reason: a picture is not the product's
+   * commercial data, so it must not carry the whole row into a D-32 version
+   * race against somebody genuinely editing prices.
+   */
+  setImage(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+    image: { readonly mime: string; readonly bytes: Uint8Array } | null,
+  ): Promise<void>;
+  findImage(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<{ readonly mime: string; readonly bytes: Uint8Array } | null>;
+
   /** Hard delete, only ever called for a product nothing refers to (§3.6). */
   deleteUnused(tx: Tx, ctx: TenantContext, id: string): Promise<void>;
 

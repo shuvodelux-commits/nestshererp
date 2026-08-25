@@ -56,7 +56,7 @@ describe('navigation architecture', () => {
     // the owner's decision of 2026-08-24. The list grows only when a real
     // implemented route ships; nothing is ever removed from it, which is what
     // makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/parties', '/daily-cash', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

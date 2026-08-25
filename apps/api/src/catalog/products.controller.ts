@@ -22,10 +22,14 @@ import {
   AppError,
   ErrorCode,
   productQuerySchema,
+  saveProductImageRequestSchema,
   saveProductRequestSchema,
   setProductStatusRequestSchema,
   updateProductRequestSchema,
 } from '@sher/core-contracts';
+
+import { Response } from '@nestjs/common';
+import type { Response as ExpressResponse } from 'express';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
 import { MANAGE_PRODUCTS_SERVICE } from './tokens';
@@ -131,6 +135,49 @@ export class ProductsController {
   @HttpCode(204)
   async remove(@Param('id') id: string, @Ctx() ctx: TenantContext): Promise<void> {
     await this.products.deleteProduct({ ctx, productId: id });
+  }
+
+  /**
+   * A product's thumbnail (owner decision 2026-08-25).
+   *
+   * The bytes are served rather than embedded in the product JSON: a POS grid
+   * asks for a page of products constantly and would carry every picture with
+   * every refresh. As an ordinary image URL the browser caches it, and a
+   * product without one simply 404s and the tile draws its letters.
+   */
+  @Get(':id/image')
+  async image(
+    @Param('id') id: string,
+    @Ctx() ctx: TenantContext,
+    @Response() response: ExpressResponse,
+  ): Promise<void> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+    const image = await this.products.image(ctx, id);
+    response.setHeader('Content-Type', image.mime);
+    // Private: it is one shop's own picture, and it changes when they replace it.
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    response.end(Buffer.from(image.bytes));
+  }
+
+  @Post(':id/image')
+  async saveImage(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: ProductResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+    const parsed = saveProductImageRequestSchema.safeParse(body);
+    if (!parsed.success) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid picture');
+    return { data: await this.products.saveImage({ ctx, productId: id, image: parsed.data }) };
+  }
+
+  @Delete(':id/image')
+  async removeImage(
+    @Param('id') id: string,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: ProductResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+    return { data: await this.products.saveImage({ ctx, productId: id, image: null }) };
   }
 }
 

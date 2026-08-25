@@ -1,6 +1,7 @@
 import type { LoginResponse } from '@sher/core-contracts';
 
 import { useSession } from '../auth/session';
+import { markDataChanged } from '../state/data-freshness';
 
 /**
  * The HTTP client.
@@ -39,6 +40,15 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly status: number,
+    /**
+     * The server's own `details` map (§5.26's error envelope).
+     *
+     * Carried because one refusal needs a *different screen*, not different
+     * wording: a cash payment on a day nobody started comes back with
+     * `reason: CASH_DAY_NOT_STARTED`, and the purchase screen turns that into
+     * a দিন শুরু করুন button beside the half-typed bill rather than a dead end.
+     */
+    readonly details: Readonly<Record<string, string>> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -46,11 +56,15 @@ export class ApiError extends Error {
 }
 
 interface ErrorBody {
-  readonly error?: { readonly code?: string; readonly message?: string };
+  readonly error?: {
+    readonly code?: string;
+    readonly message?: string;
+    readonly details?: Readonly<Record<string, string>>;
+  };
 }
 
 interface RequestOptions {
-  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly token?: string | undefined;
   /** ULID, generated once per user intent and reused on retry (UI-34). */
@@ -136,6 +150,7 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
       body.error?.code ?? 'INTERNAL_ERROR',
       body.error?.message ?? 'The server rejected this request.',
       response.status,
+      body.error?.details ?? {},
     );
   }
 
@@ -158,8 +173,19 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
  * straight through — which is also what stops a failed refresh from looping.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  /*
+   * Any successful write invalidates every derived figure on every open screen
+   * — a balance, a due, a stock position are all computed from the journal on
+   * read (INV-06, INV-07). Signalling here rather than at each call site is
+   * what makes that automatic: a use case added later cannot forget to do it,
+   * and no screen has to know which other screen changed what.
+   */
+  const writes = options.method !== undefined && options.method !== 'GET';
+
   try {
-    return await send<T>(path, options);
+    const result = await send<T>(path, options);
+    if (writes) markDataChanged();
+    return result;
   } catch (cause) {
     const expired = cause instanceof ApiError && cause.status === 401;
     if (!expired || options.token === undefined) throw cause;
@@ -168,6 +194,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
     // Deliberately re-read the token rather than reusing the one passed in:
     // the renewal above replaced it, and the caller still holds the old value.
-    return send<T>(path, { ...options, token: currentAccessToken() ?? options.token });
+    const retried = await send<T>(path, {
+      ...options,
+      token: currentAccessToken() ?? options.token,
+    });
+    if (writes) markDataChanged();
+    return retried;
   }
 }

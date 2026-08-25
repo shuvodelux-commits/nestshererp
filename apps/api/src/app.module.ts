@@ -8,6 +8,8 @@ import { ImportsModule } from './imports/imports.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { MoneyModule } from './money/money.module';
 import { PartiesModule } from './parties/parties.module';
+import { PurchasingModule } from './purchasing/purchasing.module';
+import { SalesModule } from './sales/sales.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
 import { ReadOnlyLicenseGuard } from './deployment/read-only.guard';
 import { TraceIdMiddleware } from './common/trace-id.middleware';
@@ -36,6 +38,8 @@ import { UsersModule } from './users/users.module';
     PartiesModule,
     MoneyModule,
     ImportsModule,
+    PurchasingModule,
+    SalesModule,
   ],
   controllers: [HealthController],
   providers: [

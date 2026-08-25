@@ -107,6 +107,32 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     ],
   },
   {
+    // §5.7, §5.8: Sales is one business module — the counter, the invoices it
+    // produced, and how those invoices are printed. `Sales Return` is not
+    // listed, because the capability does not ship yet and UI-09 refuses a
+    // dead page.
+    id: 'sales', label: 'Sales (POS)', icon: 'pi-shopping-bag', subcategories: [
+      { id: 'sales.counter', label: 'Sales', icon: 'pi-receipt', features: [
+        feature('sales.pos', 'POS — New Sale', 'নতুন বিক্রি', 'Sell at the counter and print the invoice', '/pos', ['sale.invoice.create'], ['/pos']),
+        feature('sales.list', 'Sales Invoice', 'বিক্রির তালিকা', 'Every invoice, what is paid and what is owed', '/sales', ['sale.invoice.view'], ['/sales']),
+        feature('sales.receive', 'Receive Payment', 'কাস্টমারের টাকা নিন', 'Take money against what a customer owes', '/sales', ['sale.payment.record'], ['/sales'], false),
+      ] },
+    ],
+  },
+  {
+    // §5.9: Purchase is one business module with its own feature navigation —
+    // `New Purchase` and `Purchase Invoice` today. `Purchase Return` is not
+    // listed, because the capability does not ship yet and UI-09 refuses a
+    // dead page.
+    id: 'purchases', label: 'Purchases', icon: 'pi-shopping-cart', subcategories: [
+      { id: 'purchases.bills', label: 'Purchases', icon: 'pi-receipt', features: [
+        feature('purchases.list', 'Purchase Invoice', 'কেনার তালিকা', 'Every supplier bill, what is paid and what is owed', '/purchases', ['purchase.bill.view'], ['/purchases']),
+        feature('purchases.new', 'New Purchase', 'নতুন মাল কেনা', 'Record goods received from a supplier', '/purchases/new', ['purchase.bill.create'], ['/purchases/new']),
+        feature('purchases.pay', 'Pay Supplier', 'সরবরাহকারীকে টাকা দিন', 'Settle a supplier from cash or bank', '/purchases', ['purchase.payment.record'], ['/purchases'], false),
+      ] },
+    ],
+  },
+  {
     id: 'parties', label: 'Parties', icon: 'pi-users', alwaysGroup: true, subcategories: [
       { id: 'customers.management', label: 'Customers', icon: 'pi-user', features: [
         feature('parties.customers', 'Customers', 'কাস্টমারের তালিকা', 'Manage customers', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties']),
@@ -147,6 +173,9 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.money', label: 'Money Accounts', icon: 'pi-wallet', features: [
         feature('settings.money.cash', 'Cash Accounts', 'ক্যাশ ও সিন্দুক', 'The till, the safe and any other cash box', '/settings/accounts', ['cash.account.view'], ['/settings/accounts']),
         { ...feature('settings.money.bank', 'Bank & bKash Accounts', 'ব্যাংক ও বিকাশ', 'Bank, bKash and Nagad accounts with their statements', '/settings/accounts', ['bank.account.view'], ['/settings/accounts'], false), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
+      ] },
+      { id: 'settings.invoice', label: 'Invoice Design', icon: 'pi-file', features: [
+        feature('settings.invoice.design', 'Invoice Design', 'ইনভয়েসের ডিজাইন', 'What is printed on an invoice, and on which paper', '/settings/invoice-design', ['settings.setting.edit'], ['/settings/invoice-design']),
       ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),

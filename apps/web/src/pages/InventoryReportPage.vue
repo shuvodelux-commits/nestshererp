@@ -21,6 +21,7 @@ import {
 } from '../api/inventory';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
+import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
 import EmptyState from '../components/EmptyState.vue';
@@ -125,6 +126,8 @@ async function load(): Promise<void> {
 }
 
 onMounted(load);
+// Any posting anywhere refreshes what this screen is showing.
+onDataChanged(load);
 
 function clearRange(): void {
   fromDate.value = '';

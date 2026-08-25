@@ -77,3 +77,21 @@ export function generateProductBarcode(
 export function deleteProduct(token: string, id: string): Promise<void> {
   return request(`/api/v1/products/${id}`, { method: 'DELETE', token });
 }
+
+/**
+ * A product's picture (§5.5, owner decision 2026-08-25).
+ *
+ * The bytes are resized in the browser first, so what crosses the wire is a
+ * thumbnail rather than a camera original.
+ */
+export function saveProductImage(
+  token: string,
+  productId: string,
+  payload: { mime: string; dataBase64: string },
+): Promise<ProductResponse> {
+  return request(`/api/v1/products/${productId}/image`, { method: 'POST', token, body: payload });
+}
+
+export function removeProductImage(token: string, productId: string): Promise<ProductResponse> {
+  return request(`/api/v1/products/${productId}/image`, { method: 'DELETE', token });
+}

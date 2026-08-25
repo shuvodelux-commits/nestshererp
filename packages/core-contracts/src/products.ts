@@ -84,6 +84,7 @@ export const productResponseSchema = z
     /** Whether the promotion is live right now, decided server-side (§5.5). */
     offerLive: z.boolean(),
 
+    hasImage: z.boolean(),
     tracksExpiry: z.boolean(),
     tracksSerial: z.boolean(),
 
@@ -258,3 +259,20 @@ export type SetProductStatusRequest = z.infer<typeof setProductStatusRequestSche
 /** What a generated barcode came back as (§5.5 "product barcode generation"). */
 export const generatedBarcodeResponseSchema = z.object({ barcode: z.string() }).strict();
 export type GeneratedBarcodeResponse = z.infer<typeof generatedBarcodeResponseSchema>;
+
+/**
+ * One optional product thumbnail (owner decision 2026-08-25).
+ *
+ * The browser resizes and compresses before it sends — a counter grid loads a
+ * page of these at a time, and a phone camera's 4MB original has no business in
+ * a POS tile. The cap here is the backstop, not the mechanism: 192KB of base64
+ * is roughly a 140KB image, far above a 256px thumbnail and far below anything
+ * that would slow the grid.
+ */
+export const saveProductImageRequestSchema = z
+  .object({
+    mime: z.union([z.literal('image/webp'), z.literal('image/jpeg'), z.literal('image/png')]),
+    dataBase64: z.string().min(16).max(192 * 1024),
+  })
+  .strict();
+export type SaveProductImageRequest = z.infer<typeof saveProductImageRequestSchema>;

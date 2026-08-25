@@ -30,3 +30,5 @@ export const PRODUCT_REPOSITORY = Symbol('ProductRepository');
 export const PARTY_REPOSITORY = Symbol('PartyRepository');
 export const MONEY_REPOSITORY = Symbol('MoneyRepository');
 export const INVENTORY_REPOSITORY = Symbol('InventoryRepository');
+export const SALE_REPOSITORY = Symbol('SaleRepository');
+export const PURCHASE_REPOSITORY = Symbol('PurchaseRepository');

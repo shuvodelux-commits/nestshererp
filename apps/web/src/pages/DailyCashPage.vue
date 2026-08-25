@@ -9,6 +9,7 @@ import { computed, onMounted, ref } from 'vue';
 import { ApiError } from '../api/client';
 import { fetchDailyCash, fetchDayStatus } from '../api/money';
 import { useSession } from '../auth/session';
+import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
@@ -48,6 +49,17 @@ const showReopen = ref(false);
 const today = computed<CashSessionResponse | null>(() => status.value?.todaySession ?? null);
 const openToday = computed(() => (today.value?.status === 'OPEN' ? today.value : null));
 const closedToday = computed(() => (today.value?.status === 'CLOSED' ? today.value : null));
+
+/*
+ * The day still waiting to be counted, whichever day that is.
+ *
+ * End Day was offered only for **today's** open session, so a shop that forgot
+ * to close last night was told "2026-08-24 is still open" by a banner with
+ * nothing on it to press, and the button that would have fixed it was hidden
+ * precisely because the day was not today (owner-reported, 2026-08-25).
+ */
+const blockedSession = computed(() => status.value?.blockedSession ?? null);
+const dayToClose = computed(() => blockedSession.value ?? openToday.value);
 
 const canStart = computed(
   () =>
@@ -100,6 +112,8 @@ function statusLabel(row: DailyCashRow): string {
 }
 
 onMounted(load);
+// Any posting anywhere refreshes what this screen is showing.
+onDataChanged(load);
 </script>
 
 <template>
@@ -118,7 +132,7 @@ onMounted(load);
           @click="showStart = true"
         />
         <Button
-          v-if="openToday && session.can('cash.session.close')"
+          v-if="dayToClose && session.can('cash.session.close')"
           icon="pi pi-check"
           :label="MONEY_BN.endDay"
           @click="showEnd = true"
@@ -142,6 +156,13 @@ onMounted(load);
         {{ status.blockedByDate }} is still open. Close it before starting a new day.
         <span class="sher-bn">{{ MONEY_BN.closePreviousFirst }}</span>
       </span>
+      <Button
+        v-if="blockedSession && session.can('cash.session.close')"
+        icon="pi pi-check"
+        size="small"
+        :label="`${MONEY_BN.endDay} — ${status.blockedByDate}`"
+        @click="showEnd = true"
+      />
     </p>
 
     <AppCard>
@@ -228,8 +249,8 @@ onMounted(load);
       @close="showStart = false"
     />
     <EndDayDialog
-      v-if="showEnd && openToday"
-      :day="openToday"
+      v-if="showEnd && dayToClose"
+      :day="dayToClose"
       @closed="done"
       @close="showEnd = false"
     />

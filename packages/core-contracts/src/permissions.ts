@@ -147,6 +147,42 @@ export const Permission = {
 
   BANK_ACCOUNT_VIEW: 'bank.account.view',
   BANK_ACCOUNT_MANAGE: 'bank.account.manage',
+
+  /**
+   * Buying goods (Phase 5, §5.9).
+   *
+   * Three codes rather than one `purchase.manage`, by the owner decision of
+   * 2026-08-24: entering a delivery and handing over money are different
+   * sizes of trust. A shop with a stock-keeper can let them record what
+   * arrived without also letting them empty the drawer, which is the split
+   * §5.26 asks for on financially meaningful actions.
+   */
+  PURCHASE_VIEW: 'purchase.bill.view',
+  PURCHASE_CREATE: 'purchase.bill.create',
+  PURCHASE_PAY: 'purchase.payment.record',
+
+  /*
+   * Selling (§5.7, §5.8, §5.26). The split mirrors purchasing: recording a sale
+   * is the counter's daily work, taking money against old dues is a second
+   * decision, and changing a price or a posted invoice is a third — a cashier
+   * who may sell at the marked price has no business discounting it or voiding
+   * yesterday's invoice.
+   *
+   * `SALE_PRESENTATION_EDIT` is deliberately its own code and deliberately not
+   * `SALE_EDIT`: it changes what an invoice *says* — a display name, a courier,
+   * a note — and can reach no quantity, price, payment or journal figure, which
+   * is exactly why the person who prints invoices can hold it safely.
+   */
+  SALE_VIEW: 'sale.invoice.view',
+  SALE_CREATE: 'sale.invoice.create',
+  SALE_EDIT: 'sale.invoice.edit',
+  SALE_VOID: 'sale.invoice.void',
+  SALE_RECEIVE_PAYMENT: 'sale.payment.record',
+  SALE_PRICE_EDIT: 'sale.price.edit',
+  SALE_DISCOUNT_APPLY: 'sale.discount.apply',
+  SALE_PRESENTATION_EDIT: 'invoice.presentation.edit',
+  SALE_QUOTATION_MANAGE: 'sale.quotation.manage',
+  SALE_ORDER_MANAGE: 'sale.order.manage',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -391,6 +427,89 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
       'Post a whole CSV file at once. Still needs permission to add the kind of record being imported.',
   },
   {
+    code: Permission.PURCHASE_VIEW,
+    group: 'Purchases',
+    label: 'See purchases',
+    detail: 'Open the purchase list and any bill, and see what is still owed on it.',
+  },
+  {
+    code: Permission.PURCHASE_CREATE,
+    group: 'Purchases',
+    label: 'Record a purchase',
+    detail:
+      'Enter goods received from a supplier. This puts stock on the shelf and records what the supplier is owed.',
+  },
+  {
+    code: Permission.PURCHASE_PAY,
+    group: 'Purchases',
+    label: 'Pay a supplier',
+    detail: 'Hand money to a supplier from the drawer or a bank account and settle their bills.',
+  },
+  {
+    code: Permission.SALE_VIEW,
+    group: 'Sales',
+    label: 'See sales and invoices',
+    detail: 'Open the sales list and any invoice, and see what is still owed on it.',
+  },
+  {
+    code: Permission.SALE_CREATE,
+    group: 'Sales',
+    label: 'Sell at the counter',
+    detail:
+      'Use the POS: take goods off the shelf, take the money, and give the customer an invoice.',
+  },
+  {
+    code: Permission.SALE_EDIT,
+    group: 'Sales',
+    label: 'Correct a posted sale',
+    detail:
+      'Change what was actually sold — quantity, price, product or payment — on an invoice already posted. The correction is recorded, never hidden.',
+  },
+  {
+    code: Permission.SALE_VOID,
+    group: 'Sales',
+    label: 'Cancel a sale',
+    detail:
+      'Reverse a whole invoice: the goods go back on the shelf and the money comes back out of the day.',
+  },
+  {
+    code: Permission.SALE_RECEIVE_PAYMENT,
+    group: 'Sales',
+    label: 'Receive money from a customer',
+    detail: 'Take money against what a customer owes and settle their invoices.',
+  },
+  {
+    code: Permission.SALE_PRICE_EDIT,
+    group: 'Sales',
+    label: 'Change a price at the counter',
+    detail: 'Sell an item at something other than its marked selling price.',
+  },
+  {
+    code: Permission.SALE_DISCOUNT_APPLY,
+    group: 'Sales',
+    label: 'Give a discount',
+    detail: 'Knock money off one line or off the whole bill.',
+  },
+  {
+    code: Permission.SALE_PRESENTATION_EDIT,
+    group: 'Sales',
+    label: 'Edit how an invoice is printed',
+    detail:
+      'Change the names, addresses and notes printed on an invoice. It never changes quantity, price, payment, stock or accounts.',
+  },
+  {
+    code: Permission.SALE_QUOTATION_MANAGE,
+    group: 'Sales',
+    label: 'Make quotations',
+    detail: 'Prepare a price quotation for a customer. It reserves no stock and posts nothing.',
+  },
+  {
+    code: Permission.SALE_ORDER_MANAGE,
+    group: 'Sales',
+    label: 'Take sales orders',
+    detail: 'Record an order a customer placed, to be invoiced when the goods go out.',
+  },
+  {
     code: Permission.CASH_ACCOUNT_VIEW,
     group: 'Money',
     label: 'See cash accounts and their balances',
@@ -537,6 +656,29 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_MOVEMENT_RECORD,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_DAILY_INVESTIGATE,
+      /*
+       * Buying is operations, and cost is already visible to this role, so
+       * the manager records deliveries and settles suppliers.
+       */
+      Permission.PURCHASE_VIEW,
+      Permission.PURCHASE_CREATE,
+      Permission.PURCHASE_PAY,
+      /*
+       * Selling is operations too, and this role already sees cost — so the
+       * manager sells, prices, discounts, corrects and cancels, and takes
+       * money against old dues. Quotations and orders come with it because
+       * both are the wholesale half of the same counter.
+       */
+      Permission.SALE_VIEW,
+      Permission.SALE_CREATE,
+      Permission.SALE_EDIT,
+      Permission.SALE_VOID,
+      Permission.SALE_RECEIVE_PAYMENT,
+      Permission.SALE_PRICE_EDIT,
+      Permission.SALE_DISCOUNT_APPLY,
+      Permission.SALE_PRESENTATION_EDIT,
+      Permission.SALE_QUOTATION_MANAGE,
+      Permission.SALE_ORDER_MANAGE,
     ],
   },
   {
@@ -573,6 +715,21 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_SESSION_CLOSE,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_ACCOUNT_VIEW,
+      /*
+       * The counter itself: sell, take money against a due, and fix what an
+       * invoice *says* before handing it over — a misspelt name or a missing
+       * delivery address is caught at the counter or not at all.
+       *
+       * Deliberately **not** `sale.price.edit`, `sale.discount.apply`,
+       * `sale.invoice.edit` or `sale.invoice.void`: changing a price, giving a
+       * money-off, rewriting a posted sale or cancelling one are all decisions
+       * about the shop's margin, and §5.26 puts them above this role. The POS
+       * hides those controls rather than refusing them (UI-09).
+       */
+      Permission.SALE_VIEW,
+      Permission.SALE_CREATE,
+      Permission.SALE_RECEIVE_PAYMENT,
+      Permission.SALE_PRESENTATION_EDIT,
     ],
   },
   {
@@ -594,6 +751,14 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.UNIT_MANAGE,
       Permission.INVENTORY_LOT_VIEW,
       Permission.SUPPLIER_VIEW,
+      /*
+       * They receive the goods, so they may read the bill behind a batch —
+       * but not record one and not pay for it, because a purchase carries
+       * both prices and this role excludes pricing. Without
+       * `inventory.cost.view` the bill arrives with its amounts omitted
+       * (UI-40), which is exactly the reading a storekeeper should get.
+       */
+      Permission.PURCHASE_VIEW,
     ],
   },
   {
@@ -622,6 +787,12 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_MOVEMENT_RECORD,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_DAILY_INVESTIGATE,
+      /* Payables are this role in one word: they enter the bills and pay them. */
+      Permission.PURCHASE_VIEW,
+      Permission.SALE_VIEW,
+      Permission.SALE_RECEIVE_PAYMENT,
+      Permission.PURCHASE_CREATE,
+      Permission.PURCHASE_PAY,
     ],
   },
   {
@@ -637,6 +808,7 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_ACCOUNT_VIEW,
       Permission.BANK_ACCOUNT_VIEW,
       Permission.CASH_DAILY_VIEW,
+      Permission.PURCHASE_VIEW,
     ],
   },
 ];

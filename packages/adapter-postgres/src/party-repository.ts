@@ -256,6 +256,16 @@ export class PostgresPartyRepository implements PartyRepository {
     return withRoles[0] ?? null;
   }
 
+  /** The seeded walk-in customer every fully paid guest sale posts against. */
+  async findWalkInCustomer(tx: Tx, ctx: TenantContext): Promise<PartyRow | null> {
+    const rows = await this.selectParties(tx)
+      .where(and(this.liveInTenant(ctx), eq(parties.isSystemReserved, true)))
+      .limit(1);
+
+    const withRoles = await this.withRoles(tx, ctx, rows);
+    return withRoles[0] ?? null;
+  }
+
   /** D-02: the party already holding this phone **as a customer**, if any. */
   async findCustomerIdByPhone(
     tx: Tx,

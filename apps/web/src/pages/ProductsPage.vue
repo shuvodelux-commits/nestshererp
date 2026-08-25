@@ -423,7 +423,7 @@ function stockPill(product: ProductResponse): string {
           v-model="search"
           field-id="product-search"
           label="Search products"
-          placeholder="Name, code, barcode or brand"
+          placeholder="Any part of a name, brand, category, code or barcode — in any order"
           @search="load"
         />
       </div>

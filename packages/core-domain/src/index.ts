@@ -211,3 +211,55 @@ export type {
   CashMovementKind,
   CashMovementRejection,
 } from './money/cash-movement';
+export {
+  purchaseCosts,
+  purchasePosting,
+  rejectPurchase,
+} from './purchasing/purchase';
+export type {
+  PurchaseCosts,
+  PurchaseDraft,
+  PurchaseLineCost,
+  PurchaseLineDraft,
+  PurchasePostingSides,
+  PurchaseRejection,
+} from './purchasing/purchase';
+export {
+  allocateOldestFirst,
+  rejectSupplierPayment,
+  supplierPaymentPosting,
+} from './purchasing/supplier-payment';
+export type {
+  BillAllocation,
+  OpenBill,
+  SupplierPaymentDraft,
+  SupplierPaymentRejection,
+} from './purchasing/supplier-payment';
+export {
+  ageingBucket,
+  allocateReceipt,
+  receiptPosting,
+  rejectSale,
+  salePosting,
+  saleTotals,
+} from './sales/sale';
+export type {
+  AgeingBucket,
+  AllocatableInvoice,
+  ReceiptAllocation,
+  SaleDraft,
+  SaleLineDraft,
+  SaleLineTotals,
+  SalePaymentSide,
+  SalePostingSides,
+  SaleRejection,
+  SaleTotals,
+} from './sales/sale';
+export {
+  buildProductSearchText,
+  normalizeSearchText,
+  rankProduct,
+  searchProducts,
+  searchTokens,
+} from './catalog/product-search';
+export type { ProductSearchDoc, ProductSearchFields } from './catalog/product-search';

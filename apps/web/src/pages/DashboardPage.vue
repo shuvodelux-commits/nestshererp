@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue';
 import { fetchDashboardSummary } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
+import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
@@ -46,6 +47,8 @@ async function load(): Promise<void> {
 }
 
 onMounted(load);
+// Any posting anywhere refreshes what this screen is showing.
+onDataChanged(load);
 
 /**
  * The six tiles this screen will carry, in the order and tone §2.7.I assigns

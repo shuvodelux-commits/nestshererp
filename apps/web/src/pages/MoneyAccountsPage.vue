@@ -10,6 +10,7 @@ import { useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import { deactivateAccount, fetchAccounts } from '../api/money';
 import { useSession } from '../auth/session';
+import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
@@ -122,6 +123,8 @@ async function saved(): Promise<void> {
 }
 
 onMounted(load);
+// Any posting anywhere refreshes what this screen is showing.
+onDataChanged(load);
 </script>
 
 <template>
