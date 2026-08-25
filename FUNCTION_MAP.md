@@ -163,6 +163,18 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 `components/ConfirmDialog.vue` — the last look before money posts, showing the amount in Bangla words.
 `state/data-freshness.ts` — `markDataChanged()` is raised by `request` after every non-GET, and `onDataChanged(fn)` re-reads any screen showing a journal-derived figure.
 
+### Corrections and adjustments (Phase 7, §5.11 · §5.12 · §5.13 · §5.19)
+
+**Domain.** `sales/sales-return.ts` — `salesReturnTotals` (apportions a sold line by quantity, last returnable unit carrying the remainder), `salesReturnPosting`, `refillLots` (newest consumption first). `purchasing/purchase-return.ts` — `purchaseReturnTotals` and `purchaseReturnPosting`, where the gap between the lot's `actual_unit_cost` and what the supplier billed lands in `STOCK_ADJUSTMENT`. `inventory/stock-count.ts` — `countTotals`. All three are called **from the browser too**, which is what keeps a modal's figures and the server's identical.
+
+**Application — `core-application/src/returns/`.** `CreateSalesReturnService` (WRITE CLASS T; refund caps read off the role, PIN approval through the same `PasswordHasher` a login uses), `CreatePurchaseReturnService`, their query services and repositories. `purchasing/void-purchase-service.ts` — cancelling a bill. `CreatePurchaseService.correctionOf` — **a correction is the create path**, so there is one purchase writer; it reverses the original and keeps its number. `ManageInventoryService.adjustStockWithin` — one stock change inside somebody else's transaction, which is how the count sheet posts N differences atomically (the split the importer made with `createWithin`). `expenses/manage-expenses-service.ts`, `inventory/stock-count-service.ts`, `periods/manage-periods-service.ts` (close only — there is no reopen).
+
+**Contracts.** `returns.ts`, `expenses.ts`, `periods.ts`, count schemas in `inventory.ts`; `ErrorCode.APPROVAL_REQUIRED` (403) is what opens the PIN dialog and nothing else raises it. `roles.ts` carries `cashRefundPerReturnMinor` / `cashRefundPerDayMinor`.
+
+**API.** `/api/v1/sales-returns` (+ `returnable/:saleId`), `/api/v1/purchase-returns` (+ `returnable/:purchaseId`), `/api/v1/purchases/:id/void`, `/api/v1/expenses` (+ `categories`), `/api/v1/stock-counts`, `/api/v1/periods` (+ `close`).
+
+**Web.** Pages `SalesReturnsPage`, `PurchaseReturnsPage`, `ExpensesPage`, `StockCountPage`, `PeriodsPage`. `components/sales/SalesReturnDialog.vue` and `components/purchasing/PurchaseReturnDialog.vue` — opened from the invoice and the bill, never from a menu of their own. `components/money/RecordExpenseDialog.vue`. The count sheet is **the one Phase 7 screen that is a page**: one product is a dialog, the whole shelf is not.
+
 ## 9. Business rules worth knowing before writing code
 
 - **Ten-step write path** for money/stock/document writes, in one transaction (R-D). Master data and

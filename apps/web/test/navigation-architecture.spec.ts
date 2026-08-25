@@ -23,7 +23,15 @@ describe('navigation architecture', () => {
       'inventory.products', 'inventory.reporting',
     ]);
     expect(resolved.flatMap((category) => category.subcategories).some((item) => 'features' in item)).toBe(false);
-    expect(resolved.find((category) => category.id === 'sales')).toBeUndefined();
+    /*
+     * `sales` was a placeholder with no shipped route until Phase 6 gave it the
+     * POS, the invoice list and the returns history, so it now resolves like any
+     * other category. `finance` still has no entry at all, and this assertion is
+     * what would notice if one were invented before its screens exist (UI-09).
+     */
+    expect(resolved.find((category) => category.id === 'sales')?.subcategories.map((item) => item.id)).toEqual([
+      'sales.counter',
+    ]);
     expect(resolved.find((category) => category.id === 'finance')).toBeUndefined();
   });
 
@@ -58,7 +66,7 @@ describe('navigation architecture', () => {
     // return is always taken from the invoice it comes off. The list grows only
     // when a real implemented route ships; nothing is ever removed from it,
     // which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/settings/periods', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/security']));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

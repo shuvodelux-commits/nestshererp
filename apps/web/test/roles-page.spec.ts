@@ -189,6 +189,10 @@ describe('RolesPage', () => {
     expect(create).toHaveBeenCalledWith('test-access', {
       name: 'Shift Supervisor',
       permissions: ['user.account.view'],
+      // Phase 7: a new role starts with no refund limit — unlimited — and the
+      // form carries the pair so an edit cannot silently drop what a role holds.
+      cashRefundPerReturnMinor: null,
+      cashRefundPerDayMinor: null,
       confirmPassword: 'Passw0rd23',
     });
   });

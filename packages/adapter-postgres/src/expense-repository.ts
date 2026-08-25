@@ -18,7 +18,6 @@ import {
   expenses,
   journalEntries,
   journalLines,
-  parties,
 } from './schema';
 import { txOf } from './unit-of-work';
 
