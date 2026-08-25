@@ -70,6 +70,7 @@ const router = createRouter({
     { path: '/pos', name: 'pos', component: () => import('./pages/PosPage.vue') },
     { path: '/sales', name: 'sales', component: () => import('./pages/SalesPage.vue') },
     { path: '/expenses', name: 'expenses', component: () => import('./pages/ExpensesPage.vue') },
+    { path: '/settings/periods', name: 'periods', component: () => import('./pages/PeriodsPage.vue') },
     {
       path: '/stock-count',
       name: 'stock-count',

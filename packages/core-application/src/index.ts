@@ -330,6 +330,8 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { ManagePeriodsService } from './periods/manage-periods-service';
+export type { PeriodRepository, PeriodRow } from './periods/period-repository';
 export { StockCountService } from './inventory/stock-count-service';
 export type { CountLineInput, PostStockCountCommand } from './inventory/stock-count-service';
 export type {

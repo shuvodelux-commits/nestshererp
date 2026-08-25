@@ -185,6 +185,15 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.business', label: 'Business', icon: 'pi-building', features: [
         feature('settings.business.page', 'Settings', 'ব্যবসার সেটিংস', 'Business details and approved feature controls', '/settings', ['settings.setting.view'], ['/settings']),
       ] },
+      /*
+       * Closing a month is a Settings act, not a daily one: it is the shop
+       * deciding its books for that month are final (§5.19, D-25). There is no
+       * reopen, so it sits beside the other one-way switches rather than in a
+       * workflow anybody runs at the counter.
+       */
+      { id: 'settings.periods', label: 'Months', icon: 'pi-calendar', features: [
+        feature('settings.periods.page', 'Months', 'হিসাবের মাস', 'Close a month so nothing more can post into it', '/settings/periods', ['settings.setting.view'], ['/settings/periods']),
+      ] },
       { id: 'settings.money', label: 'Money Accounts', icon: 'pi-wallet', features: [
         feature('settings.money.cash', 'Cash Accounts', 'ক্যাশ ও সিন্দুক', 'The till, the safe and any other cash box', '/settings/accounts', ['cash.account.view'], ['/settings/accounts']),
         { ...feature('settings.money.bank', 'Bank & bKash Accounts', 'ব্যাংক ও বিকাশ', 'Bank, bKash and Nagad accounts with their statements', '/settings/accounts', ['bank.account.view'], ['/settings/accounts'], false), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },

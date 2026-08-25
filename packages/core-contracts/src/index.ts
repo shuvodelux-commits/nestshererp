@@ -421,6 +421,8 @@ export type {
   UpdateInvoiceSettingsRequest,
 } from './sales';
 export { SEED_EXPENSE_CATEGORIES } from './permissions';
+export { closePeriodRequestSchema, periodListResponseSchema, periodSchema } from './periods';
+export type { ClosePeriodRequest, PeriodListResponse, PeriodResponse } from './periods';
 export {
   countLineRequestSchema,
   postStockCountRequestSchema,

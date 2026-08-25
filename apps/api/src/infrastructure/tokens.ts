@@ -35,4 +35,5 @@ export const SALES_RETURN_REPOSITORY = Symbol('SalesReturnRepository');
 export const PURCHASE_RETURN_REPOSITORY = Symbol('PurchaseReturnRepository');
 export const EXPENSE_REPOSITORY = Symbol('ExpenseRepository');
 export const STOCK_COUNT_REPOSITORY = Symbol('StockCountRepository');
+export const PERIOD_REPOSITORY = Symbol('PeriodRepository');
 export const PURCHASE_REPOSITORY = Symbol('PurchaseRepository');

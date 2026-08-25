@@ -18,6 +18,7 @@ import {
   PostgresPurchaseRepository,
   PostgresSaleRepository,
   PostgresExpenseRepository,
+  PostgresPeriodRepository,
   PostgresStockCountRepository,
   PostgresPurchaseReturnRepository,
   PostgresSalesReturnRepository,
@@ -73,6 +74,7 @@ import {
   PURCHASE_RETURN_REPOSITORY,
   EXPENSE_REPOSITORY,
   STOCK_COUNT_REPOSITORY,
+  PERIOD_REPOSITORY,
   PARTY_REPOSITORY,
   PRODUCT_REPOSITORY,
   ROLE_REPOSITORY,
@@ -282,6 +284,11 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [CLOCK],
     },
     {
+      provide: PERIOD_REPOSITORY,
+      useFactory: (): PostgresPeriodRepository => new PostgresPeriodRepository(),
+      inject: [],
+    },
+    {
       provide: STOCK_COUNT_REPOSITORY,
       useFactory: (clock: Clock): PostgresStockCountRepository =>
         new PostgresStockCountRepository(clock),
@@ -343,6 +350,7 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     PURCHASE_RETURN_REPOSITORY,
     EXPENSE_REPOSITORY,
     STOCK_COUNT_REPOSITORY,
+    PERIOD_REPOSITORY,
   ],
 })
 export class PersistenceModule {}
