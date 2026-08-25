@@ -1,0 +1,243 @@
+import type { AccountCode } from '@sher/core-domain';
+
+import type { TenantContext } from '../ports/tenant-context';
+import type { Tx } from '../ports/unit-of-work';
+
+/**
+ * Everything one posted purchase writes (§5.9), and the reads the two purchase
+ * screens live on.
+ *
+ * Every id is generated in the application layer (R-C1) and handed down, so the
+ * repository inserts rows and decides nothing about business meaning (R-B6).
+ * One bill writes: the document, its lines, one lot and one stock movement per
+ * line, the moving-average cache per product, and one journal entry — all in
+ * the caller's transaction, because a bill that put stock on the shelf without
+ * recording what it owes is not half a purchase, it is a wrong one.
+ */
+
+export interface NewJournalLine {
+  readonly id: string;
+  readonly account: AccountCode;
+  readonly amountMinor: number;
+  readonly partyId: string | null;
+}
+
+export interface NewPurchaseLine {
+  readonly id: string;
+  readonly lineNo: number;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly qty: number;
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+  readonly discountShareMinor: number;
+  readonly extraCostShareMinor: number;
+  /** Scale 4 — what the lot carries and a later sale is charged at. */
+  readonly actualUnitCost: number;
+  readonly lotValueMinor: number;
+  readonly expiryDate: string | null;
+  readonly lotId: string;
+  readonly movementId: string;
+  /** The moving-average cache for this product after this line (DR13.5). */
+  readonly costState: {
+    readonly id: string;
+    readonly exists: boolean;
+    readonly avgUnitCost: number;
+    readonly qtyOnHand: number;
+  };
+}
+
+export interface NewPurchase {
+  readonly id: string;
+  readonly number: string;
+  readonly operationId: string;
+  readonly supplierPartyId: string;
+  readonly supplierBillRef: string | null;
+  readonly locationId: string;
+  readonly dueDate: string | null;
+  readonly itemsTotalMinor: number;
+  readonly discountMinor: number;
+  readonly extraCostMinor: number;
+  readonly grandTotalMinor: number;
+  readonly paidMinor: number;
+  readonly paidAccountCode: string | null;
+  /** The open day the cash left, when cash left at all (§5.16.1). */
+  readonly sessionId: string | null;
+  readonly notes: string | null;
+  readonly businessDate: string;
+  readonly entryMode: 'ON_TIME' | 'LATE_ENTRY' | 'BACKDATED' | 'CORRECTED';
+  readonly journalEntryId: string;
+  readonly journalLines: readonly NewJournalLine[];
+  readonly lines: readonly NewPurchaseLine[];
+}
+
+export interface PurchaseLineRow {
+  readonly id: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly unitName: string;
+  readonly qty: number;
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+  readonly discountShareMinor: number;
+  readonly extraCostShareMinor: number;
+  readonly actualUnitCost: number;
+  readonly expiryDate: string | null;
+  readonly lotId: string;
+}
+
+export interface PurchasePaymentRow {
+  readonly id: string;
+  readonly number: string;
+  readonly businessDate: string;
+  readonly accountName: string;
+  readonly amountMinor: number;
+}
+
+export interface PurchaseRow {
+  readonly id: string;
+  readonly number: string;
+  readonly supplierPartyId: string;
+  readonly supplierName: string;
+  readonly supplierBillRef: string | null;
+  readonly businessDate: string;
+  readonly dueDate: string | null;
+  readonly status: 'POSTED' | 'VOIDED';
+  readonly notes: string | null;
+  readonly itemsTotalMinor: number;
+  readonly discountMinor: number;
+  readonly extraCostMinor: number;
+  readonly grandTotalMinor: number;
+  /** Paid on the bill plus everything allocated to it since — never stored. */
+  readonly paidMinor: number;
+  readonly dueMinor: number;
+  readonly paidAccountCode: string | null;
+  readonly paidAccountName: string | null;
+  readonly createdAt: Date;
+}
+
+export interface PurchaseDetail extends PurchaseRow {
+  readonly lines: readonly PurchaseLineRow[];
+  readonly payments: readonly PurchasePaymentRow[];
+}
+
+export interface PurchaseListRowData {
+  readonly id: string;
+  readonly number: string;
+  readonly supplierPartyId: string;
+  readonly supplierName: string;
+  readonly supplierBillRef: string | null;
+  readonly businessDate: string;
+  readonly dueDate: string | null;
+  readonly status: 'POSTED' | 'VOIDED';
+  readonly lineCount: number;
+  readonly grandTotalMinor: number;
+  readonly paidMinor: number;
+  readonly dueMinor: number;
+}
+
+export interface PurchaseFilter {
+  readonly search: string | null;
+  readonly supplierPartyId: string | null;
+  readonly fromDate: string | null;
+  readonly toDate: string | null;
+  readonly settlement: 'ALL' | 'UNPAID' | 'PAID';
+  readonly cursor: string | null;
+  readonly limit: number;
+}
+
+export interface PurchaseSummary {
+  readonly periodTotalMinor: number;
+  readonly unpaidTotalMinor: number;
+  readonly overdueTotalMinor: number;
+  readonly purchaseCount: number;
+}
+
+/** One bill with money still on it, oldest first — what a payment fills up. */
+export interface OpenBillRow {
+  readonly purchaseId: string;
+  readonly number: string;
+  readonly businessDate: string;
+  readonly dueDate: string | null;
+  readonly grandTotalMinor: number;
+  readonly outstandingMinor: number;
+}
+
+export interface NewSupplierPayment {
+  readonly id: string;
+  readonly number: string;
+  readonly operationId: string;
+  readonly supplierPartyId: string;
+  readonly accountCode: string;
+  readonly amountMinor: number;
+  readonly note: string | null;
+  readonly sessionId: string | null;
+  readonly businessDate: string;
+  readonly entryMode: 'ON_TIME' | 'LATE_ENTRY' | 'BACKDATED' | 'CORRECTED';
+  readonly journalEntryId: string;
+  readonly journalLines: readonly NewJournalLine[];
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly purchaseId: string;
+    readonly amountMinor: number;
+  }[];
+}
+
+export interface SupplierPaymentDetail {
+  readonly id: string;
+  readonly number: string;
+  readonly supplierPartyId: string;
+  readonly supplierName: string;
+  readonly accountCode: string;
+  readonly amountMinor: number;
+  readonly note: string | null;
+  readonly businessDate: string;
+  readonly createdAt: Date;
+  readonly allocations: readonly {
+    readonly purchaseId: string;
+    readonly purchaseNumber: string;
+    readonly amountMinor: number;
+  }[];
+}
+
+export interface PurchaseRepository {
+  insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void>;
+  /** C10: the permanent unique index is the guarantee, not the 30-day cache. */
+  findPurchaseIdByOperationId(
+    tx: Tx,
+    ctx: TenantContext,
+    operationId: string,
+  ): Promise<string | null>;
+  findPurchaseById(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDetail | null>;
+  listPurchases(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PurchaseFilter,
+  ): Promise<readonly PurchaseListRowData[]>;
+  summarise(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PurchaseFilter,
+    today: string,
+  ): Promise<PurchaseSummary>;
+  /**
+   * The supplier's open bills in settlement order — business date, then id.
+   *
+   * `purchaseId` narrows it to one bill for the "Pay this bill" entry point;
+   * the ordering and the outstanding arithmetic are the same either way, which
+   * is what keeps the two buttons one use case.
+   */
+  listOpenBills(
+    tx: Tx,
+    ctx: TenantContext,
+    supplierPartyId: string,
+    purchaseId: string | null,
+  ): Promise<readonly OpenBillRow[]>;
+  insertPayment(tx: Tx, ctx: TenantContext, payment: NewSupplierPayment): Promise<void>;
+  findPaymentIdByOperationId(
+    tx: Tx,
+    ctx: TenantContext,
+    operationId: string,
+  ): Promise<string | null>;
+  findPaymentById(tx: Tx, ctx: TenantContext, id: string): Promise<SupplierPaymentDetail | null>;
+}

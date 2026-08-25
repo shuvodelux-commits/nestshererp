@@ -1,0 +1,152 @@
+import { Module } from '@nestjs/common';
+import type {
+  AccessControl,
+  AuditWriter,
+  IdempotencyStore,
+  InventoryRepository,
+  MoneyRepository,
+  NumberingService,
+  Outbox,
+  PartyRepository,
+  PeriodGuard,
+  ProductRepository,
+  PurchaseRepository,
+  UnitOfWork,
+} from '@sher/core-application';
+import {
+  CreatePurchaseService,
+  PaySupplierService,
+  PurchaseQueryService,
+} from '@sher/core-application';
+import type { Clock } from '@sher/shared-utils';
+
+import {
+  ACCESS_CONTROL,
+  AUDIT_WRITER,
+  CLOCK,
+  IDEMPOTENCY_STORE,
+  INVENTORY_REPOSITORY,
+  MONEY_REPOSITORY,
+  NUMBERING_SERVICE,
+  OUTBOX,
+  PARTY_REPOSITORY,
+  PERIOD_GUARD,
+  PRODUCT_REPOSITORY,
+  PURCHASE_REPOSITORY,
+  UNIT_OF_WORK,
+} from '../infrastructure/tokens';
+import { PurchasesController } from './purchases.controller';
+import { SupplierPaymentsController } from './supplier-payments.controller';
+import {
+  CREATE_PURCHASE_SERVICE,
+  PAY_SUPPLIER_SERVICE,
+  PURCHASE_QUERY_SERVICE,
+} from './tokens';
+
+/** Phase 5 — buying goods, and paying the supplier for them (§5.9). */
+@Module({
+  controllers: [PurchasesController, SupplierPaymentsController],
+  providers: [
+    {
+      provide: CREATE_PURCHASE_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        idempotency: IdempotencyStore,
+        periods: PeriodGuard,
+        parties: PartyRepository,
+        products: ProductRepository,
+        inventory: InventoryRepository,
+        money: MoneyRepository,
+        purchases: PurchaseRepository,
+        numbering: NumberingService,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): CreatePurchaseService =>
+        new CreatePurchaseService(
+          uow,
+          accessControl,
+          idempotency,
+          periods,
+          parties,
+          products,
+          inventory,
+          money,
+          purchases,
+          numbering,
+          audit,
+          outbox,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        IDEMPOTENCY_STORE,
+        PERIOD_GUARD,
+        PARTY_REPOSITORY,
+        PRODUCT_REPOSITORY,
+        INVENTORY_REPOSITORY,
+        MONEY_REPOSITORY,
+        PURCHASE_REPOSITORY,
+        NUMBERING_SERVICE,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
+    },
+    {
+      provide: PAY_SUPPLIER_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        idempotency: IdempotencyStore,
+        periods: PeriodGuard,
+        parties: PartyRepository,
+        money: MoneyRepository,
+        purchases: PurchaseRepository,
+        numbering: NumberingService,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): PaySupplierService =>
+        new PaySupplierService(
+          uow,
+          accessControl,
+          idempotency,
+          periods,
+          parties,
+          money,
+          purchases,
+          numbering,
+          audit,
+          outbox,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        IDEMPOTENCY_STORE,
+        PERIOD_GUARD,
+        PARTY_REPOSITORY,
+        MONEY_REPOSITORY,
+        PURCHASE_REPOSITORY,
+        NUMBERING_SERVICE,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
+    },
+    {
+      provide: PURCHASE_QUERY_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        purchases: PurchaseRepository,
+        clock: Clock,
+      ): PurchaseQueryService => new PurchaseQueryService(uow, accessControl, purchases, clock),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PURCHASE_REPOSITORY, CLOCK],
+    },
+  ],
+})
+export class PurchasingModule {}
