@@ -679,6 +679,23 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
  * adds its own codes to the roles that should hold them. Inventing the codes now
  * would mean granting names that nothing checks.
  */
+/**
+ * The expense categories every tenant starts with (owner decision 2026-08-26).
+ *
+ * A shopkeeper should never meet an empty dropdown on their first expense. The
+ * code is half an account code — `EXPENSE:SALARY` — and is fixed for ever once
+ * anything posts to it; the name beside it stays editable.
+ */
+export const SEED_EXPENSE_CATEGORIES: readonly { readonly code: string; readonly name: string }[] = [
+  { code: 'SALARY', name: 'Salary' },
+  { code: 'RENT', name: 'Rent' },
+  { code: 'ELECTRICITY', name: 'Electricity' },
+  { code: 'TRANSPORT', name: 'Transport' },
+  { code: 'TEA_SNACKS', name: 'Tea & snacks' },
+  { code: 'REPAIRS', name: 'Repairs' },
+  { code: 'OTHER', name: 'Other' },
+];
+
 export interface SeedRole {
   readonly code: string;
   readonly name: string;

@@ -1002,3 +1002,30 @@ export const purchaseReturnLines = pgTable('purchase_return_lines', {
   movementId: char('movement_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });
+
+export const expenseCategories = pgTable('expense_categories', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  code: text('code').notNull(), name: text('name').notNull(),
+  isSystem: boolean('is_system').notNull(), status: text('status').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const expenses = pgTable('expenses', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  expenseNumber: text('expense_number').notNull(),
+  categoryId: char('category_id', { length: 26 }).notNull(),
+  categoryCodeSnapshot: text('category_code_snapshot').notNull(),
+  categoryNameSnapshot: text('category_name_snapshot').notNull(),
+  payeePartyId: char('payee_party_id', { length: 26 }), payeeNameSnapshot: text('payee_name_snapshot'),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  accountCode: text('account_code').notNull(), sessionId: char('session_id', { length: 26 }),
+  note: text('note'),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
+  backdateReason: text('backdate_reason'),
+  status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});

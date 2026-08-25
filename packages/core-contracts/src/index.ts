@@ -420,6 +420,21 @@ export type {
   SaleSource,
   UpdateInvoiceSettingsRequest,
 } from './sales';
+export { SEED_EXPENSE_CATEGORIES } from './permissions';
+export {
+  expenseCategorySchema,
+  expenseListResponseSchema,
+  expenseSchema,
+  recordExpenseRequestSchema,
+  saveExpenseCategoryRequestSchema,
+} from './expenses';
+export type {
+  ExpenseCategoryResponse,
+  ExpenseListResponse,
+  ExpenseResponse,
+  RecordExpenseRequest,
+  SaveExpenseCategoryRequest,
+} from './expenses';
 export {
   createPurchaseReturnRequestSchema,
   purchaseReturnListSchema,

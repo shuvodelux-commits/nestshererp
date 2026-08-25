@@ -69,6 +69,7 @@ const router = createRouter({
     // list it can navigate away from by accident.
     { path: '/pos', name: 'pos', component: () => import('./pages/PosPage.vue') },
     { path: '/sales', name: 'sales', component: () => import('./pages/SalesPage.vue') },
+    { path: '/expenses', name: 'expenses', component: () => import('./pages/ExpensesPage.vue') },
     {
       path: '/purchase-returns',
       name: 'purchase-returns',

@@ -1,5 +1,10 @@
 import { createPool } from '@sher/adapter-postgres';
-import { SEED_ROLES, SEED_UNITS, WALK_IN_PARTY_NAME } from '@sher/core-contracts';
+import {
+  SEED_EXPENSE_CATEGORIES,
+  SEED_ROLES,
+  SEED_UNITS,
+  WALK_IN_PARTY_NAME,
+} from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 
 import { loadConfig } from './config';
@@ -126,6 +131,16 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
           }
         }
       }
+      for (const category of SEED_EXPENSE_CATEGORIES) {
+        const added = await ensureExpenseCategory(
+          client,
+          tenantId,
+          tenant.created_by.trim(),
+          category.code,
+          category.name,
+        );
+        if (added) touched = true;
+      }
       for (const unitName of SEED_UNITS) {
         const added = await ensureUnit(client, tenantId, tenant.created_by.trim(), unitName);
         if (added) {
@@ -209,6 +224,36 @@ async function ensureRole(
  * Returns whether anything changed, so the run's summary counts the tenant as
  * touched — the same reporting every other step here does.
  */
+/**
+ * One expense category per tenant, by code.
+ *
+ * Added only if that code is absent, live or archived: a shop that archived
+ * `Transport` meant it, and a backfill that resurrected it every deploy would
+ * be a bug nobody could explain.
+ */
+async function ensureExpenseCategory(
+  client: { query: QueryFn },
+  tenantId: string,
+  actorId: string,
+  code: string,
+  name: string,
+): Promise<boolean> {
+  const existing = await client.query<{ id: string }>(
+    'SELECT id FROM expense_categories WHERE tenant_id = $1 AND code = $2',
+    [tenantId, code],
+  );
+  if (existing.rows[0] !== undefined) return false;
+
+  const now = clock.now();
+  await client.query(
+    `INSERT INTO expense_categories
+       (id, tenant_id, code, name, is_system, status, created_at, updated_at, created_by, updated_by, version)
+     VALUES ($1, $2, $3, $4, TRUE, 'ACTIVE', $5, $5, $6, $6, 1)`,
+    [Ulid.generate(clock), tenantId, code, name, now, actorId],
+  );
+  return true;
+}
+
 async function ensureRefundCaps(
   client: { query: QueryFn },
   tenantId: string,

@@ -32,5 +32,6 @@ export { PostgresInventoryRepository } from './inventory-repository';
 export { PostgresMoneyRepository } from './money-repository';
 export { PostgresPurchaseRepository } from './purchase-repository';
 export { PostgresSaleRepository } from './sale-repository';
+export { PostgresExpenseRepository } from './expense-repository';
 export { PostgresPurchaseReturnRepository } from './purchase-return-repository';
 export { PostgresSalesReturnRepository } from './sales-return-repository';

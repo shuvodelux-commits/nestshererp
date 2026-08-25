@@ -330,6 +330,19 @@ export type {
   SaleRow,
   SaleTotalsRow,
 } from './sales/sale-repository';
+export { ManageExpensesService, toExpenseResponse } from './expenses/manage-expenses-service';
+export type {
+  RecordExpenseCommand,
+  SaveCategoryCommand,
+} from './expenses/manage-expenses-service';
+export type {
+  ExpenseCategoryRow,
+  ExpenseFilter,
+  ExpenseRepository,
+  ExpenseRow,
+  NewExpense,
+  NewExpenseCategory,
+} from './expenses/expense-repository';
 export { VoidPurchaseService } from './purchasing/void-purchase-service';
 export type { VoidPurchaseCommand } from './purchasing/void-purchase-service';
 export type {

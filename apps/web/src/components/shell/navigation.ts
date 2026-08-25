@@ -103,6 +103,12 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     id: 'daily', label: 'Daily', icon: 'pi-calendar', subcategories: [
       { id: 'daily.cash', label: 'Daily Cash', icon: 'pi-wallet', features: [
         feature('daily.cash.page', 'Daily Cash', 'দিনের নগদ হিসাব', 'Expected against counted, day by day', '/daily-cash', ['cash.daily.view'], ['/daily-cash']),
+        /*
+         * Expenses sit under Daily, not Settings: rent and salary are things a
+         * shop pays *on a day*, and the person recording one is the person
+         * who just counted the drawer (Phase 7, §5.12).
+         */
+        feature('daily.expenses', 'Expenses', 'খরচ', 'Rent, salary, electricity — everything that is not stock', '/expenses', ['expense.view'], ['/expenses']),
       ] },
     ],
   },

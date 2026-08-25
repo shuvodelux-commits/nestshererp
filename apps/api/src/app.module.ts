@@ -9,6 +9,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { MoneyModule } from './money/money.module';
 import { PartiesModule } from './parties/parties.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
+import { ExpensesModule } from './expenses/expenses.module';
 import { ReturnsModule } from './returns/returns.module';
 import { SalesModule } from './sales/sales.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
@@ -42,6 +43,7 @@ import { UsersModule } from './users/users.module';
     PurchasingModule,
     SalesModule,
     ReturnsModule,
+    ExpensesModule,
   ],
   controllers: [HealthController],
   providers: [
