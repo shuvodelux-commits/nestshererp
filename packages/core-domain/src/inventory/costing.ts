@@ -91,11 +91,31 @@ export function allocateLots(
   layers: readonly CostLayer[],
   requestedQty: number,
   expiryTracked: boolean,
+  /**
+   * The business date an expired batch stops being sellable on (Phase 7.2,
+   * owner decision 2026-08-26).
+   *
+   * When given, a dated layer whose date is **before** this one is not eligible
+   * at all: expired goods are not stock a shop may sell, so the picker passes
+   * over them and the shortage falls to the negative-stock or vendor-sourcing
+   * answer instead. Null leaves every layer eligible, which is what a stock
+   * adjustment needs — writing expired goods off has to be able to consume the
+   * very lot that expired.
+   *
+   * A layer with **no** date never expires, so it stays eligible either way.
+   */
+  expiredOn: string | null = null,
 ): { readonly allocations: readonly LotAllocation[]; readonly shortageQty: number } {
   const wanted = Qty(requestedQty);
   if (wanted.raw <= 0) throw new RangeError('Issue quantity must be greater than zero');
 
-  const eligible = layers.map(validateLayer).filter((layer) => layer.qtyRemaining > 0);
+  const eligible = layers
+    .map(validateLayer)
+    .filter((layer) => layer.qtyRemaining > 0)
+    .filter(
+      (layer) =>
+        expiredOn === null || layer.expiryDate === null || layer.expiryDate >= expiredOn,
+    );
   if (expiryTracked && eligible.some((layer) => layer.expiryDate === null)) {
     throw new RangeError('An expiry-tracked lot is missing its expiry date');
   }
@@ -127,8 +147,10 @@ export function costIssue(
   averageUnitCost: number,
   provisionalUnitCost: number,
   expiryTracked: boolean,
+  /** See `allocateLots`: expired batches are skipped, not costed. */
+  expiredOn: string | null = null,
 ): IssueCost {
-  const selected = allocateLots(layers, requestedQty, expiryTracked);
+  const selected = allocateLots(layers, requestedQty, expiryTracked, expiredOn);
   const shortageCost = UnitCost(provisionalUnitCost);
   if (shortageCost.raw < 0) throw new RangeError('Provisional cost cannot be negative');
 

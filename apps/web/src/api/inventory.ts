@@ -65,3 +65,21 @@ export function fetchInventoryLots(token: string, query: InventoryLotsQuery): Pr
 export function fetchInventoryValuation(token: string): Promise<InventoryValuationResponse> {
   return request('/api/v1/inventory/valuation', { token });
 }
+
+/**
+ * Set or correct one batch's expiry date (§5.13).
+ *
+ * `null` clears it, which puts the batch back among the undated — never
+ * expiring, never blocking — and is the only way to undo a date typed wrongly.
+ */
+export function setLotExpiry(
+  token: string,
+  lotId: string,
+  expiryDate: string | null,
+): Promise<void> {
+  return request(`/api/v1/inventory/lots/${lotId}/expiry`, {
+    method: 'PUT',
+    token,
+    body: { expiryDate },
+  });
+}

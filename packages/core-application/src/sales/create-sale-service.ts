@@ -212,6 +212,15 @@ export class CreateSaleService {
       const method = values.get(SettingKey.SALE_COSTING_METHOD) === 'AVERAGE' ? 'AVERAGE' : 'FIFO';
       const negativePolicy = String(values.get(SettingKey.NEGATIVE_STOCK_POLICY) ?? 'WARN');
       const consignmentOn = values.get(SettingKey.VENDOR_CONSIGNMENT_ENABLED) === 'ON';
+      /*
+       * §5.13, owner decision 2026-08-26. Under BLOCK an expired batch stops
+       * being sellable stock: the picker passes over it, so a customer gets
+       * whatever is still good and the rest becomes an ordinary shortage —
+       * answered by vendor sourcing or the negative-stock policy, exactly as
+       * any other shortage is. Under WARN and ALLOW expired goods *are*
+       * sellable, so nothing is skipped and the sale simply says so.
+       */
+      const expiredPolicy = String(values.get(SettingKey.EXPIRED_STOCK_SALE_POLICY) ?? 'BLOCK');
 
       const location =
         (await this.inventory.findDefaultLocation(tx, ctx)) ??
@@ -271,6 +280,7 @@ export class CreateSaleService {
                 method,
                 layersByProduct,
                 negativePolicy,
+                expiredOn: expiredPolicy === 'BLOCK' ? businessDate : null,
                 allowNegativeStock: command.allowNegativeStock,
                 warnings,
               });
@@ -496,6 +506,8 @@ export class CreateSaleService {
       method: 'FIFO' | 'AVERAGE';
       layersByProduct: Map<string, CostLayer[]>;
       negativePolicy: string;
+      /** The date expired batches stop counting, or null when they still do. */
+      expiredOn: string | null;
       allowNegativeStock: boolean;
       warnings: string[];
     },
@@ -545,25 +557,57 @@ export class CreateSaleService {
       position.avgUnitCost,
       provisional,
       byExpiry,
+      args.expiredOn,
     );
 
 
     if (issue.shortageQty > 0) {
+      /*
+       * What the shopkeeper is told has to be what they can actually sell.
+       * With expired batches skipped, "only 5 in stock" would be a lie about
+       * two of them, so the figure counts sellable units and the sentence names
+       * the expired ones separately — the shop then knows to look at Inventory
+       * rather than at the shelf (owner decision 2026-08-26).
+       */
+      const sellableQty =
+        args.expiredOn === null
+          ? Math.max(position.qtyOnHand, 0)
+          : available
+              .filter(
+                (layer) => layer.expiryDate === null || layer.expiryDate >= (args.expiredOn ?? ''),
+              )
+              .reduce((sum, layer) => sum + Math.max(layer.qtyRemaining, 0), 0);
+      const expiredQty = Math.max(Math.max(position.qtyOnHand, 0) - sellableQty, 0);
+      const expiredNote =
+        expiredQty > 0 ? ` — ${Qty(expiredQty).format()} expired and cannot be sold` : '';
+
       // §5.7's negative-stock policy. `BLOCK` refuses; `WARN` needs the cashier
       // to have seen and accepted it, which is what `allowNegativeStock` is;
       // `ALLOW` posts and labels the cost provisional (D-19).
       if (args.negativePolicy === 'BLOCK') {
         throw new AppError(
           ErrorCode.INSUFFICIENT_STOCK,
-          `Only ${Qty(Math.max(position.qtyOnHand, 0)).format()} of “${product.name}” is in stock`,
-          { reason: 'NEGATIVE_STOCK_BLOCKED', productId: product.id, shortageQty: String(issue.shortageQty) },
+          sellableQty <= 0 && expiredQty > 0
+            ? `Product expired. This batch cannot be sold`
+            : `Only ${Qty(sellableQty).format()} of “${product.name}” can be sold${expiredNote}`,
+          {
+            reason: 'NEGATIVE_STOCK_BLOCKED',
+            productId: product.id,
+            shortageQty: String(issue.shortageQty),
+            expiredQty: String(expiredQty),
+          },
         );
       }
       if (args.negativePolicy === 'WARN' && !args.allowNegativeStock) {
         throw new AppError(
           ErrorCode.INSUFFICIENT_STOCK,
-          `Only ${Qty(Math.max(position.qtyOnHand, 0)).format()} of “${product.name}” is in stock — confirm to sell anyway`,
-          { reason: 'NEGATIVE_STOCK_CONFIRM', productId: product.id, shortageQty: String(issue.shortageQty) },
+          `Only ${Qty(sellableQty).format()} of “${product.name}” can be sold${expiredNote} — confirm to sell anyway`,
+          {
+            reason: 'NEGATIVE_STOCK_CONFIRM',
+            productId: product.id,
+            shortageQty: String(issue.shortageQty),
+            expiredQty: String(expiredQty),
+          },
         );
       }
       args.warnings.push(

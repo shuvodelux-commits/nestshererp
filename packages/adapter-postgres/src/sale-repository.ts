@@ -974,11 +974,28 @@ export class PostgresSaleRepository implements SaleRepository {
         tracksExpiry: products.tracksExpiry,
         hasImage: sql<boolean>`(${products.imageMime} IS NOT NULL)`,
         searchText: products.searchText,
-        qtyOnHand: sql<number>`COALESCE((
-          SELECT SUM(pcs.qty_on_hand) FROM product_cost_state pcs
-           WHERE pcs.tenant_id = ${ctx.tenantId} AND pcs.product_id = ${products.id}
-             AND pcs.deleted_at IS NULL
-        ), 0)::bigint`,
+        /*
+         * What the cashier can actually sell.
+         *
+         * Normally the moving-average cache, which is what every other stock
+         * figure reads. Under BLOCK it is the open lots with the expired ones
+         * left out instead (Phase 7.2): three of five expired has to show two,
+         * because a cashier promising five must not find out at the cart. An
+         * undated lot never expires, so it always counts.
+         */
+        qtyOnHand:
+          filter.expiredOn === null
+            ? sql<number>`COALESCE((
+                SELECT SUM(pcs.qty_on_hand) FROM product_cost_state pcs
+                 WHERE pcs.tenant_id = ${ctx.tenantId} AND pcs.product_id = ${products.id}
+                   AND pcs.deleted_at IS NULL
+              ), 0)::bigint`
+            : sql<number>`COALESCE((
+                SELECT SUM(il.qty_remaining) FROM inventory_lots il
+                 WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
+                   AND il.deleted_at IS NULL AND il.qty_remaining > 0
+                   AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})
+              ), 0)::bigint`,
         groupPriceMinor: groupPrice,
       })
       .from(products)

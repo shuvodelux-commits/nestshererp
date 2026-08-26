@@ -183,6 +183,12 @@ export class SaleQueryService {
 
       const values = effectiveSettings(settingValuesOf(await this.settings.listStored(tx, ctx)));
       const dealerPricingOn = values.get(SettingKey.DEALER_PRICING_ENABLED) === 'ON';
+      // Only BLOCK takes expired units off the tile: under WARN and ALLOW they
+      // really are sellable, so the grid keeps counting them.
+      const expiredOn =
+        String(values.get(SettingKey.EXPIRED_STOCK_SALE_POLICY) ?? 'BLOCK') === 'BLOCK'
+          ? this.clock.businessDate(ctx.timezone)
+          : null;
 
       let customerGroupId: string | null = null;
       if (dealerPricingOn && query.customerPartyId !== undefined) {
@@ -191,6 +197,7 @@ export class SaleQueryService {
       }
 
       const rows = await this.sales.listPosProducts(tx, ctx, {
+        expiredOn,
         search: query.search ?? null,
         barcode: query.barcode ?? null,
         categoryId: query.categoryId ?? null,

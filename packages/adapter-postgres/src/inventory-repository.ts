@@ -365,6 +365,37 @@ export class PostgresInventoryRepository implements InventoryRepository {
       eq(inventoryLots.tenantId, ctx.tenantId),
       ...(filter.productId === null ? [] : [eq(inventoryLots.productId, filter.productId)]),
       ...(filter.expiringOnly ? [isNotNull(inventoryLots.expiryDate)] : []),
+      /*
+       * The Expiry card's three questions. Only batches with something left in
+       * them are asked about: an empty lot cannot expire on anybody, and a
+       * closed one is history. `MISSING` reaches through to the product,
+       * because a batch without a date only matters when its product is
+       * supposed to have one.
+       */
+      ...(filter.expiry === 'EXPIRED'
+        ? [
+            sql`${inventoryLots.expiryDate} IS NOT NULL AND ${inventoryLots.expiryDate} < ${filter.asOf}`,
+            sql`${inventoryLots.qtyRemaining} > 0`,
+          ]
+        : []),
+      ...(filter.expiry === 'SOON'
+        ? [
+            sql`${inventoryLots.expiryDate} IS NOT NULL
+                AND ${inventoryLots.expiryDate} >= ${filter.asOf}
+                AND ${inventoryLots.expiryDate} <= ${filter.warnUntil}`,
+            sql`${inventoryLots.qtyRemaining} > 0`,
+          ]
+        : []),
+      ...(filter.expiry === 'MISSING'
+        ? [
+            sql`${inventoryLots.expiryDate} IS NULL`,
+            sql`${inventoryLots.qtyRemaining} > 0`,
+            sql`EXISTS (
+              SELECT 1 FROM products p
+               WHERE p.id = ${inventoryLots.productId} AND p.tracks_expiry = TRUE
+            )`,
+          ]
+        : []),
       isNull(inventoryLots.deletedAt),
       ...(filter.status === null ? [] : [eq(inventoryLots.status, filter.status)]),
       ...(filter.cursor === null ? [] : [afterCursor(
@@ -455,5 +486,120 @@ export class PostgresInventoryRepository implements InventoryRepository {
       .from(journalLines)
       .where(and(eq(journalLines.tenantId, ctx.tenantId), eq(journalLines.accountCode, 'INVENTORY')));
     return rows.map((row) => row.amountMinor);
+  }
+  /**
+   * How many batches sit in each of the Expiry card's three buckets.
+   *
+   * One statement for all three, so the chips and the table under them are two
+   * readings of one query rather than four round trips that can disagree. Only
+   * batches with something left are counted — an empty lot cannot expire on
+   * anybody.
+   */
+  async expirySummary(
+    tx: Tx,
+    ctx: TenantContext,
+    range: { readonly productId: string | null; readonly asOf: string; readonly warnUntil: string },
+  ): Promise<{
+    readonly expiredCount: number;
+    readonly expiredValueMinor: number;
+    readonly soonCount: number;
+    readonly missingCount: number;
+  }> {
+    const forProduct =
+      range.productId === null ? sql`TRUE` : sql`il.product_id = ${range.productId}`;
+
+    const rows = await txOf(tx).execute<{
+      expired_count: string;
+      expired_value: string;
+      soon_count: string;
+      missing_count: string;
+    }>(sql`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE il.expiry_date IS NOT NULL AND il.expiry_date < ${range.asOf}
+        )::bigint AS expired_count,
+        COALESCE(SUM(
+          CASE WHEN il.expiry_date IS NOT NULL AND il.expiry_date < ${range.asOf}
+               THEN ROUND(il.qty_remaining::numeric * il.actual_unit_cost::numeric / 100000)
+               ELSE 0 END
+        ), 0)::bigint AS expired_value,
+        COUNT(*) FILTER (
+          WHERE il.expiry_date IS NOT NULL
+            AND il.expiry_date >= ${range.asOf}
+            AND il.expiry_date <= ${range.warnUntil}
+        )::bigint AS soon_count,
+        COUNT(*) FILTER (
+          WHERE il.expiry_date IS NULL
+            AND EXISTS (SELECT 1 FROM products p WHERE p.id = il.product_id AND p.tracks_expiry = TRUE)
+        )::bigint AS missing_count
+      FROM inventory_lots il
+     WHERE il.tenant_id = ${ctx.tenantId}
+       AND il.deleted_at IS NULL
+       AND il.qty_remaining > 0
+       AND ${forProduct}
+    `);
+
+    const row = rows.rows[0];
+    return {
+      expiredCount: Number(row?.expired_count ?? 0),
+      expiredValueMinor: Number(row?.expired_value ?? 0),
+      soonCount: Number(row?.soon_count ?? 0),
+      missingCount: Number(row?.missing_count ?? 0),
+    };
+  }
+
+  async findLotById(
+    tx: Tx,
+    ctx: TenantContext,
+    lotId: string,
+  ): Promise<{ readonly id: string; readonly productId: string; readonly expiryDate: string | null } | null> {
+    const rows = await txOf(tx)
+      .select({
+        id: inventoryLots.id,
+        productId: inventoryLots.productId,
+        expiryDate: inventoryLots.expiryDate,
+      })
+      .from(inventoryLots)
+      .where(
+        and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, lotId),
+          isNull(inventoryLots.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    return row === undefined
+      ? null
+      : { id: row.id.trim(), productId: row.productId.trim(), expiryDate: row.expiryDate };
+  }
+
+  /** Set or correct a batch's date. The version moves, as any edit does. */
+  async setLotExpiry(
+    tx: Tx,
+    ctx: TenantContext,
+    lotId: string,
+    expiryDate: string | null,
+  ): Promise<boolean> {
+    const now = this.clock.now();
+    const updated = await txOf(tx)
+      .update(inventoryLots)
+      .set({
+        expiryDate,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${inventoryLots.version} + 1`,
+      })
+      .where(
+        and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, lotId),
+          isNull(inventoryLots.deletedAt),
+        ),
+      )
+      .returning({ id: inventoryLots.id });
+
+    return updated.length > 0;
   }
 }

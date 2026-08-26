@@ -296,6 +296,15 @@ export interface PosProductRow {
 }
 
 export interface PosProductFilter {
+  /**
+   * The business date expired batches stop counting on, or null when they
+   * still count (Phase 7.2, owner decision 2026-08-26).
+   *
+   * Under BLOCK the tile has to show what the cashier can actually sell: three
+   * of five expired means the number is two, and a cashier promising five to a
+   * customer must not find out at the cart.
+   */
+  readonly expiredOn: string | null;
   readonly search: string | null;
   readonly barcode: string | null;
   readonly categoryId: string | null;

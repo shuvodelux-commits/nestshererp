@@ -389,6 +389,23 @@ export class CreatePurchaseService {
             `“${product.name}” does not track expiry dates`,
           );
         }
+        /*
+         * A tracked product cannot be received without a date (owner decision
+         * 2026-08-26, reversing the 5.1 decision that made it optional).
+         *
+         * That earlier choice is what left FEFO falling back to FIFO whenever
+         * one batch was undated, and what would have let "block expired stock"
+         * quietly not apply. Every batch bought from here on is dated, so both
+         * rules mean what they say. Batches received while it was optional keep
+         * their blank date and are filled in from the product screen.
+         */
+        if (expiryDate === null && product.tracksExpiry) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            `“${product.name}” needs an expiry date — this batch cannot be received without one`,
+            { reason: 'EXPIRY_REQUIRED', productId: product.id },
+          );
+        }
 
         let position = positions.get(product.id);
         if (position === undefined) {

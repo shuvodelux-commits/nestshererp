@@ -107,6 +107,7 @@ export const inventoryLotsQuerySchema = z.object({
   productId: ULID.optional(),
   /** Report-only: lots carrying an expiry date, for the Expiry section. */
   expiringOnly: z.coerce.boolean().optional(),
+  expiry: z.enum(["EXPIRED", "SOON", "MISSING"]).optional(),
   status: z.enum(['OPEN', 'CLOSED']).optional(),
   cursor: ULID.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -137,10 +138,26 @@ export const inventoryLotSchema = z.object({
 }).strict();
 export type InventoryLot = z.infer<typeof inventoryLotSchema>;
 
+export const expirySummarySchema = z
+  .object({
+    expiredCount: z.number().int(),
+    expiredValueMinor: z.number().int().optional(),
+    soonCount: z.number().int(),
+    missingCount: z.number().int(),
+    warnDays: z.number().int(),
+  })
+  .strict();
+export type ExpirySummary = z.infer<typeof expirySummarySchema>;
+
+export const setLotExpiryRequestSchema = z.object({ expiryDate: BUSINESS_DATE.nullable() }).strict();
+export type SetLotExpiryRequest = z.infer<typeof setLotExpiryRequestSchema>;
+
 export const inventoryLotPageSchema = z.object({
   data: z.array(inventoryLotSchema),
   page: z.object({ nextCursor: ULID.nullable(), hasMore: z.boolean() }).strict(),
   valuationMethod: z.enum(['FIFO', 'AVERAGE']),
+  /** What the Expiry card's three filters hold. Absent on a per-product read. */
+  expiry: expirySummarySchema.optional(),
 }).strict();
 export type InventoryLotPage = z.infer<typeof inventoryLotPageSchema>;
 

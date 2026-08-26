@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { CatalogResponse, ProductResponse, SaveProductRequest } from '@sher/core-contracts';
+import type {
+  CatalogResponse,
+  InventoryLot,
+  ProductResponse,
+  SaveProductRequest,
+} from '@sher/core-contracts';
 import {
   pricePerBaseUnit,
   pricePerConversionUnit,
@@ -19,7 +24,7 @@ import {
   type CatalogKind,
 } from '../api/catalog';
 import { ApiError } from '../api/client';
-import { recordOpeningStock } from '../api/inventory';
+import { fetchInventoryLots, recordOpeningStock, setLotExpiry } from '../api/inventory';
 import {
   createProduct,
   deleteProduct,
@@ -115,6 +120,58 @@ const catalog = ref<CatalogResponse>(EMPTY_CATALOG);
  */
 const offersOn = computed(() => catalog.value.features.productOffers);
 const expiryOn = computed(() => catalog.value.features.expiryTracking);
+
+/**
+ * The batches this product still holds, and their dates (§5.13).
+ *
+ * Loaded only for a saved product that tracks expiry — a new one has no stock
+ * yet, and a product that does not track expiry has no dates to set. Saving is
+ * per batch and immediate: it is one field, and a shopkeeper working down a
+ * list of undated batches should not have to press Save at the bottom.
+ */
+const batches = ref<readonly InventoryLot[]>([]);
+const batchDates = ref<Record<string, string>>({});
+const savingBatch = ref<string | null>(null);
+
+async function loadBatches(): Promise<void> {
+  const token = session.accessToken.value;
+  const id = productId.value;
+  if (token === null || id === null) return;
+  try {
+    const page = await fetchInventoryLots(token, {
+      productId: id,
+      status: 'OPEN',
+      limit: 50,
+      sort: 'expiryDate',
+      direction: 'ASC',
+    });
+    batches.value = page.data.filter((lot) => lot.qtyRemaining > 0);
+    batchDates.value = Object.fromEntries(
+      batches.value.map((lot) => [lot.id, lot.expiryDate ?? '']),
+    );
+  } catch {
+    batches.value = [];
+  }
+}
+
+async function saveBatchExpiry(lotId: string, value: string): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null) return;
+  batchDates.value = { ...batchDates.value, [lotId]: value };
+  savingBatch.value = lotId;
+  try {
+    await setLotExpiry(token, lotId, value === '' ? null : value);
+    await loadBatches();
+  } catch (cause) {
+    formError.value =
+      cause instanceof ApiError
+        ? { code: cause.code, message: cause.message }
+        : { code: 'UNKNOWN', message: 'Could not save that expiry date' };
+  } finally {
+    savingBatch.value = null;
+  }
+}
+
 const serialOn = computed(() => catalog.value.features.serialTracking);
 
 /** The edited product's version, carried back on save for the D-32 lock. */
@@ -431,6 +488,9 @@ onMounted(async () => {
 
     if (productId.value !== null) {
       fill(await fetchProduct(session.accessToken.value ?? '', productId.value));
+      // Batches only matter for a saved product that tracks expiry, and `fill`
+      // is what tells us whether it does.
+      if (tracksExpiry.value) await loadBatches();
     } else {
       baseUnitId.value = catalog.value.units[0]?.id ?? '';
     }
@@ -1262,6 +1322,47 @@ const baseUnitName = computed(
         </label>
       </AppCard>
 
+      <!--
+        The batches this product has in stock, with their dates (§5.13, owner
+        decision 2026-08-26).
+
+        Stock bought before dates were required — and everything imported from
+        an old ledger — has no date, never expires and never blocks. This is
+        where the shopkeeper fills those in: on the form they already open to
+        change anything else about the product, not on a screen of its own.
+      -->
+      <AppCard v-if="!isNew && tracksExpiry && batches.length > 0" title="Batches in stock" subtitle="চালান ও মেয়াদ">
+        <table class="batches">
+          <thead>
+            <tr>
+              <th>Batch <small>চালান</small></th>
+              <th class="num">Left <small>বাকি</small></th>
+              <th>Expiry date <small>মেয়াদ শেষ</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="batch in batches" :key="batch.id">
+              <td>
+                <strong>{{ batch.sourceNumber }}</strong>
+                <small>{{ batch.businessDate }}</small>
+              </td>
+              <td class="num">{{ Qty(batch.qtyRemaining).format() }}</td>
+              <td>
+                <DateOnlyPicker
+                  :input-id="`batch-expiry-${batch.id}`"
+                  :model-value="batchDates[batch.id] ?? ''"
+                  :disabled="!canSave || savingBatch === batch.id"
+                  @update:model-value="(value: string) => void saveBatchExpiry(batch.id, value)"
+                />
+                <small v-if="batch.expiryDate === null" class="batch-missing">
+                  No date yet — this batch never expires until one is set
+                </small>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </AppCard>
+
       <!-- UI-22: a form has a sticky save bar. -->
       <div class="save-bar">
         <button
@@ -1313,6 +1414,36 @@ const baseUnitName = computed(
 </template>
 
 <style scoped>
+.batches {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.batches th,
+.batches td {
+  padding: 0.4rem 0.35rem;
+  border-bottom: 1px solid var(--sher-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.batches th small,
+.batches td small {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
+.batches .num {
+  text-align: right;
+}
+
+.batch-missing {
+  color: var(--sher-warn-text, #92400e);
+}
+
 .picture {
   display: flex;
   gap: var(--sher-space-4, 16px);

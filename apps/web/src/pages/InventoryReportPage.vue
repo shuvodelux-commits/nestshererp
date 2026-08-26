@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   CostAdjustmentRow,
+  ExpirySummary,
   InventoryLot,
   InventoryOverviewResponse,
   InventoryValuationResponse,
@@ -10,6 +11,7 @@ import type {
 import { Money, Qty, UnitCost } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import {
   fetchCostAdjustments,
@@ -21,6 +23,7 @@ import {
 } from '../api/inventory';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
+import { taka } from '../components/money/money-text';
 import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
@@ -57,8 +60,63 @@ const overview = ref<InventoryOverviewResponse>({ stock: [], movements: [] });
 const valuation = ref<InventoryValuationResponse | null>(null);
 const adjustments = ref<readonly StockAdjustmentRow[]>([]);
 const costAdjustments = ref<readonly CostAdjustmentRow[]>([]);
+const router = useRouter();
 const lots = ref<readonly InventoryLot[]>([]);
 const expiring = ref<readonly InventoryLot[]>([]);
+/**
+ * Which of the Expiry card's three questions is being asked.
+ *
+ * `null` is the plain list every dated batch appears in, soonest first — what
+ * the card showed before the filters existed, and still the default.
+ */
+const expiryFilter = ref<'EXPIRED' | 'SOON' | 'MISSING' | null>(null);
+const expirySummary = ref<ExpirySummary | null>(null);
+
+async function setExpiryFilter(next: 'EXPIRED' | 'SOON' | 'MISSING'): Promise<void> {
+  // Clicking the chip that is already on turns it off, back to the full list.
+  expiryFilter.value = expiryFilter.value === next ? null : next;
+  await loadExpiring();
+}
+
+async function loadExpiring(): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null) return;
+  try {
+    const page = await fetchInventoryLots(token, {
+      limit: 100,
+      sort: 'expiryDate',
+      direction: 'ASC',
+      status: 'OPEN',
+      // The MISSING list is the one place the card asks for batches *without* a
+      // date, so `expiringOnly` — which means "has a date" — has to come off.
+      ...(expiryFilter.value === null
+        ? { expiringOnly: true }
+        : { expiry: expiryFilter.value }),
+    });
+    expiring.value = page.data;
+    expirySummary.value = page.expiry ?? expirySummary.value;
+  } catch {
+    expiring.value = [];
+  }
+}
+
+/** Red once it is past, amber inside the shop's window, plain before that. */
+function expiryTone(date: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (date < today) return 'expiry-past';
+  const days = expirySummary.value?.warnDays ?? 30;
+  const edge = new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  return date <= edge ? 'expiry-soon' : '';
+}
+
+/** The date is set where everything else about a product is set (§5.13). */
+function openProduct(productId: string): void {
+  void router.push({ path: `/products/${productId}` });
+}
+
+
 
 function describe(cause: unknown, fallback: string): { code: string; message: string } {
   return cause instanceof ApiError
@@ -103,9 +161,11 @@ async function load(): Promise<void> {
       ]);
       lots.value = all.data;
       expiring.value = expiringOnly.data;
+      expirySummary.value = expiringOnly.expiry ?? null;
     } catch {
       lots.value = [];
       expiring.value = [];
+      expirySummary.value = null;
     }
   }
 
@@ -438,9 +498,52 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
 
       <!-- ------------------------------------------------------------ expiry -->
       <AppCard v-if="canViewLots" title="Expiry" subtitle="মেয়াদ শেষের তারিখ অনুযায়ী">
-        <EmptyState v-if="expiring.length === 0" icon="pi-calendar" title="Nothing tracks expiry">
-          Batches with an expiry date appear here, soonest first, once expiry tracking is on for a
-          product.
+        <!--
+          Three questions a shopkeeper actually asks, counted by the same query
+          as the rows under them (§2.7.I): what is dead, what is about to die,
+          and what nobody has dated. Nothing here posts — the two ways to clear
+          a batch open the screens that already do it (owner decision
+          2026-08-26).
+        -->
+        <div class="expiry-filters no-print">
+          <button
+            type="button"
+            :class="{ 'chip--on': expiryFilter === 'EXPIRED' }"
+            class="chip chip--danger"
+            @click="setExpiryFilter('EXPIRED')"
+          >
+            Expired <small>মেয়াদ শেষ</small>
+            <b>{{ expirySummary?.expiredCount ?? 0 }}</b>
+          </button>
+          <button
+            type="button"
+            :class="{ 'chip--on': expiryFilter === 'SOON' }"
+            class="chip chip--warn"
+            @click="setExpiryFilter('SOON')"
+          >
+            Expiring soon <small>{{ expirySummary?.warnDays ?? 30 }} দিনের মধ্যে</small>
+            <b>{{ expirySummary?.soonCount ?? 0 }}</b>
+          </button>
+          <button
+            type="button"
+            :class="{ 'chip--on': expiryFilter === 'MISSING' }"
+            class="chip"
+            @click="setExpiryFilter('MISSING')"
+          >
+            Missing date <small>তারিখ নেই</small>
+            <b>{{ expirySummary?.missingCount ?? 0 }}</b>
+          </button>
+          <span v-if="expirySummary?.expiredValueMinor" class="expiry-loss">
+            Expired stock is worth {{ taka(expirySummary.expiredValueMinor) }}
+          </span>
+        </div>
+
+        <EmptyState v-if="expiring.length === 0" icon="pi-calendar" title="Nothing to show">
+          <template v-if="expiryFilter === null">
+            Batches with an expiry date appear here, soonest first, once expiry tracking is on for
+            a product.
+          </template>
+          <template v-else>Nothing in this list right now.</template>
         </EmptyState>
         <div v-else class="table-wrap">
           <table>
@@ -450,14 +553,33 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                 <th>Product<small>পণ্য</small></th>
                 <th>Batch<small>চালান</small></th>
                 <th class="num">Left<small>বাকি</small></th>
+                <th class="no-print" />
               </tr>
             </thead>
             <tbody>
               <tr v-for="lot in expiring" :key="lot.id">
-                <td>{{ lot.expiryDate }}</td>
+                <td>
+                  <span v-if="lot.expiryDate === null" class="badge badge--missing">
+                    No date — তারিখ নেই
+                  </span>
+                  <span v-else :class="expiryTone(lot.expiryDate)">{{ lot.expiryDate }}</span>
+                </td>
                 <td><strong>{{ lot.productName }}</strong></td>
                 <td>{{ lot.sourceNumber }}</td>
                 <td class="num">{{ Qty(lot.qtyRemaining).format() }}</td>
+                <td class="num no-print">
+                  <button
+                    v-if="lot.sourceType === 'PURCHASE'"
+                    type="button"
+                    class="link"
+                    @click="router.push({ path: `/purchases/${lot.sourceId}` })"
+                  >
+                    Return to supplier
+                  </button>
+                  <button type="button" class="link" @click="openProduct(lot.productId)">
+                    {{ lot.expiryDate === null ? 'Set expiry date' : 'Open product' }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -587,6 +709,85 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
 </template>
 
 <style scoped>
+.expiry-filters {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--sher-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chip small {
+  color: var(--sher-text-muted);
+  font-size: 0.72rem;
+}
+
+.chip b {
+  font-variant-numeric: tabular-nums;
+}
+
+.chip--on {
+  border-color: var(--sher-primary, #2563eb);
+  background: var(--sher-primary-soft, #eff6ff);
+}
+
+.chip--danger.chip--on {
+  border-color: var(--sher-danger-line, #fca5a5);
+  background: var(--sher-danger-soft, #fef2f2);
+}
+
+.chip--warn.chip--on {
+  border-color: var(--sher-warn-line);
+  background: var(--sher-warn-soft, #fffbeb);
+}
+
+.expiry-loss {
+  font-size: 0.85rem;
+  color: var(--sher-text-muted);
+}
+
+.expiry-past {
+  color: var(--sher-danger-text, #b91c1c);
+  font-weight: 600;
+}
+
+.expiry-soon {
+  color: var(--sher-warn-text, #92400e);
+  font-weight: 600;
+}
+
+.badge--missing {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px dashed var(--sher-line-strong);
+  font-size: 0.75rem;
+  color: var(--sher-text-muted);
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0 0.35rem;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--sher-primary, #2563eb);
+  cursor: pointer;
+}
+
 .filters label span {
   display: block;
   color: var(--sher-text-muted);

@@ -23,6 +23,7 @@ export const SettingKey = {
   EXPIRED_STOCK_SALE_POLICY: 'expired_stock_sale_policy',
 
   EXPIRY_TRACKING_ENABLED: 'expiry_tracking_enabled',
+  EXPIRY_WARN_DAYS: 'expiry_warn_days',
   SERIAL_TRACKING_ENABLED: 'serial_tracking_enabled',
   WARRANTY_ENABLED: 'warranty_enabled',
   PRODUCT_OFFERS_ENABLED: 'product_offers_enabled',
@@ -93,6 +94,14 @@ const COSTING_OPTIONS = ['FIFO', 'AVERAGE'] as const;
 const STOCK_POLICY_OPTIONS = ['BLOCK', 'WARN', 'ALLOW'] as const;
 
 /**
+ * How long before its date a batch counts as short-dated (owner decision
+ * 2026-08-26). A closed list rather than a typed number: the settings machinery
+ * has toggles and choices, and a shopkeeper picking from five familiar periods
+ * is safer than one typing 3650 by accident.
+ */
+const EXPIRY_WARN_OPTIONS = ['7', '15', '30', '60', '90'] as const;
+
+/**
  * Every setting §5.21 and PART 5A define concretely, with the value set each
  * one is allowed to take.
  *
@@ -149,14 +158,29 @@ export const SETTING_CATALOGUE: readonly SettingDescriptor[] = [
     key: SettingKey.EXPIRED_STOCK_SALE_POLICY,
     group: 'Stock',
     label: 'Selling expired stock',
-    detail: 'What happens when a batch past its expiry date is added to a sale.',
+    detail:
+      'Block skips expired batches at the counter and refuses when nothing else is left. Warn sells them and says so. Allow says nothing.',
     kind: 'CHOICE',
     options: STOCK_POLICY_OPTIONS,
     defaultValue: 'BLOCK',
     requires: [SettingKey.EXPIRY_TRACKING_ENABLED],
     stepUp: false,
     consumedBy: 'Inventory & costing',
-    inEffect: false,
+    inEffect: true,
+  },
+  {
+    key: SettingKey.EXPIRY_WARN_DAYS,
+    group: 'Stock',
+    label: 'Warn when a batch expires within',
+    detail:
+      'How many days ahead a batch counts as expiring soon. It is shown in amber on the Inventory report; the counter says nothing until a batch has actually expired.',
+    kind: 'CHOICE',
+    options: EXPIRY_WARN_OPTIONS,
+    defaultValue: '30',
+    requires: [SettingKey.EXPIRY_TRACKING_ENABLED],
+    stepUp: false,
+    consumedBy: 'Inventory & costing',
+    inEffect: true,
   },
   {
     key: SettingKey.EXPIRY_TRACKING_ENABLED,

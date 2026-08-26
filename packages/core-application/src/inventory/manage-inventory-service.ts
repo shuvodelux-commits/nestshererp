@@ -141,7 +141,18 @@ export class ManageInventoryService {
     if ((await this.inventory.findOpeningByProduct(tx, ctx, product.id)) !== null) {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Opening stock was already recorded for this product');
     }
-    if (product.tracksExpiry && input.expiryDate === null) {
+    /*
+     * A tracked product needs its date when the opening is typed by hand
+     * (owner decision 2026-08-26) — the same rule a purchase now follows.
+     *
+     * **The CSV import is deliberately exempt.** A shop onboarding a hundred
+     * products from an old paper ledger rarely has dates to hand, and a file
+     * that refuses on row 300 stops the shop starting at all. Those batches
+     * land undated, are badged "Missing expiry date" on the Inventory report,
+     * and are filled in from the product screen as the shopkeeper works
+     * through them.
+     */
+    if (product.tracksExpiry && input.expiryDate === null && input.source !== 'IMPORT') {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Enter the expiry date for this opening batch');
     }
     if (!product.tracksExpiry && input.expiryDate !== null) {
@@ -434,6 +445,55 @@ export class ManageInventoryService {
     });
   }
 
+/**
+   * Setting or correcting a batch's expiry date (§5.13, owner decision
+   * 2026-08-26).
+   *
+   * Batches received while the date was optional — and every row of an imported
+   * opening file — have no date, never expire and never block. This is how they
+   * join the system: the shopkeeper opens the product they are already looking
+   * at and fills the date in, from the same form that governs everything else
+   * about that product. There is no separate expiry screen.
+   *
+   * `catalog.product.edit` is the gate, because this is editing what a product's
+   * stock **is**, and the trail records the before and after — a date is a
+   * business fact, and changing one changes which goods may be sold.
+   */
+  async setLotExpiry(command: {
+    readonly ctx: TenantContext;
+    readonly lotId: string;
+    readonly expiryDate: string | null;
+  }): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.PRODUCT_EDIT);
+
+      const lot = await this.inventory.findLotById(tx, ctx, command.lotId);
+      if (lot === null) throw new AppError(ErrorCode.NOT_FOUND, 'That batch was not found');
+
+      const product = await this.products.findById(tx, ctx, lot.productId);
+      if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+      if (!product.tracksExpiry && command.expiryDate !== null) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          `“${product.name}” does not track expiry dates`,
+        );
+      }
+
+      const ok = await this.inventory.setLotExpiry(tx, ctx, command.lotId, command.expiryDate);
+      if (!ok) throw new AppError(ErrorCode.NOT_FOUND, 'That batch was not found');
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'inventory_lot',
+        entityId: command.lotId,
+        action: 'UPDATE',
+        before: { expiryDate: lot.expiryDate ?? '' },
+        after: { productId: lot.productId, expiryDate: command.expiryDate ?? '' },
+        source: 'API',
+      });
+    });
+  }
+
   async lots(ctx: TenantContext, query: InventoryLotsQuery): Promise<InventoryLotPage> {
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, Permission.INVENTORY_LOT_VIEW);
@@ -446,9 +506,23 @@ export class ManageInventoryService {
 
       const showCost = (await this.access.permissionsOf(tx, ctx)).includes(Permission.COST_VIEW);
       const method = await this.costingMethod(tx, ctx);
+      /*
+       * The window comes from the shop's setting, not from a constant: a
+       * pharmacy watches ninety days ahead and a bakery two. Both dates are
+       * business dates, so "expiring soon" means the same thing on the report
+       * as it does at the counter.
+       */
+      const values = effectiveSettings(settingValuesOf(await this.settings.listStored(tx, ctx)));
+      const warnDays = Number(values.get(SettingKey.EXPIRY_WARN_DAYS) ?? '30');
+      const asOf = this.clock.businessDate(ctx.timezone);
+      const warnUntil = addDays(asOf, Number.isFinite(warnDays) ? warnDays : 30);
+
       const rows = await this.inventory.listLots(tx, ctx, {
         productId: query.productId ?? null,
         expiringOnly: query.expiringOnly ?? false,
+        expiry: query.expiry ?? null,
+        asOf,
+        warnUntil,
         status: query.status ?? null,
         cursor: query.cursor ?? null,
         limit: query.limit + 1,
@@ -486,6 +560,18 @@ export class ManageInventoryService {
         };
       });
 
+      /*
+       * Counted by the same query the rows come from (§2.7.I), so a filter chip
+       * and the table under it can never disagree. The expired value is shown
+       * only to somebody who may see cost — it is the size of a loss, which is
+       * a cost figure (UI-40).
+       */
+      const summary = await this.inventory.expirySummary(tx, ctx, {
+        productId: query.productId ?? null,
+        asOf,
+        warnUntil,
+      });
+
       return {
         data,
         page: {
@@ -493,9 +579,17 @@ export class ManageInventoryService {
           hasMore,
         },
         valuationMethod: method,
+        expiry: {
+          expiredCount: summary.expiredCount,
+          ...(showCost ? { expiredValueMinor: summary.expiredValueMinor } : {}),
+          soonCount: summary.soonCount,
+          missingCount: summary.missingCount,
+          warnDays: Number.isFinite(warnDays) ? warnDays : 30,
+        },
       };
     });
   }
+
 
   async valuation(ctx: TenantContext): Promise<InventoryValuationResponse> {
     return this.uow.run(ctx, async (tx) => {
@@ -553,4 +647,17 @@ function withoutCost<T extends { readonly valueMinor?: number; readonly unitCost
   void _value;
   void _cost;
   return safe;
+}
+
+/**
+ * `YYYY-MM-DD` plus a number of days, in UTC (§3.5).
+ *
+ * Written here rather than taken from a date library because the whole app
+ * treats a business date as a string and never as a moment: the end of a warn
+ * window must not depend on where the server is standing.
+ */
+function addDays(businessDate: string, days: number): string {
+  const at = Date.parse(`${businessDate}T00:00:00Z`);
+  if (Number.isNaN(at)) return businessDate;
+  return new Date(at + days * 86_400_000).toISOString().slice(0, 10);
 }

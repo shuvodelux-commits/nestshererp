@@ -424,12 +424,19 @@ export { SEED_EXPENSE_CATEGORIES } from './permissions';
 export { closePeriodRequestSchema, periodListResponseSchema, periodSchema } from './periods';
 export type { ClosePeriodRequest, PeriodListResponse, PeriodResponse } from './periods';
 export {
+  expirySummarySchema,
+  setLotExpiryRequestSchema,
   countLineRequestSchema,
   postStockCountRequestSchema,
   stockCountLineSchema,
   stockCountSchema,
 } from './inventory';
-export type { PostStockCountRequest, StockCountResponse } from './inventory';
+export type {
+  ExpirySummary,
+  PostStockCountRequest,
+  SetLotExpiryRequest,
+  StockCountResponse,
+} from './inventory';
 export {
   expenseCategorySchema,
   expenseListResponseSchema,

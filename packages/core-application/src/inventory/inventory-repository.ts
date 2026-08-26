@@ -176,6 +176,15 @@ export interface InventoryLotFilter {
   /** `null` reads every product, for the Inventory Report's lot and expiry views. */
   readonly productId: string | null;
   readonly expiringOnly: boolean;
+  /**
+   * The Expiry card's three questions (Phase 7.2). `EXPIRED` past `asOf`,
+   * `SOON` between `asOf` and the warn window, `MISSING` an expiry-tracked
+   * batch with no date at all.
+   */
+  readonly expiry: 'EXPIRED' | 'SOON' | 'MISSING' | null;
+  /** Today, and the last day of the warn window — both business dates. */
+  readonly asOf: string;
+  readonly warnUntil: string;
   readonly status: 'OPEN' | 'CLOSED' | null;
   readonly cursor: string | null;
   readonly limit: number;
@@ -224,6 +233,25 @@ export interface InventoryRepository {
   listStock(tx: Tx, ctx: TenantContext): Promise<readonly InventoryStockRow[]>;
   listMovements(tx: Tx, ctx: TenantContext, filter: StockAdjustmentFilter): Promise<readonly InventoryMovementRow[]>;
   listLots(tx: Tx, ctx: TenantContext, filter: InventoryLotFilter): Promise<readonly InventoryLotRow[]>;
+  /** How many batches sit in each of the three buckets, and what the expired ones are worth. */
+  expirySummary(
+    tx: Tx,
+    ctx: TenantContext,
+    range: { readonly productId: string | null; readonly asOf: string; readonly warnUntil: string },
+  ): Promise<{
+    readonly expiredCount: number;
+    readonly expiredValueMinor: number;
+    readonly soonCount: number;
+    readonly missingCount: number;
+  }>;
+  /** Set or correct a batch's expiry date. Returns false when the lot is not this tenant's. */
+  setLotExpiry(tx: Tx, ctx: TenantContext, lotId: string, expiryDate: string | null): Promise<boolean>;
+  /** One lot, for the audit trail's before-and-after. */
+  findLotById(
+    tx: Tx,
+    ctx: TenantContext,
+    lotId: string,
+  ): Promise<{ readonly id: string; readonly productId: string; readonly expiryDate: string | null } | null>;
   listValuationLots(tx: Tx, ctx: TenantContext): Promise<readonly InventoryValuationLotRow[]>;
   listCostStates(tx: Tx, ctx: TenantContext): Promise<readonly InventoryCostStateRow[]>;
   listInventoryJournalAmounts(tx: Tx, ctx: TenantContext): Promise<readonly number[]>;
