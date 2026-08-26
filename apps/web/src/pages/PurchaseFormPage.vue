@@ -297,7 +297,27 @@ function onProductPicked(option: { id: string }): void {
   productPick.value = '';
 }
 
+/**
+ * Adding a product to the bill.
+ *
+ * **The same product twice is more of it, not a second line** (owner-reported
+ * 2026-08-26) — the rule the POS already follows when a barcode is scanned
+ * twice. Three separate lines of the same air conditioner is a bill nobody can
+ * check against the delivery in front of them.
+ *
+ * The exception is a product that **tracks expiry**: two entries of it usually
+ * mean two batches with different dates, and each batch needs its own line to
+ * carry its own date onto its own lot. Those still split.
+ */
 function addLine(product: ProductResponse): void {
+  if (!product.tracksExpiry) {
+    const existing = lines.value.find((line) => line.productId === product.id);
+    if (existing !== undefined) {
+      existing.qty += 1;
+      return;
+    }
+  }
+
   lines.value.push({
     productId: product.id,
     productName: product.name,
