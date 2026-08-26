@@ -6,6 +6,8 @@ import { Qty, Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { InventoryRepository } from '../inventory/inventory-repository';
+import type { ManagePartiesService } from '../parties/manage-parties-service';
+import type { PartyRepository } from '../parties/party-repository';
 import type { MoneyRepository } from '../money/money-repository';
 import { entryModeFor } from '../notes/create-note-service';
 import type { AccessControl } from '../ports/access-control';
@@ -18,7 +20,7 @@ import type { PeriodGuard } from '../ports/period-guard';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import { resolvePaymentAccount } from '../purchasing/payment-account';
-import type { SalesReturnRepository } from './sales-return-repository';
+import type { ReturnableInvoiceRow, SalesReturnRepository } from './sales-return-repository';
 import { toSalesReturnResponse } from './sales-return-view';
 
 /**
@@ -60,6 +62,14 @@ export interface CreateSalesReturnCommand {
   readonly refundMinor: number;
   readonly refundAccountCode: string | null;
   readonly approvalPin: string | null;
+  /**
+   * The customer, when a guest sale's return leaves money on account. Blank
+   * falls back to what the invoice already recorded (§5.8).
+   */
+  readonly customerName: string | null;
+  readonly customerPhone: string | null;
+  readonly customerAddress: string | null;
+  readonly customerGuardianName: string | null;
   readonly businessDate?: string | undefined;
   readonly backdateReason: string | null;
 }
@@ -84,6 +94,8 @@ export class CreateSalesReturnService {
     private readonly periods: PeriodGuard,
     private readonly inventory: InventoryRepository,
     private readonly money: MoneyRepository,
+    private readonly parties: PartyRepository,
+    private readonly partyService: ManagePartiesService,
     private readonly returns: SalesReturnRepository,
     private readonly numbering: NumberingService,
     private readonly hasher: PasswordHasher,
@@ -191,8 +203,20 @@ export class CreateSalesReturnService {
        */
       const settledMinor = Math.min(totals.creditMinor, Math.max(invoice.dueMinor, 0));
 
+      /*
+       * A guest sale creates nobody (§5.8) — but credit left on account is a
+       * balance, and a balance needs somebody the ledger can point at. The
+       * customer is created here from what the counter was already told.
+       */
+      const creditParty = await this.resolveCreditParty(tx, ctx, invoice, totals.creditMinor, {
+        name: command.customerName,
+        phone: command.customerPhone,
+        address: command.customerAddress,
+        guardianName: command.customerGuardianName,
+      });
+
       const journal = salesReturnPosting(totals, {
-        partyId: invoice.partyId,
+        partyId: creditParty.partyId,
         refundAccount,
         settledMinor,
       });
@@ -267,8 +291,8 @@ export class CreateSalesReturnService {
         id: returnId,
         number,
         saleId: invoice.saleId,
-        partyId: invoice.partyId,
-        customerName: invoice.customerName,
+        partyId: creditParty.partyId,
+        customerName: creditParty.name,
         locationId: invoice.locationId,
         reason: command.reason,
         note: command.note,
@@ -334,6 +358,92 @@ export class CreateSalesReturnService {
       });
       return response;
     });
+  }
+
+  /**
+   * Who the credit belongs to (§5.8, owner-reported 2026-08-26).
+   *
+   * A fully paid sale stays on the shop's walk-in party and creates nobody —
+   * that is §5.8's guest rule and it is right, because a settled sale has no
+   * balance and a balance is the only thing that needs a name. **A return
+   * changes that.** The moment goods come back and the money stays on account,
+   * there is a balance again, and leaving it on the walk-in party would put a
+   * shop's credit against nobody: the next visit could not find it, and no
+   * statement could show it.
+   *
+   * So the customer is created here, from what the counter was already told
+   * when the sale was made — the name, phone, address and guardian the invoice
+   * carries — through **`ManagePartiesService.createWithin`, the same writer
+   * the party form and the POS call**, inside this return's own transaction.
+   * There is one party writer (A11, A14), so a customer born from a return
+   * obeys the same validation, the same D-02 phone rule, the same permissions
+   * and the same audit trail as one typed into the form.
+   *
+   * A phone that already belongs to a customer **is** that customer: D-02 makes
+   * the number unique among customers, and a return that created a second
+   * Karim would split his credit across two ledgers.
+   *
+   * Nothing happens for a refund: cash handed back leaves no balance behind, so
+   * a guest stays a guest. Nothing happens on a named customer's invoice
+   * either — they already have a ledger.
+   */
+  private async resolveCreditParty(
+    tx: Tx,
+    ctx: TenantContext,
+    invoice: ReturnableInvoiceRow,
+    creditMinor: number,
+    typed: {
+      readonly name: string | null;
+      readonly phone: string | null;
+      readonly address: string | null;
+      readonly guardianName: string | null;
+    },
+  ): Promise<{ readonly partyId: string; readonly name: string }> {
+    if (!invoice.isWalkIn || creditMinor <= 0) {
+      return { partyId: invoice.partyId, name: invoice.customerName };
+    }
+
+    // What the shopkeeper typed on the return wins over the invoice's snapshot:
+    // the guest may be correcting a number that was taken down wrongly.
+    const name = (typed.name ?? '').trim() === '' ? invoice.customerName.trim() : (typed.name ?? '').trim();
+    const phone = (typed.phone ?? '').trim() === '' ? (invoice.customerPhone ?? '').trim() : (typed.phone ?? '').trim();
+
+    if (name === '' || phone === '') {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'Leaving money on account needs the customer’s name and phone',
+        { reason: 'CUSTOMER_REQUIRED' },
+      );
+    }
+
+    const existingId = await this.parties.findCustomerIdByPhone(tx, ctx, phone);
+    if (existingId !== null) {
+      const existing = await this.parties.findById(tx, ctx, existingId);
+      if (existing !== null && existing.status === 'ACTIVE') {
+        return { partyId: existing.id, name: existing.name };
+      }
+    }
+
+    const created = await this.partyService.createWithin(
+      tx,
+      ctx,
+      {
+        name,
+        roles: ['CUSTOMER'],
+        phone,
+        address: (typed.address ?? '').trim() === '' ? invoice.customerAddress : typed.address,
+        guardianName:
+          (typed.guardianName ?? '').trim() === '' ? invoice.customerGuardianName : typed.guardianName,
+        nid: null,
+        email: null,
+        notes: null,
+        customerGroupId: null,
+        creditLimitMinor: null,
+        opening: null,
+      },
+      'POS',
+    );
+    return { partyId: created.id, name: created.name };
   }
 
   /**

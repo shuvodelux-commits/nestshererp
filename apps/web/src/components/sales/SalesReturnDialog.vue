@@ -56,6 +56,13 @@ const settlement = ref<'REFUND' | 'CREDIT'>('CREDIT');
 const refund = ref(0);
 const accountId = ref('');
 const approvalPin = ref('');
+/*
+ * A guest sale created nobody (§5.8). Credit left on account is a balance, so
+ * it needs a customer — prefilled with what the counter was told when the sale
+ * was made, which is usually already right.
+ */
+const customerName = ref('');
+const customerPhone = ref('');
 const askingPin = ref(false);
 const saving = ref(false);
 const loading = ref(true);
@@ -136,6 +143,11 @@ const overLimit = computed(() => {
   return overPerReturn || overPerDay;
 });
 
+/** Only a guest sale keeping money on account has to name anybody. */
+const needsCustomer = computed(
+  () => invoice.value?.isWalkIn === true && creditMinor.value > 0,
+);
+
 const accountOptions = computed(() =>
   accounts.value.map((account) => ({ value: account.id, label: account.name })),
 );
@@ -144,7 +156,9 @@ const ready = computed(
   () =>
     returnValueMinor.value > 0 &&
     refundMinor.value <= returnValueMinor.value &&
-    (refundMinor.value === 0 || accountId.value !== ''),
+    (refundMinor.value === 0 || accountId.value !== '') &&
+    (!needsCustomer.value ||
+      (customerName.value.trim() !== '' && customerPhone.value.trim() !== '')),
 );
 
 async function load(): Promise<void> {
@@ -156,6 +170,8 @@ async function load(): Promise<void> {
       fetchAccounts(token),
     ]);
     invoice.value = returnable;
+    customerName.value = returnable.isWalkIn ? returnable.customerName : '';
+    customerPhone.value = returnable.customerPhone ?? '';
     accounts.value = accountPage.accounts.filter((account) => account.status === 'ACTIVE');
     accountId.value =
       accounts.value.find((account) => account.isDrawer)?.id ?? accounts.value[0]?.id ?? '';
@@ -207,6 +223,10 @@ async function submit(): Promise<void> {
               ? `CASH:${account.id}`
               : `BANK:${account.id}`,
         approvalPin: approvalPin.value === '' ? null : approvalPin.value,
+        customerName: customerName.value.trim() === '' ? null : customerName.value.trim(),
+        customerPhone: customerPhone.value.trim() === '' ? null : customerPhone.value.trim(),
+        customerAddress: null,
+        customerGuardianName: null,
         // Today, always: backdating a return has its own screen and its own
         // permission, and the counter modal deliberately does not carry one.
         backdateReason: null,
@@ -388,6 +408,21 @@ onMounted(load);
         </div>
       </div>
 
+      <div v-if="needsCustomer" class="dlg__grid ret__customer">
+        <p class="ret__customer-why">
+          This sale was paid in full, so no customer was saved. Money left on account belongs to
+          somebody — check the name and number below.
+        </p>
+        <label class="field">
+          <span>Customer name <small>কাস্টমারের নাম</small></span>
+          <InputText v-model="customerName" placeholder="Full name" />
+        </label>
+        <label class="field">
+          <span>Mobile <small>মোবাইল নম্বর</small></span>
+          <InputText v-model="customerPhone" placeholder="01XXXXXXXXX" />
+        </label>
+      </div>
+
       <dl class="ret__totals">
         <div>
           <dt>Goods coming back</dt>
@@ -564,6 +599,20 @@ onMounted(load);
 .ret__totals dd {
   margin: 0;
   font-weight: 600;
+}
+
+.ret__customer {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--sher-line-strong);
+  border-radius: var(--sher-radius-sm);
+}
+
+.ret__customer-why {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--sher-text-muted);
 }
 
 .ret__limit {

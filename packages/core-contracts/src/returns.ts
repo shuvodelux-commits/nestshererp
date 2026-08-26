@@ -51,6 +51,17 @@ export const createSalesReturnRequestSchema = z
      * whose own role allows the amount, and stores who approved.
      */
     approvalPin: z.string().min(4).max(12).nullable().default(null),
+    /**
+     * The customer, for a guest sale whose return leaves money on account.
+     *
+     * §5.8 lets a fully paid sale create nobody, but credit is a balance and a
+     * balance needs a name. Blank falls back to what the invoice recorded when
+     * the sale was made, which is usually exactly right.
+     */
+    customerName: z.string().trim().max(120).nullable().default(null),
+    customerPhone: z.string().trim().max(20).nullable().default(null),
+    customerAddress: z.string().trim().max(300).nullable().default(null),
+    customerGuardianName: z.string().trim().max(120).nullable().default(null),
     /** Backdating (§5.19): today unless the caller holds `period.backdate`. */
     businessDate: BUSINESS_DATE.optional(),
     backdateReason: z.string().trim().max(300).nullable().default(null),
@@ -89,6 +100,9 @@ export const returnableInvoiceSchema = z
     number: z.string(),
     businessDate: BUSINESS_DATE,
     customerName: z.string(),
+    customerPhone: z.string().nullable(),
+    customerAddress: z.string().nullable(),
+    customerGuardianName: z.string().nullable(),
     partyId: ULID,
     isWalkIn: z.boolean(),
     grandTotalMinor: z.number().int(),

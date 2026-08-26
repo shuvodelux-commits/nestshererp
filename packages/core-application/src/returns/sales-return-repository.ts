@@ -36,6 +36,15 @@ export interface ReturnableInvoiceRow {
   readonly partyId: string;
   readonly isWalkIn: boolean;
   readonly customerName: string;
+  /**
+   * What the counter was told when the sale was made, even on a guest sale.
+   * A return that leaves credit needs it: §5.8 says a balance must belong to
+   * somebody the ledger can point at, and these are the details the shopkeeper
+   * already collected.
+   */
+  readonly customerPhone: string | null;
+  readonly customerGuardianName: string | null;
+  readonly customerAddress: string | null;
   readonly locationId: string;
   readonly grandTotalMinor: number;
   /** What this invoice still owes, after payments, allocations and credits. */
