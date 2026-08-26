@@ -17,6 +17,7 @@ import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
 import PaySupplierDialog from '../components/purchasing/PaySupplierDialog.vue';
+import ReceivePaymentDialog from '../components/sales/ReceivePaymentDialog.vue';
 import PartyFormPage from './PartyFormPage.vue';
 
 /**
@@ -209,20 +210,32 @@ const closingAmount = computed(() => {
  */
 const futureActions = computed(() => {
   /*
-   * Phase 5 landed, so a supplier's two actions are no longer among these:
-   * `Pay supplier` is the large primary button below and `New purchase` opens
-   * the purchase form with this supplier already chosen. What remains here is
-   * still-unbuilt work for the other roles.
+   * Phase 5 landed, then Phase 6: a supplier's and a customer's actions are
+   * real buttons now — `Pay supplier`, `Receive payment` and `New sale` are
+   * below, each opening the use case that exists. What is left here is only
+   * still-unbuilt work, which today is the vendor's (owner-reported
+   * 2026-08-26: these two had stayed disabled after Sales shipped).
    */
   if (role.value === 'SUPPLIER') return [];
   if (role.value === 'VENDOR') {
     return [{ label: 'Pay vendor', icon: 'pi-wallet', hint: 'Arrives with Consignment' }];
   }
-  return [
-    { label: 'Receive payment', icon: 'pi-wallet', hint: 'Arrives with Sales' },
-    { label: 'New sale', icon: 'pi-shopping-cart', hint: 'Arrives with Sales' },
-  ];
+  return [];
 });
+
+/**
+ * §5.6's hub for a customer, now that Phase 6 exists.
+ *
+ * `Receive payment` opens the same dialog the invoice list uses — one service,
+ * two entry points, settling their oldest invoices first. `New sale` goes to
+ * the counter with this customer already chosen, so the shopkeeper does not
+ * type a name they have just been looking at.
+ */
+const canReceivePayment = computed(
+  () => role.value === 'CUSTOMER' && session.can('sale.payment.record'),
+);
+const canSell = computed(() => role.value === 'CUSTOMER' && session.can('sale.invoice.create'));
+const receiving = ref(false);
 
 /**
  * §5.6's hub, now that Phase 5 exists: the large primary way to settle a
@@ -235,6 +248,14 @@ const canPaySupplier = computed(
 );
 const canBuy = computed(() => role.value === 'SUPPLIER' && session.can('purchase.bill.create'));
 const paying = ref(false);
+
+/** The balance, the tiles and the statement all moved — re-read all three. */
+async function onPaymentReceived(): Promise<void> {
+  receiving.value = false;
+  // The balance above and the statement below are two readings of the lines
+  // this receipt just wrote, so both are re-read — as the supplier path does.
+  await Promise.all([loadParty(), load()]);
+}
 
 async function onSupplierPaid(): Promise<void> {
   paying.value = false;
@@ -364,6 +385,24 @@ watch(partyId, () => {
           :title="action.hint"
         >
           <i :class="`pi ${action.icon}`" aria-hidden="true" /> {{ action.label }}
+        </button>
+
+        <button
+          v-if="canReceivePayment"
+          type="button"
+          class="btn btn-primary"
+          @click="receiving = true"
+        >
+          <i class="pi pi-wallet" aria-hidden="true" /> Receive payment
+        </button>
+
+        <button
+          v-if="canSell"
+          type="button"
+          class="btn btn-primary"
+          @click="router.push({ name: 'pos', query: { customer: party.id } })"
+        >
+          <i class="pi pi-shopping-cart" aria-hidden="true" /> New sale
         </button>
 
         <button
@@ -558,6 +597,13 @@ watch(partyId, () => {
       :role="role"
       @saved="onOpeningSaved"
       @close="openingOpen = false"
+    />
+    <ReceivePaymentDialog
+      v-if="receiving && party !== null"
+      :party-id="party.id"
+      :party-name="party.name"
+      @received="onPaymentReceived"
+      @close="receiving = false"
     />
     <PaySupplierDialog
       v-if="paying && party !== null"

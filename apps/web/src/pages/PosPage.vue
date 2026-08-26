@@ -789,6 +789,15 @@ onMounted(async () => {
   await loadDrafts();
   const editing = route.query['edit'];
   if (typeof editing === 'string' && editing.length === 26) await loadForCorrection(editing);
+  /*
+   * Opened from a customer's hub with `?customer=<id>`: the cart starts on that
+   * person, so "New sale" from their ledger lands at the counter with them
+   * already chosen instead of asking who they are again (§5.6).
+   */
+  const forCustomer = route.query['customer'];
+  if (typeof forCustomer === 'string' && forCustomer.length === 26 && customerId.value === '') {
+    customerId.value = forCustomer;
+  }
   await focusSearch();
 });
 
