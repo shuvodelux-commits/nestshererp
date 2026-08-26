@@ -373,13 +373,26 @@ function addToCart(product: PosProduct): void {
  * **Own Stock** means "sell only what is on the shelf", so it brings the
  * quantity down to what is actually there — the shortage disappears because the
  * sale changed, which is what the shopkeeper asked for by choosing it.
+ *
+ * **With nothing on the shelf, "what is actually there" is no line at all**, so
+ * the item leaves the cart. It used to be clamped to a floor of 0.001 to keep a
+ * quantity from reaching zero, which put a thousandth of a fridge on the bill
+ * (owner-reported 2026-08-26) — a sale nobody meant to make and a figure nobody
+ * could read.
+ *
  * **Negative Stock** marks *this* line, so the sale posts with the cost
  * provisional (D-19). **Vendor Sourcing** hands the line to a vendor instead.
  */
 function useOwnStock(line: CartLine): void {
+  const available = Math.round(line.qtyOnHand) / 1000;
+  if (available <= 0) {
+    const index = lines.value.indexOf(line);
+    if (index !== -1) removeLine(index);
+    return;
+  }
   line.source = 'OWN_STOCK';
   line.allowNegative = false;
-  line.qty = Math.max(Math.round(line.qtyOnHand) / 1000, 0.001);
+  line.qty = available;
 }
 
 function useVendor(line: CartLine): void {
