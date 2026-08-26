@@ -347,8 +347,31 @@ describe('permissions (R-E8)', () => {
     expect(asCashier.status).toBe(200);
     expect(asCashier.body.data.user.roleName).toBe('Cashier');
     expect(asCashier.body.data.permissions).not.toContain('user.account.create');
+    /*
+     * The Cashier's whole grant, in one list, because the point of this
+     * assertion is that it is *exact*: a permission quietly added to the till
+     * is a permission somebody quietly gained. It has grown with each module —
+     * the day and the drawer in Phase 4, the counter itself in Phase 6, and
+     * customer returns in Phase 7, capped by the role's refund limits rather
+     * than by a permission (owner decision 2026-08-26).
+     */
     expect([...asCashier.body.data.permissions].sort()).toEqual(
-      ['catalog.product.view', 'party.customer.create', 'party.customer.edit', 'party.customer.view'].sort(),
+      [
+        'cash.account.view',
+        'cash.daily.view',
+        'cash.session.close',
+        'cash.session.start',
+        'catalog.product.view',
+        'invoice.presentation.edit',
+        'party.customer.create',
+        'party.customer.edit',
+        'party.customer.view',
+        'sale.invoice.create',
+        'sale.invoice.view',
+        'sale.payment.record',
+        'sales.return.create',
+        'sales.return.view',
+      ].sort(),
     );
   });
 
