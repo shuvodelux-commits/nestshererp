@@ -349,7 +349,8 @@ describe('stock adjustment vertical path', () => {
     const refused = await adjust({ productId, qtyDelta: -12_000, reason: 'DAMAGE', businessDate: today() });
 
     expect(refused.status).toBe(400);
-    expect(refused.body.error.message).toContain('10.000');
+    // Phase 8.2's owner rule: quantities read `10`, not `10.000`.
+    expect(refused.body.error.message).toContain('Only 10 in stock');
 
     const rows = await asTenant(pool, tenant.tenantId, (db) =>
       db.query('SELECT qty_on_hand FROM product_cost_state'),

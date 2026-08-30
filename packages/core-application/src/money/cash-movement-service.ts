@@ -1,11 +1,16 @@
-import { accountCodeFor, cashMovementPosting, rejectCashMovement } from '@sher/core-domain';
+import {
+  accountCodeFor, cashMovementPosting, correctionWindow, rejectCashMovement,
+} from '@sher/core-domain';
 import type { CashMovementRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { CashMovementResponse } from '@sher/core-contracts';
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
+import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
+import { reverseMoneyDocument } from '../corrections/reverse-money-document';
 import { entryModeFor } from '../notes/create-note-service';
+import type { Outbox } from '../ports/outbox';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { IdempotencyStore } from '../ports/idempotency-store';
@@ -44,7 +49,21 @@ export interface RecordMovementCommand {
   readonly operationId: string;
 }
 
+export interface VoidMovementCommand {
+  readonly ctx: TenantContext;
+  readonly movementId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+export interface CorrectMovementCommand extends RecordMovementCommand {
+  readonly movementId: string;
+  readonly version: number;
+  readonly reason: string | null;
+}
+
 const OWNER_ACCOUNT = 'OWNER_CURRENT_ACCOUNT';
+
 
 const REJECTION_MESSAGES: Record<CashMovementRejection, string> = {
   MOVEMENT_AMOUNT_NOT_INTEGER_MINOR: 'The amount must be a whole amount',
@@ -61,6 +80,8 @@ export class CashMovementService {
     private readonly periods: PeriodGuard,
     private readonly idempotency: IdempotencyStore,
     private readonly audit: AuditWriter,
+    private readonly reversals: DocumentReversalRepository,
+    private readonly outbox: Outbox,
     private readonly clock: Clock,
   ) {}
 
@@ -202,6 +223,219 @@ export class CashMovementService {
 
       return response;
     });
+  }
+
+  /**
+   * Cancelling a movement that should not have been recorded (Phase 9.2).
+   *
+   * **WRITE CLASS: T.** One reversing entry sends the money back the way it
+   * came and the movement stays visible, marked `VOIDED` with the reason —
+   * which is required, because a drawer that changed for no stated reason is
+   * exactly what a day-end count cannot explain.
+   *
+   * A movement that touched the drawer can only be undone while a day is open,
+   * for the same reason it could only be recorded while one was: cash that
+   * moves on a day nobody counted is cash no count will ever see (§5.16.1).
+   */
+  async void(command: VoidMovementCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_VOID);
+      await this.assertDrawerOpenFor(tx, ctx, command.movementId);
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'CASH_MOVEMENT',
+          documentId: command.movementId,
+          expectedVersion: command.version,
+          reason: command.reason,
+          intent: 'VOID',
+          entityType: 'cash_movement',
+          eventType: 'cash.movement.cancelled',
+        },
+      );
+    });
+  }
+
+  /**
+   * Correcting a movement — the amount typed wrongly, or the wrong account
+   * picked (Phase 9.2, owner decisions 2026-08-30).
+   *
+   * Reversed and re-posted under the same number in one transaction. Where it
+   * lands follows the closed-period rule: the original day while that month is
+   * open, otherwise today as a `PRIOR_PERIOD` adjustment carrying the date it
+   * belongs to, with a reason the shopkeeper must give.
+   */
+  async correct(command: CorrectMovementCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_RECORD);
+
+      const posted = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', command.movementId);
+      if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
+
+      const today = this.clock.businessDate(ctx.timezone);
+      const placement = correctionWindow(
+        command.businessDate,
+        today,
+        await this.isOpen(tx, ctx, command.businessDate),
+      );
+      const reason = command.reason?.trim() ?? '';
+      if (placement.reasonRequired && reason === '') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          placement.entryMode === 'PRIOR_PERIOD'
+            ? 'That month is closed, so this correction posts today — say why'
+            : 'A correction dated in the past needs a reason',
+        );
+      }
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'CASH_MOVEMENT',
+          documentId: command.movementId,
+          expectedVersion: command.version,
+          reason: reason === '' ? 'Corrected' : reason,
+          intent: 'CORRECT',
+          // Both halves of a correction land on the same day (see the port).
+          businessDate: placement.businessDate,
+          entityType: 'cash_movement',
+          eventType: 'cash.movement.corrected',
+        },
+      );
+
+      const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
+      const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
+      const rejection = rejectCashMovement({
+        kind: command.kind,
+        fromAccount: from.code as never,
+        toAccount: to.code as never,
+        amountMinor: command.amountMinor,
+      });
+      if (rejection !== null) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
+      }
+
+      const session = await this.money.findOpenSession(tx, ctx);
+      const touchesDrawer = from.isDrawer || to.isDrawer;
+      if (touchesDrawer && (session === null || session.businessDate !== placement.businessDate)) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Start the day before correcting cash in or out of the drawer',
+        );
+      }
+
+      const posting = cashMovementPosting({
+        kind: command.kind,
+        fromAccount: from.code as never,
+        toAccount: to.code as never,
+        amountMinor: command.amountMinor,
+      });
+
+      const reposted = await this.money.repostMovement(tx, ctx, {
+        id: command.movementId,
+        // The reversal bumped the version a moment ago.
+        expectedVersion: command.version + 1,
+        kind: command.kind,
+        fromAccountCode: from.code,
+        toAccountCode: to.code,
+        amountMinor: command.amountMinor,
+        note: command.note,
+        sessionId: touchesDrawer ? (session?.id ?? null) : null,
+        businessDate: placement.businessDate,
+        entryMode: placement.entryMode,
+        correctionReason: reason === '' ? null : reason,
+        originalBusinessDate: placement.originalBusinessDate,
+        journal: {
+          journalEntryId: Ulid.generate(this.clock),
+          businessDate: placement.businessDate,
+          entryMode: placement.entryMode,
+          sourceType: 'CASH_MOVEMENT_CORRECTION',
+          sourceId: command.movementId,
+          sourceNumber: posted.number,
+          lines: posting.lines.map((line) => ({
+            id: Ulid.generate(this.clock),
+            account: line.account,
+            amountMinor: line.amountMinor,
+            partyId: line.partyId,
+          })),
+        },
+      });
+      if (!reposted) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this movement — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'cash_movement',
+        entityId: command.movementId,
+        action: 'UPDATE',
+        before: {
+          amountMinor: String(posted.amountMinor),
+          businessDate: posted.businessDate,
+        },
+        after: {
+          amountMinor: String(command.amountMinor),
+          businessDate: placement.businessDate,
+          entryMode: placement.entryMode,
+          reason,
+        },
+        source: 'API',
+      });
+    });
+  }
+
+  /** Whether a business date's month still accepts postings (§5.14). */
+  private async isOpen(tx: Tx, ctx: TenantContext, businessDate: string): Promise<boolean> {
+    try {
+      await this.periods.assertOpen(tx, ctx, businessDate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Undoing drawer cash needs an open day, exactly as recording it did — the
+   * money comes back into a till somebody has to count tonight.
+   */
+  private async assertDrawerOpenFor(
+    tx: Tx,
+    ctx: TenantContext,
+    movementId: string,
+  ): Promise<void> {
+    const posted = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', movementId);
+    if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
+    const touchesDrawer = posted.journalLines.some((line) => line.account.startsWith('CASH:'));
+    if (!touchesDrawer) return;
+
+    const session = await this.money.findOpenSession(tx, ctx);
+    if (session === null) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'Start the day before cancelling cash in or out of the drawer',
+      );
+    }
   }
 
   /**

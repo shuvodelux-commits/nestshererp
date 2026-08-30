@@ -31,6 +31,8 @@ const props = defineProps<{
   /** Set by "Pay this bill"; absent settles the oldest bills first. */
   purchaseId?: string | null;
   purchaseNumber?: string | null;
+  /** Phase 11: figures read off a bank statement line (§5.17). */
+  prefill?: { readonly amountMinor: number; readonly accountId: string; readonly businessDate: string } | null;
 }>();
 
 const emit = defineEmits<{ (event: 'paid'): void; (event: 'close'): void }>();
@@ -95,6 +97,15 @@ async function load(): Promise<void> {
     // Pre-filled with what is actually owed: the commonest payment is the
     // whole of it, and the shopkeeper types over it when it is not.
     amount.value = payableMinor.value === 0 ? '' : String(payableMinor.value / 100);
+
+    // Opened from a bank statement line, the amount and the account are known
+    // exactly — the bank has already told us what left and from where.
+    const suggested = props.prefill ?? null;
+    if (suggested !== null) {
+      amount.value = String(Math.abs(suggested.amountMinor) / 100);
+      accountId.value = suggested.accountId;
+      businessDate.value = suggested.businessDate;
+    }
   } catch (cause) {
     failure.value = describe(cause, 'Could not open this supplier');
   } finally {

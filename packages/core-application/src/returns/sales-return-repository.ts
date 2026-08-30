@@ -171,6 +171,80 @@ export interface ApprovalCandidate {
   readonly pinHash: string;
 }
 
+/**
+ * What a posted sales return did, read back so it can be undone exactly
+ * (Phase 9.2, §2.5).
+ *
+ * The **stored** figures, never recomputed: a return cancelled next month at
+ * today's average would take a different cost off `INVENTORY` than it put on,
+ * and the account would stop equalling the valuation (INV-05).
+ */
+export interface SalesReturnForReversal {
+  readonly id: string;
+  readonly number: string;
+  readonly status: string;
+  readonly businessDate: string;
+  readonly version: number;
+  readonly cogsMinor: number;
+  readonly journalLines: readonly {
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qty: number;
+    readonly costMinor: number;
+    /** The lots this return put goods back into, and how much went into each. */
+    readonly refills: readonly {
+      readonly lotId: string;
+      readonly qty: number;
+      /** What is in that lot now — less than `qty` means it has been re-sold. */
+      readonly lotRemaining: number;
+    }[];
+  }[];
+  readonly costStates: readonly {
+    readonly id: string;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  }[];
+}
+
+/** Undoing one sales return — the mirror of `postSalesReturn`. */
+export interface SalesReturnReversal {
+  readonly returnId: string;
+  readonly expectedVersion: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly reason: string;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly lines: readonly {
+    readonly movementId: string;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qty: number;
+    readonly costMinor: number;
+    readonly takeBack: readonly { readonly lotId: string; readonly qty: number }[];
+  }[];
+  readonly costStates: readonly {
+    readonly id: string;
+    readonly exists: boolean;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  }[];
+}
+
 export interface SalesReturnRepository {
   refundCapsOf(tx: Tx, ctx: TenantContext, userId: string): Promise<RefundCaps>;
   /**
@@ -198,6 +272,13 @@ export interface SalesReturnRepository {
   cashRefundedToday(tx: Tx, ctx: TenantContext, userId: string, businessDate: string): Promise<number>;
   /** The whole return, in one transaction: document, stock, cost cache, journal. */
   postSalesReturn(tx: Tx, ctx: TenantContext, draft: NewSalesReturn): Promise<void>;
+  findReturnForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    returnId: string,
+  ): Promise<SalesReturnForReversal | null>;
+  /** Returns false when somebody else changed the return first (D-32). */
+  reverseSalesReturn(tx: Tx, ctx: TenantContext, reversal: SalesReturnReversal): Promise<boolean>;
   findReturnById(tx: Tx, ctx: TenantContext, returnId: string): Promise<SalesReturnRow | null>;
   findReturnIdByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<string | null>;
   listReturns(

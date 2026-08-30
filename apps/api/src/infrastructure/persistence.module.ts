@@ -3,6 +3,7 @@ import {
   createDatabase,
   createPool,
   PostgresAccessControl,
+  PostgresBackupRepository,
   PostgresAuditQueryRepository,
   PostgresAuditWriter,
   PostgresBusinessProfileRepository,
@@ -20,6 +21,15 @@ import {
   PostgresExpenseRepository,
   PostgresPeriodRepository,
   PostgresStockCountRepository,
+  PostgresPurchasePlanRepository,
+  PostgresLandedCostRepository,
+  PostgresSerialRepository,
+  PostgresWarrantyRepository,
+  PostgresVendorStockRepository,
+  PostgresReportRepository,
+  PostgresDaybookRepository,
+  PostgresReconciliationRepository,
+  PostgresDocumentReversalRepository,
   PostgresPurchaseReturnRepository,
   PostgresSalesReturnRepository,
   PostgresOutbox,
@@ -32,12 +42,23 @@ import {
   PostgresUserIdentifierRepository,
   PostgresUserRepository,
 } from '@sher/adapter-postgres';
-import type { EntitlementProvider, GoogleVerifier, IdentityVerifier } from '@sher/core-application';
+import type {
+  BuildInfo,
+  EntitlementProvider,
+  GoogleVerifier,
+  IdentityVerifier,
+} from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { SystemClock } from '@sher/shared-utils';
 import type pg from 'pg';
 
 import { DevIdentityVerifier } from '../auth/dev-identity-verifier';
+import { PdfTextExtractor } from './pdf-text-extractor';
+import { AesArchiveCodec } from './archive-codec';
+import { DirectoryBackupFileStore } from './backup-file-store';
+import { FileBackupSecretStore } from './backup-secret-store';
+import { PgDumpTool } from './database-dump-tool';
+import { loadBuildInfo, MIGRATIONS_DIRECTORY, PACKAGE_JSON_PATH } from './build-info';
 import { NoOpIdentityVerifier } from '../auth/noop-identity-verifier';
 import { LicenseKeyEntitlementProvider } from '../deployment/license-entitlement-provider';
 import { SubscriptionEntitlementProvider } from '../deployment/subscription-entitlement-provider';
@@ -74,7 +95,23 @@ import {
   PURCHASE_RETURN_REPOSITORY,
   EXPENSE_REPOSITORY,
   STOCK_COUNT_REPOSITORY,
+  PURCHASE_PLAN_REPOSITORY,
+  LANDED_COST_REPOSITORY,
+  SERIAL_REPOSITORY,
+  WARRANTY_REPOSITORY,
+  VENDOR_STOCK_REPOSITORY,
   PERIOD_REPOSITORY,
+  REPORT_REPOSITORY,
+  DAYBOOK_REPOSITORY,
+  RECONCILIATION_REPOSITORY,
+  STATEMENT_EXTRACTOR,
+  BACKUP_REPOSITORY,
+  ARCHIVE_CODEC,
+  BACKUP_FILE_STORE,
+  BACKUP_SECRET_STORE,
+  DATABASE_DUMP_TOOL,
+  BUILD_INFO,
+  DOCUMENT_REVERSAL_REPOSITORY,
   PARTY_REPOSITORY,
   PRODUCT_REPOSITORY,
   ROLE_REPOSITORY,
@@ -149,7 +186,12 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
         new PostgresUnitOfWork(createDatabase(pool)),
       inject: [DATABASE_POOL],
     },
-    { provide: ACCESS_CONTROL, useFactory: (): PostgresAccessControl => new PostgresAccessControl() },
+    {
+      provide: ACCESS_CONTROL,
+      useFactory: (entitlements: EntitlementProvider, clock: Clock): PostgresAccessControl =>
+        new PostgresAccessControl(entitlements, clock),
+      inject: [ENTITLEMENT_PROVIDER, CLOCK],
+    },
     { provide: PERIOD_GUARD, useFactory: (): PostgresPeriodGuard => new PostgresPeriodGuard() },
     {
       provide: AUDIT_WRITER,
@@ -284,7 +326,71 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [CLOCK],
     },
     {
+      provide: DOCUMENT_REVERSAL_REPOSITORY,
+      useFactory: (clock: Clock): PostgresDocumentReversalRepository =>
+        new PostgresDocumentReversalRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: REPORT_REPOSITORY,
+
+      useFactory: (): PostgresReportRepository => new PostgresReportRepository(),
+      inject: [],
+    },
+    {
+      provide: DAYBOOK_REPOSITORY,
+      useFactory: (clock: Clock): PostgresDaybookRepository =>
+        new PostgresDaybookRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: RECONCILIATION_REPOSITORY,
+      useFactory: (clock: Clock): PostgresReconciliationRepository =>
+        new PostgresReconciliationRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      /*
+       * The one adapter in this module that is not a database: reading text out
+       * of a PDF (§5.17). It sits here because it is infrastructure like the
+       * rest — a library behind a port, replaceable without the use case
+       * noticing.
+       */
+      provide: STATEMENT_EXTRACTOR,
+      useFactory: (): PdfTextExtractor => new PdfTextExtractor(),
+      inject: [],
+    },
+    {
+      provide: BACKUP_REPOSITORY,
+      useFactory: (clock: Clock): PostgresBackupRepository => new PostgresBackupRepository(clock),
+      inject: [CLOCK],
+    },
+    { provide: ARCHIVE_CODEC, useFactory: (): AesArchiveCodec => new AesArchiveCodec() },
+    {
+      provide: BACKUP_FILE_STORE,
+      useFactory: (config: ApiConfig): DirectoryBackupFileStore =>
+        new DirectoryBackupFileStore(config.backupDir),
+      inject: [API_CONFIG],
+    },
+    {
+      provide: BACKUP_SECRET_STORE,
+      useFactory: (config: ApiConfig): FileBackupSecretStore =>
+        new FileBackupSecretStore(config.backupKeyPath),
+      inject: [API_CONFIG],
+    },
+    {
+      provide: DATABASE_DUMP_TOOL,
+      useFactory: (config: ApiConfig): PgDumpTool =>
+        new PgDumpTool(config.databaseUrl, config.recoveryDumpDir),
+      inject: [API_CONFIG],
+    },
+    {
+      provide: BUILD_INFO,
+      useFactory: (): BuildInfo => loadBuildInfo(MIGRATIONS_DIRECTORY, PACKAGE_JSON_PATH),
+    },
+    {
       provide: PERIOD_REPOSITORY,
+
       useFactory: (): PostgresPeriodRepository => new PostgresPeriodRepository(),
       inject: [],
     },
@@ -292,6 +398,35 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       provide: STOCK_COUNT_REPOSITORY,
       useFactory: (clock: Clock): PostgresStockCountRepository =>
         new PostgresStockCountRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: PURCHASE_PLAN_REPOSITORY,
+      useFactory: (clock: Clock): PostgresPurchasePlanRepository =>
+        new PostgresPurchasePlanRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: LANDED_COST_REPOSITORY,
+      useFactory: (clock: Clock): PostgresLandedCostRepository =>
+        new PostgresLandedCostRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: SERIAL_REPOSITORY,
+      useFactory: (clock: Clock): PostgresSerialRepository => new PostgresSerialRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: WARRANTY_REPOSITORY,
+      useFactory: (clock: Clock): PostgresWarrantyRepository =>
+        new PostgresWarrantyRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: VENDOR_STOCK_REPOSITORY,
+      useFactory: (clock: Clock): PostgresVendorStockRepository =>
+        new PostgresVendorStockRepository(clock),
       inject: [CLOCK],
     },
     {
@@ -350,7 +485,23 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     PURCHASE_RETURN_REPOSITORY,
     EXPENSE_REPOSITORY,
     STOCK_COUNT_REPOSITORY,
+    PURCHASE_PLAN_REPOSITORY,
+    RECONCILIATION_REPOSITORY,
+    STATEMENT_EXTRACTOR,
+    LANDED_COST_REPOSITORY,
+    SERIAL_REPOSITORY,
+    WARRANTY_REPOSITORY,
+    VENDOR_STOCK_REPOSITORY,
     PERIOD_REPOSITORY,
+    REPORT_REPOSITORY,
+    DAYBOOK_REPOSITORY,
+    DOCUMENT_REVERSAL_REPOSITORY,
+    BACKUP_REPOSITORY,
+    ARCHIVE_CODEC,
+    BACKUP_FILE_STORE,
+    BACKUP_SECRET_STORE,
+    DATABASE_DUMP_TOOL,
+    BUILD_INFO,
   ],
 })
 export class PersistenceModule {}

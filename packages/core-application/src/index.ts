@@ -176,7 +176,9 @@ export type {
   ProductStockPosition,
   StockAdjustmentFilter,
   StockAdjustmentListRow,
+  StockAdjustmentForReversal,
   StockAdjustmentRecord,
+  StockAdjustmentReversal,
   StockCostLayerRow,
 } from './inventory/inventory-repository';
 export { ManageInventoryService } from './inventory/manage-inventory-service';
@@ -254,6 +256,7 @@ export type {
   NewCashSessionClose,
   NewJournalEntry,
   NewMoneyAccount,
+  RepostCashMovement,
   StatementFilter,
   StatementLineRow,
 } from './money/money-repository';
@@ -281,6 +284,7 @@ export type {
   PurchaseListRowData,
   PurchasePaymentRow,
   PurchaseRepository,
+  RepostSupplierPayment,
   PurchaseRow,
   PurchaseSummary,
   SupplierPaymentDetail,
@@ -325,6 +329,7 @@ export type {
   SaleLineRow,
   SalePaymentRow,
   SaleReceiptRow,
+  RepostCustomerReceipt,
   SaleRepository,
   SaleReversal,
   SaleRow,
@@ -352,6 +357,7 @@ export type {
   ExpenseRepository,
   ExpenseRow,
   NewExpense,
+  RepostExpense,
   NewExpenseCategory,
 } from './expenses/expense-repository';
 export { VoidPurchaseService } from './purchasing/void-purchase-service';
@@ -371,6 +377,8 @@ export type {
   NewPurchaseReturn,
   NewPurchaseReturnLine,
   PurchaseReturnFilter,
+  PurchaseReturnForReversal,
+  PurchaseReturnReversal,
   PurchaseReturnLineRow,
   PurchaseReturnRepository,
   PurchaseReturnRow,
@@ -393,7 +401,188 @@ export type {
   ReturnableInvoiceRow,
   ReturnableLineRow,
   SalesReturnFilter,
+  SalesReturnForReversal,
+  SalesReturnReversal,
   SalesReturnLineRow,
   SalesReturnRepository,
   SalesReturnRow,
 } from './returns/sales-return-repository';
+
+// ------------------------------------------------------------------ Phase 8
+export { PlannerService, supplierFor, toPlanProduct } from './purchasing/planner-service';
+export type { PlannerQueryCommand } from './purchasing/planner-service';
+export { PurchasePlanService } from './purchasing/purchase-plan-service';
+export type {
+  SavePlanCommand,
+  SendSupplierOrderCommand,
+  UpdatePlanCommand,
+} from './purchasing/purchase-plan-service';
+export type {
+  NewPlanLine,
+  NewPurchasePlan,
+  NewSupplierOrder,
+  NewSupplierOrderLine,
+  PlanListRow,
+  PlanLineRow,
+  PlanOrderRow,
+  PlannerProductRow,
+  PlannerReadOptions,
+  PlanRow,
+  PurchasePlanRepository,
+  SupplierOrderListRow,
+  SupplierOrderRow,
+} from './purchasing/purchase-plan-repository';
+export { AddLandedCostService } from './purchasing/landed-cost-service';
+export type { AddLandedCostCommand } from './purchasing/landed-cost-service';
+export type {
+  CostStateRow,
+  CostStateUpdate,
+  LandedCostPurchaseRow,
+  LandedCostRepository,
+  LandedCostTargetRow,
+  LotCostUpdate,
+  NewLandedCost,
+  PurchaseLineShareUpdate,
+} from './purchasing/landed-cost-repository';
+export { SerialService, toUnitResponse } from './inventory/serial-service';
+export type {
+  NewSerialUnit,
+  SerialLineRow,
+  SerialRepository,
+  SerialUnitRow,
+} from './inventory/serial-repository';
+export { WarrantyService } from './warranty/warranty-service';
+export type { CreateClaimCommand, MoveClaimCommand } from './warranty/warranty-service';
+export type {
+  ClaimMove,
+  NewWarrantyClaim,
+  WarrantyClaimRow,
+  WarrantyRepository,
+} from './warranty/warranty-repository';
+export { VendorStockService } from './vendors/vendor-stock-service';
+export type {
+  ReceiveVendorStockCommand,
+  ReturnVendorStockCommand,
+} from './vendors/vendor-stock-service';
+export type {
+  NewVendorReceipt,
+  NewVendorReturn,
+  VendorReceiptRow,
+  VendorStockRepository,
+} from './vendors/vendor-stock-repository';
+
+/* ------------------------------------------- Phase 9: reporting and Daybook */
+export { ReportQueryService } from './reporting/report-query-service';
+export { ProfitTargetService } from './reporting/profit-target-service';
+export { DashboardService } from './reporting/dashboard-service';
+export type {
+  AccountMovementRow,
+  DashboardFigures,
+  DashboardSale,
+  GroupedAmountRow,
+  PartyLedgerEntry,
+  ProductPerformanceRow,
+  ProfitFigures,
+  PurchaseGrouping,
+  ReportPeriod,
+  ReportRepository,
+  SalesGrouping,
+  SaveTargetInput,
+  StoredTarget,
+  WhySourceLine,
+} from './reporting/report-repository';
+export { GetDaybookService } from './daybook/get-daybook-service';
+export { MarkDayReviewedService } from './daybook/mark-day-reviewed-service';
+export { PrintDaybookService } from './daybook/print-daybook-service';
+export { CAPABILITIES, KIND_BY_SOURCE_TYPE, kindOf } from './daybook/daybook-kinds';
+export type {
+  DaybookDayTotals,
+  DaybookEntryRow,
+  DaybookFilter,
+  DaybookPrintRow,
+  DaybookRepository,
+  DaybookReviewRow,
+  NewDaybookPrint,
+  NewDaybookReview,
+} from './daybook/daybook-repository';
+export { reverseMoneyDocument } from './corrections/reverse-money-document';
+export type {
+  ReverseMoneyDocumentDeps,
+  ReverseMoneyDocumentInput,
+} from './corrections/reverse-money-document';
+export type {
+  DocumentReversalInput,
+  DocumentReversalRepository,
+  PostedDocument,
+  PostedJournalLine,
+  ReversibleDocument,
+} from './corrections/document-reversal-repository';
+export { ReconcileAccountService } from './reconciliation/reconcile-account-service';
+export type {
+  CompleteReconciliationCommand,
+  ListReconciliationsCommand,
+  RemoveMatchCommand,
+  ReopenReconciliationCommand,
+  SaveMatchCommand,
+  StartReconciliationCommand,
+  WorkspaceCommand,
+} from './reconciliation/reconcile-account-service';
+export { ImportStatementService } from './reconciliation/import-statement-service';
+export type {
+  ConfirmStatementCommand,
+  ReadStatementFileCommand,
+  StatementFileContent,
+  UploadStatementCommand,
+} from './reconciliation/import-statement-service';
+export type { StatementExtractor } from './reconciliation/statement-extractor';
+export type {
+  CompleteReconciliation,
+  ForeignAccountLine,
+  LedgerFilter,
+  LedgerLineRow,
+  MatchRecord,
+  NewMatch,
+  NewReconciliation,
+  NewStatementFile,
+  ReconcilableAccount,
+  ReconciliationRepository,
+  ReconciliationRow,
+  ReopenReconciliation,
+  StatementFileRow,
+  StatementLineRecord,
+} from './reconciliation/reconciliation-repository';
+
+export { BackupService } from './backup/backup-service';
+export type {
+  BackupStatusCommand,
+  ExportBackupCommand,
+  ExportedArchive,
+} from './backup/backup-service';
+export { RestoreService } from './backup/restore-service';
+export type { InspectArchiveCommand, RestoreCommand } from './backup/restore-service';
+export { ResetBusinessService } from './backup/reset-business-service';
+export type { ResetBusinessCommand } from './backup/reset-business-service';
+export { LicenseStatusService } from './licensing/license-status-service';
+export { ArchiveOpenError } from './backup/backup-ports';
+export type {
+  ArchiveBody,
+  ArchiveCodec,
+  ArchiveOpenFailure,
+  ArchiveTable,
+  BackupFileStore,
+  BackupSecretStore,
+  BuildInfo,
+  DatabaseDumpTool,
+  DumpResult,
+  EncodedArchive,
+  StoredArchive,
+} from './backup/backup-ports';
+export type {
+  BackupRepository,
+  BackupRunRecord,
+  FinishRunInput,
+  RestoreBlock,
+  RestoreEventInput,
+  StartRunInput,
+} from './backup/backup-repository';
+export type { ReplaceSecretCommand } from './backup/backup-service';

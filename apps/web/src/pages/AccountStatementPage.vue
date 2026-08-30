@@ -8,11 +8,13 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
 import { fetchAccountStatement } from '../api/money';
+import { fetchReconciliations } from '../api/reconciliation';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import StatCard from '../components/StatCard.vue';
+import StartReconciliationDialog from '../components/money/StartReconciliationDialog.vue';
 import { taka } from '../components/money/money-text';
 
 /**
@@ -33,6 +35,13 @@ const route = useRoute();
 const router = useRouter();
 
 const statement = ref<AccountStatementResponse | null>(null);
+/**
+ * Phase 11 (§5.17, UI-70): reconciling starts here, from the account whose
+ * statement the owner is already reading. Cash is not offered — a drawer is
+ * reconciled by counting it, in Daily Cash (UI-71).
+ */
+const reconciling = ref(false);
+const openReconciliationId = ref<string | null>(null);
 const loading = ref(true);
 const failure = ref<{ code: string; message: string } | null>(null);
 
@@ -52,12 +61,24 @@ function sourceLabel(sourceType: string): string {
   return SOURCE_LABELS[sourceType] ?? sourceType;
 }
 
+const canReconcile = computed(
+  () => statement.value !== null && statement.value.type !== 'CASH' && session.can('bank.reconciliation.view'),
+);
+
+function openReconciliation(id: string): void {
+  void router.push(`/settings/accounts/${accountId.value}/reconcile/${id}`);
+}
+
 onMounted(async () => {
   const token = session.accessToken.value;
   if (token === null) return;
 
   try {
     statement.value = await fetchAccountStatement(token, accountId.value);
+    if (canReconcile.value) {
+      const open = await fetchReconciliations(token, accountId.value);
+      openReconciliationId.value = open.rows.find((row) => row.status === 'DRAFT')?.id ?? null;
+    }
   } catch (error) {
     failure.value =
       error instanceof ApiError
@@ -76,12 +97,30 @@ onMounted(async () => {
         <h1>{{ statement?.accountName ?? 'Statement' }}</h1>
         <p class="sher-bn">এই অ্যাকাউন্টে কবে কত ঢুকেছে আর বেরিয়েছে</p>
       </div>
-      <Button
-        text
-        icon="pi pi-arrow-left"
-        label="Back to accounts"
-        @click="router.push('/settings/accounts')"
-      />
+      <div class="head-actions">
+        <button
+          v-if="canReconcile && openReconciliationId !== null"
+          type="button"
+          class="btn btn-primary"
+          @click="openReconciliation(openReconciliationId)"
+        >
+          Continue reconciling
+        </button>
+        <button
+          v-else-if="canReconcile && session.can('bank.reconciliation.perform')"
+          type="button"
+          class="btn btn-primary"
+          @click="reconciling = true"
+        >
+          Reconcile
+        </button>
+        <Button
+          text
+          icon="pi pi-arrow-left"
+          label="Back to accounts"
+          @click="router.push('/settings/accounts')"
+        />
+      </div>
     </header>
 
     <ErrorNotice v-if="failure" :code="failure.code" :message="failure.message" />
@@ -136,6 +175,24 @@ onMounted(async () => {
         </Column>
       </DataTable>
     </AppCard>
+    <StartReconciliationDialog
+      v-if="reconciling && statement !== null"
+      :account="{
+        id: statement.accountId,
+        name: statement.accountName,
+        type: statement.type,
+        holderName: null,
+        reference: null,
+        isDrawer: false,
+        status: 'ACTIVE',
+        balanceMinor: statement.closingBalanceMinor,
+        openingAmountMinor: null,
+        openingDate: null,
+        version: 1,
+      }"
+      @close="reconciling = false"
+      @started="openReconciliation"
+    />
   </section>
 </template>
 
@@ -157,6 +214,12 @@ onMounted(async () => {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .page-head p {

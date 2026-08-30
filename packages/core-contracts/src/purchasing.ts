@@ -22,6 +22,15 @@ export const purchaseLineRequestSchema = z
     unitPriceMinor: z.number().int().nonnegative(),
     /** Only meaningful for a product that tracks expiry; optional either way. */
     expiryDate: BUSINESS_DATE.nullable().default(null),
+    /**
+     * The plan line this quantity is buying (Phase 8, §5.9).
+     *
+     * Null on an ordinary typed bill, which is most of them. When it is set,
+     * how much of that plan has been bought becomes a SUM over posted purchase
+     * lines — so voiding this bill simply makes the plan right again, with no
+     * counter to unwind.
+     */
+    planLineId: ULID.nullable().default(null),
   })
   .strict();
 export type PurchaseLineRequest = z.infer<typeof purchaseLineRequestSchema>;
@@ -51,6 +60,14 @@ export const createPurchaseRequestSchema = z
      * ordinary new purchase, which is what every existing caller sends.
      */
     correctionOf: ULID.nullable().default(null),
+    /**
+     * The supplier order this bill was raised from (Phase 8, §5.9).
+     *
+     * Set when the shopkeeper pressed Convert. The order becomes CONVERTED and
+     * names this bill, so "what did we order and did it come" and "what was
+     * this bill against" are both answerable afterwards.
+     */
+    supplierOrderId: ULID.nullable().default(null),
   })
   .strict();
 export type CreatePurchaseRequest = z.infer<typeof createPurchaseRequestSchema>;
@@ -190,6 +207,20 @@ export const paySupplierRequestSchema = z
   .strict();
 export type PaySupplierRequest = z.infer<typeof paySupplierRequestSchema>;
 
+/**
+ * Correcting a posted supplier payment (Phase 9.2). Reversed and re-posted
+ * under the same number, re-allocated oldest-first against what is owed now.
+ */
+export const correctSupplierPaymentRequestSchema = paySupplierRequestSchema
+  .extend({
+    version: z.number().int().nonnegative(),
+    reason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CorrectSupplierPaymentRequest = z.infer<typeof correctSupplierPaymentRequestSchema>;
+
+
 export const supplierPaymentResponseSchema = z
   .object({
     id: ULID,
@@ -212,6 +243,11 @@ export const supplierPaymentResponseSchema = z
     /** What the supplier is still owed once this payment landed. */
     outstandingAfterMinor: z.number().int(),
     createdAt: z.string(),
+    /** Phase 9.2: what a correction and a cancellation need, and what they leave. */
+    status: z.enum(['POSTED', 'VOIDED']).default('POSTED'),
+    entryMode: z.string().default('ON_TIME'),
+    voidReason: z.string().nullable().default(null),
+    version: z.number().int().default(1),
   })
   .strict();
 export type SupplierPaymentResponse = z.infer<typeof supplierPaymentResponseSchema>;

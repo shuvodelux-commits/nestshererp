@@ -174,7 +174,7 @@ describe('ProductsPage', () => {
     const headers = wrapper.findAll('thead th').map((cell) => cell.text());
     expect(headers.some((text) => text.startsWith('Stock'))).toBe(true);
     expect(headers.some((text) => text.startsWith('Stock value'))).toBe(true);
-    expect(wrapper.text()).toContain('48.000');
+    expect(wrapper.text()).toContain('48');
     expect(wrapper.text()).toContain('৳4,800.00');
   });
 
@@ -238,7 +238,7 @@ describe('ProductsPage', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('Adjust stock');
-    expect(wrapper.text()).toContain('In stock now: 48.000 Piece');
+    expect(wrapper.text()).toContain('In stock now: 48 Piece');
     // UI-64: the list is still behind the dialog, not navigated away from.
     expect(push).not.toHaveBeenCalled();
   });
@@ -314,7 +314,7 @@ describe('ProductsPage without inventory.cost.view', () => {
     expect(headers.some((text) => text.startsWith('Purchase'))).toBe(false);
     expect(headers.some((text) => text.startsWith('Stock value'))).toBe(false);
     // Quantity is not a cost figure, so it stays.
-    expect(wrapper.text()).toContain('48.000');
+    expect(wrapper.text()).toContain('48');
     expect(wrapper.text()).toContain('not sent to this screen at all');
   });
 

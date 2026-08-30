@@ -2,6 +2,7 @@
 import type {
   DayStatusResponse,
   ExpenseCategoryResponse,
+  ExpenseResponse,
   MoneyAccountResponse,
   PartyResponse,
 } from '@sher/core-contracts';
@@ -13,7 +14,7 @@ import Select from 'primevue/select';
 import { computed, onMounted, ref } from 'vue';
 
 import { ApiError } from '../../api/client';
-import { recordExpense } from '../../api/expenses';
+import { correctExpense, recordExpense } from '../../api/expenses';
 import { fetchAccounts, fetchDayStatus } from '../../api/money';
 import { fetchParties } from '../../api/parties';
 import { useSession } from '../../auth/session';
@@ -34,7 +35,29 @@ import StartDayDialog from './StartDayDialog.vue';
  * is chosen from the shop's list rather than typed: two spellings of Rent would
  * be two accounts, and no report would add them up.
  */
-const props = defineProps<{ categories: readonly ExpenseCategoryResponse[] }>();
+/**
+ * Phase 9.2: the same modal corrects a posted expense. `existing` turns it from
+ * a create into a correction — the server reverses what was posted and
+ * re-posts these figures under the **same number**, so the shopkeeper sees one
+ * expense that now says the right thing, not two that half-cancel.
+ */
+/**
+ * Phase 11: `prefill` opens the same modal on figures the shop has not typed —
+ * a bank charge read off a statement line (§5.17). It fills the boxes and
+ * nothing else: the owner still chooses the category and still presses Save,
+ * because reconciliation may not post, and a form that posts itself is posting.
+ */
+const props = defineProps<{
+  categories: readonly ExpenseCategoryResponse[];
+  existing?: ExpenseResponse | null;
+  prefill?: {
+    readonly amountMinor: number;
+    readonly accountId: string;
+    readonly businessDate: string;
+    readonly note: string;
+  } | null;
+}>();
+
 const emit = defineEmits<{ close: []; recorded: [] }>();
 
 const session = useSession();
@@ -106,6 +129,27 @@ async function load(): Promise<void> {
     accountId.value =
       accounts.value.find((account) => account.isDrawer)?.id ?? accounts.value[0]?.id ?? '';
     categoryId.value = activeCategories.value[0]?.value ?? '';
+
+    // A correction opens on the figures that are posted, so the shopkeeper
+    // changes the one thing that is wrong rather than typing it all again.
+    const suggested = props.prefill ?? null;
+    if (suggested !== null) {
+      amount.value = Math.abs(suggested.amountMinor) / 100;
+      accountId.value = suggested.accountId;
+      businessDate.value = suggested.businessDate;
+      note.value = suggested.note;
+    }
+
+    const posted = props.existing ?? null;
+    if (posted !== null) {
+      categoryId.value = posted.categoryId;
+      amount.value = posted.amountMinor / 100;
+      accountId.value = posted.accountCode.slice(posted.accountCode.indexOf(':') + 1);
+      payeeId.value = posted.payeePartyId ?? '';
+      note.value = posted.note ?? '';
+      businessDate.value = posted.businessDate;
+    }
+
   } catch (cause) {
     failure.value = describe(cause, 'Could not open this form');
   }
@@ -120,19 +164,32 @@ async function save(): Promise<void> {
   saving.value = true;
   failure.value = null;
   try {
-    await recordExpense(
-      token,
-      {
-        categoryId: categoryId.value,
-        amountMinor: amountMinor.value,
-        accountCode: account.type === 'CASH' ? `CASH:${account.id}` : `BANK:${account.id}`,
-        payeePartyId: payeeId.value === '' ? null : payeeId.value,
-        note: note.value.trim() === '' ? null : note.value.trim(),
-        ...(isBackdated.value ? { businessDate: businessDate.value } : {}),
-        backdateReason: isBackdated.value ? backdateReason.value.trim() : null,
-      },
-      operationId.value,
-    );
+    const body = {
+      categoryId: categoryId.value,
+      amountMinor: amountMinor.value,
+      accountCode: account.type === 'CASH' ? `CASH:${account.id}` : `BANK:${account.id}`,
+      payeePartyId: payeeId.value === '' ? null : payeeId.value,
+      note: note.value.trim() === '' ? null : note.value.trim(),
+      ...(isBackdated.value ? { businessDate: businessDate.value } : {}),
+      backdateReason: isBackdated.value ? backdateReason.value.trim() : null,
+    };
+
+    const posted = props.existing ?? null;
+    if (posted === null) {
+      await recordExpense(token, body, operationId.value);
+    } else {
+      /*
+       * A correction carries the document's version (D-32) and the reason the
+       * backdating rule may ask for — the server refuses without one when the
+       * correction cannot post on its own date.
+       */
+      await correctExpense(token, posted.id, {
+        ...body,
+        businessDate: businessDate.value,
+        version: posted.version,
+        reason: backdateReason.value.trim() === '' ? null : backdateReason.value.trim(),
+      });
+    }
     emit('recorded');
   } catch (cause) {
     if (cause instanceof ApiError && cause.details['reason'] === 'CASH_DAY_NOT_STARTED') {
@@ -168,12 +225,15 @@ onMounted(load);
     visible
     modal
     :style="{ width: 'min(38rem, 96vw)' }"
-    header="Record expense"
+    :header="existing ? 'Correct expense' : 'Record expense'"
     @update:visible="emit('close')"
   >
     <template #header>
       <div class="dlg__head">
-        <h2>Record expense <small>খরচ লিখুন</small></h2>
+        <h2 v-if="existing">
+          Correct this expense <small>খরচ ঠিক করুন — {{ existing.number }}</small>
+        </h2>
+        <h2 v-else>Record expense <small>খরচ লিখুন</small></h2>
       </div>
     </template>
 

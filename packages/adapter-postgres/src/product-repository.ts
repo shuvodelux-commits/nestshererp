@@ -16,7 +16,7 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
-import { brands, categories, productCostState, products, units } from './schema';
+import { brands, categories, parties, productCostState, products, units } from './schema';
 import { txOf } from './unit-of-work';
 
 /**
@@ -31,6 +31,8 @@ import { txOf } from './unit-of-work';
 const parentCategories = alias(categories, 'parent_categories');
 /** The conversion unit is a second row in `units`, so it needs its own alias. */
 const conversionUnits = alias(units, 'conversion_units');
+/** The party named as the product's usual supplier (Phase 8), joined for its name. */
+const usualSuppliers = alias(parties, 'usual_suppliers');
 
 /**
  * What each tappable header on the Products list orders by (UI-46).
@@ -95,6 +97,11 @@ const PRODUCT_COLUMNS = {
   conversionUnitId: products.conversionUnitId,
   conversionUnitName: conversionUnits.name,
   conversionFactorQty: products.conversionFactorQty,
+  usualSupplierId: products.usualSupplierId,
+  usualSupplierName: usualSuppliers.name,
+  minOrderQty: products.minOrderQty,
+  warrantyMonths: products.warrantyMonths,
+  supplierWarrantyMonths: products.supplierWarrantyMonths,
   version: products.version,
   /**
    * Stock, for the §5.5 list columns — read here rather than summed in Vue.
@@ -169,6 +176,11 @@ interface RawProduct {
   readonly conversionUnitId: string | null;
   readonly conversionUnitName: string | null;
   readonly conversionFactorQty: number | null;
+  readonly usualSupplierId: string | null;
+  readonly usualSupplierName: string | null;
+  readonly minOrderQty: number | null;
+  readonly warrantyMonths: number | null;
+  readonly supplierWarrantyMonths: number | null;
   readonly version: number;
   readonly stockQty: number | null;
   readonly avgUnitCost: number | null;
@@ -497,6 +509,13 @@ export class PostgresProductRepository implements ProductRepository {
       .leftJoin(categories, eq(categories.id, products.categoryId))
       .leftJoin(parentCategories, eq(parentCategories.id, categories.parentId))
       .leftJoin(conversionUnits, eq(conversionUnits.id, products.conversionUnitId))
+      .leftJoin(
+        usualSuppliers,
+        and(
+          eq(usualSuppliers.tenantId, ctx.tenantId),
+          eq(usualSuppliers.id, products.usualSupplierId),
+        ),
+      )
       // Left, not inner: a product with no stock yet still belongs in the list,
       // reading zero rather than vanishing from it.
       .leftJoin(
@@ -595,6 +614,7 @@ function toRow(raw: RawProduct): ProductRow {
     // not unknown, and not a reason to leave the column blank.
     stockQty: raw.stockQty ?? 0,
     avgUnitCost: raw.avgUnitCost ?? 0,
+    usualSupplierName: raw.usualSupplierName ?? null,
     lotValueMinor: bigintMinor(raw.lotValueMinor),
   };
 }

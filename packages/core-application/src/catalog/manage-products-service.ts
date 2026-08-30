@@ -104,6 +104,16 @@ export interface ProductInput {
    */
   readonly conversionUnitId: string | null;
   readonly conversionFactorQty: number | null;
+  /**
+   * Phase 8, all optional (owner decisions 2026-08-26). The usual supplier is
+   * what the purchase planner assumes; the minimum order is the smallest that
+   * supplier will sell; the two warranty figures are months, one clock running
+   * from the sale and the other from the delivery.
+   */
+  readonly usualSupplierId: string | null;
+  readonly minOrderQty: number | null;
+  readonly warrantyMonths: number | null;
+  readonly supplierWarrantyMonths: number | null;
 }
 
 export interface CreateProductCommand {
@@ -749,6 +759,10 @@ export class ManageProductsService {
       tracksSerial: input.tracksSerial,
       conversionUnitId,
       conversionFactorQty: conversionUnitId === null ? null : input.conversionFactorQty,
+      usualSupplierId: input.usualSupplierId,
+      minOrderQty: input.minOrderQty,
+      warrantyMonths: input.warrantyMonths,
+      supplierWarrantyMonths: input.supplierWarrantyMonths,
     };
   }
 
@@ -861,6 +875,11 @@ export class ManageProductsService {
       stockQty: row.stockQty,
       stockStatus: stockStatus(row.stockQty, row.minStockQty),
       hasStockHistory: row.hasStockHistory,
+      usualSupplierId: row.usualSupplierId,
+      usualSupplierName: row.usualSupplierName,
+      minOrderQty: row.minOrderQty,
+      warrantyMonths: row.warrantyMonths,
+      supplierWarrantyMonths: row.supplierWarrantyMonths,
       /*
        * D-41: one conversion or none. Present only when the product genuinely
        * carries both halves — the schema, the migration's CHECK and the domain

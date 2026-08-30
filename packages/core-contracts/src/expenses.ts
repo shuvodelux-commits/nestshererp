@@ -51,6 +51,41 @@ export const recordExpenseRequestSchema = z
 
 export type RecordExpenseRequest = z.infer<typeof recordExpenseRequestSchema>;
 
+/**
+ * Cancelling and correcting a posted expense (Phase 9.2, §2.5).
+ *
+ * **A reason is mandatory to cancel** (owner rule 2026-08-30) — the ledger's
+ * own before/after values explain a correction, and nothing explains a
+ * cancellation except the person who made it. `version` is D-32's optimistic
+ * lock: whoever saves second is told rather than overwriting the first.
+ */
+export const voidDocumentRequestSchema = z
+  .object({
+    version: z.number().int().nonnegative(),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .strict();
+
+export type VoidDocumentRequest = z.infer<typeof voidDocumentRequestSchema>;
+
+/**
+ * A correction carries the whole document again, not a patch: the server
+ * reverses what was posted and re-posts these figures under the same number,
+ * so what is sent is what the expense **becomes**.
+ *
+ * `reason` is optional for a same-day fix and required when the correction
+ * cannot post on its own date — a backdated one, or one whose month has closed
+ * and which therefore posts today as a prior-period adjustment.
+ */
+export const correctExpenseRequestSchema = recordExpenseRequestSchema
+  .extend({
+    version: z.number().int().nonnegative(),
+    reason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CorrectExpenseRequest = z.infer<typeof correctExpenseRequestSchema>;
+
 export const expenseSchema = z
   .object({
     id: ULID,
@@ -65,6 +100,13 @@ export const expenseSchema = z
     note: z.string().nullable(),
     businessDate: BUSINESS_DATE,
     status: z.enum(['POSTED', 'VOIDED']),
+    /** `CORRECTED` and `PRIOR_PERIOD` say this figure is not the first one posted. */
+    entryMode: z.string(),
+    voidReason: z.string().nullable(),
+    correctionReason: z.string().nullable(),
+    /** Set when a correction could not post on the day it belongs to. */
+    originalBusinessDate: BUSINESS_DATE.nullable(),
+    version: z.number().int(),
     createdAt: z.string(),
   })
   .strict();

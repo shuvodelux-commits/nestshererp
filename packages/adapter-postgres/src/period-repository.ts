@@ -1,4 +1,5 @@
 import type { PeriodRepository, PeriodRow, TenantContext, Tx } from '@sher/core-application';
+import { parseInstant } from '@sher/shared-utils';
 import { sql } from 'drizzle-orm';
 
 import { txOf } from './unit-of-work';
@@ -14,6 +15,18 @@ import { txOf } from './unit-of-work';
  * lock, for the same reason nothing else here is stored: it is the answer to
  * "what would closing freeze", and it must be true when it is asked.
  */
+/**
+ * `closed_at` comes back as a string from a raw statement and as a `Date` from
+ * the query builder. Reading a closed month crashed on the difference, so every
+ * instant is normalised in one place, through `shared-utils` — the only file
+ * allowed to touch `Date` (R-C8).
+ */
+function instant(value: unknown): Date | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value;
+  return parseInstant(typeof value === 'string' ? value : null);
+}
+
 export class PostgresPeriodRepository implements PeriodRepository {
   async listPeriods(tx: Tx, ctx: TenantContext, limit: number): Promise<readonly PeriodRow[]> {
     const rows = await txOf(tx).execute<{
@@ -55,7 +68,7 @@ export class PostgresPeriodRepository implements PeriodRepository {
       month: Number(row.period_month),
       status: row.status === 'CLOSED' ? 'CLOSED' : 'OPEN',
       entryCount: Number(row.entry_count),
-      closedAt: row.status === 'CLOSED' ? row.closed_at : null,
+      closedAt: row.status === 'CLOSED' ? instant(row.closed_at) : null,
       closedByName: row.status === 'CLOSED' ? row.closed_by_name : null,
     }));
   }
@@ -94,7 +107,7 @@ export class PostgresPeriodRepository implements PeriodRepository {
       month,
       status: row.status === 'CLOSED' ? 'CLOSED' : 'OPEN',
       entryCount: Number(row.entry_count),
-      closedAt: row.status === 'CLOSED' ? row.closed_at : null,
+      closedAt: row.status === 'CLOSED' ? instant(row.closed_at) : null,
       closedByName: row.status === 'CLOSED' ? row.closed_by_name : null,
     };
   }

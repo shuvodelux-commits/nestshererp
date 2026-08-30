@@ -344,10 +344,12 @@ export class ImportDataService {
         sku: draft.sku,
         barcode: draft.barcode,
         description: draft.description,
-        // Offers, expiry, serial tracking and unit conversion are deliberately
-        // not columns in this template: each is behind its own §5.21 feature and
-        // belongs to the product's own screen, where the shopkeeper can see what
-        // they are switching on.
+        // Offers, expiry, serial tracking, unit conversion and the Phase 8
+        // planner/warranty fields are deliberately not columns in this template:
+        // each is behind its own §5.21 feature or is a decision belonging to the
+        // product's own screen, where the shopkeeper can see what they are
+        // switching on. An import that guessed them would switch on features
+        // nobody asked for, across a whole catalogue at once.
         defaultDiscountType: null,
         defaultDiscountValue: null,
         offerEnabled: false,
@@ -358,6 +360,10 @@ export class ImportDataService {
         tracksSerial: false,
         conversionUnitId: null,
         conversionFactorQty: null,
+        usualSupplierId: null,
+        minOrderQty: null,
+        warrantyMonths: null,
+        supplierWarrantyMonths: null,
       };
 
       const rejection = await this.check(() => this.productsService.validate(tx, ctx, input, null));

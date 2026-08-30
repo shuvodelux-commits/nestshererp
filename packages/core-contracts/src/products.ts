@@ -122,6 +122,13 @@ export const productResponseSchema = z
      */
     hasStockHistory: z.boolean(),
 
+    /** Phase 8: what the planner assumes, and what the supplier will sell. */
+    usualSupplierId: ULID.nullable(),
+    usualSupplierName: z.string().nullable(),
+    minOrderQty: z.number().int().nullable(),
+    warrantyMonths: z.number().int().nullable(),
+    supplierWarrantyMonths: z.number().int().nullable(),
+
     /** Optimistic lock (D-32). Sent back on edit; a stale one is a 409. */
     version: z.number().int(),
   })
@@ -233,6 +240,20 @@ export const saveProductRequestSchema = z
     /** Both or neither (D-41). `factorQty` is a scale-3 quantity. */
     conversionUnitId: ULID.nullable(),
     conversionFactorQty: z.number().int().positive().nullable(),
+
+    /**
+     * Phase 8, all optional (owner decisions 2026-08-26).
+     *
+     * `usualSupplierId` is who the purchase planner assumes; left blank it falls
+     * back to the supplier this product has most often been bought from
+     * recently. `minOrderQty` is the smallest that supplier will sell, and a
+     * blank one applies no minimum. The two warranty figures are months: the
+     * customer's cover runs from the sale, the shop's from the delivery.
+     */
+    usualSupplierId: ULID.nullable().default(null),
+    minOrderQty: z.number().int().positive().nullable().default(null),
+    warrantyMonths: z.number().int().positive().max(600).nullable().default(null),
+    supplierWarrantyMonths: z.number().int().positive().max(600).nullable().default(null),
   })
   .strict();
 

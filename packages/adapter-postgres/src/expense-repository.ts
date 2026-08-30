@@ -7,6 +7,7 @@ import type {
   NewExpenseCategory,
   TenantContext,
   Tx,
+  RepostExpense,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm';
@@ -258,6 +259,83 @@ export class PostgresExpenseRepository implements ExpenseRepository {
     return rows[0]?.id.trim() ?? null;
   }
 
+  /**
+   * A corrected expense, re-posted under its own number (Phase 9.2).
+   *
+   * The status goes back to `POSTED` from the `VOIDED` the reversal left a
+   * moment ago, inside the same transaction — so no reader ever sees the
+   * document cancelled, and no reader ever sees it missing.
+   */
+  async repostExpense(tx: Tx, ctx: TenantContext, expense: RepostExpense): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    const updated = await db
+      .update(expenses)
+      .set({
+        categoryId: expense.categoryId,
+        categoryCodeSnapshot: expense.categoryCode,
+        categoryNameSnapshot: expense.categoryName,
+        payeePartyId: expense.payeePartyId,
+        payeeNameSnapshot: expense.payeeName,
+        amountMinor: expense.amountMinor,
+        accountCode: expense.accountCode,
+        sessionId: expense.sessionId,
+        note: expense.note,
+        businessDate: expense.businessDate,
+        entryMode: expense.entryMode,
+        correctionReason: expense.correctionReason,
+        originalBusinessDate: expense.originalBusinessDate,
+        status: 'POSTED',
+        voidReason: null,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: expense.expectedVersion + 1,
+      })
+      .where(
+        and(
+          eq(expenses.tenantId, ctx.tenantId),
+          eq(expenses.id, expense.id),
+          eq(expenses.version, expense.expectedVersion),
+        ),
+      )
+      .returning({ id: expenses.id, number: expenses.expenseNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    await db.insert(journalEntries).values({
+      id: expense.journalEntryId,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+      businessDate: expense.businessDate,
+      /*
+       * A correction is filed as its own kind of entry (migration 0038): the
+       * document keeps exactly one `EXPENSE` posting for ever, and every
+       * correction after it is an additional, equally visible fact.
+       */
+      sourceDocumentType: 'EXPENSE_CORRECTION',
+      sourceDocumentId: expense.id,
+      sourceNumber: saved.number,
+      entryMode: expense.entryMode,
+    });
+
+    for (const line of expense.journalLines) {
+      await db.insert(journalLines).values({
+        id: line.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        journalEntryId: expense.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      });
+    }
+
+    return true;
+  }
+
   async listExpenses(
     tx: Tx,
     ctx: TenantContext,
@@ -327,6 +405,11 @@ export class PostgresExpenseRepository implements ExpenseRepository {
         note: expenses.note,
         businessDate: expenses.businessDate,
         status: expenses.status,
+        entryMode: expenses.entryMode,
+        voidReason: expenses.voidReason,
+        correctionReason: expenses.correctionReason,
+        originalBusinessDate: expenses.originalBusinessDate,
+        version: expenses.version,
         createdAt: expenses.createdAt,
       })
       .from(expenses)
@@ -351,6 +434,11 @@ export class PostgresExpenseRepository implements ExpenseRepository {
       note: row.note,
       businessDate: row.businessDate,
       status: row.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
+      entryMode: row.entryMode,
+      voidReason: row.voidReason,
+      correctionReason: row.correctionReason,
+      originalBusinessDate: row.originalBusinessDate,
+      version: row.version,
       createdAt: row.createdAt,
     }));
   }

@@ -206,3 +206,20 @@ function safeNumber(value: bigint, label: string): number {
   if (value > maximum || value < -maximum) throw new RangeError(`${label} exceeds the safe integer range`);
   return Number(value);
 }
+
+/**
+ * The moving average a position comes to, given what it is worth and how much
+ * of it there is — the inverse of `stockValueMinor`, rounded half-up once
+ * (D-31).
+ *
+ * Reversals need it: taking a receipt or an adjustment back out of a position
+ * means recomputing the average from the value that is left, and doing that
+ * arithmetic by hand at each call site is how two of them end up a poisha
+ * apart. `VoidPurchaseService` and `CreatePurchaseService` still compute it
+ * inline; they should move to this.
+ */
+export function averageUnitCostFrom(valueMinor: number, qtyRaw: number): number {
+  if (qtyRaw <= 0 || valueMinor <= 0) return 0;
+  const scaled = (BigInt(valueMinor) * 100_000n * 2n) / BigInt(qtyRaw);
+  return Number((scaled + 1n) / 2n);
+}

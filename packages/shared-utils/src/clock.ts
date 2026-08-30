@@ -193,3 +193,62 @@ export class FixedClock implements Clock {
     return businessDateOf(this.instant, tz);
   }
 }
+
+/**
+ * A tenant-local day, some whole number of days earlier or later.
+ *
+ * Calendar arithmetic, not a reading of the clock: it takes the day it is given
+ * and hands back another one. It lives here because this is the only file
+ * allowed to touch `Date` (R-C8), and because three callers were each about to
+ * write it again — a sales look-back window, a supplier-history window and an
+ * expiry warning window are the same question asked three times.
+ *
+ * Anchored at UTC midnight deliberately: a business date is a label on a
+ * calendar, so adding a day to it must not depend on where the server stands.
+ */
+export function addDays(businessDate: string, days: number): string {
+  const at = Date.parse(`${businessDate}T00:00:00Z`);
+  if (Number.isNaN(at)) return businessDate;
+  return new Date(at + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * How many days a `YYYY-MM` month has.
+ *
+ * Calendar arithmetic like `addDays`, and here for the same reason: this file
+ * is the only one allowed to touch `Date` (R-C8). The month's own length is
+ * what a run-rate projection divides by, so getting February wrong would make
+ * every forecast in a leap year wrong by a day (§5.20).
+ */
+export function daysInMonth(month: string): number {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (match === null) throw new RangeError(`Invalid month: ${month}`);
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) throw new RangeError(`Invalid month: ${month}`);
+  // Day 0 of the next month is the last day of this one.
+  return new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+}
+
+/** The `YYYY-MM` a business date belongs to. */
+export function monthOf(businessDate: string): string {
+  return businessDate.slice(0, 7);
+}
+
+/** The first and last business date of a `YYYY-MM` month. */
+export function monthRange(month: string): { from: string; to: string } {
+  const days = daysInMonth(month);
+  return { from: `${month}-01`, to: `${month}-${String(days).padStart(2, '0')}` };
+}
+
+/**
+ * Which day of the week a business date falls on — 0 Sunday … 6 Saturday.
+ *
+ * Calendar arithmetic, in the one file allowed to touch `Date` (R-C8). The
+ * shop's week starts on Saturday, so "this week" on a report needs this.
+ */
+export function weekdayOf(businessDate: string): number {
+  const at = Date.parse(`${businessDate}T00:00:00Z`);
+  if (Number.isNaN(at)) return 0;
+  return new Date(at).getUTCDay();
+}

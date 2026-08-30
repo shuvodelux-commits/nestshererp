@@ -8,10 +8,17 @@ import DashboardPage from '../src/pages/DashboardPage.vue';
  * error. Business assertions stay in the domain and integration tests; nothing
  * here asserts a number.
  */
+/*
+ * Phase 9 filled the dashboard: it reads `/dashboard/cards`, which returns the
+ * business name **and** the day's figures, instead of the name-only summary
+ * slice 1.1 had. The screen changed, so the double it is mounted with changed
+ * with it — the assertions below are the same three UI-44 asks for.
+ */
 const summary = vi.fn();
 
-vi.mock('../src/api/auth', () => ({
-  fetchDashboardSummary: (token: string) => summary(token),
+vi.mock('../src/api/reports', () => ({
+  fetchDashboardCards: (token: string) => summary(token),
+  saveTarget: vi.fn(),
 }));
 
 vi.mock('../src/components/shell/AppShell.vue', () => ({
@@ -37,7 +44,7 @@ describe('DashboardPage', () => {
   });
 
   it('renders the business name once loaded', async () => {
-    summary.mockResolvedValue({ businessName: 'Karim Traders' });
+    summary.mockResolvedValue({ businessName: 'Karim Traders', businessDate: '2026-08-30' });
 
     const wrapper = mount(DashboardPage);
     await flushPromises();

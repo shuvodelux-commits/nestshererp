@@ -279,6 +279,21 @@ export const receiveCustomerPaymentRequestSchema = z
   .strict();
 export type ReceiveCustomerPaymentRequest = z.infer<typeof receiveCustomerPaymentRequestSchema>;
 
+/**
+ * Correcting a posted receipt (Phase 9.2). The whole receipt is sent again —
+ * the server reverses what was posted, re-posts these figures under the same
+ * number and re-allocates them against what the customer owes now.
+ */
+export const correctCustomerPaymentRequestSchema = receiveCustomerPaymentRequestSchema
+  .extend({
+    version: z.number().int().nonnegative(),
+    reason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CorrectCustomerPaymentRequest = z.infer<typeof correctCustomerPaymentRequestSchema>;
+
+
 export const customerReceiptResponseSchema = z
   .object({
     id: ULID,
@@ -295,6 +310,11 @@ export const customerReceiptResponseSchema = z
     allocations: z.array(
       z.object({ saleId: ULID, saleNumber: z.string(), amountMinor: z.number().int() }).strict(),
     ),
+    /** Phase 9.2: what a correction and a cancellation need, and what they leave. */
+    status: z.enum(['POSTED', 'VOIDED']).default('POSTED'),
+    entryMode: z.string().default('ON_TIME'),
+    voidReason: z.string().nullable().default(null),
+    version: z.number().int().default(1),
   })
   .strict();
 export type CustomerReceiptResponse = z.infer<typeof customerReceiptResponseSchema>;

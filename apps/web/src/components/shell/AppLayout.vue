@@ -5,6 +5,7 @@ import { RouterView, useRouter } from 'vue-router';
 import { loadMyAccess } from '../../auth/access';
 import AppBottomNav from './AppBottomNav.vue';
 import AppSidebar from './AppSidebar.vue';
+import LicenseNotice from './LicenseNotice.vue';
 import AppTopBar from './AppTopBar.vue';
 import { navigationModuleId } from './navigation';
 
@@ -65,6 +66,15 @@ onMounted(() => void loadMyAccess());
 
     <div class="main">
       <AppTopBar :collapsed="collapsed" @toggle-sidebar="toggleNavigation" />
+
+      <!--
+        Phase 10 (D-36). Directly under the top bar and above the scrolling
+        content, so it is present on every screen and scrolls out of nobody's
+        way — a cashier whose sale will not save must be able to see why without
+        going looking for it. It draws nothing at all while the licence is
+        healthy.
+      -->
+      <LicenseNotice />
 
       <div ref="scroller" class="scroll">
         <div class="content">

@@ -9,7 +9,7 @@ import {
 import type { CostLayer, SaleRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type { SaleResponse } from '@sher/core-contracts';
-import { Money, Qty, Ulid } from '@sher/shared-utils';
+import { Money, QTY_SCALE, Qty, Ulid, formatForDisplay } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { ProductRepository } from '../catalog/product-repository';
@@ -579,7 +579,7 @@ export class CreateSaleService {
               .reduce((sum, layer) => sum + Math.max(layer.qtyRemaining, 0), 0);
       const expiredQty = Math.max(Math.max(position.qtyOnHand, 0) - sellableQty, 0);
       const expiredNote =
-        expiredQty > 0 ? ` — ${Qty(expiredQty).format()} expired and cannot be sold` : '';
+        expiredQty > 0 ? ` — ${formatForDisplay(expiredQty, QTY_SCALE)} expired and cannot be sold` : '';
 
       // §5.7's negative-stock policy. `BLOCK` refuses; `WARN` needs the cashier
       // to have seen and accepted it, which is what `allowNegativeStock` is;
@@ -589,7 +589,7 @@ export class CreateSaleService {
           ErrorCode.INSUFFICIENT_STOCK,
           sellableQty <= 0 && expiredQty > 0
             ? `Product expired. This batch cannot be sold`
-            : `Only ${Qty(sellableQty).format()} of “${product.name}” can be sold${expiredNote}`,
+            : `Only ${formatForDisplay(sellableQty, QTY_SCALE)} of “${product.name}” can be sold${expiredNote}`,
           {
             reason: 'NEGATIVE_STOCK_BLOCKED',
             productId: product.id,
@@ -601,7 +601,7 @@ export class CreateSaleService {
       if (args.negativePolicy === 'WARN' && !args.allowNegativeStock) {
         throw new AppError(
           ErrorCode.INSUFFICIENT_STOCK,
-          `Only ${Qty(sellableQty).format()} of “${product.name}” can be sold${expiredNote} — confirm to sell anyway`,
+          `Only ${formatForDisplay(sellableQty, QTY_SCALE)} of “${product.name}” can be sold${expiredNote} — confirm to sell anyway`,
           {
             reason: 'NEGATIVE_STOCK_CONFIRM',
             productId: product.id,

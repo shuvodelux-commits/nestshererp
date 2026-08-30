@@ -3,6 +3,8 @@ import type {
   InventoryRepository, InventoryStockRow, InventoryValuationLotRow, LocationRow,
   OpeningStockRecord, ProductStockPosition, StockAdjustmentFilter, StockAdjustmentListRow,
   StockAdjustmentRecord, StockCostLayerRow, TenantContext, Tx,
+  StockAdjustmentForReversal,
+  StockAdjustmentReversal,
 } from '@sher/core-application';
 import type { InventoryLotSort } from '@sher/core-contracts';
 import type { AccountCode, StockAdjustmentReason } from '@sher/core-domain';
@@ -232,6 +234,265 @@ export class PostgresInventoryRepository implements InventoryRepository {
       id: line.id, ...owner, journalEntryId: adjustment.journalEntryId,
       accountCode: line.account as string, amountMinor: line.amountMinor, partyId: line.partyId,
     })));
+  }
+
+  async findAdjustmentForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    adjustmentId: string,
+  ): Promise<StockAdjustmentForReversal | null> {
+    const db = txOf(tx);
+
+    const rows = await db.execute<{
+      id: string; number: string; status: string; business_date: string; product_id: string;
+      location_id: string; qty_delta: string; qty: string; direction: string;
+      value_minor: string; version: number;
+    }>(sql`
+      SELECT a.id, a.adjustment_number AS number, a.status, a.business_date::text AS business_date,
+             a.product_id, a.location_id, a.qty_delta::text AS qty_delta, a.qty::text AS qty,
+             a.direction, a.value_minor::text AS value_minor, a.version
+        FROM stock_adjustments a
+       WHERE a.tenant_id = ${ctx.tenantId} AND a.id = ${adjustmentId}
+       LIMIT 1
+    `);
+    const row = rows.rows[0];
+    if (row === undefined) return null;
+
+    const lines = await db.execute<{
+      account_code: string; amount_minor: string; party_id: string | null;
+    }>(sql`
+      SELECT jl.account_code, jl.amount_minor::text AS amount_minor, jl.party_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.tenant_id = jl.tenant_id AND je.id = jl.journal_entry_id
+       WHERE jl.tenant_id = ${ctx.tenantId}
+         AND je.source_document_id = ${adjustmentId}
+         AND je.source_document_type = 'STOCK_ADJUSTMENT'
+       ORDER BY jl.id
+    `);
+
+    // The lot an increase created, with what is left of it — the difference is
+    // what stops a cancellation from taking back goods somebody has sold.
+    const lots = await db.execute<{
+      id: string; qty_received: string; qty_remaining: string; actual_unit_cost: string;
+    }>(sql`
+      SELECT l.id, l.qty_received::text AS qty_received, l.qty_remaining::text AS qty_remaining,
+             l.actual_unit_cost::text AS actual_unit_cost
+        FROM inventory_lots l
+       WHERE l.tenant_id = ${ctx.tenantId}
+         AND l.source_document_type = 'STOCK_ADJUSTMENT'
+         AND l.source_document_id = ${adjustmentId}
+       LIMIT 1
+    `);
+
+    const consumptions = await db.execute<{
+      lot_id: string; qty: string; unit_cost_used: string;
+    }>(sql`
+      SELECT c.lot_id, c.qty::text AS qty, c.unit_cost_used::text AS unit_cost_used
+        FROM lot_consumptions c
+       WHERE c.tenant_id = ${ctx.tenantId}
+         AND c.document_type = 'STOCK_ADJUSTMENT'
+         AND c.document_id = ${adjustmentId}
+         AND c.superseded_by IS NULL
+    `);
+
+    const state = await db.execute<{ id: string; qty_on_hand: string; avg_unit_cost: string }>(sql`
+      SELECT s.id, s.qty_on_hand::text AS qty_on_hand, s.avg_unit_cost::text AS avg_unit_cost
+        FROM product_cost_state s
+       WHERE s.tenant_id = ${ctx.tenantId} AND s.product_id = ${row.product_id}
+       LIMIT 1
+    `);
+
+    const lot = lots.rows[0];
+    const cost = state.rows[0];
+    return {
+      id: row.id.trim(),
+      number: row.number,
+      status: row.status,
+      businessDate: row.business_date,
+      productId: row.product_id.trim(),
+      locationId: row.location_id.trim(),
+      qtyDelta: Number(row.qty_delta),
+      qty: Number(row.qty),
+      direction: row.direction === 'IN' ? 'IN' : 'OUT',
+      valueMinor: Number(row.value_minor),
+      version: row.version,
+      journalLines: lines.rows.map((line) => ({
+        account: line.account_code,
+        amountMinor: Number(line.amount_minor),
+        partyId: line.party_id === null ? null : line.party_id.trim(),
+      })),
+      newLot:
+        lot === undefined
+          ? null
+          : {
+              id: lot.id.trim(),
+              qtyReceived: Number(lot.qty_received),
+              qtyRemaining: Number(lot.qty_remaining),
+              unitCost: Number(lot.actual_unit_cost),
+            },
+      consumptions: consumptions.rows.map((consumption) => ({
+        lotId: consumption.lot_id.trim(),
+        qty: Number(consumption.qty),
+        unitCostUsed: Number(consumption.unit_cost_used),
+      })),
+      costState:
+        cost === undefined
+          ? null
+          : {
+              id: cost.id.trim(),
+              qtyOnHand: Number(cost.qty_on_hand),
+              avgUnitCost: Number(cost.avg_unit_cost),
+            },
+    };
+  }
+
+  /**
+   * Undoing one stock adjustment: the goods go back where they were, the value
+   * that left `INVENTORY` returns, and the document stays, marked `VOIDED`.
+   *
+   * The mirror image of `insertAdjustment`, written from what that call
+   * stored — a lot it opened is closed, lots it drew down are refilled, and
+   * the journal entry is negated line for line.
+   */
+  async reverseAdjustment(
+    tx: Tx,
+    ctx: TenantContext,
+    reversal: StockAdjustmentReversal,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+    const owner = { tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId };
+
+    const updated = await db
+      .update(stockAdjustments)
+      .set({
+        status: 'VOIDED',
+        voidReason: reversal.reason,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${stockAdjustments.version} + 1`,
+      })
+      .where(
+        and(
+          eq(stockAdjustments.tenantId, ctx.tenantId),
+          eq(stockAdjustments.id, reversal.adjustmentId),
+          eq(stockAdjustments.version, reversal.expectedVersion),
+          eq(stockAdjustments.status, 'POSTED'),
+        ),
+      )
+      .returning({ id: stockAdjustments.id, number: stockAdjustments.adjustmentNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    await db.insert(stockMovements).values({
+      id: reversal.movementId,
+      ...owner,
+      productId: (
+        await db
+          .select({ productId: stockAdjustments.productId })
+          .from(stockAdjustments)
+          .where(
+            and(
+              eq(stockAdjustments.tenantId, ctx.tenantId),
+              eq(stockAdjustments.id, reversal.adjustmentId),
+            ),
+          )
+          .limit(1)
+      )[0]?.productId ?? '',
+      locationId: (
+        await db
+          .select({ locationId: stockAdjustments.locationId })
+          .from(stockAdjustments)
+          .where(
+            and(
+              eq(stockAdjustments.tenantId, ctx.tenantId),
+              eq(stockAdjustments.id, reversal.adjustmentId),
+            ),
+          )
+          .limit(1)
+      )[0]?.locationId ?? '',
+      lotId: reversal.closeLotId,
+      qty: reversal.qty,
+      direction: reversal.direction,
+      businessDate: reversal.businessDate,
+      sourceDocumentType: 'STOCK_ADJUSTMENT_REVERSAL',
+      sourceDocumentId: reversal.adjustmentId,
+      sourceNumber: saved.number,
+      unitCost: null,
+    });
+
+    // A lot the adjustment opened is emptied and closed; it keeps existing,
+    // because the movement that made it still happened (DR13.11).
+    if (reversal.closeLotId !== null) {
+      await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: 0,
+          status: 'CLOSED',
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(
+          and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, reversal.closeLotId)),
+        );
+    }
+
+    // Quantities go back into the very lots they came out of, which is what
+    // keeps FIFO order meaningful after an undo (the rule `refillLots` states).
+    for (const refill of reversal.refills) {
+      await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: sql`${inventoryLots.qtyRemaining} + ${refill.qty}`,
+          status: 'OPEN',
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, refill.lotId)));
+    }
+
+    if (reversal.costState.exists) {
+      await db
+        .update(productCostState)
+        .set({
+          avgUnitCost: reversal.costState.avgUnitCost,
+          qtyOnHand: reversal.costState.qtyOnHand,
+          lastRecomputedAt: now,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${productCostState.version} + 1`,
+        })
+        .where(
+          and(
+            eq(productCostState.tenantId, ctx.tenantId),
+            eq(productCostState.id, reversal.costState.id),
+          ),
+        );
+    }
+
+    await db.insert(journalEntries).values({
+      id: reversal.journalEntryId,
+      ...owner,
+      businessDate: reversal.businessDate,
+      sourceDocumentType: 'STOCK_ADJUSTMENT_REVERSAL',
+      sourceDocumentId: reversal.adjustmentId,
+      sourceNumber: saved.number,
+      entryMode: reversal.entryMode,
+    });
+    await db.insert(journalLines).values(
+      reversal.journalLines.map((line) => ({
+        id: line.id,
+        ...owner,
+        journalEntryId: reversal.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      })),
+    );
+
+    return true;
   }
 
   async listAdjustments(tx: Tx, ctx: TenantContext, filter: StockAdjustmentFilter): Promise<readonly StockAdjustmentListRow[]> {

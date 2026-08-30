@@ -1,6 +1,7 @@
 import { accountCodeFor } from '@sher/core-domain';
 import type { AccountCode } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
+import { Money } from '@sher/shared-utils';
 
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
@@ -24,6 +25,14 @@ import type { MoneyRepository } from '../money/money-repository';
  * count — so a shop that has not started the day can still pay by transfer.
  * The refusal carries `reason: CASH_DAY_NOT_STARTED` so the screen can offer
  * `দিন শুরু করুন` in place, without the shopkeeper losing what they typed.
+ *
+ * **A cash box cannot pay out money it does not hold** (bug reported by the
+ * owner 2026-08-26). Without this, an expense or a supplier payment larger than
+ * the drawer drove the balance negative and nothing complained — and the day
+ * then could not be closed at all, because a physical count can never be a
+ * negative number. Only **cash** is guarded and only on the way **out**: a bank
+ * account may legitimately be overdrawn, and money coming in never needs a
+ * balance to arrive against.
  */
 export interface ResolvedPaymentAccount {
   readonly code: AccountCode;
@@ -43,6 +52,12 @@ export async function resolvePaymentAccount(
   ctx: TenantContext,
   code: string,
   businessDate: string,
+  /**
+   * What is leaving this account, in poisha. Omitted by every caller taking
+   * money **in**, which is what keeps a receipt from being refused for a drawer
+   * that happens to be empty.
+   */
+  outflowMinor?: number,
 ): Promise<ResolvedPaymentAccount> {
   const separatorAt = code.indexOf(':');
   const accountId = separatorAt === -1 ? '' : code.slice(separatorAt + 1);
@@ -60,6 +75,30 @@ export async function resolvePaymentAccount(
 
   if (account.status === 'INACTIVE') {
     throw new AppError(ErrorCode.VALIDATION_FAILED, `“${account.name}” is no longer in use`);
+  }
+
+  /*
+   * Checked against the live journal rollup, not a stored column, so it is the
+   * same figure the account list and the statement show. A shop that genuinely
+   * paid from elsewhere records it against that account instead; a shop that
+   * has miscounted finds out here rather than at the end of the day, when the
+   * only way out is a short/over adjustment.
+   */
+  if (
+    account.type === 'CASH' &&
+    outflowMinor !== undefined &&
+    outflowMinor > 0 &&
+    outflowMinor > account.balanceMinor
+  ) {
+    throw new AppError(
+      ErrorCode.VALIDATION_FAILED,
+      `“${account.name}” only has ${Money(account.balanceMinor).format()} in it`,
+      {
+        reason: 'CASH_ACCOUNT_SHORT',
+        accountId: account.id,
+        balanceMinor: String(account.balanceMinor),
+      },
+    );
   }
 
   if (!account.isDrawer) {

@@ -31,6 +31,16 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   PURCHASE_RETURN: 'PR',
   EXPENSE: 'EXP',
   STOCK_COUNT: 'SC',
+  /*
+   * Phase 8. The plan is the shop's own paper and the order is the supplier's;
+   * they are numbered apart because the supplier only ever sees one of them,
+   * and a phone call about "order 41" has to mean exactly one document.
+   */
+  PURCHASE_PLAN: 'PP',
+  SUPPLIER_ORDER: 'PO',
+  WARRANTY_CLAIM: 'WC',
+  VENDOR_RECEIPT: 'VR',
+  VENDOR_RETURN: 'VRT',
 };
 
 /**

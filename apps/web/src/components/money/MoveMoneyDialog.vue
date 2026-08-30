@@ -28,7 +28,12 @@ import { MONEY_BN, MONEY_EN, parseTaka } from './money-text';
  * `OWNER_CURRENT_ACCOUNT` and never through an expense, because what the owner
  * takes is not a cost of running the shop.
  */
-const props = defineProps<{ drawerAccountId: string; businessDate: string }>();
+const props = defineProps<{
+  drawerAccountId: string;
+  businessDate: string;
+  /** Phase 11: the amount a statement line shows, still needing a choice (§5.17). */
+  prefillAmountMinor?: number | null;
+}>();
 const emit = defineEmits<{ (event: 'recorded'): void; (event: 'close'): void }>();
 
 const session = useSession();
@@ -119,6 +124,9 @@ const canSubmit = computed(
 onMounted(async () => {
   const token = session.accessToken.value;
   if (token === null) return;
+  const suggested = props.prefillAmountMinor ?? null;
+  if (suggested !== null) amount.value = String(Math.abs(suggested) / 100);
+
   try {
     accounts.value = (await fetchAccounts(token)).accounts;
   } catch {

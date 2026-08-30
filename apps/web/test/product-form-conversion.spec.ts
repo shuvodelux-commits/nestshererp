@@ -257,7 +257,7 @@ describe('a product with a second unit (D-41)', () => {
     await wrapper.find('#min-stock').setValue('105');
     await flushPromises();
 
-    expect(wrapper.text()).toContain('5.000 Pipe + 5.000 Feet');
+    expect(wrapper.text()).toContain('5 Pipe + 5 Feet');
   });
 
   it('refuses half a rule before making the round trip', async () => {

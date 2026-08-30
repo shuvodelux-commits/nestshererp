@@ -1,5 +1,8 @@
-import { purchaseReturnPosting, purchaseReturnTotals, rejectPurchaseReturn } from '@sher/core-domain';
-import type { PurchaseReturnRejection, ReturnableBillLine } from '@sher/core-domain';
+import {
+  averageUnitCostFrom, purchaseReturnPosting, purchaseReturnTotals, rejectEntry,
+  rejectPurchaseReturn, stockValueMinor,
+} from '@sher/core-domain';
+import type { AccountCode, PurchaseReturnRejection, ReturnableBillLine } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { PurchaseReturnResponse } from '@sher/core-contracts';
 import { Qty, Ulid } from '@sher/shared-utils';
@@ -67,7 +70,15 @@ const REFUSALS: Record<PurchaseReturnRejection, string> = {
   RETURN_HAS_NO_VALUE: 'These goods are worth nothing to return',
 };
 
+export interface VoidPurchaseReturnCommand {
+  readonly ctx: TenantContext;
+  readonly returnId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
 export class CreatePurchaseReturnService {
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly access: AccessControl,
@@ -82,7 +93,114 @@ export class CreatePurchaseReturnService {
     private readonly clock: Clock,
   ) {}
 
+  /**
+   * Cancelling a return to a supplier (Phase 9.2, §2.5).
+   *
+   * **WRITE CLASS: T.** The goods go back into the very lot they left — so
+   * their cost, their expiry and their place in the FIFO queue are the ones
+   * they always had — the supplier credit is reversed, and the document stays
+   * with its number, marked `VOIDED` and carrying its reason.
+   *
+   * The asymmetry Phase 7 recorded is undone as it was made: whatever share of
+   * the transport went to `STOCK_ADJUSTMENT` when the goods left comes back out
+   * of it, because the reversal is the stored entry negated rather than a fresh
+   * calculation.
+   */
+  async void(command: VoidPurchaseReturnCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.PURCHASE_RETURN_VOID);
+      if (command.reason.trim().length === 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say why this is being cancelled');
+      }
+
+      const original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That return was not found');
+      if (original.status !== 'POSTED') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This return has already been cancelled');
+      }
+
+      const today = this.clock.businessDate(ctx.timezone);
+      // The day the reversal posts on, and only that day: the document's own
+      // month may be closed, and a cancellation still has to be possible.
+      await this.periods.assertOpen(tx, ctx, today);
+
+      const reversalLines = original.journalLines.map((line) => ({
+        id: Ulid.generate(this.clock),
+        account: line.account as AccountCode,
+        amountMinor: -line.amountMinor,
+        partyId: line.partyId,
+      }));
+      if (rejectEntry({ lines: reversalLines }) !== null) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'This return cannot be reversed cleanly');
+      }
+
+      const costStates = original.costStates.map((state) => {
+        const back = original.lines
+          .filter((line) => line.productId === state.productId)
+          .reduce(
+            (totals, line) => ({
+              qty: Qty(totals.qty).add(Qty(line.qty)).raw,
+              valueMinor: totals.valueMinor + line.costMinor,
+            }),
+            { qty: 0, valueMinor: 0 },
+          );
+        const qtyAfter = Qty(state.qtyOnHand).add(Qty(back.qty)).raw;
+        const valueAfter = stockValueMinor(state.qtyOnHand, state.avgUnitCost) + back.valueMinor;
+        return {
+          id: state.id,
+          exists: true,
+          productId: state.productId,
+          locationId: state.locationId,
+          qtyOnHand: qtyAfter,
+          avgUnitCost: averageUnitCostFrom(valueAfter, qtyAfter),
+        };
+      });
+
+      const ok = await this.returns.reversePurchaseReturn(tx, ctx, {
+        returnId: original.id,
+        expectedVersion: command.version,
+        businessDate: today,
+        entryMode: entryModeFor(today, today),
+        reason: command.reason.trim(),
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: reversalLines,
+        lines: original.lines.map((line) => ({
+          movementId: Ulid.generate(this.clock),
+          productId: line.productId,
+          lotId: line.lotId,
+          locationId: line.locationId,
+          qty: line.qty,
+          costMinor: line.costMinor,
+        })),
+        costStates,
+      });
+      if (!ok) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this return — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'purchase_return',
+        entityId: original.id,
+        action: 'DELETE',
+        before: { number: original.number, status: 'POSTED' },
+        after: { number: original.number, status: 'VOIDED', reason: command.reason.trim() },
+        source: 'API',
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'purchase.return.cancelled',
+        aggregateType: 'purchase_return',
+        aggregateId: original.id,
+        payload: { number: original.number },
+      });
+    });
+  }
+
   async create(command: CreatePurchaseReturnCommand): Promise<PurchaseReturnResponse> {
+
     const fingerprint = JSON.stringify([
       command.purchaseId,
       command.lines,

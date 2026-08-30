@@ -7,6 +7,12 @@ import type pg from 'pg';
 const clock = new SystemClock();
 
 const TENANT_SCOPED_TABLES = [
+  // Phase 11 reconciliation (migration 0039). First, because matches reference
+  // statement lines, which reference the file, which references the account.
+  'reconciliation_matches',
+  'statement_lines',
+  'bank_statement_files',
+  'account_reconciliations',
   // Phase 4 money (migration 0016). Before the journal tables and `tenants`,
   // like everything else here; movements and closes precede the sessions and
   // accounts they reference.

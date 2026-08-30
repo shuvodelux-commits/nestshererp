@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import type {
   AccessControl,
   AuditWriter,
+  DocumentReversalRepository,
   IdempotencyStore,
   InventoryRepository,
   MoneyRepository,
@@ -11,11 +12,18 @@ import type {
   PeriodGuard,
   ProductRepository,
   PurchaseRepository,
+  LandedCostRepository,
+  PurchasePlanRepository,
+  SaleRepository,
+  SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
 import {
+  AddLandedCostService,
   CreatePurchaseService,
   PaySupplierService,
+  PlannerService,
+  PurchasePlanService,
   PurchaseQueryService,
   VoidPurchaseService,
 } from '@sher/core-application';
@@ -24,6 +32,7 @@ import type { Clock } from '@sher/shared-utils';
 import {
   ACCESS_CONTROL,
   AUDIT_WRITER,
+  DOCUMENT_REVERSAL_REPOSITORY,
   CLOCK,
   IDEMPOTENCY_STORE,
   INVENTORY_REPOSITORY,
@@ -34,20 +43,38 @@ import {
   PERIOD_GUARD,
   PRODUCT_REPOSITORY,
   PURCHASE_REPOSITORY,
+  PURCHASE_PLAN_REPOSITORY,
+  LANDED_COST_REPOSITORY,
+  SALE_REPOSITORY,
+  SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
+import {
+  LandedCostsController,
+  PurchasePlansController,
+  SupplierOrdersController,
+} from './purchase-plans.controller';
 import { PurchasesController } from './purchases.controller';
 import { SupplierPaymentsController } from './supplier-payments.controller';
 import {
+  ADD_LANDED_COST_SERVICE,
   CREATE_PURCHASE_SERVICE,
   VOID_PURCHASE_SERVICE,
   PAY_SUPPLIER_SERVICE,
+  PLANNER_SERVICE,
+  PURCHASE_PLAN_SERVICE,
   PURCHASE_QUERY_SERVICE,
 } from './tokens';
 
 /** Phase 5 — buying goods, and paying the supplier for them (§5.9). */
 @Module({
-  controllers: [PurchasesController, SupplierPaymentsController],
+  controllers: [
+    PurchasesController,
+    SupplierPaymentsController,
+    PurchasePlansController,
+    SupplierOrdersController,
+    LandedCostsController,
+  ],
   providers: [
     {
       provide: CREATE_PURCHASE_SERVICE,
@@ -107,6 +134,7 @@ import {
         parties: PartyRepository,
         money: MoneyRepository,
         purchases: PurchaseRepository,
+        reversals: DocumentReversalRepository,
         numbering: NumberingService,
         audit: AuditWriter,
         outbox: Outbox,
@@ -120,6 +148,7 @@ import {
           parties,
           money,
           purchases,
+          reversals,
           numbering,
           audit,
           outbox,
@@ -133,6 +162,7 @@ import {
         PARTY_REPOSITORY,
         MONEY_REPOSITORY,
         PURCHASE_REPOSITORY,
+        DOCUMENT_REVERSAL_REPOSITORY,
         NUMBERING_SERVICE,
         AUDIT_WRITER,
         OUTBOX,
@@ -177,6 +207,85 @@ import {
         PERIOD_GUARD,
         INVENTORY_REPOSITORY,
         PURCHASE_REPOSITORY,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
+    },
+    {
+      provide: PLANNER_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        plans: PurchasePlanRepository,
+        settings: SettingsRepository,
+      ): PlannerService => new PlannerService(uow, accessControl, plans, settings),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PURCHASE_PLAN_REPOSITORY, SETTINGS_REPOSITORY],
+    },
+    {
+      provide: PURCHASE_PLAN_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        plans: PurchasePlanRepository,
+        settings: SettingsRepository,
+        sales: SaleRepository,
+        numbering: NumberingService,
+        audit: AuditWriter,
+        clock: Clock,
+      ): PurchasePlanService =>
+        new PurchasePlanService(
+          uow,
+          accessControl,
+          plans,
+          settings,
+          sales,
+          numbering,
+          audit,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        PURCHASE_PLAN_REPOSITORY,
+        SETTINGS_REPOSITORY,
+        SALE_REPOSITORY,
+        NUMBERING_SERVICE,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
+    {
+      provide: ADD_LANDED_COST_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        idempotency: IdempotencyStore,
+        periods: PeriodGuard,
+        costs: LandedCostRepository,
+        money: MoneyRepository,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): AddLandedCostService =>
+        new AddLandedCostService(
+          uow,
+          accessControl,
+          idempotency,
+          periods,
+          costs,
+          money,
+          audit,
+          outbox,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        IDEMPOTENCY_STORE,
+        PERIOD_GUARD,
+        LANDED_COST_REPOSITORY,
+        MONEY_REPOSITORY,
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,

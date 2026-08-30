@@ -1,8 +1,9 @@
 import {
   averageAfterReceipt, costIssue, openingStockPosting, rejectStockAdjustment,
-  stockAdjustmentPosting, stockStatus, stockValueMinor, unitCostFromMoneyMinor,
+  averageUnitCostFrom, rejectEntry, stockAdjustmentPosting, stockStatus, stockValueMinor,
+  unitCostFromMoneyMinor,
 } from '@sher/core-domain';
-import type { CostLayer, StockAdjustmentReason, StockAdjustmentRejection } from '@sher/core-domain';
+import type { AccountCode, CostLayer, StockAdjustmentReason, StockAdjustmentRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type {
   CostAdjustmentRow, InventoryLotPage, InventoryLotsQuery, InventoryOverviewResponse,
@@ -10,7 +11,7 @@ import type {
   StockAdjustmentResponse, StockAdjustmentRow,
 } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
-import { Money, Qty, Ulid } from '@sher/shared-utils';
+import { Money, QTY_SCALE, Qty, Ulid, addDays, formatForDisplay } from '@sher/shared-utils';
 
 import type { ProductRepository } from '../catalog/product-repository';
 import { entryModeFor } from '../notes/create-note-service';
@@ -53,6 +54,14 @@ export interface AdjustStockCommand {
   readonly ctx: TenantContext; readonly operationId: string; readonly productId: string;
   readonly qtyDelta: number; readonly reason: StockAdjustmentReason; readonly note: string | null;
   readonly businessDate?: string | undefined; readonly source: string;
+  /**
+   * Where the value lands instead of `STOCK_ADJUSTMENT` (Phase 8, §5.19).
+   *
+   * Only warranty uses it, to charge a replacement given from own stock to
+   * `WARRANTY_EXPENSE`. Everything else leaves it unset and posts exactly as
+   * before.
+   */
+  readonly counterAccount?: AccountCode | undefined;
 }
 
 /** What one adjustment will do, resolved before anything is written. */
@@ -84,6 +93,14 @@ const ADJUSTMENT_REFUSALS: Record<StockAdjustmentRejection, string> = {
   NOTE_REQUIRED_FOR_OTHER: 'Write what happened — "Other" needs a note',
   ADJUSTMENT_HAS_NO_VALUE: 'This product has no cost yet, so its stock cannot be valued',
 };
+
+export interface VoidStockAdjustmentCommand {
+  readonly ctx: TenantContext;
+  readonly adjustmentId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
 
 export class ManageInventoryService {
   constructor(
@@ -230,6 +247,142 @@ export class ManageInventoryService {
   }
 
   /**
+   * Cancelling a stock adjustment (Phase 9.2, owner decision 2026-08-30).
+   *
+   * **WRITE CLASS: T.** The owner chose a real reversal over "post the opposite
+   * adjustment": the goods go back exactly where they were, the value that left
+   * `INVENTORY` returns, and the original document stays visible, struck
+   * through and marked `VOIDED` with the reason — rather than two adjustments
+   * sitting side by side with nothing saying one undid the other.
+   *
+   * **Everything is undone from what was stored**, never recomputed. An
+   * adjustment cancelled a month later at today's moving average would take a
+   * different value off `INVENTORY` than it put on, and the account would stop
+   * equalling the valuation (INV-05).
+   *
+   * The one refusal is the honest one: if the stock an increase created has
+   * since been sold, it is not there to take back, and the shop is told to
+   * correct the shelf with another adjustment instead.
+   */
+  async voidAdjustment(command: VoidStockAdjustmentCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.STOCK_ADJUSTMENT_VOID);
+
+      if (command.reason.trim().length === 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say why this is being cancelled');
+      }
+
+      const original = await this.inventory.findAdjustmentForReversal(
+        tx,
+        ctx,
+        command.adjustmentId,
+      );
+      if (original === null) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'That stock change was not found');
+      }
+      if (original.status !== 'POSTED') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This stock change is already cancelled');
+      }
+
+      const today = this.clock.businessDate(ctx.timezone);
+      // Both ends: the day the reversal posts on, and the day it belongs to.
+      // The day the reversal posts on, and only that day: the document's own
+      // month may be closed, and a cancellation still has to be possible.
+      await this.periods.assertOpen(tx, ctx, today);
+
+      const increase = original.qtyDelta > 0;
+      if (increase && original.newLot !== null && original.newLot.qtyRemaining < original.qty) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Some of this stock has already been sold — correct the shelf with another adjustment instead',
+        );
+      }
+
+      const reversalLines = original.journalLines.map((line) => ({
+        id: Ulid.generate(this.clock),
+        account: line.account as AccountCode,
+        amountMinor: -line.amountMinor,
+        partyId: line.partyId,
+      }));
+      if (rejectEntry({ lines: reversalLines }) !== null) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'This stock change cannot be reversed cleanly');
+      }
+
+      /*
+       * The position after the undo, in value terms: the quantity goes back the
+       * way it came and the value moves by exactly what the adjustment moved.
+       * The average is then what that value comes to over that quantity — which
+       * is the same arithmetic a receipt reversal uses, and keeps the cached
+       * state agreeing with the lots behind it.
+       */
+      const qtyBefore = original.costState?.qtyOnHand ?? 0;
+      const avgBefore = original.costState?.avgUnitCost ?? 0;
+      const qtyAfter = increase
+        ? Qty(qtyBefore).subtract(Qty(original.qty)).raw
+        : Qty(qtyBefore).add(Qty(original.qty)).raw;
+      const valueAfter = increase
+        ? stockValueMinor(qtyBefore, avgBefore) - original.valueMinor
+        : stockValueMinor(qtyBefore, avgBefore) + original.valueMinor;
+      const avgAfter = averageUnitCostFrom(valueAfter, qtyAfter);
+
+      const ok = await this.inventory.reverseAdjustment(tx, ctx, {
+        adjustmentId: original.id,
+        expectedVersion: command.version,
+        businessDate: today,
+        entryMode: entryModeFor(today, today),
+        reason: command.reason.trim(),
+        movementId: Ulid.generate(this.clock),
+        // The mirror of what the adjustment did: an increase leaves, a decrease
+        // comes back.
+        direction: increase ? 'OUT' : 'IN',
+        qty: original.qty,
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: reversalLines,
+        closeLotId: increase ? (original.newLot?.id ?? null) : null,
+        refills: increase
+          ? []
+          : original.consumptions.map((consumption) => ({
+              lotId: consumption.lotId,
+              qty: consumption.qty,
+            })),
+        costState: {
+          id: original.costState?.id ?? Ulid.generate(this.clock),
+          exists: original.costState !== null,
+          qtyOnHand: qtyAfter,
+          avgUnitCost: avgAfter,
+        },
+      });
+      if (!ok) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this stock change — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'stock_adjustment',
+        entityId: original.id,
+        action: 'DELETE',
+        before: {
+          number: original.number,
+          status: 'POSTED',
+          qtyDelta: String(original.qtyDelta),
+          valueMinor: String(original.valueMinor),
+        },
+        after: { number: original.number, status: 'VOIDED', reason: command.reason.trim() },
+        source: 'API',
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'inventory.stock-adjustment-cancelled',
+        aggregateType: 'stock_adjustment',
+        aggregateId: original.id,
+        payload: { number: original.number, qtyDelta: original.qtyDelta },
+      });
+    });
+  }
+
+  /**
    * One stock change, **inside somebody else's transaction** (R-D5).
    *
    * The stock count posts a difference per product and must be all-or-nothing
@@ -263,7 +416,7 @@ export class ManageInventoryService {
         : await this.planDecrease(tx, command.ctx, product.id, location.locationId, qty, qtyOnHand, avgUnitCost);
 
       let posting;
-      try { posting = stockAdjustmentPosting(command.qtyDelta, plan.valueMinor); }
+      try { posting = stockAdjustmentPosting(command.qtyDelta, plan.valueMinor, command.counterAccount); }
       catch { throw new AppError(ErrorCode.VALIDATION_FAILED, ADJUSTMENT_REFUSALS.ADJUSTMENT_HAS_NO_VALUE); }
 
       const adjustment: StockAdjustmentRecord = {
@@ -343,7 +496,7 @@ export class ManageInventoryService {
     if (qty > qtyOnHand) {
       throw new AppError(
         ErrorCode.VALIDATION_FAILED,
-        `Only ${Qty(Math.max(qtyOnHand, 0)).format()} in stock — remove that much or less`,
+        `Only ${formatForDisplay(Math.max(qtyOnHand, 0), QTY_SCALE)} in stock — remove that much or less`,
       );
     }
 
@@ -656,8 +809,3 @@ function withoutCost<T extends { readonly valueMinor?: number; readonly unitCost
  * treats a business date as a string and never as a moment: the end of a warn
  * window must not depend on where the server is standing.
  */
-function addDays(businessDate: string, days: number): string {
-  const at = Date.parse(`${businessDate}T00:00:00Z`);
-  if (Number.isNaN(at)) return businessDate;
-  return new Date(at + days * 86_400_000).toISOString().slice(0, 10);
-}

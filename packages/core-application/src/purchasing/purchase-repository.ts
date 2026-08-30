@@ -38,6 +38,8 @@ export interface NewPurchaseLine {
   readonly expiryDate: string | null;
   readonly lotId: string;
   readonly movementId: string;
+  /** The plan line this fulfils, or null on an ordinary typed bill (Phase 8). */
+  readonly planLineId?: string | null | undefined;
   /** The moving-average cache for this product after this line (DR13.5). */
   readonly costState: {
     readonly id: string;
@@ -64,6 +66,8 @@ export interface NewPurchase {
   /** The open day the cash left, when cash left at all (§5.16.1). */
   readonly sessionId: string | null;
   readonly notes: string | null;
+  /** Marks that order CONVERTED and points it at this bill (Phase 8). */
+  readonly supplierOrderId?: string | null | undefined;
   readonly businessDate: string;
   readonly entryMode: 'ON_TIME' | 'LATE_ENTRY' | 'BACKDATED' | 'CORRECTED';
   readonly journalEntryId: string;
@@ -200,6 +204,44 @@ export interface SupplierPaymentDetail {
     readonly purchaseNumber: string;
     readonly amountMinor: number;
   }[];
+  /** Phase 9.2: what a correction and a cancellation need (D-32), and what they leave. */
+  readonly status: 'POSTED' | 'VOIDED';
+  readonly entryMode: string;
+  readonly voidReason: string | null;
+  readonly version: number;
+}
+
+/**
+ * A corrected supplier payment, re-posted under its own number (Phase 9.2).
+ *
+ * The row is updated in place, the bills are allocated again — the reversal
+ * released the old pointers — and a `SUPPLIER_PAYMENT_CORRECTION` entry
+ * carries the new figures (§2.5).
+ */
+export interface RepostSupplierPayment {
+  readonly id: string;
+  readonly expectedVersion: number;
+  readonly supplierPartyId: string;
+  readonly accountCode: string;
+  readonly amountMinor: number;
+  readonly note: string | null;
+  readonly sessionId: string | null;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly correctionReason: string | null;
+  readonly originalBusinessDate: string | null;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly purchaseId: string;
+    readonly amountMinor: number;
+  }[];
 }
 
 export interface PurchaseRepository {
@@ -236,6 +278,8 @@ export interface PurchaseRepository {
     purchaseId: string | null,
   ): Promise<readonly OpenBillRow[]>;
   insertPayment(tx: Tx, ctx: TenantContext, payment: NewSupplierPayment): Promise<void>;
+  /** Returns false when somebody else changed the payment first (D-32). */
+  repostPayment(tx: Tx, ctx: TenantContext, payment: RepostSupplierPayment): Promise<boolean>;
   findPaymentIdByOperationId(
     tx: Tx,
     ctx: TenantContext,

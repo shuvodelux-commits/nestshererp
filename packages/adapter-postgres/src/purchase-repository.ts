@@ -12,6 +12,7 @@ import type {
   SupplierPaymentDetail,
   TenantContext,
   Tx,
+  RepostSupplierPayment,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
@@ -22,6 +23,7 @@ import {
   inventoryLots,
   journalEntries,
   journalLines,
+  supplierPurchaseOrders,
   parties,
   paymentAllocations,
   productCostState,
@@ -63,6 +65,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     const now = this.clock.now();
 
     await db.insert(purchases).values({
+      supplierOrderId: purchase.supplierOrderId ?? null,
       id: purchase.id,
       tenantId: ctx.tenantId,
       purchaseNumber: purchase.number,
@@ -173,6 +176,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         id: line.id,
         tenantId: ctx.tenantId,
         purchaseId: purchase.id,
+        planLineId: line.planLineId ?? null,
         lineNo: line.lineNo,
         productId: line.productId,
         qty: line.qty,
@@ -187,6 +191,29 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         createdAt: now,
         createdBy: ctx.userId,
       });
+    }
+
+    /*
+     * Closing the order belongs in the bill's own transaction: a bill that
+     * posted while its order stayed Open would have the shop ask the same
+     * supplier for the same goods again.
+     */
+    if (purchase.supplierOrderId !== null && purchase.supplierOrderId !== undefined) {
+      await db
+        .update(supplierPurchaseOrders)
+        .set({
+          status: 'CONVERTED',
+          purchaseId: purchase.id,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${supplierPurchaseOrders.version} + 1`,
+        })
+        .where(
+          and(
+            eq(supplierPurchaseOrders.tenantId, ctx.tenantId),
+            eq(supplierPurchaseOrders.id, purchase.supplierOrderId),
+          ),
+        );
     }
 
     await this.insertJournal(
@@ -480,6 +507,72 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     }));
   }
 
+  async repostPayment(
+    tx: Tx,
+    ctx: TenantContext,
+    payment: RepostSupplierPayment,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    const updated = await db
+      .update(supplierPayments)
+      .set({
+        supplierPartyId: payment.supplierPartyId,
+        accountCode: payment.accountCode,
+        amountMinor: payment.amountMinor,
+        note: payment.note,
+        sessionId: payment.sessionId,
+        businessDate: payment.businessDate,
+        entryMode: payment.entryMode,
+        correctionReason: payment.correctionReason,
+        originalBusinessDate: payment.originalBusinessDate,
+        status: 'POSTED',
+        voidReason: null,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: payment.expectedVersion + 1,
+      })
+      .where(
+        and(
+          eq(supplierPayments.tenantId, ctx.tenantId),
+          eq(supplierPayments.id, payment.id),
+          eq(supplierPayments.version, payment.expectedVersion),
+        ),
+      )
+      .returning({ id: supplierPayments.id, number: supplierPayments.paymentNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    if (payment.allocations.length > 0) {
+      await db.insert(paymentAllocations).values(
+        payment.allocations.map((allocation) => ({
+          id: allocation.id,
+          tenantId: ctx.tenantId,
+          paymentId: payment.id,
+          purchaseId: allocation.purchaseId,
+          amountMinor: allocation.amountMinor,
+          createdAt: now,
+          createdBy: ctx.userId,
+        })),
+      );
+    }
+
+    await this.insertJournal(
+      tx,
+      ctx,
+      payment.journalEntryId,
+      payment.businessDate,
+      payment.entryMode,
+      'SUPPLIER_PAYMENT_CORRECTION',
+      payment.id,
+      saved.number,
+      payment.journalLines,
+    );
+
+    return true;
+  }
+
   async insertPayment(tx: Tx, ctx: TenantContext, payment: NewSupplierPayment): Promise<void> {
     const db = txOf(tx);
     const now = this.clock.now();
@@ -567,6 +660,10 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         note: supplierPayments.note,
         businessDate: supplierPayments.businessDate,
         createdAt: supplierPayments.createdAt,
+        status: supplierPayments.status,
+        entryMode: supplierPayments.entryMode,
+        voidReason: supplierPayments.voidReason,
+        version: supplierPayments.version,
       })
       .from(supplierPayments)
       .innerJoin(
@@ -619,6 +716,10 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         purchaseNumber: allocation.purchaseNumber,
         amountMinor: Number(allocation.amountMinor),
       })),
+      status: row.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
+      entryMode: row.entryMode,
+      voidReason: row.voidReason,
+      version: row.version,
     };
   }
 

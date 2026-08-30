@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { qtyText } from '../components/money/money-text';
 import type {
   CatalogResponse,
   ProductResponse,
@@ -646,7 +647,7 @@ function stockPill(product: ProductResponse): string {
                 <td v-if="canSeeCost" class="num">{{ money(product.purchasePriceMinor) }}</td>
                 <td class="num">{{ money(product.sellingPriceMinor) }}</td>
                 <td class="num">
-                  {{ Qty(product.stockQty).format() }}
+                  {{ qtyText(product.stockQty) }}
                   <span
                     v-if="product.stockStatus !== 'IN_STOCK'"
                     class="pill"

@@ -173,7 +173,31 @@ export interface NewCashMovement {
   readonly journal: NewJournalEntry;
 }
 
+/**
+ * A corrected cash movement, re-posted under its own number (Phase 9.2).
+ *
+ * The row is updated in place and a `CASH_MOVEMENT_CORRECTION` entry is
+ * written; the reversal of what it used to say was posted a moment earlier in
+ * the same transaction, so the journal holds all three facts (§2.5).
+ */
+export interface RepostCashMovement {
+  readonly id: string;
+  readonly expectedVersion: number;
+  readonly kind: CashMovementKind;
+  readonly fromAccountCode: string;
+  readonly toAccountCode: string;
+  readonly amountMinor: number;
+  readonly note: string | null;
+  readonly sessionId: string | null;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly correctionReason: string | null;
+  readonly originalBusinessDate: string | null;
+  readonly journal: NewJournalEntry;
+}
+
 export interface CashMovementRow {
+
   readonly id: string;
   readonly number: string;
   readonly kind: CashMovementKind;
@@ -287,6 +311,8 @@ export interface MoneyRepository {
   reopenSession(tx: Tx, ctx: TenantContext, reopen: CashSessionReopen): Promise<boolean>;
 
   insertMovement(tx: Tx, ctx: TenantContext, movement: NewCashMovement): Promise<void>;
+  /** Returns false when somebody else changed the movement first (D-32). */
+  repostMovement(tx: Tx, ctx: TenantContext, movement: RepostCashMovement): Promise<boolean>;
   listMovements(
     tx: Tx,
     ctx: TenantContext,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { qtyText } from './money/money-text';
 import type {
   CatalogResponse,
   InventoryLot,
@@ -25,6 +26,7 @@ import {
 } from '../api/catalog';
 import { ApiError } from '../api/client';
 import { fetchInventoryLots, recordOpeningStock, setLotExpiry } from '../api/inventory';
+import { fetchParties } from '../api/parties';
 import {
   createProduct,
   deleteProduct,
@@ -173,6 +175,32 @@ async function saveBatchExpiry(lotId: string, value: string): Promise<void> {
 }
 
 const serialOn = computed(() => catalog.value.features.serialTracking);
+const warrantyOn = computed(() => catalog.value.features.warranty);
+
+/** Whole months, or nothing. A blank box means the product carries no warranty. */
+function positiveMonths(text: string): number | null {
+  const months = Number(text.trim());
+  return Number.isSafeInteger(months) && months > 0 ? months : null;
+}
+
+/**
+ * Suppliers, for the optional `usual supplier` box.
+ *
+ * Loaded beside the catalogue rather than with it: a shop that never fills the
+ * box in should not pay for the list, and a form that failed to load it is
+ * still a usable form with one fewer convenience.
+ */
+async function loadSuppliers(): Promise<void> {
+  try {
+    const response = await fetchParties(session.accessToken.value ?? '', {
+      role: 'SUPPLIER',
+      limit: 200,
+    });
+    suppliers.value = response.data.map((party) => ({ id: party.id, name: party.name }));
+  } catch {
+    suppliers.value = [];
+  }
+}
 
 /** The edited product's version, carried back on save for the D-32 lock. */
 const version = ref(1);
@@ -215,6 +243,17 @@ const tracksSerial = ref(false);
  * nothing on this screen behaves any differently for one.
  */
 const conversionUnitId = ref('');
+/*
+ * Phase 8, all optional (owner decisions 2026-08-26). The usual supplier is what
+ * the purchase planner assumes; the minimum order is the smallest that supplier
+ * will sell; warranty months are what the customer and the shop are each
+ * covered for. Left blank, each simply does not apply.
+ */
+const usualSupplierId = ref('');
+const minOrderQty = ref('');
+const warrantyMonths = ref('');
+const supplierWarrantyMonths = ref('');
+const suppliers = ref<Array<{ id: string; name: string }>>([]);
 const conversionFactor = ref('');
 
 /**
@@ -234,6 +273,10 @@ function toggleSecondUnit(on: boolean): void {
   // Unticking is a real answer — "no, it does not" — so it clears both halves.
   // Leaving one behind would be half a rule, which D-41 and the server refuse.
   conversionUnitId.value = '';
+  usualSupplierId.value = '';
+  minOrderQty.value = '';
+  warrantyMonths.value = '';
+  supplierWarrantyMonths.value = '';
   conversionFactor.value = '';
   priceUnit.value = 'BASE';
 }
@@ -302,7 +345,7 @@ const minStockMixed = computed(() => {
 
   const mixed = splitToMixed(raw, factor);
   if (mixed.conversionQty === 0) return null;
-  return `${Qty(mixed.conversionQty).format()} ${conversionUnitName.value} + ${Qty(mixed.baseQty).format()} ${baseUnitName.value}`;
+  return `${qtyText(mixed.conversionQty)} ${conversionUnitName.value} + ${qtyText(mixed.baseQty)} ${baseUnitName.value}`;
 });
 
 /**
@@ -319,8 +362,8 @@ const conversionExample = computed(() => {
   if (factor === null || five === null) return null;
 
   return {
-    five: Qty(five).format(),
-    total: Qty(toBaseQty({ conversionQty: five, baseQty: five }, factor)).format(),
+    five: qtyText(five),
+    total: qtyText(toBaseQty({ conversionQty: five, baseQty: five }, factor)),
   };
 });
 
@@ -405,6 +448,7 @@ function removeIn(kind: CatalogKind) {
   return async (id: string): Promise<string> => {
     const result = await removeCatalogEntry(session.accessToken.value ?? '', kind, id);
     catalog.value = await fetchCatalog(session.accessToken.value ?? '');
+    void loadSuppliers();
 
     return result.outcome === 'ARCHIVED'
       ? 'It is still used by some products, so it was archived rather than deleted. Nothing those products record has changed.'
@@ -443,7 +487,7 @@ function fill(product: ProductResponse): void {
   baseUnitId.value = product.baseUnitId;
   purchasePrice.value = moneyText(product.purchasePriceMinor);
   sellingPrice.value = moneyText(product.sellingPriceMinor);
-  minStock.value = Qty(product.minStockQty).format();
+  minStock.value = qtyText(product.minStockQty);
   brandId.value = product.brandId ?? '';
   sku.value = product.sku ?? '';
   barcode.value = product.barcode ?? '';
@@ -460,8 +504,13 @@ function fill(product: ProductResponse): void {
   tracksSerial.value = product.tracksSerial;
   version.value = product.version;
   conversionUnitId.value = product.conversion?.unitId ?? '';
+  usualSupplierId.value = product.usualSupplierId ?? '';
+  minOrderQty.value = product.minOrderQty === null ? '' : qtyText(product.minOrderQty);
+  warrantyMonths.value = product.warrantyMonths === null ? '' : String(product.warrantyMonths);
+  supplierWarrantyMonths.value =
+    product.supplierWarrantyMonths === null ? '' : String(product.supplierWarrantyMonths);
   conversionFactor.value =
-    product.conversion === null ? '' : Qty(product.conversion.factorQty).format();
+    product.conversion === null ? '' : qtyText(product.conversion.factorQty);
   hasSecondUnit.value = product.conversion !== null;
   // Prices are always stored per base unit, so a reopened form starts there.
   priceUnit.value = 'BASE';
@@ -628,6 +677,10 @@ function toRequest(): SaveProductRequest | null {
     tracksSerial: tracksSerial.value,
     conversionUnitId: hasUnit ? conversionUnitId.value : null,
     conversionFactorQty: conversionQty,
+    usualSupplierId: usualSupplierId.value === '' ? null : usualSupplierId.value,
+    minOrderQty: parseQty(minOrderQty.value),
+    warrantyMonths: positiveMonths(warrantyMonths.value),
+    supplierWarrantyMonths: positiveMonths(supplierWarrantyMonths.value),
   };
 }
 
@@ -1320,6 +1373,61 @@ const baseUnitName = computed(
           <input v-model="tracksSerial" type="checkbox" :disabled="!canSave" />
           <span>Follow each unit of this product by its serial number</span>
         </label>
+
+        <!--
+          Phase 8: four optional boxes, none of them required to save a product.
+          The planner reads the first two and the warranty screens read the last
+          two; a shop that uses neither never has to fill any of them in.
+        -->
+        <div class="sher-grid two">
+          <div class="field">
+            <label for="usual-supplier">
+              Usual supplier <span class="sher-bn">সাধারণত কার কাছে কেনেন</span>
+            </label>
+            <select id="usual-supplier" v-model="usualSupplierId" :disabled="!canSave">
+              <option value="">Work it out from past purchases</option>
+              <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                {{ supplier.name }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="min-order">
+              Minimum order <span class="sher-bn">সবচেয়ে কম কত কেনা যায়</span>
+            </label>
+            <input
+              id="min-order"
+              v-model="minOrderQty"
+              inputmode="decimal"
+              :disabled="!canSave"
+              placeholder="e.g. 5 — leave blank for no minimum"
+            />
+          </div>
+          <div v-if="warrantyOn" class="field">
+            <label for="warranty-months">
+              Warranty for the customer <span class="sher-bn">কাস্টমারের ওয়ারেন্টি (মাস)</span>
+            </label>
+            <input
+              id="warranty-months"
+              v-model="warrantyMonths"
+              inputmode="numeric"
+              :disabled="!canSave"
+              placeholder="12 — counted from the day they buy it"
+            />
+          </div>
+          <div v-if="warrantyOn" class="field">
+            <label for="supplier-warranty-months">
+              Warranty from the supplier <span class="sher-bn">সাপ্লায়ারের ওয়ারেন্টি (মাস)</span>
+            </label>
+            <input
+              id="supplier-warranty-months"
+              v-model="supplierWarrantyMonths"
+              inputmode="numeric"
+              :disabled="!canSave"
+              placeholder="12 — counted from the day it arrives"
+            />
+          </div>
+        </div>
       </AppCard>
 
       <!--
@@ -1346,7 +1454,7 @@ const baseUnitName = computed(
                 <strong>{{ batch.sourceNumber }}</strong>
                 <small>{{ batch.businessDate }}</small>
               </td>
-              <td class="num">{{ Qty(batch.qtyRemaining).format() }}</td>
+              <td class="num">{{ qtyText(batch.qtyRemaining) }}</td>
               <td>
                 <DateOnlyPicker
                   :input-id="`batch-expiry-${batch.id}`"

@@ -116,6 +116,7 @@ export type {
 export {
   allocateLots,
   averageAfterReceipt,
+  averageUnitCostFrom,
   costIssue,
   stockValueMinor,
   unitCostFromMoneyMinor,
@@ -298,3 +299,125 @@ export {
   searchTokens,
 } from './catalog/product-search';
 export type { ProductSearchDoc, ProductSearchFields } from './catalog/product-search';
+
+// ------------------------------------------------------------------ Phase 8
+export {
+  affordableQty,
+  allocateBudget,
+  comparePlanLines,
+  coverDaysOf,
+  dailySalesQty,
+  expectedSalesMinor,
+  investmentMinor,
+  MIN_SELLING_DAYS,
+  PLAN_PRIORITIES,
+  planTotals,
+  priorityOf,
+  roundToPack,
+  suggestFor,
+} from './purchasing/purchase-plan';
+export type {
+  BudgetAllocation,
+  BudgetedLine,
+  PlanLineForBudget,
+  PlanParams,
+  PlanPriority,
+  PlanProduct,
+  PlanSuggestion,
+  PlanTotals,
+  PlanTotalsLine,
+} from './purchasing/purchase-plan';
+export {
+  allocateLandedCost,
+  DEFAULT_LANDED_COST_METHOD,
+  isLandedCostCategory,
+  LANDED_COST_CATEGORIES,
+  rejectLandedCost,
+  splitLateLandedCost,
+} from './purchasing/landed-cost';
+export type {
+  LandedCostCategory,
+  LandedCostMethod,
+  LandedCostRejection,
+  LandedCostShare,
+  LandedCostTarget,
+  LateCostSplit,
+} from './purchasing/landed-cost';
+export {
+  ACTIVE_SERIAL_STATUSES,
+  normalizeSerial,
+  rejectSerial,
+  rejectSerialBatch,
+  serialsOutstanding,
+  wholeUnitsOf,
+} from './inventory/serial-unit';
+export type { SerialBatch, SerialRejection, SerialUnitStatus } from './inventory/serial-unit';
+export {
+  canMoveClaim,
+  nextClaimStatuses,
+  rejectClaim,
+  rejectClaimMove,
+  settlementRecoversValue,
+  settlementReturnsGoods,
+  warrantyCoversOn,
+  warrantyEndDate,
+} from './warranty/warranty-claim';
+export type {
+  ClaimDraft,
+  ClaimHandling,
+  ClaimRejection,
+  ClaimSettlement,
+  ClaimStatus,
+} from './warranty/warranty-claim';
+export {
+  ageingTotals,
+  daysOutstanding,
+  isOverdue,
+  reportAgeingBucket,
+  REPORT_AGEING_BUCKETS,
+} from './reporting/ageing';
+export type { AgeingDocument, AgeingTotals, ReportAgeingBucket } from './reporting/ageing';
+export {
+  grossProfitMinor,
+  marginBp,
+  PERCENT_BASIS,
+  productPerformance,
+  rankMovers,
+  stockTurnBp,
+} from './reporting/performance';
+export type { ProductPerformance, ProductPerformanceInput } from './reporting/performance';
+export { targetProgress } from './reporting/target';
+export type { TargetBasis, TargetProgress, TargetProgressInput } from './reporting/target';
+export { cancellationDate, correctionWindow } from './corrections/correction-window';
+export type { CorrectionEntryMode, CorrectionWindow } from './corrections/correction-window';
+export { parseStatement } from './reconciliation/statement-parser';
+export type {
+  ExtractedTextLine,
+  ParsedStatement,
+  ParsedStatementLine,
+  StatementParseStatus,
+  StatementProblem,
+} from './reconciliation/statement-parser';
+export {
+  daysBetween,
+  describeSimilarity,
+  MATCH_RULES,
+  matchStatement,
+} from './reconciliation/matching';
+export type {
+  MatchableRow,
+  MatchConflict,
+  MatchOutcome,
+  MatchPair,
+  MatchReason,
+  MatchRules,
+} from './reconciliation/matching';
+export {
+  ARCHIVE_VERSION,
+  archiveCompatibility,
+  archiveFileName,
+  archivesToDelete,
+  AUTOMATIC_BACKUP_RETENTION,
+  MANUAL_EXPORT_REMINDER_DAYS,
+} from './backup/archive';
+export type { ArchiveCompatibility, ArchiveManifest } from './backup/archive';

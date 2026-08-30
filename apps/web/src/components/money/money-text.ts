@@ -1,3 +1,5 @@
+import { formatForDisplay, QTY_SCALE } from '@sher/shared-utils';
+
 /**
  * The words the counter reads (UI-74, UI-75; owner decision 2026-08-24).
  *
@@ -138,4 +140,18 @@ export function parseTaka(input: string): number | null {
 
   if (western === '' || !/^\d+(\.\d{0,2})?$/.test(western)) return null;
   return Math.round(Number(western) * 100);
+}
+
+/**
+ * A quantity as a shopkeeper reads it (owner decision 2026-08-26).
+ *
+ * `12` rather than `12.000`, `12.12` rather than `12.120`, at most two decimal
+ * places. Quantities are stored at scale 3 and always will be — this is only
+ * how they are drawn, and the same rule `taka` already followed for paisa.
+ *
+ * Use this everywhere a quantity is shown. The scale-3 `format()` on `Qty` is
+ * the storage form and belongs in tests and round-trips, not on a screen.
+ */
+export function qtyText(rawQty: number): string {
+  return formatForDisplay(rawQty, QTY_SCALE);
 }

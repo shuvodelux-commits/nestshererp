@@ -1,8 +1,10 @@
 import type {
+  CorrectExpenseRequest,
   ExpenseCategoryResponse,
   ExpenseListResponse,
   ExpenseResponse,
   RecordExpenseRequest,
+  VoidDocumentRequest,
 } from '@sher/core-contracts';
 
 import { request } from './client';
@@ -68,4 +70,26 @@ export function renameExpenseCategory(
 /** Archived, not deleted: posted expenses keep pointing at it. */
 export function archiveExpenseCategory(token: string, categoryId: string): Promise<void> {
   return request(`/api/v1/expenses/categories/${categoryId}`, { method: 'DELETE', token });
+}
+
+/**
+ * Correcting and cancelling a posted expense (Phase 9.2).
+ *
+ * `PATCH` sends the whole expense again — the server reverses what was posted
+ * and re-posts these figures under the same number — and `void` needs a reason.
+ */
+export function correctExpense(
+  token: string,
+  id: string,
+  body: CorrectExpenseRequest,
+): Promise<ExpenseResponse> {
+  return request(`/api/v1/expenses/${id}`, { token, method: 'PATCH', body });
+}
+
+export function voidExpense(
+  token: string,
+  id: string,
+  body: VoidDocumentRequest,
+): Promise<ExpenseResponse> {
+  return request(`/api/v1/expenses/${id}/void`, { token, method: 'POST', body });
 }

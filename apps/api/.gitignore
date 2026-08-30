@@ -1,0 +1,4 @@
+
+# Phase 10: nightly archives, recovery dumps and the backup key never enter git.
+backups/
+secrets/

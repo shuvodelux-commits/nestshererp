@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards,
+} from '@nestjs/common';
 import type {
   CashMovementService,
   CashSessionService,
@@ -13,10 +15,12 @@ import type {
 } from '@sher/core-contracts';
 import {
   closeDayRequestSchema,
+  correctCashMovementRequestSchema,
   dailyCashQuerySchema,
   recordCashMovementRequestSchema,
   reopenDayRequestSchema,
   startDayRequestSchema,
+  voidDocumentRequestSchema,
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
@@ -99,4 +103,34 @@ export class CashSessionsController {
 
     return { data: await this.movements.record({ ctx, ...parsed.data }) };
   }
+
+  /**
+   * Correcting a posted movement (Phase 9.2). `PATCH`, because the movement
+   * keeps its identity and its number; what changes is what it says.
+   */
+  @Patch('movements/:id')
+  async correctMovement(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = correctCashMovementRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    await this.movements.correct({ ctx, movementId: id, operationId: id, ...parsed.data });
+    return { data: { ok: true } };
+  }
+
+  /** Cancelling a posted movement. A reason is required (owner rule). */
+  @Post('movements/:id/void')
+  async voidMovement(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = voidDocumentRequestSchema.safeParse(body);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    await this.movements.void({ ctx, movementId: id, ...parsed.data });
+    return { data: { ok: true } };
+  }
 }
+

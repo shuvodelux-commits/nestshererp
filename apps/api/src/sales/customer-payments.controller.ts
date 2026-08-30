@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Headers, HttpCode, Inject, Param, Patch, Post, UseGuards,
+} from '@nestjs/common';
 import type {
   ReceiveCustomerPaymentService,
   SaleQueryService,
   TenantContext,
 } from '@sher/core-application';
 import type { CustomerReceiptResponse, CustomerStandingResponse } from '@sher/core-contracts';
-import { AppError, ErrorCode, receiveCustomerPaymentRequestSchema } from '@sher/core-contracts';
+import {
+  AppError, correctCustomerPaymentRequestSchema, ErrorCode,
+  receiveCustomerPaymentRequestSchema, voidDocumentRequestSchema,
+} from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
 import { RECEIVE_CUSTOMER_PAYMENT_SERVICE, SALE_QUERY_SERVICE } from './tokens';
@@ -48,4 +53,37 @@ export class CustomerPaymentsController {
     }
     return { data: await this.receipts.receive({ ctx, operationId, ...parsed.data }) };
   }
+
+  /** Correcting a posted receipt (Phase 9.2) — same number, new figures. */
+  @Patch('customer-payments/:id')
+  async correct(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: CustomerReceiptResponse }> {
+    const parsed = correctCustomerPaymentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid correction');
+    }
+    return {
+      data: await this.receipts.correct({ ctx, receiptId: id, operationId: id, ...parsed.data }),
+    };
+  }
+
+  /** Cancelling a posted receipt. A reason is required (owner rule). */
+  @Post('customer-payments/:id/void')
+  async void(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: CustomerReceiptResponse }> {
+    const parsed = voidDocumentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'A cancellation needs the document version and a reason');
+    }
+    return {
+      data: await this.receipts.void({ ctx, receiptId: id, ...parsed.data }),
+    };
+  }
 }
+

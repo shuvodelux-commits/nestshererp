@@ -1,10 +1,12 @@
-import { allocateReceipt, receiptPosting } from '@sher/core-domain';
+import { allocateReceipt, correctionWindow, receiptPosting } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { CustomerReceiptResponse } from '@sher/core-contracts';
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { MoneyRepository } from '../money/money-repository';
+import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
+import { reverseMoneyDocument } from '../corrections/reverse-money-document';
 import { entryModeFor } from '../notes/create-note-service';
 import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
@@ -45,7 +47,21 @@ export interface ReceiveCustomerPaymentCommand {
   readonly note: string | null;
 }
 
+export interface VoidReceiptCommand {
+  readonly ctx: TenantContext;
+  readonly receiptId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+export interface CorrectReceiptCommand extends ReceiveCustomerPaymentCommand {
+  readonly receiptId: string;
+  readonly version: number;
+  readonly reason: string | null;
+}
+
 export class ReceiveCustomerPaymentService {
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly access: AccessControl,
@@ -54,6 +70,7 @@ export class ReceiveCustomerPaymentService {
     private readonly parties: PartyRepository,
     private readonly money: MoneyRepository,
     private readonly sales: SaleRepository,
+    private readonly reversals: DocumentReversalRepository,
     private readonly numbering: NumberingService,
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
@@ -202,7 +219,193 @@ export class ReceiveCustomerPaymentService {
     });
   }
 
-  private async detail(tx: Tx, ctx: TenantContext, id: string): Promise<CustomerReceiptResponse> {
+  /**
+   * Cancelling a receipt (Phase 9.2, §2.5).
+   *
+   * **WRITE CLASS: T.** One reversing entry takes the money back out of the
+   * account it went into, the allocations are released so the invoices it
+   * settled are owed again, and the receipt stays with its number, marked
+   * `VOIDED` and carrying the reason — which is mandatory: a customer's balance
+   * going back up needs an explanation somebody can read months later.
+   */
+  async void(command: VoidReceiptCommand): Promise<CustomerReceiptResponse> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.RECEIPT_VOID);
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'CUSTOMER_RECEIPT',
+          documentId: command.receiptId,
+          expectedVersion: command.version,
+          reason: command.reason,
+          intent: 'VOID',
+          entityType: 'customer_receipt',
+          eventType: 'customer.receipt.cancelled',
+        },
+      );
+
+      return this.detail(tx, ctx, command.receiptId);
+    });
+  }
+
+  /**
+   * Correcting a receipt — the wrong amount taken, or the wrong account
+   * (Phase 9.2, owner decisions 2026-08-30).
+   *
+   * Reversed and re-posted under the same number in one transaction, and
+   * **re-allocated from scratch**: the invoices the old figure settled were
+   * released by the reversal, and the corrected amount is pointed at what the
+   * customer actually owes now, oldest first, by the same domain function the
+   * original receipt used.
+   */
+  async correct(command: CorrectReceiptCommand): Promise<CustomerReceiptResponse> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.SALE_RECEIVE_PAYMENT);
+
+      const posted = await this.reversals.findPosted(
+        tx,
+        ctx,
+        'CUSTOMER_RECEIPT',
+        command.receiptId,
+      );
+      if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That receipt was not found');
+
+      const today = this.clock.businessDate(ctx.timezone);
+      const originalDate = command.businessDate ?? posted.businessDate;
+      const placement = correctionWindow(originalDate, today, await this.isOpen(tx, ctx, originalDate));
+      const reason = command.reason?.trim() ?? '';
+      if (placement.reasonRequired && reason === '') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          placement.entryMode === 'PRIOR_PERIOD'
+            ? 'That month is closed, so this correction posts today — say why'
+            : 'A correction dated in the past needs a reason',
+        );
+      }
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'CUSTOMER_RECEIPT',
+          documentId: command.receiptId,
+          expectedVersion: command.version,
+          reason: reason === '' ? 'Corrected' : reason,
+          intent: 'CORRECT',
+          // Both halves of a correction land on the same day (see the port).
+          businessDate: placement.businessDate,
+          entityType: 'customer_receipt',
+          eventType: 'customer.receipt.corrected',
+        },
+      );
+
+      const customer = await this.parties.findById(tx, ctx, command.customerPartyId);
+      if (customer === null) throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
+
+      const account = await resolvePaymentAccount(
+        { access: this.access, money: this.money },
+        tx,
+        ctx,
+        command.accountCode,
+        placement.businessDate,
+      );
+
+      const invoices = await this.sales.listOpenInvoices(tx, ctx, customer.id, command.saleIds);
+      const { allocations, advanceMinor } = allocateReceipt(
+        command.amountMinor,
+        invoices.map((invoice) => ({
+          saleId: invoice.id,
+          outstandingMinor: invoice.outstandingMinor,
+        })),
+      );
+      const settledMinor = command.amountMinor - advanceMinor;
+
+      const posting = receiptPosting({
+        partyId: customer.id,
+        account: account.code,
+        amountMinor: command.amountMinor,
+        settledMinor,
+      });
+
+      const reposted = await this.sales.repostReceipt(tx, ctx, {
+        id: command.receiptId,
+        // The reversal bumped the version a moment ago.
+        expectedVersion: command.version + 1,
+        customerPartyId: customer.id,
+        accountCode: account.code,
+        amountMinor: command.amountMinor,
+        note: command.note,
+        sessionId: account.sessionId,
+        businessDate: placement.businessDate,
+        entryMode: placement.entryMode,
+        correctionReason: reason === '' ? null : reason,
+        originalBusinessDate: placement.originalBusinessDate,
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: posting.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
+        allocations: allocations.map((allocation) => ({
+          id: Ulid.generate(this.clock),
+          saleId: allocation.saleId,
+          amountMinor: allocation.amountMinor,
+        })),
+      });
+      if (!reposted) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this receipt — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'customer_receipt',
+        entityId: command.receiptId,
+        action: 'UPDATE',
+        before: {
+          amountMinor: String(posted.amountMinor),
+          businessDate: posted.businessDate,
+        },
+        after: {
+          amountMinor: String(command.amountMinor),
+          businessDate: placement.businessDate,
+          entryMode: placement.entryMode,
+          reason,
+        },
+        source: 'API',
+      });
+
+      return this.detail(tx, ctx, command.receiptId);
+    });
+  }
+
+  /** Whether a business date's month still accepts postings (§5.14). */
+  private async isOpen(tx: Tx, ctx: TenantContext, businessDate: string): Promise<boolean> {
+    try {
+      await this.periods.assertOpen(tx, ctx, businessDate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async detail(
+tx: Tx, ctx: TenantContext, id: string): Promise<CustomerReceiptResponse> {
     const row = await this.sales.findReceiptById(tx, ctx, id);
     if (row === null) throw new AppError(ErrorCode.NOT_FOUND, 'Receipt not found');
     return {
@@ -222,6 +425,10 @@ export class ReceiveCustomerPaymentService {
         saleNumber: allocation.saleNumber,
         amountMinor: allocation.amountMinor,
       })),
+      status: row.status,
+      entryMode: row.entryMode,
+      voidReason: row.voidReason,
+      version: row.version,
     };
   }
 }

@@ -6,6 +6,7 @@ import type {
   InventoryOverviewResponse,
   InventoryValuationResponse,
   OpeningStockResponse,
+  ReportRow,
   StockAdjustmentRow,
 } from '@sher/core-contracts';
 import { Money, Qty, UnitCost } from '@sher/shared-utils';
@@ -21,9 +22,10 @@ import {
   fetchOpeningStock,
   fetchStockAdjustments,
 } from '../api/inventory';
+import { fetchStockReport } from '../api/reports';
 import { ApiError } from '../api/client';
 import { useSession } from '../auth/session';
-import { taka } from '../components/money/money-text';
+import { taka, qtyText } from '../components/money/money-text';
 import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
@@ -71,6 +73,18 @@ const expiring = ref<readonly InventoryLot[]>([]);
  */
 const expiryFilter = ref<'EXPIRED' | 'SOON' | 'MISSING' | null>(null);
 const expirySummary = ref<ExpirySummary | null>(null);
+
+/*
+ * Phase 9 folded the Stock report into this page rather than building a second
+ * screen that answers the same question (owner decision 2026-08-30). Cost of
+ * goods sold and margin per product are the two views the inventory endpoints
+ * cannot serve, because both need sales data the stock tables do not carry —
+ * so they come from `/reports/stock`, and everything else on this page still
+ * comes from where it always did.
+ */
+const cogsRows = ref<readonly ReportRow[]>([]);
+const marginRows = ref<readonly ReportRow[]>([]);
+
 
 async function setExpiryFilter(next: 'EXPIRED' | 'SOON' | 'MISSING'): Promise<void> {
   // Clicking the chip that is already on turns it off, back to the full list.
@@ -180,6 +194,21 @@ async function load(): Promise<void> {
     } catch {
       costAdjustments.value = [];
     }
+    // Both need a range; without one the shop's whole history would be summed
+    // into a single meaningless row, so they use the month by default.
+    const period = { from: fromDate.value === '' ? monthStart() : fromDate.value,
+                     to: toDate.value === '' ? todayDate() : toDate.value };
+    try {
+      const [cogs, margin] = await Promise.all([
+        fetchStockReport(token, { ...period, view: 'COGS' }),
+        fetchStockReport(token, { ...period, view: 'MARGIN' }),
+      ]);
+      cogsRows.value = cogs.rows;
+      marginRows.value = margin.rows;
+    } catch {
+      cogsRows.value = [];
+      marginRows.value = [];
+    }
   }
 
   loading.value = false;
@@ -189,7 +218,16 @@ onMounted(load);
 // Any posting anywhere refreshes what this screen is showing.
 onDataChanged(load);
 
+/** Today and the first of this month, for the two sales-derived sections. */
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+function monthStart(): string {
+  return `${todayDate().slice(0, 7)}-01`;
+}
+
 function clearRange(): void {
+
   fromDate.value = '';
   toDate.value = '';
   void load();
@@ -283,8 +321,8 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
 
 <template>
   <AppShell
-    title="Inventory Report"
-    :breadcrumb="['Dashboard', 'Inventory Report']"
+    title="Stock report"
+    :breadcrumb="['Dashboard', 'Reports', 'Stock']"
     help-bn="স্টকের হিসাব — কত আছে, কত দাম, কী নষ্ট হয়েছে"
   >
     <form class="filters" @submit.prevent="load">
@@ -363,8 +401,8 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                   <strong>{{ row.productName }}</strong>
                   <small>{{ row.baseUnitName }}</small>
                 </td>
-                <td class="num">{{ Qty(row.qtyOnHand).format() }}</td>
-                <td class="num">{{ Qty(row.minStockQty).format() }}</td>
+                <td class="num">{{ qtyText(row.qtyOnHand) }}</td>
+                <td class="num">{{ qtyText(row.minStockQty) }}</td>
                 <td>
                   <span
                     class="pill"
@@ -401,7 +439,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                   <small>{{ row.baseUnitName }}</small>
                 </td>
                 <td>{{ row.locationName ?? 'Not stocked yet' }}</td>
-                <td class="num">{{ Qty(row.qtyOnHand).format() }}</td>
+                <td class="num">{{ qtyText(row.qtyOnHand) }}</td>
                 <td v-if="canSeeCost" class="num">{{ money(row.valueMinor) }}</td>
               </tr>
             </tbody>
@@ -441,7 +479,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                     {{ reasonLabels[row.reason] ?? row.reason }}
                     <small v-if="row.note !== null">{{ row.note }}</small>
                   </td>
-                  <td class="num">{{ Qty(row.qtyDelta).format() }}</td>
+                  <td class="num">{{ qtyText(row.qtyDelta) }}</td>
                   <td v-if="canSeeCost" class="num">{{ money(row.valueMinor) }}</td>
                   <td>{{ row.createdByName }}</td>
                 </tr>
@@ -485,7 +523,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                   <span class="pill" :class="row.direction === 'IN' ? 'pill-ok' : 'pill-warn'">
                     {{ row.direction === 'IN' ? 'in' : 'out' }}
                   </span>
-                  {{ Qty(row.qty).format() }}
+                  {{ qtyText(row.qty) }}
                 </td>
                 <td v-if="canSeeCost" class="num">
                   {{ row.unitCost === undefined ? '—' : `৳${UnitCost(row.unitCost).format()}` }}
@@ -566,7 +604,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                 </td>
                 <td><strong>{{ lot.productName }}</strong></td>
                 <td>{{ lot.sourceNumber }}</td>
-                <td class="num">{{ Qty(lot.qtyRemaining).format() }}</td>
+                <td class="num">{{ qtyText(lot.qtyRemaining) }}</td>
                 <td class="num no-print">
                   <button
                     v-if="lot.sourceType === 'PURCHASE'"
@@ -609,8 +647,8 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
                 <td>{{ lot.businessDate }}</td>
                 <td><strong>{{ lot.productName }}</strong></td>
                 <td>{{ lot.sourceNumber }}</td>
-                <td class="num">{{ Qty(lot.qtyReceived).format() }}</td>
-                <td class="num">{{ Qty(lot.qtyRemaining).format() }}</td>
+                <td class="num">{{ qtyText(lot.qtyReceived) }}</td>
+                <td class="num">{{ qtyText(lot.qtyRemaining) }}</td>
                 <td v-if="canSeeCost" class="num">{{ money(lot.valueMinor) }}</td>
               </tr>
             </tbody>
@@ -652,6 +690,62 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
         </div>
       </AppCard>
 
+      <!-- ------------------------------------------ cost of goods sold (§5.20) -->
+      <AppCard
+        v-if="canSeeCost && cogsRows.length > 0"
+        title="Cost of goods sold"
+        subtitle="বিক্রি হওয়া পণ্যের কেনা দাম — দিন অনুযায়ী"
+      >
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date<small>তারিখ</small></th>
+                <th class="num">Entries<small>কয়টি লেনদেন</small></th>
+                <th class="num">Cost of goods sold<small>বিক্রির কেনা দাম</small></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in cogsRows" :key="row.key">
+                <td>{{ row.label }}</td>
+                <td class="num">{{ row.count }}</td>
+                <td class="num">{{ money(row.amountMinor) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+
+      <!-- ------------------------------------------------ margin per product -->
+      <AppCard
+        v-if="canSeeCost && marginRows.length > 0"
+        title="Margin per product"
+        subtitle="কোন পণ্যে কত লাভ"
+      >
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Product<small>পণ্য</small></th>
+                <th class="num">Sold<small>বিক্রি হয়েছে</small></th>
+                <th class="num">Earned<small>বিক্রির টাকা</small></th>
+                <th class="num">Cost<small>কেনা দাম</small></th>
+                <th class="num">Profit<small>লাভ</small></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in marginRows" :key="row.key">
+                <td><strong>{{ row.label }}</strong></td>
+                <td class="num">{{ qtyText(row.qty) }}</td>
+                <td class="num">{{ money(row.amountMinor) }}</td>
+                <td class="num">{{ money(row.costMinor ?? 0) }}</td>
+                <td class="num">{{ money(row.profitMinor ?? 0) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+
       <p v-if="!canSeeCost" class="fine">
         Stock values and cost corrections are not shown to your role, and are not sent to this
         screen at all.
@@ -676,7 +770,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
         <div><span>Product</span><strong>{{ sourceOpening.productName }}</strong></div>
         <div><span>Date</span><strong>{{ sourceOpening.businessDate }}</strong></div>
         <div><span>Where</span><strong>{{ sourceOpening.locationName }}</strong></div>
-        <div><span>Opening quantity</span><strong>{{ Qty(sourceOpening.qty).format() }}</strong></div>
+        <div><span>Opening quantity</span><strong>{{ qtyText(sourceOpening.qty) }}</strong></div>
         <div v-if="sourceOpening.expiryDate">
           <span>Expiry</span><strong>{{ sourceOpening.expiryDate }}</strong>
         </div>
@@ -695,7 +789,7 @@ async function openSource(sourceType: string, sourceId: string): Promise<void> {
           <span>Reason</span>
           <strong>{{ reasonLabels[sourceAdjustment.reason] ?? sourceAdjustment.reason }}</strong>
         </div>
-        <div><span>Quantity</span><strong>{{ Qty(sourceAdjustment.qtyDelta).format() }}</strong></div>
+        <div><span>Quantity</span><strong>{{ qtyText(sourceAdjustment.qtyDelta) }}</strong></div>
         <div v-if="sourceAdjustment.valueMinor !== undefined">
           <span>Value</span><strong>{{ money(sourceAdjustment.valueMinor) }}</strong>
         </div>

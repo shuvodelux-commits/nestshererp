@@ -28,7 +28,13 @@ import StartDayDialog from '../money/StartDayDialog.vue';
  * Every figure moves as the amount is typed: what this settles, what is left
  * owing, and what would be held as an advance.
  */
-const props = defineProps<{ partyId: string; partyName: string; saleId?: string | undefined }>();
+/** Phase 11: `prefill` opens this on a statement line's figures (§5.17). */
+const props = defineProps<{
+  partyId: string;
+  partyName: string;
+  saleId?: string | undefined;
+  prefill?: { readonly amountMinor: number; readonly accountId: string } | null;
+}>();
 const emit = defineEmits<{ close: []; received: [] }>();
 
 const session = useSession();
@@ -89,6 +95,14 @@ async function load(): Promise<void> {
     standing.value = standingResponse;
     accountId.value = accounts.value.find((account) => account.isDrawer)?.id ?? accounts.value[0]?.id ?? '';
     amount.value = outstandingMinor.value / 100;
+
+    // A statement line says what actually arrived and where; the due is only a
+    // guess at it, so the real figure wins when there is one.
+    const suggested = props.prefill ?? null;
+    if (suggested !== null) {
+      amount.value = Math.abs(suggested.amountMinor) / 100;
+      accountId.value = suggested.accountId;
+    }
   } catch (cause) {
     failure.value = describe(cause, 'Could not open this customer');
   }

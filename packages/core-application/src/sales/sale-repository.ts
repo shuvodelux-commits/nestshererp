@@ -268,6 +268,11 @@ export interface CustomerReceiptRow {
     readonly saleNumber: string;
     readonly amountMinor: number;
   }[];
+  /** Phase 9.2: what a correction and a cancellation need (D-32), and what they leave. */
+  readonly status: 'POSTED' | 'VOIDED';
+  readonly entryMode: string;
+  readonly voidReason: string | null;
+  readonly version: number;
 }
 
 /** A customer's standing, read from the journal (INV-06), never from invoices. */
@@ -458,6 +463,39 @@ export interface SaleDraftRow extends NewSaleDraft {
   readonly savedAt: Date;
 }
 
+/**
+ * A corrected receipt, re-posted under its own number (Phase 9.2).
+ *
+ * The row is updated in place, the allocations are written again — the
+ * reversal released the old ones — and a `CUSTOMER_RECEIPT_CORRECTION` entry
+ * carries the new figures. All three facts stay in the journal (§2.5).
+ */
+export interface RepostCustomerReceipt {
+  readonly id: string;
+  readonly expectedVersion: number;
+  readonly customerPartyId: string;
+  readonly accountCode: string;
+  readonly amountMinor: number;
+  readonly note: string | null;
+  readonly sessionId: string | null;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly correctionReason: string | null;
+  readonly originalBusinessDate: string | null;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly saleId: string;
+    readonly amountMinor: number;
+  }[];
+}
+
 export interface SaleRepository {
   findSaleIdByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<string | null>;
   insertSale(tx: Tx, ctx: TenantContext, sale: NewSale): Promise<void>;
@@ -477,6 +515,8 @@ export interface SaleRepository {
 
   findReceiptIdByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<string | null>;
   insertReceipt(tx: Tx, ctx: TenantContext, receipt: NewCustomerReceipt): Promise<void>;
+  /** Returns false when somebody else changed the receipt first (D-32). */
+  repostReceipt(tx: Tx, ctx: TenantContext, receipt: RepostCustomerReceipt): Promise<boolean>;
   findReceiptById(tx: Tx, ctx: TenantContext, id: string): Promise<CustomerReceiptRow | null>;
 
   listPosProducts(

@@ -6,6 +6,8 @@ import type {
   ReturnableBillRow,
   TenantContext,
   Tx,
+  PurchaseReturnForReversal,
+  PurchaseReturnReversal,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -151,6 +153,196 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         actualUnitCost: Number(line.actualUnitCost),
       })),
     };
+  }
+
+  async findReturnForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    returnId: string,
+  ): Promise<PurchaseReturnForReversal | null> {
+    const db = txOf(tx);
+
+    const head = await db.execute<{
+      id: string; number: string; status: string; business_date: string; version: number;
+    }>(sql`
+      SELECT r.id, r.return_number AS number, r.status, r.business_date::text AS business_date,
+             r.version
+        FROM purchase_returns r
+       WHERE r.tenant_id = ${ctx.tenantId} AND r.id = ${returnId}
+       LIMIT 1
+    `);
+    const row = head.rows[0];
+    if (row === undefined) return null;
+
+    const journal = await db.execute<{
+      account_code: string; amount_minor: string; party_id: string | null;
+    }>(sql`
+      SELECT jl.account_code, jl.amount_minor::text AS amount_minor, jl.party_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.tenant_id = jl.tenant_id AND je.id = jl.journal_entry_id
+       WHERE jl.tenant_id = ${ctx.tenantId}
+         AND je.source_document_id = ${returnId}
+         AND je.source_document_type = 'PURCHASE_RETURN'
+       ORDER BY jl.id
+    `);
+
+    const lines = await db.execute<{
+      product_id: string; lot_id: string; location_id: string; qty: string; cost_minor: string;
+    }>(sql`
+      SELECT l.product_id, l.lot_id, r.location_id, l.qty::text AS qty,
+             l.cost_minor::text AS cost_minor
+        FROM purchase_return_lines l
+        JOIN purchase_returns r ON r.tenant_id = l.tenant_id AND r.id = l.return_id
+       WHERE l.tenant_id = ${ctx.tenantId} AND l.return_id = ${returnId}
+       ORDER BY l.line_no
+    `);
+
+    const states = await db.execute<{
+      id: string; product_id: string; location_id: string; qty_on_hand: string;
+      avg_unit_cost: string;
+    }>(sql`
+      SELECT s.id, s.product_id, s.location_id, s.qty_on_hand::text AS qty_on_hand,
+             s.avg_unit_cost::text AS avg_unit_cost
+        FROM product_cost_state s
+       WHERE s.tenant_id = ${ctx.tenantId}
+         AND s.product_id IN (
+           SELECT l.product_id FROM purchase_return_lines l
+            WHERE l.tenant_id = ${ctx.tenantId} AND l.return_id = ${returnId}
+         )
+    `);
+
+    return {
+      id: row.id.trim(),
+      number: row.number,
+      status: row.status,
+      businessDate: row.business_date,
+      version: row.version,
+      journalLines: journal.rows.map((line) => ({
+        account: line.account_code,
+        amountMinor: Number(line.amount_minor),
+        partyId: line.party_id === null ? null : line.party_id.trim(),
+      })),
+      lines: lines.rows.map((line) => ({
+        productId: line.product_id.trim(),
+        lotId: line.lot_id.trim(),
+        locationId: line.location_id.trim(),
+        qty: Number(line.qty),
+        costMinor: Number(line.cost_minor),
+      })),
+      costStates: states.rows.map((state) => ({
+        id: state.id.trim(),
+        productId: state.product_id.trim(),
+        locationId: state.location_id.trim(),
+        qtyOnHand: Number(state.qty_on_hand),
+        avgUnitCost: Number(state.avg_unit_cost),
+      })),
+    };
+  }
+
+  /**
+   * Undoing one return to a supplier: the goods go back into the lot they left,
+   * the credit is reversed, and the document stays, marked `VOIDED` (§2.5).
+   */
+  async reversePurchaseReturn(
+    tx: Tx,
+    ctx: TenantContext,
+    reversal: PurchaseReturnReversal,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    const updated = await db
+      .update(purchaseReturns)
+      .set({
+        status: 'VOIDED',
+        voidReason: reversal.reason,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${purchaseReturns.version} + 1`,
+      })
+      .where(
+        and(
+          eq(purchaseReturns.tenantId, ctx.tenantId),
+          eq(purchaseReturns.id, reversal.returnId),
+          eq(purchaseReturns.version, reversal.expectedVersion),
+          eq(purchaseReturns.status, 'POSTED'),
+        ),
+      )
+      .returning({ id: purchaseReturns.id, number: purchaseReturns.returnNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    for (const line of reversal.lines) {
+      await db.insert(stockMovements).values({
+        id: line.movementId,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        productId: line.productId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        qty: line.qty,
+        direction: 'IN',
+        businessDate: reversal.businessDate,
+        sourceDocumentType: 'PURCHASE_RETURN_REVERSAL',
+        sourceDocumentId: reversal.returnId,
+        sourceNumber: saved.number,
+        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
+      });
+
+      await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: sql`${inventoryLots.qtyRemaining} + ${line.qty}`,
+          // The lot the goods left is open again, with them back in it.
+          status: 'OPEN',
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, line.lotId)));
+    }
+
+    for (const state of reversal.costStates) {
+      if (!state.exists) continue;
+      await db
+        .update(productCostState)
+        .set({
+          qtyOnHand: state.qtyOnHand,
+          avgUnitCost: state.avgUnitCost,
+          lastRecomputedAt: now,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${productCostState.version} + 1`,
+        })
+        .where(and(eq(productCostState.tenantId, ctx.tenantId), eq(productCostState.id, state.id)));
+    }
+
+    await db.insert(journalEntries).values({
+      id: reversal.journalEntryId,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+      businessDate: reversal.businessDate,
+      sourceDocumentType: 'PURCHASE_RETURN_REVERSAL',
+      sourceDocumentId: reversal.returnId,
+      sourceNumber: saved.number,
+      entryMode: reversal.entryMode,
+    });
+    await db.insert(journalLines).values(
+      reversal.journalLines.map((line) => ({
+        id: line.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        journalEntryId: reversal.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      })),
+    );
+
+    return true;
   }
 
   async postPurchaseReturn(tx: Tx, ctx: TenantContext, draft: NewPurchaseReturn): Promise<void> {

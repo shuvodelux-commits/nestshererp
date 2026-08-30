@@ -19,6 +19,7 @@ import type {
   StatementLineRow,
   TenantContext,
   Tx,
+  RepostCashMovement,
 } from '@sher/core-application';
 import type { CashMovementKind, MoneyAccountStatus, MoneyAccountType } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
@@ -602,7 +603,50 @@ export class PostgresMoneyRepository implements MoneyRepository {
     await this.postJournal(tx, ctx, movement.journal);
   }
 
+  async repostMovement(
+    tx: Tx,
+    ctx: TenantContext,
+    movement: RepostCashMovement,
+  ): Promise<boolean> {
+    const now = this.clock.now();
+
+    // Back to POSTED from the VOIDED the reversal left moments ago, in the same
+    // transaction — so no reader ever sees the movement cancelled or missing.
+    const updated = await txOf(tx)
+      .update(cashMovements)
+      .set({
+        kind: movement.kind,
+        fromAccountCode: movement.fromAccountCode,
+        toAccountCode: movement.toAccountCode,
+        amountMinor: movement.amountMinor,
+        note: movement.note,
+        sessionId: movement.sessionId,
+        businessDate: movement.businessDate,
+        entryMode: movement.entryMode,
+        correctionReason: movement.correctionReason,
+        originalBusinessDate: movement.originalBusinessDate,
+        status: 'POSTED',
+        voidReason: null,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: movement.expectedVersion + 1,
+      })
+      .where(
+        and(
+          eq(cashMovements.tenantId, ctx.tenantId),
+          eq(cashMovements.id, movement.id),
+          eq(cashMovements.version, movement.expectedVersion),
+        ),
+      )
+      .returning({ id: cashMovements.id });
+    if (updated.length === 0) return false;
+
+    await this.postJournal(tx, ctx, movement.journal);
+    return true;
+  }
+
   async listMovements(
+
     tx: Tx,
     ctx: TenantContext,
     sessionId: string,

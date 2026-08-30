@@ -20,6 +20,7 @@ export const EMPTY_CATALOG: CatalogResponse = {
     productOffers: false,
     expiryTracking: false,
     serialTracking: false,
+  warranty: false,
     customerGroups: false,
     vendors: false,
   },

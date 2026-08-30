@@ -334,6 +334,26 @@ export const recordCashMovementRequestSchema = z
 
 export type RecordCashMovementRequest = z.infer<typeof recordCashMovementRequestSchema>;
 
+/**
+ * Correcting a posted movement (Phase 9.2). The whole movement is sent again,
+ * not a patch: the server reverses what was posted and re-posts these figures
+ * under the same number, so what arrives is what the movement **becomes**.
+ *
+ * `reason` is optional for a same-day fix — the before and after values are in
+ * the audit trail — and required when the correction cannot post on its own
+ * date, which is any backdated one and any whose month has closed.
+ */
+export const correctCashMovementRequestSchema = recordCashMovementRequestSchema
+  .omit({ operationId: true })
+  .extend({
+    version: z.number().int().nonnegative(),
+    reason: z.string().trim().max(300).nullable().default(null),
+  })
+  .strict();
+
+export type CorrectCashMovementRequest = z.infer<typeof correctCashMovementRequestSchema>;
+
+
 export const cashMovementResponseSchema = z.object({
   id: ULID,
   number: z.string(),

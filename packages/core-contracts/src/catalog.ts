@@ -70,6 +70,7 @@ export const catalogFeaturesSchema = z
     productOffers: z.boolean(),
     expiryTracking: z.boolean(),
     serialTracking: z.boolean(),
+    warranty: z.boolean(),
     customerGroups: z.boolean(),
     vendors: z.boolean(),
   })

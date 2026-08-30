@@ -9,10 +9,12 @@ import type {
   SalesReturnRow,
   TenantContext,
   Tx,
+  SalesReturnForReversal,
+  SalesReturnReversal,
 } from '@sher/core-application';
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, gte, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import {
@@ -345,6 +347,232 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
    * it does, which is what stops goods being back on the shelf with no refund
    * recorded against them.
    */
+  async findReturnForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    returnId: string,
+  ): Promise<SalesReturnForReversal | null> {
+    const db = txOf(tx);
+
+    const head = await db.execute<{
+      id: string; number: string; status: string; business_date: string; version: number;
+      cogs_minor: string;
+    }>(sql`
+      SELECT r.id, r.return_number AS number, r.status, r.business_date::text AS business_date,
+             r.version, r.cogs_minor::text AS cogs_minor
+        FROM sales_returns r
+       WHERE r.tenant_id = ${ctx.tenantId} AND r.id = ${returnId}
+       LIMIT 1
+    `);
+    const row = head.rows[0];
+    if (row === undefined) return null;
+
+    const journal = await db.execute<{
+      account_code: string; amount_minor: string; party_id: string | null;
+    }>(sql`
+      SELECT jl.account_code, jl.amount_minor::text AS amount_minor, jl.party_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.tenant_id = jl.tenant_id AND je.id = jl.journal_entry_id
+       WHERE jl.tenant_id = ${ctx.tenantId}
+         AND je.source_document_id = ${returnId}
+         AND je.source_document_type = 'SALES_RETURN'
+       ORDER BY jl.id
+    `);
+
+    const lines = await db.execute<{
+      product_id: string; location_id: string; qty: string; cost_minor: string;
+    }>(sql`
+      SELECT l.product_id, r.location_id, l.qty::text AS qty, l.cost_minor::text AS cost_minor
+        FROM sales_return_lines l
+        JOIN sales_returns r ON r.tenant_id = l.tenant_id AND r.id = l.return_id
+       WHERE l.tenant_id = ${ctx.tenantId} AND l.return_id = ${returnId}
+       ORDER BY l.line_no
+    `);
+
+    /*
+     * What went back into which lot, and what is in that lot **now** — the
+     * difference is what stops a cancellation from taking back goods that have
+     * since been sold again.
+     */
+    const refills = await db.execute<{
+      product_id: string; lot_id: string; qty: string; lot_remaining: string;
+    }>(sql`
+      SELECT lc.lot_id, c.qty::text AS qty, il.qty_remaining::text AS lot_remaining,
+             il.product_id
+        FROM lot_consumptions c
+        JOIN lot_consumptions lc ON lc.id = c.id
+        JOIN inventory_lots il ON il.tenant_id = c.tenant_id AND il.id = c.lot_id
+       WHERE c.tenant_id = ${ctx.tenantId}
+         AND c.document_type = 'SALES_RETURN'
+         AND c.document_id = ${returnId}
+    `);
+
+    const states = await db.execute<{
+      id: string; product_id: string; location_id: string; qty_on_hand: string;
+      avg_unit_cost: string;
+    }>(sql`
+      SELECT s.id, s.product_id, s.location_id, s.qty_on_hand::text AS qty_on_hand,
+             s.avg_unit_cost::text AS avg_unit_cost
+        FROM product_cost_state s
+       WHERE s.tenant_id = ${ctx.tenantId}
+         AND s.product_id IN (
+           SELECT l.product_id FROM sales_return_lines l
+            WHERE l.tenant_id = ${ctx.tenantId} AND l.return_id = ${returnId}
+         )
+    `);
+
+    return {
+      id: row.id.trim(),
+      number: row.number,
+      status: row.status,
+      businessDate: row.business_date,
+      version: row.version,
+      cogsMinor: Number(row.cogs_minor),
+      journalLines: journal.rows.map((line) => ({
+        account: line.account_code,
+        amountMinor: Number(line.amount_minor),
+        partyId: line.party_id === null ? null : line.party_id.trim(),
+      })),
+      lines: lines.rows.map((line) => ({
+        productId: line.product_id.trim(),
+        locationId: line.location_id.trim(),
+        qty: Number(line.qty),
+        costMinor: Number(line.cost_minor),
+        refills: refills.rows
+          .filter((refill) => refill.product_id.trim() === line.product_id.trim())
+          .map((refill) => ({
+            lotId: refill.lot_id.trim(),
+            qty: Number(refill.qty),
+            lotRemaining: Number(refill.lot_remaining),
+          })),
+      })),
+      costStates: states.rows.map((state) => ({
+        id: state.id.trim(),
+        productId: state.product_id.trim(),
+        locationId: state.location_id.trim(),
+        qtyOnHand: Number(state.qty_on_hand),
+        avgUnitCost: Number(state.avg_unit_cost),
+      })),
+    };
+  }
+
+  /**
+   * Undoing one sales return: the goods leave the shelf again through the very
+   * lots they were put back into, the refund or credit is reversed, and the
+   * document stays, marked `VOIDED` with its reason (§2.5).
+   */
+  async reverseSalesReturn(
+    tx: Tx,
+    ctx: TenantContext,
+    reversal: SalesReturnReversal,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    const updated = await db
+      .update(salesReturns)
+      .set({
+        status: 'VOIDED',
+        voidReason: reversal.reason,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: sql`${salesReturns.version} + 1`,
+      })
+      .where(
+        and(
+          eq(salesReturns.tenantId, ctx.tenantId),
+          eq(salesReturns.id, reversal.returnId),
+          eq(salesReturns.version, reversal.expectedVersion),
+          eq(salesReturns.status, 'POSTED'),
+        ),
+      )
+      .returning({ id: salesReturns.id, number: salesReturns.returnNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    for (const line of reversal.lines) {
+      await db.insert(stockMovements).values({
+        id: line.movementId,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        productId: line.productId,
+        locationId: line.locationId,
+        lotId: null,
+        qty: line.qty,
+        direction: 'OUT',
+        businessDate: reversal.businessDate,
+        sourceDocumentType: 'SALES_RETURN_REVERSAL',
+        sourceDocumentId: reversal.returnId,
+        sourceNumber: saved.number,
+        unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
+      });
+
+      for (const take of line.takeBack) {
+        await db
+          .update(inventoryLots)
+          .set({
+            qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${take.qty}`,
+            // A lot emptied again closes again (DR13.11).
+            status: sql`CASE WHEN ${inventoryLots.qtyRemaining} - ${take.qty} <= 0 THEN 'CLOSED' ELSE 'OPEN' END`,
+            updatedAt: now,
+            updatedBy: ctx.userId,
+            version: sql`${inventoryLots.version} + 1`,
+          })
+          .where(
+            and(
+              eq(inventoryLots.tenantId, ctx.tenantId),
+              eq(inventoryLots.id, take.lotId),
+              gte(inventoryLots.qtyRemaining, take.qty),
+            ),
+          );
+      }
+    }
+
+    for (const state of reversal.costStates) {
+      if (!state.exists) continue;
+      await db
+        .update(productCostState)
+        .set({
+          qtyOnHand: state.qtyOnHand,
+          avgUnitCost: state.avgUnitCost,
+          lastRecomputedAt: now,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${productCostState.version} + 1`,
+        })
+        .where(
+          and(eq(productCostState.tenantId, ctx.tenantId), eq(productCostState.id, state.id)),
+        );
+    }
+
+    await db.insert(journalEntries).values({
+      id: reversal.journalEntryId,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+      businessDate: reversal.businessDate,
+      sourceDocumentType: 'SALES_RETURN_REVERSAL',
+      sourceDocumentId: reversal.returnId,
+      sourceNumber: saved.number,
+      entryMode: reversal.entryMode,
+    });
+    await db.insert(journalLines).values(
+      reversal.journalLines.map((line) => ({
+        id: line.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        journalEntryId: reversal.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      })),
+    );
+
+    return true;
+  }
+
   async postSalesReturn(tx: Tx, ctx: TenantContext, draft: NewSalesReturn): Promise<void> {
     const db = txOf(tx);
     const now = this.clock.now();

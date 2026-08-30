@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { qtyText } from './money/money-text';
 import type { ProductResponse, StockAdjustmentReasonValue } from '@sher/core-contracts';
 import { parseQty, Qty, SystemClock, Ulid } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
@@ -66,7 +67,7 @@ watch(
   },
 );
 
-const onHand = computed(() => Qty(props.product?.stockQty ?? 0).format());
+const onHand = computed(() => qtyText(props.product?.stockQty ?? 0));
 const unitName = computed(() => props.product?.baseUnitName ?? '');
 const noteRequired = computed(() => reason.value === 'OTHER');
 

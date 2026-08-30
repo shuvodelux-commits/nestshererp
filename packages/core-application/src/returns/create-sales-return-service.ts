@@ -1,5 +1,8 @@
-import { refillLots, rejectSalesReturn, salesReturnPosting, salesReturnTotals } from '@sher/core-domain';
-import type { LotRefill, ReturnableLine, SalesReturnRejection } from '@sher/core-domain';
+import {
+  averageUnitCostFrom, refillLots, rejectEntry, rejectSalesReturn, salesReturnPosting,
+  salesReturnTotals, stockValueMinor,
+} from '@sher/core-domain';
+import type { AccountCode, LotRefill, ReturnableLine, SalesReturnRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { SalesReturnResponse } from '@sher/core-contracts';
 import { Qty, Ulid } from '@sher/shared-utils';
@@ -86,7 +89,15 @@ const REFUSALS: Record<SalesReturnRejection, string> = {
   RETURN_HAS_NO_VALUE: 'These goods are worth nothing to return',
 };
 
+export interface VoidSalesReturnCommand {
+  readonly ctx: TenantContext;
+  readonly returnId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
 export class CreateSalesReturnService {
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly access: AccessControl,
@@ -104,7 +115,134 @@ export class CreateSalesReturnService {
     private readonly clock: Clock,
   ) {}
 
+  /**
+   * Cancelling a customer return (Phase 9.2, §2.5).
+   *
+   * **WRITE CLASS: T.** A return taken in by mistake is undone whole: the goods
+   * leave the shelf again **through the very lots they were put back into**, so
+   * FIFO order still means something afterwards; the refund or the credit is
+   * reversed; and the document stays, marked `VOIDED` with the reason the
+   * shopkeeper gave.
+   *
+   * Everything is undone from what was **stored** — the cost that came back is
+   * the cost that goes out again, not today's average — because a return
+   * cancelled next month at a different cost would leave `COGS` and
+   * `INVENTORY` holding a difference nobody created.
+   *
+   * The refusal is the honest one: if the returned goods have since been sold,
+   * they are not on the shelf to take back, and the shop is told so.
+   */
+  async void(command: VoidSalesReturnCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.SALES_RETURN_VOID);
+      if (command.reason.trim().length === 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say why this is being cancelled');
+      }
+
+      const original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That return was not found');
+      if (original.status !== 'POSTED') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This return has already been cancelled');
+      }
+
+      const today = this.clock.businessDate(ctx.timezone);
+      // The day the reversal posts on, and only that day: the document's own
+      // month may be closed, and a cancellation still has to be possible.
+      await this.periods.assertOpen(tx, ctx, today);
+
+      for (const line of original.lines) {
+        for (const refill of line.refills) {
+          if (refill.lotRemaining < refill.qty) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'Some of these returned goods have been sold again — they are not on the shelf to take back',
+            );
+          }
+        }
+      }
+
+      const reversalLines = original.journalLines.map((line) => ({
+        id: Ulid.generate(this.clock),
+        account: line.account as AccountCode,
+        amountMinor: -line.amountMinor,
+        partyId: line.partyId,
+      }));
+      if (rejectEntry({ lines: reversalLines }) !== null) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'This return cannot be reversed cleanly');
+      }
+
+      /*
+       * The cached position per product, wound back by exactly what the return
+       * added: the quantity that came in goes out, and the value that came in
+       * with it goes with it.
+       */
+      const costStates = original.costStates.map((state) => {
+        const returned = original.lines
+          .filter((line) => line.productId === state.productId)
+          .reduce(
+            (totals, line) => ({
+              qty: Qty(totals.qty).add(Qty(line.qty)).raw,
+              valueMinor: totals.valueMinor + line.costMinor,
+            }),
+            { qty: 0, valueMinor: 0 },
+          );
+        const qtyAfter = Qty(state.qtyOnHand).subtract(Qty(returned.qty)).raw;
+        const valueAfter = stockValueMinor(state.qtyOnHand, state.avgUnitCost) - returned.valueMinor;
+        return {
+          id: state.id,
+          exists: true,
+          productId: state.productId,
+          locationId: state.locationId,
+          qtyOnHand: qtyAfter,
+          avgUnitCost: averageUnitCostFrom(valueAfter, qtyAfter),
+        };
+      });
+
+      const ok = await this.returns.reverseSalesReturn(tx, ctx, {
+        returnId: original.id,
+        expectedVersion: command.version,
+        businessDate: today,
+        entryMode: entryModeFor(today, today),
+        reason: command.reason.trim(),
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: reversalLines,
+        lines: original.lines.map((line) => ({
+          movementId: Ulid.generate(this.clock),
+          productId: line.productId,
+          locationId: line.locationId,
+          qty: line.qty,
+          costMinor: line.costMinor,
+          takeBack: line.refills.map((refill) => ({ lotId: refill.lotId, qty: refill.qty })),
+        })),
+        costStates,
+      });
+      if (!ok) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this return — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'sales_return',
+        entityId: original.id,
+        action: 'DELETE',
+        before: { number: original.number, status: 'POSTED', cogsMinor: String(original.cogsMinor) },
+        after: { number: original.number, status: 'VOIDED', reason: command.reason.trim() },
+        source: 'API',
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'sales.return.cancelled',
+        aggregateType: 'sales_return',
+        aggregateId: original.id,
+        payload: { number: original.number },
+      });
+    });
+  }
+
   async create(command: CreateSalesReturnCommand): Promise<SalesReturnResponse> {
+
     const fingerprint = JSON.stringify([
       command.saleId,
       command.lines,
@@ -189,6 +327,7 @@ export class CreateSalesReturnService {
               ctx,
               command.refundAccountCode,
               businessDate,
+              totals.refundMinor,
             );
       const refundAccount = resolved?.code ?? null;
       if (totals.refundMinor > 0 && refundAccount === null) {

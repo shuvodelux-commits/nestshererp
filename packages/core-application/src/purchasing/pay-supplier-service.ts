@@ -1,4 +1,6 @@
-import { allocateOldestFirst, rejectSupplierPayment, supplierPaymentPosting } from '@sher/core-domain';
+import {
+  allocateOldestFirst, correctionWindow, rejectSupplierPayment, supplierPaymentPosting,
+} from '@sher/core-domain';
 import type { SupplierPaymentRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { SupplierDueResponse, SupplierPaymentResponse } from '@sher/core-contracts';
@@ -6,6 +8,8 @@ import { Money, Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { MoneyRepository } from '../money/money-repository';
+import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
+import { reverseMoneyDocument } from '../corrections/reverse-money-document';
 import { entryModeFor } from '../notes/create-note-service';
 import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
@@ -42,7 +46,21 @@ export interface PaySupplierCommand {
   readonly purchaseId: string | null;
 }
 
+export interface VoidSupplierPaymentCommand {
+  readonly ctx: TenantContext;
+  readonly paymentId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+export interface CorrectSupplierPaymentCommand extends PaySupplierCommand {
+  readonly paymentId: string;
+  readonly version: number;
+  readonly reason: string | null;
+}
+
 export interface SupplierDueCommand {
+
   readonly ctx: TenantContext;
   readonly supplierPartyId: string;
 }
@@ -63,6 +81,7 @@ export class PaySupplierService {
     private readonly parties: PartyRepository,
     private readonly money: MoneyRepository,
     private readonly purchases: PurchaseRepository,
+    private readonly reversals: DocumentReversalRepository,
     private readonly numbering: NumberingService,
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
@@ -70,6 +89,183 @@ export class PaySupplierService {
   ) {}
 
   /** What the Pay Supplier dialog opens on: the debt, and the bills behind it. */
+  /**
+   * Cancelling a supplier payment (Phase 9.2, §2.5).
+   *
+   * **WRITE CLASS: T.** The money goes back into the account it left, the
+   * bills it settled are owed again — the allocations are released, not
+   * negated, because an allocation only ever said which bill this money was
+   * pointed at — and the payment stays with its number, marked `VOIDED` and
+   * carrying its reason.
+   */
+  async void(command: VoidSupplierPaymentCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.SUPPLIER_PAYMENT_VOID);
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'SUPPLIER_PAYMENT',
+          documentId: command.paymentId,
+          expectedVersion: command.version,
+          reason: command.reason,
+          intent: 'VOID',
+          entityType: 'supplier_payment',
+          eventType: 'supplier.payment.cancelled',
+        },
+      );
+    });
+  }
+
+  /**
+   * Correcting a supplier payment (Phase 9.2, owner decisions 2026-08-30).
+   *
+   * Reversed and re-posted under the same number in one transaction, and
+   * re-allocated oldest-first against what the supplier is owed **now** — the
+   * old pointers went with the reversal, so nothing is patched.
+   */
+  async correct(command: CorrectSupplierPaymentCommand): Promise<void> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.PURCHASE_PAY);
+
+      const posted = await this.reversals.findPosted(
+        tx,
+        ctx,
+        'SUPPLIER_PAYMENT',
+        command.paymentId,
+      );
+      if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That payment was not found');
+
+      const today = this.clock.businessDate(ctx.timezone);
+      const originalDate = command.businessDate ?? posted.businessDate;
+      const placement = correctionWindow(originalDate, today, await this.isOpen(tx, ctx, originalDate));
+      const reason = command.reason?.trim() ?? '';
+      if (placement.reasonRequired && reason === '') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          placement.entryMode === 'PRIOR_PERIOD'
+            ? 'That month is closed, so this correction posts today — say why'
+            : 'A correction dated in the past needs a reason',
+        );
+      }
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'SUPPLIER_PAYMENT',
+          documentId: command.paymentId,
+          expectedVersion: command.version,
+          reason: reason === '' ? 'Corrected' : reason,
+          intent: 'CORRECT',
+          // Both halves of a correction land on the same day (see the port).
+          businessDate: placement.businessDate,
+          entityType: 'supplier_payment',
+          eventType: 'supplier.payment.corrected',
+        },
+      );
+
+      const supplier = await this.parties.findById(tx, ctx, command.supplierPartyId);
+      if (supplier === null) throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
+
+      const account = await resolvePaymentAccount(
+        { access: this.access, money: this.money },
+        tx,
+        ctx,
+        command.accountCode,
+        placement.businessDate,
+        command.amountMinor,
+      );
+
+      const bills = await this.purchases.listOpenBills(
+        tx,
+        ctx,
+        supplier.id,
+        command.purchaseId,
+      );
+      const allocations = allocateOldestFirst(
+        bills.map((bill) => ({
+          purchaseId: bill.purchaseId,
+          outstandingMinor: bill.outstandingMinor,
+        })),
+        command.amountMinor,
+      );
+      const posting = supplierPaymentPosting(account.code, supplier.id, command.amountMinor);
+
+      const reposted = await this.purchases.repostPayment(tx, ctx, {
+        id: command.paymentId,
+        // The reversal bumped the version a moment ago.
+        expectedVersion: command.version + 1,
+        supplierPartyId: supplier.id,
+        accountCode: account.code,
+        amountMinor: command.amountMinor,
+        note: command.note,
+        sessionId: account.sessionId,
+        businessDate: placement.businessDate,
+        entryMode: placement.entryMode,
+        correctionReason: reason === '' ? null : reason,
+        originalBusinessDate: placement.originalBusinessDate,
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: posting.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
+        allocations: allocations.map((allocation) => ({
+          id: Ulid.generate(this.clock),
+          purchaseId: allocation.purchaseId,
+          amountMinor: allocation.amountMinor,
+        })),
+      });
+      if (!reposted) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this payment — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'supplier_payment',
+        entityId: command.paymentId,
+        action: 'UPDATE',
+        before: {
+          amountMinor: String(posted.amountMinor),
+          businessDate: posted.businessDate,
+        },
+        after: {
+          amountMinor: String(command.amountMinor),
+          businessDate: placement.businessDate,
+          entryMode: placement.entryMode,
+          reason,
+        },
+        source: 'API',
+      });
+    });
+  }
+
+  /** Whether a business date's month still accepts postings (§5.14). */
+  private async isOpen(tx: Tx, ctx: TenantContext, businessDate: string): Promise<boolean> {
+    try {
+      await this.periods.assertOpen(tx, ctx, businessDate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async due(command: SupplierDueCommand): Promise<SupplierDueResponse> {
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
@@ -168,6 +364,7 @@ export class PaySupplierService {
         ctx,
         command.accountCode,
         businessDate,
+        command.amountMinor,
       );
 
       const allocations = allocateOldestFirst(
@@ -257,6 +454,10 @@ export class PaySupplierService {
       allocations: payment.allocations.map((allocation) => ({ ...allocation })),
       outstandingAfterMinor: remaining.reduce((sum, bill) => sum + bill.outstandingMinor, 0),
       createdAt: payment.createdAt.toISOString(),
+      status: payment.status,
+      entryMode: payment.entryMode,
+      voidReason: payment.voidReason,
+      version: payment.version,
     };
   }
 

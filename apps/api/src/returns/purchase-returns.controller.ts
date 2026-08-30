@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Headers, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Headers, Inject, Param, Post, Query, UseGuards,
+} from '@nestjs/common';
 import type {
   CreatePurchaseReturnService,
   PurchaseReturnQueryService,
@@ -9,7 +11,9 @@ import type {
   PurchaseReturnResponse,
   ReturnableBillResponse,
 } from '@sher/core-contracts';
-import { AppError, createPurchaseReturnRequestSchema, ErrorCode } from '@sher/core-contracts';
+import {
+  AppError, createPurchaseReturnRequestSchema, ErrorCode, voidDocumentRequestSchema,
+} from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
 import { CREATE_PURCHASE_RETURN_SERVICE, PURCHASE_RETURN_QUERY_SERVICE } from './tokens';
@@ -82,5 +86,23 @@ export class PurchaseReturnsController {
         backdateReason: request.backdateReason,
       }),
     };
+  }
+
+  /**
+   * Cancelling a posted return (Phase 9.2). The goods move back, the money
+   * moves back, and the document stays — marked cancelled, with its reason.
+   */
+  @Post(':id/void')
+  async void(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = voidDocumentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'A cancellation needs the document version and a reason');
+    }
+    await this.returns.void({ ctx, returnId: id, ...parsed.data });
+    return { data: { ok: true } };
   }
 }

@@ -19,8 +19,13 @@ import { CLOCK, ENTITLEMENT_PROVIDER } from '../infrastructure/tokens';
  *   Reads pass. The shop can open every ledger, report and invoice it has.
  *   Signing in passes. Being locked out of the screen that explains why you are
  *     locked out is not a licence enforcement, it is a support call.
- *   Backup export will pass when it arrives in Phase 10 — it is a read of the
- *     tenant's own data, and gating it would hold a business's records hostage.
+ *   Backup export passes (Phase 10). D-36 is explicit that backup export works
+ *     in every state including READ_ONLY, and gating it would hold a business's
+ *     own records hostage over an unpaid renewal.
+ *   Restore passes too. A shop recovering from a dead machine onto a fresh one,
+ *     with a licence that lapsed while the computer was in a repair shop, must
+ *     be able to get its books back — and the licence still governs everything
+ *     it can do afterwards, so nothing is bypassed by letting it in.
  *
  * `GRACE` still writes. The 30 days after expiry exist precisely so that a late
  * renewal does not stop a shop trading, and treating grace as read-only would
@@ -65,5 +70,5 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * that says the licence lapsed, or take the backup D-36 promises them.
  */
 function isAlwaysAllowed(path: string): boolean {
-  return path.startsWith('/api/v1/auth/');
+  return path.startsWith('/api/v1/auth/') || path.startsWith('/api/v1/backup/');
 }

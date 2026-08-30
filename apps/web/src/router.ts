@@ -35,6 +35,18 @@ const router = createRouter({
     { path: '/users', name: 'users', component: () => import('./pages/UsersPage.vue') },
     { path: '/roles', name: 'roles', component: () => import('./pages/RolesPage.vue') },
     { path: '/audit', name: 'audit', component: () => import('./pages/AuditPage.vue') },
+    // Phase 10 (§5.25, D-36). Both are Owner-only by permission; the sidebar
+    // hides them for every other role, and the use cases refuse them anyway.
+    {
+      path: '/settings/backup',
+      name: 'settings-backup',
+      component: () => import('./pages/SettingsBackupPage.vue'),
+    },
+    {
+      path: '/settings/license',
+      name: 'settings-license',
+      component: () => import('./pages/SettingsLicensePage.vue'),
+    },
     { path: '/catalog', name: 'catalog', component: () => import('./pages/CatalogPage.vue') },
     { path: '/products', name: 'products', component: () => import('./pages/ProductsPage.vue') },
     // §5.10: per-product stock work lives on the Products row menu; what is
@@ -63,6 +75,41 @@ const router = createRouter({
       path: '/purchases/:id',
       name: 'purchase',
       component: () => import('./pages/PurchaseDetailPage.vue'),
+    },
+    /*
+     * Phase 8 — §5.9, §5.19, §5.6 M07. The planner is its own path for the same
+     * reason `purchases/new` is: a plan being worked out is not a plan that
+     * exists, and the saved one loads by id.
+     */
+    {
+      path: '/purchase-plans',
+      name: 'purchase-plans',
+      component: () => import('./pages/PurchasePlanPage.vue'),
+    },
+    {
+      path: '/purchase-plans/:id',
+      name: 'purchase-plan-detail',
+      component: () => import('./pages/PurchasePlanDetailPage.vue'),
+    },
+    {
+      path: '/supplier-orders/:id',
+      name: 'supplier-order',
+      component: () => import('./pages/SupplierOrderPage.vue'),
+    },
+    {
+      path: '/warranty',
+      name: 'warranty-claims',
+      component: () => import('./pages/WarrantyClaimsPage.vue'),
+    },
+    {
+      path: '/warranty/:id',
+      name: 'warranty-claim',
+      component: () => import('./pages/WarrantyClaimPage.vue'),
+    },
+    {
+      path: '/vendor-stock',
+      name: 'vendor-stock',
+      component: () => import('./pages/VendorStockPage.vue'),
     },
     // Phase 6 — §5.7, §5.8. The POS is its own full-screen path: a sale being
     // rung up is not a sale that exists, and the counter must not sit inside a
@@ -114,6 +161,17 @@ const router = createRouter({
       name: 'account-statement',
       component: () => import('./pages/AccountStatementPage.vue'),
     },
+    /*
+     * Phase 11 (§5.17, UI-70). A reconciliation is a workflow, not a one-task
+     * modal: two lists to compare, a statement to import and a sign-off at the
+     * end. It opens from the account's statement, which is where the owner is
+     * standing when they decide to check it against the bank.
+     */
+    {
+      path: '/settings/accounts/:accountId/reconcile/:id',
+      name: 'account-reconcile',
+      component: () => import('./pages/AccountReconcilePage.vue'),
+    },
     // §5.6's guided onboarding import, one screen for every file type.
     { path: '/import', name: 'import', component: () => import('./pages/ImportPage.vue') },
     // 'new' and an id share one component: adding and editing a party are the
@@ -124,6 +182,31 @@ const router = createRouter({
       name: 'party-ledger',
       component: () => import('./pages/PartyLedgerPage.vue'),
     },
+    /*
+     * Phase 9 — §5.20's four report screens and §5.27's Daybook.
+     *
+     * Stock has no route of its own: the Phase 3 Inventory Report **is** the
+     * stock report and grew the two sales-derived sections (owner decision
+     * 2026-08-30), so `/reports/stock` redirects to it rather than a second
+     * screen answering the same question.
+     */
+    {
+      path: '/reports/sales',
+      name: 'reports-sales',
+      component: () => import('./pages/SalesReportPage.vue'),
+    },
+    {
+      path: '/reports/purchases',
+      name: 'reports-purchases',
+      component: () => import('./pages/PurchaseReportPage.vue'),
+    },
+    { path: '/reports/stock', redirect: '/inventory-report' },
+    {
+      path: '/reports/money',
+      name: 'reports-money',
+      component: () => import('./pages/MoneyReportPage.vue'),
+    },
+    { path: '/daybook', name: 'daybook', component: () => import('./pages/DaybookPage.vue') },
     { path: '/settings', name: 'settings', component: () => import('./pages/SettingsPage.vue') },
     {
       path: '/settings/security',

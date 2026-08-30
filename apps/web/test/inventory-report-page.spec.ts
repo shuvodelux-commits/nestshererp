@@ -175,7 +175,7 @@ describe('the Inventory Report', () => {
     expect(wrapper.text()).toContain('Damaged and written off');
     expect(wrapper.text()).toContain('Damaged');
     expect(wrapper.text()).toContain('Sack torn in the rain');
-    expect(wrapper.text()).toContain('-3.000');
+    expect(wrapper.text()).toContain('-3');
     expect(wrapper.text()).toContain('৳300.00');
     expect(wrapper.text()).toContain('Karim');
   });
@@ -190,7 +190,7 @@ describe('the Inventory Report', () => {
 
     expect(loadOpening).toHaveBeenCalledWith('test-access', '01OPENINGAAAAAAAAAAAAAAAAA');
     expect(wrapper.text()).toContain('Opening quantity');
-    expect(wrapper.text()).toContain('10.000');
+    expect(wrapper.text()).toContain('10');
     expect(wrapper.text()).toContain('৳1,000.00');
   });
 

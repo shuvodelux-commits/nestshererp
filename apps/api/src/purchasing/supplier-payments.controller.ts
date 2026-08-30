@@ -6,12 +6,16 @@ import {
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import type { PaySupplierService, TenantContext } from '@sher/core-application';
 import type { SupplierDueResponse, SupplierPaymentResponse } from '@sher/core-contracts';
-import { AppError, ErrorCode, paySupplierRequestSchema } from '@sher/core-contracts';
+import {
+  AppError, correctSupplierPaymentRequestSchema, ErrorCode, paySupplierRequestSchema,
+  voidDocumentRequestSchema,
+} from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
 import { PAY_SUPPLIER_SERVICE } from './tokens';
@@ -49,5 +53,35 @@ export class SupplierPaymentsController {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid supplier payment request');
     }
     return { data: await this.payments.pay({ ctx, operationId, ...parsed.data }) };
+  }
+
+  /** Correcting a posted payment (Phase 9.2) — same number, new figures. */
+  @Patch('payments/:id')
+  async correct(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = correctSupplierPaymentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid correction');
+    }
+    await this.payments.correct({ ctx, paymentId: id, operationId: id, ...parsed.data });
+    return { data: { ok: true } };
+  }
+
+  /** Cancelling a posted payment. A reason is required (owner rule). */
+  @Post('payments/:id/void')
+  async void(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = voidDocumentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'A cancellation needs the document version and a reason');
+    }
+    await this.payments.void({ ctx, paymentId: id, ...parsed.data });
+    return { data: { ok: true } };
   }
 }

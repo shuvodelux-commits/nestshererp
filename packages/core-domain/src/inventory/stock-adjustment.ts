@@ -1,6 +1,7 @@
 import { Qty } from '@sher/shared-utils';
 
 import { fixedAccount } from '../accounting/account';
+import type { AccountCode } from '../accounting/account';
 import { rejectEntry } from '../accounting/journal-entry';
 import type { JournalEntryDraft } from '../accounting/journal-entry';
 
@@ -96,6 +97,18 @@ export function rejectStockAdjustment(draft: StockAdjustmentDraft): StockAdjustm
 export function stockAdjustmentPosting(
   qtyDelta: number,
   valueMinor: number,
+  /*
+   * What `INVENTORY` is balanced against (Phase 8, §5.19).
+   *
+   * Damage, recount and theft land in `STOCK_ADJUSTMENT`, which is why that is
+   * the default and why every existing caller is unchanged. A unit handed to a
+   * customer under warranty is not an adjustment at all — it is a cost the shop
+   * chose to carry — so it balances against `WARRANTY_EXPENSE` instead. The
+   * account is a parameter rather than a second copy of this function because
+   * the costing, the lot consumption and the movement are identical; only where
+   * the value lands differs.
+   */
+  counterAccount: AccountCode = fixedAccount('STOCK_ADJUSTMENT'),
 ): StockAdjustmentPosting {
   const checked = Qty(qtyDelta);
   if (checked.raw === 0) throw new RangeError('Stock adjustment quantity cannot be zero');
@@ -117,7 +130,7 @@ export function stockAdjustmentPosting(
   const journal: JournalEntryDraft = {
     lines: [
       { account: fixedAccount('INVENTORY'), amountMinor: inventoryAmount, partyId: null },
-      { account: fixedAccount('STOCK_ADJUSTMENT'), amountMinor: -inventoryAmount, partyId: null },
+      { account: counterAccount, amountMinor: -inventoryAmount, partyId: null },
     ],
   };
   if (rejectEntry(journal) !== null) throw new Error('Stock adjustment journal is not balanced');

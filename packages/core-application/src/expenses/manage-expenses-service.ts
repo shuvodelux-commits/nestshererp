@@ -1,4 +1,4 @@
-import { parameterisedAccount, rejectEntry } from '@sher/core-domain';
+import { correctionWindow, parameterisedAccount, rejectEntry } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type {
   ExpenseCategoryResponse,
@@ -8,6 +8,8 @@ import type {
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
+import { reverseMoneyDocument } from '../corrections/reverse-money-document';
+import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
 import { entryModeFor } from '../notes/create-note-service';
 import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
@@ -54,7 +56,21 @@ export interface RecordExpenseCommand {
   readonly backdateReason: string | null;
 }
 
+export interface VoidExpenseCommand {
+  readonly ctx: TenantContext;
+  readonly expenseId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+export interface CorrectExpenseCommand extends RecordExpenseCommand {
+  readonly expenseId: string;
+  readonly version: number;
+  readonly reason: string | null;
+}
+
 export interface SaveCategoryCommand {
+
   readonly ctx: TenantContext;
   readonly categoryId: string | null;
   readonly name: string;
@@ -69,6 +85,7 @@ export class ManageExpensesService {
     private readonly parties: PartyRepository,
     private readonly money: MoneyRepository,
     private readonly expenses: ExpenseRepository,
+    private readonly reversals: DocumentReversalRepository,
     private readonly numbering: NumberingService,
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
@@ -127,6 +144,7 @@ export class ManageExpensesService {
         ctx,
         command.accountCode,
         businessDate,
+        command.amountMinor,
       );
 
       let payeeName: string | null = null;
@@ -220,7 +238,221 @@ export class ManageExpensesService {
     });
   }
 
+  /**
+   * Cancelling a posted expense (Phase 9.2, §2.5).
+   *
+   * **WRITE CLASS: T.** The expense is never deleted: one reversing entry puts
+   * the money back where it came from, and the document stays with its number,
+   * marked `VOIDED` and carrying the reason the shopkeeper gave — which is
+   * mandatory here, because nothing else explains a cancellation.
+   *
+   * The reversal posts on the day it is made (owner rule), and both that day
+   * and the day the expense belonged to must be open: closed is final, and an
+   * undo is a posting like any other.
+   */
+  async void(command: VoidExpenseCommand): Promise<ExpenseResponse> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.EXPENSE_VOID);
+
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'EXPENSE',
+          documentId: command.expenseId,
+          expectedVersion: command.version,
+          reason: command.reason,
+          intent: 'VOID',
+          entityType: 'expense',
+          eventType: 'expense.cancelled',
+        },
+      );
+
+      return this.detail(tx, ctx, command.expenseId);
+    });
+  }
+
+  /**
+   * Correcting a posted expense (Phase 9.2, owner decisions 2026-08-30).
+   *
+   * **WRITE CLASS: T, and one transaction throughout**: the original posting is
+   * reversed and the corrected figures are posted **under the same number**, so
+   * the ledger is never briefly missing the document and the paper the shop
+   * filed still refers to something real.
+   *
+   * **Where it lands** is the owner's closed-period rule: while the expense's
+   * own month is open the correction is dated that day; once that month is
+   * closed it posts **today** as a `PRIOR_PERIOD` adjustment carrying the
+   * original date, because a closed month may not be rewritten — not even to
+   * fix it. Anything that cannot post on its own date requires a reason.
+   *
+   * Correcting rides on `expense.record`: whoever may record one may fix the
+   * amount they typed. Cancelling is the code kept separate (§5.26).
+   */
+  async correct(command: CorrectExpenseCommand): Promise<ExpenseResponse> {
+    return this.uow.run(command.ctx, async (tx) => {
+      const { ctx } = command;
+      await this.access.require(tx, ctx, Permission.EXPENSE_RECORD);
+
+      if (command.amountMinor <= 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'An expense must be more than zero');
+      }
+
+      const posted = await this.reversals.findPosted(tx, ctx, 'EXPENSE', command.expenseId);
+      if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That expense was not found');
+
+      const today = this.clock.businessDate(ctx.timezone);
+      const originalDate = command.businessDate ?? posted.businessDate;
+      const placement = correctionWindow(originalDate, today, await this.isOpen(tx, ctx, originalDate));
+      const reason = command.reason?.trim() ?? '';
+      if (placement.reasonRequired && reason === '') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          placement.entryMode === 'PRIOR_PERIOD'
+            ? 'That month is closed, so this correction posts today — say why'
+            : 'A correction dated in the past needs a reason',
+        );
+      }
+
+      // Undo what was posted first, so the corrected figures are the only ones
+      // standing when this transaction commits.
+      await reverseMoneyDocument(
+        {
+          reversals: this.reversals,
+          periods: this.periods,
+          audit: this.audit,
+          outbox: this.outbox,
+          clock: this.clock,
+        },
+        tx,
+        ctx,
+        {
+          documentType: 'EXPENSE',
+          documentId: command.expenseId,
+          expectedVersion: command.version,
+          // The reversal's own reason is the correction's, or a plain statement
+          // of what happened when the shopkeeper did not have to give one.
+          reason: reason === '' ? 'Corrected' : reason,
+          intent: 'CORRECT',
+          // Both halves of a correction land on the same day (see the port).
+          businessDate: placement.businessDate,
+          entityType: 'expense',
+          eventType: 'expense.corrected',
+        },
+      );
+
+      const category = await this.expenses.findCategoryById(tx, ctx, command.categoryId);
+      if (category === null) throw new AppError(ErrorCode.NOT_FOUND, 'That category was not found');
+      if (category.status !== 'ACTIVE') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'That category is archived');
+      }
+
+      const account = await resolvePaymentAccount(
+        { access: this.access, money: this.money },
+        tx,
+        ctx,
+        command.accountCode,
+        placement.businessDate,
+        command.amountMinor,
+      );
+
+      let payeeName: string | null = null;
+      if (command.payeePartyId !== null) {
+        const payee = await this.parties.findById(tx, ctx, command.payeePartyId);
+        if (payee === null) throw new AppError(ErrorCode.NOT_FOUND, 'That payee was not found');
+        payeeName = payee.name;
+      }
+
+      const journal = {
+        lines: [
+          {
+            account: parameterisedAccount('EXPENSE', category.code),
+            amountMinor: command.amountMinor,
+            partyId: command.payeePartyId,
+          },
+          { account: account.code, amountMinor: -command.amountMinor, partyId: null },
+        ],
+      };
+      if (rejectEntry(journal) !== null) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'This expense does not balance');
+      }
+
+      const reposted = await this.expenses.repostExpense(tx, ctx, {
+        id: command.expenseId,
+        // The reversal bumped the version a moment ago, so the repost expects
+        // the one it produced — not the one the browser sent.
+        expectedVersion: command.version + 1,
+        categoryId: category.id,
+        categoryCode: category.code,
+        categoryName: category.name,
+        payeePartyId: command.payeePartyId,
+        payeeName,
+        amountMinor: command.amountMinor,
+        accountCode: account.code,
+        sessionId: account.sessionId,
+        note: command.note,
+        businessDate: placement.businessDate,
+        entryMode: placement.entryMode,
+        correctionReason: reason === '' ? null : reason,
+        originalBusinessDate: placement.originalBusinessDate,
+        journalEntryId: Ulid.generate(this.clock),
+        journalLines: journal.lines.map((line) => ({
+          id: Ulid.generate(this.clock),
+          account: line.account,
+          amountMinor: line.amountMinor,
+          partyId: line.partyId,
+        })),
+      });
+      if (!reposted) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this expense — reload and try again',
+        );
+      }
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'expense',
+        entityId: command.expenseId,
+        action: 'UPDATE',
+        before: {
+          amountMinor: String(posted.amountMinor),
+          businessDate: posted.businessDate,
+          account: posted.accountCode ?? '',
+        },
+        after: {
+          amountMinor: String(command.amountMinor),
+          businessDate: placement.businessDate,
+          account: account.code,
+          entryMode: placement.entryMode,
+          reason,
+        },
+        source: 'API',
+      });
+
+      return this.detail(tx, ctx, command.expenseId);
+    });
+  }
+
+  /** Whether a business date's month still accepts postings (§5.14). */
+  private async isOpen(tx: Tx, ctx: TenantContext, businessDate: string): Promise<boolean> {
+    try {
+      await this.periods.assertOpen(tx, ctx, businessDate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async list(ctx: TenantContext, filter: ExpenseFilter): Promise<ExpenseListResponse> {
+
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, Permission.EXPENSE_VIEW);
       const page = await this.expenses.listExpenses(tx, ctx, filter);
@@ -356,6 +588,11 @@ export function toExpenseResponse(row: ExpenseRow): ExpenseResponse {
     note: row.note,
     businessDate: row.businessDate,
     status: row.status,
+    entryMode: row.entryMode,
+    voidReason: row.voidReason,
+    correctionReason: row.correctionReason,
+    originalBusinessDate: row.originalBusinessDate,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
   };
 }

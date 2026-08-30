@@ -208,6 +208,80 @@ export interface InventoryCostStateRow {
   readonly avgUnitCost: number;
 }
 
+/**
+ * What a posted stock adjustment did, read back so it can be undone exactly
+ * (Phase 9.2, §2.5).
+ *
+ * The **stored** figures, never recomputed: an adjustment cancelled a month
+ * later at today's average would take a different value off `INVENTORY` than
+ * it put on, and the account would stop equalling the valuation (INV-05).
+ */
+export interface StockAdjustmentForReversal {
+  readonly id: string;
+  readonly number: string;
+  readonly status: string;
+  readonly businessDate: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly qtyDelta: number;
+  readonly qty: number;
+  readonly direction: 'IN' | 'OUT';
+  readonly valueMinor: number;
+  readonly version: number;
+  readonly journalLines: readonly {
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  /** The lot an increase created, with what is left of it. */
+  readonly newLot: {
+    readonly id: string;
+    readonly qtyReceived: number;
+    readonly qtyRemaining: number;
+    readonly unitCost: number;
+  } | null;
+  /** The lots a decrease took from, so the quantity goes back where it came from. */
+  readonly consumptions: readonly {
+    readonly lotId: string;
+    readonly qty: number;
+    readonly unitCostUsed: number;
+  }[];
+  readonly costState: {
+    readonly id: string;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  } | null;
+}
+
+/** Undoing one stock adjustment — the mirror of `insertAdjustment`. */
+export interface StockAdjustmentReversal {
+  readonly adjustmentId: string;
+  readonly expectedVersion: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly reason: string;
+  readonly movementId: string;
+  readonly direction: 'IN' | 'OUT';
+  readonly qty: number;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  /** The lot to close, when the adjustment being undone had created one. */
+  readonly closeLotId: string | null;
+  /** Quantities to put back into the lots a decrease consumed. */
+  readonly refills: readonly { readonly lotId: string; readonly qty: number }[];
+  readonly costState: {
+    readonly id: string;
+    readonly exists: boolean;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  };
+}
+
 export interface InventoryRepository {
   findDefaultLocation(tx: Tx, ctx: TenantContext): Promise<LocationRow | null>;
   createDefaultLocation(tx: Tx, ctx: TenantContext, id: string): Promise<LocationRow>;
@@ -217,6 +291,17 @@ export interface InventoryRepository {
   insertOpening(tx: Tx, ctx: TenantContext, opening: OpeningStockRecord): Promise<void>;
   findAdjustmentByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<StockAdjustmentRecord | null>;
   insertAdjustment(tx: Tx, ctx: TenantContext, adjustment: StockAdjustmentRecord): Promise<void>;
+  findAdjustmentForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    adjustmentId: string,
+  ): Promise<StockAdjustmentForReversal | null>;
+  /** Returns false when somebody else changed the adjustment first (D-32). */
+  reverseAdjustment(
+    tx: Tx,
+    ctx: TenantContext,
+    reversal: StockAdjustmentReversal,
+  ): Promise<boolean>;
   listAdjustments(tx: Tx, ctx: TenantContext, filter: StockAdjustmentFilter): Promise<readonly StockAdjustmentListRow[]>;
   listCostAdjustments(tx: Tx, ctx: TenantContext, filter: StockAdjustmentFilter): Promise<readonly CostAdjustmentListRow[]>;
   /** Where a product's stock currently sits, and what it is worth per unit. */

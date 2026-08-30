@@ -171,3 +171,33 @@ export function parseScaled(text: string, scale: number): number | null {
 
   return sign === '-' ? -value : value;
 }
+
+/**
+ * A scaled integer as a person reads it (owner decision 2026-08-26).
+ *
+ * `formatScaled` writes every decimal place the scale has, because it is the
+ * exact inverse of `parseScaled` and a stored figure must round-trip. That is
+ * right for storage and wrong for a screen: a shopkeeper reading `12.000 PCs`
+ * sees precision that means nothing to them, and the owner asked for whole
+ * numbers to look whole.
+ *
+ * So: at most `maxFractionDigits` places, rounded half-up once (D-31), with
+ * trailing zeros and a bare decimal point removed. `12.000` reads `12`,
+ * `12.100` reads `12.1`, `12.126` reads `12.13`.
+ *
+ * **Display only.** Nothing may parse this back — it has thrown information
+ * away on purpose.
+ */
+export function formatForDisplay(value: number, scale: number, maxFractionDigits = 2): string {
+  const drop = Math.max(scale - maxFractionDigits, 0);
+  const rounded =
+    drop === 0 ? value : Number(divideRoundHalfUp(BigInt(value), 10n ** BigInt(drop)));
+  const shown = Math.min(scale, maxFractionDigits);
+
+  const text = formatScaled(rounded, shown);
+  if (shown === 0) return text;
+
+  // `12.10` → `12.1` → `12.` → `12`. Only ever touches the fraction, so a
+  // grouped whole part like `1,200` is never damaged.
+  return text.replace(/\.?0+$/u, '');
+}

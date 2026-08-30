@@ -60,9 +60,6 @@ const feature = (
   sidebarTarget = true,
 ): SherNavigationFeature => ({ id, label, labelBn, purpose, route, permissions, activePrefixes, sidebarTarget, status: 'LIVE' });
 
-const planned = (id: string, label: string, labelBn: string, purpose: string): SherNavigationFeature => ({
-  id, label, labelBn, purpose, status: 'PLANNED', permissions: [], activePrefixes: [],
-});
 
 /**
  * Only implemented, SRS-approved SherERP capabilities belong here. The
@@ -99,6 +96,16 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
         feature('inventory.count', 'Stock Count', 'মাল গণনা', 'Count the shelf against the system and post the difference', '/stock-count', ['stock.count.post'], ['/stock-count']),
         feature('inventory.valuation', 'Stock Valuation', 'স্টকের হিসাব করা মূল্য', 'Reconcile stock value to the journal', '/inventory-report', ['inventory.cost.view'], ['/inventory-report'], false),
       ] },
+      /*
+       * §5.19. Warranty lives under Inventory because a claim is about a
+       * physical unit the shop is holding — the serial that identifies it comes
+       * from stock, and the replacement goes back out of stock. It is behind
+       * its own §5.21 toggle, so a shop that sells nothing with a warranty
+       * never sees it.
+       */
+      { id: 'inventory.warranty', label: 'Warranty', icon: 'pi-verified', features: [
+        { ...feature('inventory.warranty.page', 'Warranty', 'ওয়ারেন্টি', 'Take faulty goods in, send them to the supplier and settle the claim', '/warranty', ['warranty.claim.view'], ['/warranty']), featureFlag: SettingKey.WARRANTY_ENABLED },
+      ] },
     ],
   },
   {
@@ -107,6 +114,14 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     // today, and an entry for the others would be the speculative placeholder
     // UI-09 refuses.
     id: 'daily', label: 'Daily', icon: 'pi-calendar', subcategories: [
+      /*
+       * Phase 9. UI-67 always reserved a place for Daybook here, and it is
+       * filled now: the day's whole activity in one list, which is the screen
+       * an owner opens at closing time.
+       */
+      { id: 'daily.daybook', label: 'Daybook', icon: 'pi-book', features: [
+        feature('daily.daybook.page', 'Daybook', 'দিনের হিসাব', 'Everything that happened on a day, in the order it happened', '/daybook', ['daybook.view'], ['/daybook']),
+      ] },
       { id: 'daily.cash', label: 'Daily Cash', icon: 'pi-wallet', features: [
         feature('daily.cash.page', 'Daily Cash', 'দিনের নগদ হিসাব', 'Expected against counted, day by day', '/daily-cash', ['cash.daily.view'], ['/daily-cash']),
         /*
@@ -142,6 +157,7 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'purchases.bills', label: 'Purchases', icon: 'pi-receipt', features: [
         feature('purchases.list', 'Purchase Invoice', 'কেনার তালিকা', 'Every supplier bill, what is paid and what is owed', '/purchases', ['purchase.bill.view'], ['/purchases']),
         feature('purchases.new', 'New Purchase', 'নতুন মাল কেনা', 'Record goods received from a supplier', '/purchases/new', ['purchase.bill.create'], ['/purchases/new']),
+        feature('purchases.plan', 'Purchase Plan', 'কেনার পরিকল্পনা', 'Work out what to buy, how much, and send the supplier an order', '/purchase-plans', ['purchase.plan.view'], ['/purchase-plans', '/supplier-orders']),
         feature('purchases.returns', 'Purchase Return', 'কেনা ফেরত', 'What went back to suppliers, and what they credited', '/purchase-returns', ['purchase.return.view'], ['/purchase-returns']),
         feature('purchases.pay', 'Pay Supplier', 'সরবরাহকারীকে টাকা দিন', 'Settle a supplier from cash or bank', '/purchases', ['purchase.payment.record'], ['/purchases'], false),
       ] },
@@ -164,8 +180,29 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       ] },
       { id: 'parties.vendors', label: 'Vendors', icon: 'pi-briefcase', features: [
         { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
-        planned('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Review vendor-owned stock and sources'),
+        { ...feature('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Vendor-owned stock: what they left, what sold, what goes back', '/vendor-stock', ['vendor.stock.manage'], ['/vendor-stock']), featureFlag: SettingKey.VENDOR_CONSIGNMENT_ENABLED },
         { ...feature('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties'], false), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
+      ] },
+    ],
+  },
+  {
+    /*
+     * §5.20. Four screens, each with a Group By rather than one screen per
+     * question (owner decision 2026-08-30) — Stock points at the Inventory
+     * Report, which is the stock report and has been since Phase 3.
+     */
+    id: 'reports', label: 'Reports', icon: 'pi-chart-bar', subcategories: [
+      { id: 'reports.sales', label: 'Sales Reports', icon: 'pi-shopping-bag', features: [
+        feature('reports.sales.page', 'Sales Reports', 'বিক্রির হিসাব', 'What sold, by day, product, customer, staff, brand, category or payment', '/reports/sales', ['report.sales.view'], ['/reports/sales']),
+      ] },
+      { id: 'reports.purchases', label: 'Purchase Reports', icon: 'pi-shopping-cart', features: [
+        feature('reports.purchases.page', 'Purchase Reports', 'কেনাকাটার হিসাব', 'What the shop bought, from whom, and how much is still owed', '/reports/purchases', ['report.purchase.view'], ['/reports/purchases']),
+      ] },
+      { id: 'reports.stock', label: 'Stock Reports', icon: 'pi-box', features: [
+        feature('reports.stock.page', 'Stock Reports', 'স্টকের হিসাব', 'Stock, low stock, expiry, valuation, cost of goods sold and margin', '/inventory-report', ['report.stock.view'], ['/inventory-report']),
+      ] },
+      { id: 'reports.money', label: 'Money Reports', icon: 'pi-wallet', features: [
+        feature('reports.money.page', 'Money Reports', 'টাকার হিসাব', 'Who owes the shop, what it owes, cash, bank, expenses and profit', '/reports/money', ['report.money.view'], ['/reports/money']),
       ] },
     ],
   },
@@ -197,9 +234,30 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.money', label: 'Money Accounts', icon: 'pi-wallet', features: [
         feature('settings.money.cash', 'Cash Accounts', 'ক্যাশ ও সিন্দুক', 'The till, the safe and any other cash box', '/settings/accounts', ['cash.account.view'], ['/settings/accounts']),
         { ...feature('settings.money.bank', 'Bank & bKash Accounts', 'ব্যাংক ও বিকাশ', 'Bank, bKash and Nagad accounts with their statements', '/settings/accounts', ['bank.account.view'], ['/settings/accounts'], false), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
+        /*
+         * Phase 11 (§5.17, UI-70). Reconciliation is an account hub workflow,
+         * not a destination of its own: it opens from the account's statement,
+         * like the party ledger opens from the party. Named here because the
+         * capability now ships, with no route of its own.
+         */
+        feature('settings.money.reconcile', 'Account Reconciliation', 'ব্যাংকের সাথে মিলিয়ে দেখা', 'Check an account against the statement the bank produced', '/settings/accounts', ['bank.reconciliation.view'], ['/settings/accounts'], false),
       ] },
       { id: 'settings.invoice', label: 'Invoice Design', icon: 'pi-file', features: [
         feature('settings.invoice.design', 'Invoice Design', 'ইনভয়েসের ডিজাইন', 'What is printed on an invoice, and on which paper', '/settings/invoice-design', ['settings.setting.edit'], ['/settings/invoice-design']),
+      ] },
+      /*
+       * Phase 10. Two entries an owner can find by reading one word — the whole
+       * point for a low-literacy user, and why they are not folded into a
+       * "System" subcategory somebody would have to decode first (owner
+       * decision 2026-08-30). Reset Business Data is deliberately **not** here:
+       * it is an action at the foot of the Backup page, where the person
+       * pressing it has just been shown when the last good backup was taken.
+       */
+      { id: 'settings.backup', label: 'Backup', icon: 'pi-database', features: [
+        feature('settings.backup.page', 'Backup', 'ব্যাকআপ', 'Take a copy of the whole business, or put one back', '/settings/backup', ['backup.export'], ['/settings/backup']),
+      ] },
+      { id: 'settings.license', label: 'Licence', icon: 'pi-key', features: [
+        feature('settings.license.page', 'Licence', 'লাইসেন্স', 'How long this SherERP licence runs, and what it includes', '/settings/license', ['license.term.view'], ['/settings/license']),
       ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),

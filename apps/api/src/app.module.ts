@@ -6,9 +6,14 @@ import { AuditModule } from './audit/audit.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { ImportsModule } from './imports/imports.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { BackupModule } from './backup/backup.module';
 import { MoneyModule } from './money/money.module';
 import { PartiesModule } from './parties/parties.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
+import { VendorsModule } from './vendors/vendors.module';
+import { WarrantyModule } from './warranty/warranty.module';
+import { DaybookModule } from './daybook/daybook.module';
+import { ReportsModule } from './reports/reports.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PeriodsModule } from './periods/periods.module';
 import { ReturnsModule } from './returns/returns.module';
@@ -40,12 +45,17 @@ import { UsersModule } from './users/users.module';
     InventoryModule,
     PartiesModule,
     MoneyModule,
+    BackupModule,
     ImportsModule,
     PurchasingModule,
+    WarrantyModule,
+    VendorsModule,
     SalesModule,
     ReturnsModule,
     ExpensesModule,
     PeriodsModule,
+    ReportsModule,
+    DaybookModule,
   ],
   controllers: [HealthController],
   providers: [

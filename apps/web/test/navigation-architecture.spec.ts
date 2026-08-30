@@ -19,8 +19,11 @@ describe('navigation architecture', () => {
 
   it('resolves only category and subcategory levels, keeping feature leaves inside hubs', () => {
     const resolved = resolveNavigation({ can: () => true, featureEnabled: () => true });
+    // `inventory.warranty` arrived with Phase 8 (§5.19): a claim is about a
+    // physical unit the shop is holding, so it hangs off Inventory rather than
+    // becoming a category of its own.
     expect(resolved.find((category) => category.id === 'inventory')?.subcategories.map((item) => item.id)).toEqual([
-      'inventory.products', 'inventory.reporting',
+      'inventory.products', 'inventory.reporting', 'inventory.warranty',
     ]);
     expect(resolved.flatMap((category) => category.subcategories).some((item) => 'features' in item)).toBe(false);
     /*
@@ -63,10 +66,11 @@ describe('navigation architecture', () => {
     // Daily Cash under `Daily` per UI-67, the account setup under Settings per
     // the owner's decision of 2026-08-24. `/pos` and `/sales` arrived with
     // Phase 6, and `/sales-returns` with Phase 7 — a history page, because a
-    // return is always taken from the invoice it comes off. The list grows only
+    // return is always taken from the invoice it comes off. `/purchase-plans`,
+    // `/warranty` and `/vendor-stock` are Phase 8's three. The list grows only
     // when a real implemented route ships; nothing is ever removed from it,
     // which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/parties', '/daily-cash', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/security']));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/parties', '/daily-cash', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

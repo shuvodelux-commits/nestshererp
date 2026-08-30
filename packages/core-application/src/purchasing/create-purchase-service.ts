@@ -48,6 +48,8 @@ export interface PurchaseLineInput {
   readonly qty: number;
   readonly unitPriceMinor: number;
   readonly expiryDate: string | null;
+  /** The plan line this buys, when the bill was seeded from one (Phase 8). */
+  readonly planLineId?: string | null | undefined;
 }
 
 export interface CreatePurchaseCommand {
@@ -75,6 +77,8 @@ export interface CreatePurchaseCommand {
    * service.
    */
   readonly correctionOf: string | null;
+  /** The supplier order being converted, when the bill came from one. */
+  readonly supplierOrderId?: string | null | undefined;
 }
 
 /**
@@ -358,6 +362,7 @@ export class CreatePurchaseService {
               ctx,
               command.paidAccountCode ?? '',
               businessDate,
+              command.paidMinor,
             );
       if (command.paidMinor > 0 && paidAccount === null) {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say which account the money came from');
@@ -446,6 +451,8 @@ export class CreatePurchaseService {
           actualUnitCost: cost.actualUnitCost,
           lotValueMinor: cost.lotValueMinor,
           expiryDate,
+          // What this line is buying against, when the bill came from a plan.
+          planLineId: command.lines[index]?.planLineId ?? null,
           lotId: Ulid.generate(this.clock),
           movementId: Ulid.generate(this.clock),
           costState: {
@@ -509,6 +516,7 @@ export class CreatePurchaseService {
         paidAccountCode: paidAccount?.code ?? null,
         sessionId: paidAccount?.sessionId ?? null,
         notes: command.notes,
+        supplierOrderId: command.supplierOrderId ?? null,
         businessDate,
         entryMode: replaced === null ? entryModeFor(businessDate, today) : 'CORRECTED',
         journalEntryId: Ulid.generate(this.clock),

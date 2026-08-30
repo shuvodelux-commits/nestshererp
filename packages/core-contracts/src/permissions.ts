@@ -149,6 +149,18 @@ export const Permission = {
   BANK_ACCOUNT_MANAGE: 'bank.account.manage',
 
   /**
+   * Reconciling an account against the bank's own statement (Phase 11, §5.17).
+   *
+   * Separate from `bank.account.view` because reading a statement and signing
+   * off that it agrees with the bank are different acts: the second one is the
+   * shop's control record, and `reopen` is separate again because reopening a
+   * completed reconciliation reopens a period somebody already certified.
+   */
+  RECONCILIATION_VIEW: 'bank.reconciliation.view',
+  RECONCILIATION_PERFORM: 'bank.reconciliation.perform',
+  RECONCILIATION_REOPEN: 'bank.reconciliation.reopen',
+
+  /**
    * Buying goods (Phase 5, §5.9).
    *
    * Three codes rather than one `purchase.manage`, by the owner decision of
@@ -205,7 +217,102 @@ export const Permission = {
   STOCK_COUNT_POST: 'stock.count.post',
   PERIOD_CLOSE: 'period.close',
   PERIOD_BACKDATE: 'period.backdate',
+
+  /**
+   * Phase 8. Five codes, not twelve (owner simplification 2026-08-26).
+   *
+   * Entering a purchase's serial numbers and adding a landed cost to it are
+   * deliberately **not** their own permissions: typing serials off the cartons
+   * is part of recording the bill, and a cost that changes what a posted bill
+   * came to is `purchase.bill.edit` by any honest reading. A permission per
+   * keystroke is a permission nobody configures correctly.
+   */
+  PURCHASE_PLAN_VIEW: 'purchase.plan.view',
+  PURCHASE_PLAN_MANAGE: 'purchase.plan.manage',
+  WARRANTY_CLAIM_VIEW: 'warranty.claim.view',
+  WARRANTY_CLAIM_MANAGE: 'warranty.claim.manage',
+  VENDOR_STOCK_MANAGE: 'vendor.stock.manage',
+
+  /**
+   * Phase 9 — reports, dashboard and Daybook (§5.20, §5.27).
+   *
+   * One code per report screen rather than one `report.view` for all four
+   * (owner decision 2026-08-30): §5.26's rule is that what a role may see is
+   * decided per kind of figure, and a manager who runs the shop floor can be
+   * given sales and stock without ever seeing what the shop owes or earns.
+   *
+   * `report.profit.view` is the §5.20 dashboard-profit gate and is separate
+   * from `inventory.cost.view`, which withholds a *product's* cost. Profit is
+   * the shop's, cost is a line's, and a shop may want one shown without the
+   * other.
+   *
+   * Daybook's five are §5.27's own list, unchanged: it concentrates
+   * visibility, never authority, so every action launched from it still needs
+   * the source module's permission.
+   */
+  REPORT_SALES_VIEW: 'report.sales.view',
+  REPORT_PURCHASE_VIEW: 'report.purchase.view',
+  REPORT_STOCK_VIEW: 'report.stock.view',
+  REPORT_MONEY_VIEW: 'report.money.view',
+  REPORT_PROFIT_VIEW: 'report.profit.view',
+  REPORT_TARGET_MANAGE: 'report.target.manage',
+  DASHBOARD_VIEW: 'dashboard.card.view',
+  DAYBOOK_VIEW: 'daybook.view',
+  DAYBOOK_VIEW_ALL_USERS: 'daybook.view.all_users',
+  DAYBOOK_VIEW_ENTRY_DATE: 'daybook.view.entry_date',
+  DAYBOOK_REVIEW_MARK: 'daybook.review.mark',
+  DAYBOOK_PRINT: 'daybook.print',
+
+  /**
+   * Phase 9.2 — cancelling what was already posted (owner decision
+   * 2026-08-30).
+   *
+   * **Correcting rides on the code that recorded it** — a cashier who may take
+   * money may fix the amount they just typed, and the before/after values are
+   * in the audit trail either way. **Cancelling gets its own code per module**,
+   * because §5.26 keeps destructive actions apart and undoing yesterday's
+   * receipt is a different act from taking today's: it puts a customer back in
+   * debt and takes money out of a drawer somebody has already counted.
+   *
+   * `sale.invoice.void` and `purchase.bill.void` already existed and are not
+   * duplicated here.
+   */
+  RECEIPT_VOID: 'sale.receipt.void',
+  SUPPLIER_PAYMENT_VOID: 'purchase.payment.void',
+  EXPENSE_VOID: 'expense.void',
+  CASH_MOVEMENT_VOID: 'cash.movement.void',
+  STOCK_ADJUSTMENT_VOID: 'stock.adjustment.void',
+  SALES_RETURN_VOID: 'sales.return.void',
+  PURCHASE_RETURN_VOID: 'purchase.return.void',
+
+  /**
+   * Phase 10 — the licence, the backup, and the two operations that can empty
+   * or replace the whole database (owner decisions 2026-08-30).
+   *
+   * **A `.sherdb` file plus its secret is the business.** Every price, cost,
+   * customer balance and credential hash travels in one download, which is why
+   * exporting is its own code rather than a corner of `settings.setting.view`,
+   * and why export, restore and reset all three demand step-up as well: §5.3
+   * classifies backup export and restore as sensitive actions needing a fresh
+   * credential, and a session left open on the counter PC must not be enough to
+   * walk out with the shop.
+   *
+   * Seeded to the **Owner alone**. Manager, Cashier, Storekeeper, Accountant
+   * and Viewer receive none of them, so the Licence and Backup pages do not
+   * render for those roles at all. A shop that wants its accountant to hold the
+   * backup right grants it deliberately, and that grant is an audited act with
+   * a date on it.
+   *
+   * `license.term.view` is permission-only: reading when the term ends is not a
+   * dangerous act, and a licence nobody may look at is one nobody renews.
+   */
+  LICENSE_VIEW: 'license.term.view',
+  BACKUP_EXPORT: 'backup.export',
+  BACKUP_RESTORE: 'backup.restore',
+  BUSINESS_RESET: 'business.reset',
 } as const;
+
+
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -604,6 +711,169 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
       'Record a return, expense or count against a business date in the past, inside a month that is still open. A reason is required and the real entry time is kept.',
   },
   {
+    code: Permission.PURCHASE_PLAN_VIEW,
+    group: 'Purchasing',
+    label: 'See the purchase planner',
+    detail:
+      'Open the planner and saved plans, and see what the shop is short of. Cost, profit and the budget stay hidden without "See cost and profit".',
+  },
+  {
+    code: Permission.PURCHASE_PLAN_MANAGE,
+    group: 'Purchasing',
+    label: 'Make and send purchase plans',
+    detail:
+      'Save a plan, change its quantities, send a supplier their order, and close a plan that will never be finished. A plan changes no stock and no balance.',
+  },
+  {
+    code: Permission.WARRANTY_CLAIM_VIEW,
+    group: 'Warranty',
+    label: 'See warranty claims',
+    detail: 'Open the claim list and any claim, and look a serial number up.',
+  },
+  {
+    code: Permission.WARRANTY_CLAIM_MANAGE,
+    group: 'Warranty',
+    label: 'Handle warranty claims',
+    detail:
+      'Take a faulty item in, send it to the supplier, replace it from own stock and settle the claim. Replacing from own stock charges the shop to warranty expense.',
+  },
+  {
+    code: Permission.VENDOR_STOCK_MANAGE,
+    group: 'Vendors',
+    label: 'Receive and return vendor stock',
+    detail:
+      'Record goods a vendor left to be sold on their behalf, and hand back what did not sell. Neither moves money — the vendor is owed only when an item sells.',
+  },
+  {
+    code: Permission.REPORT_SALES_VIEW,
+    group: 'Reports',
+    label: 'See sales reports',
+    detail:
+      'How much was sold over any period, and by which product, customer, staff member, brand, category or payment method.',
+  },
+  {
+    code: Permission.REPORT_PURCHASE_VIEW,
+    group: 'Reports',
+    label: 'See purchase reports',
+    detail: 'What the shop bought over any period, and from which supplier.',
+  },
+  {
+    code: Permission.REPORT_STOCK_VIEW,
+    group: 'Reports',
+    label: 'See stock reports',
+    detail:
+      'What is on the shelf, what is running out, what is near expiry and how stock moved. Stock value and cost need "See cost and profit" as well.',
+  },
+  {
+    code: Permission.REPORT_MONEY_VIEW,
+    group: 'Reports',
+    label: 'See money reports',
+    detail:
+      'Who owes the shop and for how long, what the shop owes its suppliers, cash and bank balances and what was spent.',
+  },
+  {
+    code: Permission.REPORT_PROFIT_VIEW,
+    group: 'Reports',
+    label: 'See profit',
+    detail:
+      'The shop’s profit on the dashboard and in reports. Hidden while costing for the period is still provisional, so a half-costed profit is never shown as final.',
+  },
+  {
+    code: Permission.REPORT_TARGET_MANAGE,
+    group: 'Reports',
+    label: 'Set the monthly target',
+    detail:
+      'Type the profit or sales target for a month. The projection beside it is an estimate from the current daily rate, never a posted figure.',
+  },
+  {
+    code: Permission.DASHBOARD_VIEW,
+    group: 'Reports',
+    label: 'See the dashboard cards',
+    detail:
+      'Today’s sales, cash, bank, stock value, dues, payables and low stock on the home screen. Each card still needs its own report permission.',
+  },
+  {
+    code: Permission.DAYBOOK_VIEW,
+    group: 'Daybook',
+    label: 'See the daybook',
+    detail:
+      'Everything that happened on a day — sales, purchases, money in and out, expenses, returns and stock changes — in one list, with the day’s cash summary.',
+  },
+  {
+    code: Permission.DAYBOOK_VIEW_ALL_USERS,
+    group: 'Daybook',
+    label: 'See everybody’s entries',
+    detail:
+      'Without this, the daybook shows only what this user recorded themselves. A cashier checking their own counter does not need it.',
+  },
+  {
+    code: Permission.DAYBOOK_VIEW_ENTRY_DATE,
+    group: 'Daybook',
+    label: 'See the daybook by entry time',
+    detail:
+      'Switch the daybook from the date a transaction belongs to, to the moment it was actually typed in. An audit view for finding late and backdated entries.',
+  },
+  {
+    code: Permission.DAYBOOK_REVIEW_MARK,
+    group: 'Daybook',
+    label: 'Mark a day checked',
+    detail: 'Tick a day off after tallying it against the notebook, with a note if something looked odd.',
+  },
+  {
+    code: Permission.DAYBOOK_PRINT,
+    group: 'Daybook',
+    label: 'Print the day-end report',
+    detail:
+      'Print or reprint the day’s report on A4 or the counter roll. Every print is recorded, and a reprint is stamped as one.',
+  },
+  {
+    code: Permission.RECEIPT_VOID,
+    group: 'Sales',
+    label: 'Cancel money received',
+    detail:
+      'Undo a receipt that was recorded by mistake. The customer owes the amount again and the money leaves the account it went into. A reason is required.',
+  },
+  {
+    code: Permission.SUPPLIER_PAYMENT_VOID,
+    group: 'Purchasing',
+    label: 'Cancel a supplier payment',
+    detail:
+      'Undo money recorded as paid to a supplier. The bills it settled are owed again and the cash goes back. A reason is required.',
+  },
+  {
+    code: Permission.EXPENSE_VOID,
+    group: 'Money',
+    label: 'Cancel an expense',
+    detail: 'Undo an expense that was recorded by mistake, putting the money back where it came from. A reason is required.',
+  },
+  {
+    code: Permission.CASH_MOVEMENT_VOID,
+    group: 'Money',
+    label: 'Cancel a cash movement',
+    detail:
+      'Undo a transfer, an owner withdrawal or a deposit that was recorded wrongly. A reason is required.',
+  },
+  {
+    code: Permission.STOCK_ADJUSTMENT_VOID,
+    group: 'Inventory',
+    label: 'Cancel a stock adjustment',
+    detail:
+      'Undo a stock correction, putting the quantity and its value back. Refused once the stock it added has been sold. A reason is required.',
+  },
+  {
+    code: Permission.SALES_RETURN_VOID,
+    group: 'Sales',
+    label: 'Cancel a customer return',
+    detail:
+      'Undo a return taken in by mistake: the goods leave the shelf again and the refund or credit is reversed. A reason is required.',
+  },
+  {
+    code: Permission.PURCHASE_RETURN_VOID,
+    group: 'Purchasing',
+    label: 'Cancel a return to a supplier',
+    detail: 'Undo goods recorded as sent back, putting them on the shelf and the credit back. A reason is required.',
+  },
+  {
     code: Permission.CASH_ACCOUNT_VIEW,
     group: 'Money',
     label: 'See cash accounts and their balances',
@@ -666,6 +936,53 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     group: 'Money',
     label: 'Set up bank and bKash accounts',
     detail: 'Add a bank, bKash or Nagad account, change its details, or take one out of use.',
+  },
+  {
+    code: Permission.RECONCILIATION_VIEW,
+    group: 'Money',
+    label: 'See account reconciliations',
+    detail: 'Open a bank or bKash account’s reconciliation and read what was matched.',
+  },
+  {
+    code: Permission.RECONCILIATION_PERFORM,
+    group: 'Money',
+    label: 'Reconcile an account against its statement',
+    detail:
+      'Upload a bank or bKash statement, match it against the shop’s own records and complete the reconciliation. Fixing a wrong transaction still needs that module’s own permission.',
+  },
+  {
+    code: Permission.RECONCILIATION_REOPEN,
+    group: 'Money',
+    label: 'Reopen a completed reconciliation',
+    detail: 'Undo a sign-off so an account can be reconciled again, or clear one marked for review.',
+  },
+
+  {
+    code: Permission.LICENSE_VIEW,
+    group: 'Licence & backup',
+    label: 'See the licence',
+    detail: 'Open Settings → Licence and see when the term ends and what it includes.',
+  },
+  {
+    code: Permission.BACKUP_EXPORT,
+    group: 'Licence & backup',
+    label: 'Download a backup',
+    detail:
+      'Download the whole business as one encrypted file. Asks for the password again first.',
+  },
+  {
+    code: Permission.BACKUP_RESTORE,
+    group: 'Licence & backup',
+    label: 'Restore a backup',
+    detail:
+      'Load a backup file into an empty installation. Asks for the password again first.',
+  },
+  {
+    code: Permission.BUSINESS_RESET,
+    group: 'Licence & backup',
+    label: 'Reset business data',
+    detail:
+      'Empty this installation so a backup can be restored into it. Asks for the password again, and for the words to be typed out.',
   },
 ];
 
@@ -770,6 +1087,9 @@ export const SEED_ROLES: readonly SeedRole[] = [
        */
       Permission.CASH_ACCOUNT_VIEW,
       Permission.BANK_ACCOUNT_VIEW,
+      // Reads a reconciliation, does not sign one off: agreeing with the bank
+      // is the accountant's certificate, not an operation (§5.17).
+      Permission.RECONCILIATION_VIEW,
       Permission.CASH_SESSION_START,
       Permission.CASH_SESSION_CLOSE,
       Permission.CASH_MOVEMENT_RECORD,
@@ -815,10 +1135,45 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.EXPENSE_RECORD,
       Permission.STOCK_COUNT_POST,
       Permission.PERIOD_BACKDATE,
+      Permission.PURCHASE_PLAN_VIEW,
+      Permission.PURCHASE_PLAN_MANAGE,
+      Permission.WARRANTY_CLAIM_VIEW,
+      Permission.WARRANTY_CLAIM_MANAGE,
+      Permission.VENDOR_STOCK_MANAGE,
+      /*
+       * Phase 9. The manager reads every report and the whole daybook,
+       * including profit — §5.26 puts cost and profit inside this role — and
+       * ticks a day off after checking it. The monthly target stays with the
+       * owner: it is what the owner wants the shop to make, not a working
+       * figure.
+       */
+      Permission.REPORT_SALES_VIEW,
+      Permission.REPORT_PURCHASE_VIEW,
+      Permission.REPORT_STOCK_VIEW,
+      Permission.REPORT_MONEY_VIEW,
+      Permission.REPORT_PROFIT_VIEW,
+      Permission.DASHBOARD_VIEW,
+      Permission.DAYBOOK_VIEW,
+      Permission.DAYBOOK_VIEW_ALL_USERS,
+      Permission.DAYBOOK_VIEW_ENTRY_DATE,
+      Permission.DAYBOOK_REVIEW_MARK,
+      Permission.DAYBOOK_PRINT,
+      /*
+       * Phase 9.2. The manager runs the floor and is who a cashier fetches when
+       * something has to be undone, so every cancellation is theirs.
+       */
+      Permission.RECEIPT_VOID,
+      Permission.SUPPLIER_PAYMENT_VOID,
+      Permission.EXPENSE_VOID,
+      Permission.CASH_MOVEMENT_VOID,
+      Permission.STOCK_ADJUSTMENT_VOID,
+      Permission.SALES_RETURN_VOID,
+      Permission.PURCHASE_RETURN_VOID,
     ],
   },
   {
     code: 'CASHIER',
+
     name: 'Cashier',
     // ৳5,000 for one return and ৳10,000 across a day, as the shop's starting
     // point. Over either, the screen asks for an owner or manager PIN.
@@ -879,6 +1234,15 @@ export const SEED_ROLES: readonly SeedRole[] = [
        */
       Permission.SALES_RETURN_VIEW,
       Permission.SALES_RETURN_CREATE,
+      Permission.WARRANTY_CLAIM_VIEW,
+      /*
+       * Phase 9. The cashier checks their own counter at the end of a shift:
+       * the daybook without `daybook.view.all_users` shows only what they
+       * recorded themselves (§5.27), and the day-end slip prints on the
+       * counter roll. No reports, no dashboard, no profit.
+       */
+      Permission.DAYBOOK_VIEW,
+      Permission.DAYBOOK_PRINT,
     ],
   },
   {
@@ -919,6 +1283,11 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.PURCHASE_RETURN_VIEW,
       Permission.PURCHASE_RETURN_CREATE,
       Permission.SALES_RETURN_VIEW,
+      Permission.PURCHASE_PLAN_VIEW,
+      Permission.WARRANTY_CLAIM_VIEW,
+      Permission.VENDOR_STOCK_MANAGE,
+      /* Phase 9. The shelf's own report, and nothing about money (§5.26). */
+      Permission.REPORT_STOCK_VIEW,
     ],
   },
   {
@@ -944,6 +1313,14 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_ACCOUNT_MANAGE,
       Permission.BANK_ACCOUNT_VIEW,
       Permission.BANK_ACCOUNT_MANAGE,
+      /*
+       * "Ledgers, payments, expenses, bank" is the reconciler's own job, so
+       * this role imports the statement and completes the sign-off. Reopening
+       * a completed one stays with the Owner — undoing a certificate is not
+       * the same act as making it.
+       */
+      Permission.RECONCILIATION_VIEW,
+      Permission.RECONCILIATION_PERFORM,
       Permission.CASH_MOVEMENT_RECORD,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_DAILY_INVESTIGATE,
@@ -968,10 +1345,38 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.PURCHASE_RETURN_VIEW,
       Permission.PERIOD_CLOSE,
       Permission.PERIOD_BACKDATE,
+      Permission.PURCHASE_PLAN_VIEW,
+      Permission.WARRANTY_CLAIM_VIEW,
+      /*
+       * Phase 9. Reports are named in this role's own description, and the
+       * daybook by entry time is how a late entry is found — the accountant's
+       * question, not the counter's. No dashboard target: see MANAGER.
+       */
+      Permission.REPORT_SALES_VIEW,
+      Permission.REPORT_PURCHASE_VIEW,
+      Permission.REPORT_STOCK_VIEW,
+      Permission.REPORT_MONEY_VIEW,
+      Permission.REPORT_PROFIT_VIEW,
+      Permission.DASHBOARD_VIEW,
+      Permission.DAYBOOK_VIEW,
+      Permission.DAYBOOK_VIEW_ALL_USERS,
+      Permission.DAYBOOK_VIEW_ENTRY_DATE,
+      Permission.DAYBOOK_REVIEW_MARK,
+      Permission.DAYBOOK_PRINT,
+      /*
+       * Phase 9.2. The accountant is the one who finds the wrong figure, so the
+       * four money cancellations are theirs — stock is the storekeeper's shelf
+       * and returns are taken at the counter.
+       */
+      Permission.RECEIPT_VOID,
+      Permission.SUPPLIER_PAYMENT_VOID,
+      Permission.EXPENSE_VOID,
+      Permission.CASH_MOVEMENT_VOID,
     ],
   },
   {
     code: 'VIEWER',
+
     name: 'Viewer',
     // "Read-only, no cost, no profit." Money is read-only too: the balances and
     // the day's history, and nothing that starts, closes or moves anything.
@@ -982,8 +1387,11 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.SUPPLIER_VIEW,
       Permission.CASH_ACCOUNT_VIEW,
       Permission.BANK_ACCOUNT_VIEW,
+      Permission.RECONCILIATION_VIEW,
       Permission.CASH_DAILY_VIEW,
       Permission.PURCHASE_VIEW,
+      Permission.PURCHASE_PLAN_VIEW,
+      Permission.WARRANTY_CLAIM_VIEW,
     ],
   },
 ];

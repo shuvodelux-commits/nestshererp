@@ -133,6 +133,17 @@ onMounted(load);
                   outlined
                   @click="closingPeriod = period"
                 />
+                <!--
+                  The current month has no button by design — closing the month
+                  you are standing in would refuse your own next sale. Saying so
+                  is the fix for a screen that otherwise looks broken: the owner
+                  read a row with no action and asked how to close a month
+                  (2026-08-26).
+                -->
+                <small v-else-if="period.isCurrent" class="per__wait">
+                  Closes once the month ends
+                  <span>মাস শেষ হলে বন্ধ করা যাবে</span>
+                </small>
               </td>
             </tr>
           </tbody>
@@ -157,6 +168,18 @@ onMounted(load);
 </template>
 
 <style scoped>
+.per__wait {
+  display: block;
+  text-align: right;
+  color: var(--sher-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.per__wait span {
+  display: block;
+}
+
 .per {
   display: flex;
   flex-direction: column;

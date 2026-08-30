@@ -69,11 +69,15 @@ interface Line {
   rate: number;
   expiryDate: string;
   showDetail: boolean;
+  /** Set only when this line came from a purchase plan (Phase 8, §5.9). */
+  planLineId: string | null;
 }
 
 const today = clock.businessDate(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 const supplierId = ref('');
+/** The supplier order being converted, when the bill came from one (Phase 8). */
+const supplierOrderId = ref<string | null>(null);
 const billRef = ref('');
 const businessDate = ref(today);
 const dueDate = ref('');
@@ -201,8 +205,63 @@ async function loadSetup(): Promise<void> {
     if (typeof correcting === 'string' && correcting !== '') {
       await loadForCorrection(token, correcting);
     }
+    await seedFromPlan(token);
   } catch (cause) {
     failure.value = describe(cause, 'Could not load suppliers and accounts');
+  }
+}
+
+/**
+ * Fill the form from a purchase plan (§5.9, A14, owner decision 2026-08-26).
+ *
+ * **The plan only seeds this screen.** Nothing was posted when the plan was
+ * made and nothing is posted now — the shopkeeper still adds, changes or
+ * removes whatever they like, and it is the ordinary purchase use case that
+ * runs when they save. What the plan contributes is the products, the
+ * quantities still owed, and the link that lets the plan know afterwards what
+ * actually arrived.
+ */
+async function seedFromPlan(token: string): Promise<void> {
+  const seeded = route.query['lines'];
+  const supplier = route.query['supplierPartyId'];
+  if (typeof seeded !== 'string' || seeded === '') return;
+
+  if (typeof supplier === 'string' && supplier !== '') supplierId.value = supplier;
+
+  // Set when the shopkeeper pressed Convert on a supplier order: saving the
+  // bill is what closes that order and points it at this purchase.
+  const fromOrder = route.query['supplierOrderId'];
+  if (typeof fromOrder === 'string' && fromOrder !== '') supplierOrderId.value = fromOrder;
+
+  const entries = seeded
+    .split(',')
+    .map((entry) => entry.split(':'))
+    .filter(([planLineId, productId, qtyRaw]) => planLineId && productId && qtyRaw);
+  if (entries.length === 0) return;
+
+  /*
+   * Read the products the plan named, so the line carries the real unit, price
+   * and expiry rule rather than whatever the picker last happened to load.
+   */
+  const page = await fetchProducts(token, { status: 'ACTIVE', limit: 200 });
+  const byId = new Map(page.data.map((product) => [product.id, product]));
+
+  for (const [planLineId = '', productId = '', qtyRaw = ''] of entries) {
+    const product = byId.get(productId);
+    if (product === undefined) continue;
+
+    lines.value.push({
+      productId: product.id,
+      productName: product.name,
+      productCode: product.sku ?? product.barcode ?? '',
+      unitName: product.baseUnitName,
+      tracksExpiry: product.tracksExpiry,
+      qty: Number(qtyRaw) / 1000,
+      rate: (product.purchasePriceMinor ?? 0) / 100,
+      expiryDate: '',
+      showDetail: false,
+      planLineId,
+    });
   }
 }
 
@@ -254,6 +313,9 @@ async function loadForCorrection(token: string, purchaseId: string): Promise<voi
     rate: (line.unitPriceMinor ?? 0) / 100,
     expiryDate: line.expiryDate ?? '',
     showDetail: false,
+    // A correction replaces a bill that already fulfilled whatever it was
+    // going to; re-linking it to the plan would count the goods twice.
+    planLineId: null,
   }));
 }
 
@@ -330,6 +392,7 @@ function addLine(product: ProductResponse): void {
     rate: (product.purchasePriceMinor ?? 0) / 100,
     expiryDate: '',
     showDetail: false,
+    planLineId: null,
   });
 }
 
@@ -400,6 +463,7 @@ async function save(): Promise<void> {
             qty: Math.round(line.qty * 1000),
             unitPriceMinor: minor(line.rate),
             expiryDate: line.expiryDate === '' ? null : line.expiryDate,
+            planLineId: line.planLineId,
           }),
         ),
         discountMinor: minor(discount.value),
@@ -408,6 +472,7 @@ async function save(): Promise<void> {
         paidAccountCode: minor(paid.value) === 0 ? null : accountCode.value,
         notes: notes.value.trim() === '' ? null : notes.value.trim(),
         correctionOf: correctionOf.value,
+        supplierOrderId: supplierOrderId.value,
       },
       operationId.value,
     );

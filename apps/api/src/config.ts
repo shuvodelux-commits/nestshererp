@@ -47,6 +47,26 @@ export interface ApiConfig {
   readonly smsProvider: string;
   /** D-34/§4.4: billing belongs to SaaS. */
   readonly billingEnabled: boolean;
+
+  /**
+   * Where the nightly `.sherdb` archives are written (Phase 10, owner decision
+   * 2026-08-30). A plain directory on this machine, fourteen files deep.
+   */
+  readonly backupDir: string;
+  /**
+   * The restricted key file holding the one backup secret — **outside
+   * PostgreSQL**, so a stolen database does not carry the key that opens its
+   * own backups (D-15). Empty means no secret is configured yet: nothing can be
+   * encrypted, the nightly run fails loudly, and the Backup screen says so.
+   */
+  readonly backupKeyPath: string;
+  /** Where the pre-migration and pre-reset `pg_dump` files go. */
+  readonly recoveryDumpDir: string;
+  /**
+   * Local hour the nightly backup runs, 0–23. Two in the morning by default:
+   * after the shop has closed and long before anyone opens it.
+   */
+  readonly backupHour: number;
 }
 
 /**
@@ -85,6 +105,16 @@ function oneOf<T extends string>(name: string, allowed: readonly T[], fallback: 
   return value as T;
 }
 
+function hourOfDay(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (value === undefined || value === '') return fallback;
+  const hour = Number(value);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new Error(`${name} must be a whole hour from 0 to 23, not "${value}"`);
+  }
+  return hour;
+}
+
 export function loadConfig(): ApiConfig {
   return {
     databaseUrl: required('DATABASE_URL'),
@@ -104,5 +134,10 @@ export function loadConfig(): ApiConfig {
     licensePublicKey: process.env['LICENSE_PUBLIC_KEY'] ?? EMBEDDED_LICENSE_PUBLIC_KEY,
     smsProvider: process.env['SMS_PROVIDER'] ?? 'none',
     billingEnabled: flag('BILLING_ENABLED', true),
+
+    backupDir: process.env['BACKUP_DIR'] ?? 'backups',
+    backupKeyPath: process.env['BACKUP_KEY_PATH'] ?? '',
+    recoveryDumpDir: process.env['RECOVERY_DUMP_DIR'] ?? 'backups/recovery',
+    backupHour: hourOfDay('BACKUP_HOUR', 2),
   };
 }

@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, UseGuards,
+} from '@nestjs/common';
 import type {
   CostAdjustmentRow, InventoryOverviewResponse, OpeningStockResponse,
   StockAdjustmentResponse, StockAdjustmentRow,
@@ -6,6 +8,7 @@ import type {
 import {
   adjustStockRequestSchema, AppError, ErrorCode, inventoryReportQuerySchema,
   recordOpeningStockRequestSchema,
+  voidDocumentRequestSchema,
 } from '@sher/core-contracts';
 import type { ManageInventoryService, TenantContext } from '@sher/core-application';
 
@@ -56,5 +59,23 @@ export class InventoryController {
     const parsed = recordOpeningStockRequestSchema.safeParse(body);
     if (!parsed.success || operationId === undefined || operationId.length !== 26) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid opening stock request');
     return { data: await this.inventory.recordOpening({ ctx, operationId, ...parsed.data, source: 'API' }) };
+  }
+
+  /**
+   * Cancelling a stock change (Phase 9.2). The goods go back exactly where they
+   * were and the document stays, marked cancelled with its reason.
+   */
+  @Post('adjustments/:id/void')
+  async voidAdjustment(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: { ok: true } }> {
+    const parsed = voidDocumentRequestSchema.safeParse(body);
+    if (!parsed.success || id.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'A cancellation needs the document version and a reason');
+    }
+    await this.inventory.voidAdjustment({ ctx, adjustmentId: id, ...parsed.data });
+    return { data: { ok: true } };
   }
 }

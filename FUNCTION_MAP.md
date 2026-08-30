@@ -214,3 +214,384 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 - `pnpm db:migrate` after a new migration; `pnpm db:backfill` after adding a permission code or
   anything else `provisionTenant` seeds.
 - Gates: `pnpm lint`, `pnpm typecheck`, `pnpm test:boundaries`, `pnpm test`.
+
+---
+
+## 11. Purchasing extras — Phase 8 (§5.9 · §5.12 · §5.19 · §5.6 M07)
+
+**Domain.** `purchasing/purchase-plan.ts` — `suggestFor` (the hybrid rule: velocity × cover days
+less stock less what is on order, falling back to the reorder level under `MIN_SELLING_DAYS`),
+`priorityOf`, `roundToPack`, `affordableQty`, `allocateBudget`, `comparePlanLines`, `planTotals`.
+`purchasing/landed-cost.ts` — `allocateLandedCost`, `splitLateLandedCost`,
+`DEFAULT_LANDED_COST_METHOD`. `inventory/serial-unit.ts` — `normalizeSerial`, `rejectSerialBatch`,
+`serialsOutstanding`. `warranty/warranty-claim.ts` — `canMoveClaim`, `rejectClaimMove`,
+`warrantyEndDate`, `warrantyCoversOn`. **Call these rather than writing the arithmetic again**: the
+planner screen and the plan service both run `allocateBudget` and `planTotals` on the same numbers,
+which is what stops the browser and the server disagreeing about a total.
+
+**Application.** `PlannerService.plan` (read-only, posts nothing) · `PurchasePlanService`
+(save/update/**decide**/remove/detail/list/**listOrders**/order — no idempotency key anywhere,
+because a plan makes no financial write) · `AddLandedCostService.add` (Class T) · `SerialService`
+(record/progress/available) · `WarrantyService` (lookup/create/move/detail/list) ·
+`VendorStockService` (receive/returnStock/settlement/listReceipts).
+
+**The plan's real flow (owner rework 2026-08-26), and the one to hold in mind:**
+
+```
+Planner  --Save-->  DRAFT plan  --Approve-->  APPROVED + one supplier order per supplier
+                                --Reject-->   REJECTED
+supplier order (OPEN)  --View-->  print / PDF / share
+                       --Convert-->  seeds New Purchase  --save-->  order CONVERTED, names the bill
+```
+
+**There is no "send".** Approving is what creates the orders; nothing is transmitted anywhere, so
+an order has no sent-at and no delivery state. `purchases.supplier_order_id` and
+`supplier_purchase_orders.purchase_id` point at each other, written in the bill's own transaction.
+
+**Two things are derived, never stored as counters:** how much of a plan line has been bought is a
+SUM over posted purchase lines carrying `plan_line_id`, and a plan's status follows from that SUM
+plus `closed_at`. Voiding a bill therefore makes the plan right again with nothing to unwind.
+
+**Accounting.** A plan and a supplier order post nothing at all. A late landed cost posts
+`DR INVENTORY` (by what the valuation actually moved) `+ DR COGS` (the share belonging to units
+already sold) `+ ROUNDING` `/ CR AP or CASH`, dated **the day it is recorded** so a closed period is
+never rewritten. Warranty posts through existing paths only: a replacement from own stock is
+`ManageInventoryService.adjustStockWithin` with `counterAccount: WARRANTY_EXPENSE` (the new optional
+parameter on `stockAdjustmentPosting`), and a cash settlement credits `WARRANTY_EXPENSE` back.
+**No warranty receivable is ever created.** Vendor stock posts no journal entry in either direction;
+the payable is created by the sale's deemed purchase (DR13.10), which already existed.
+
+**Permissions (5):** `purchase.plan.view/manage`, `warranty.claim.view/manage`,
+`vendor.stock.manage`. Entering serials rides on `purchase.bill.create`; adding a landed cost rides
+on `purchase.bill.edit`. Cost, profit, margin and the budget are **absent** from planner responses
+without `inventory.cost.view`.
+
+**Web.** `PurchasePlanPage` is one page with three tabs — Planner · Saved Plans · Supplier
+Orders — and is the only route (`/purchase-plans`); `PurchasePlanDetailPage` and
+`SupplierOrderPage` are its detail views. Also `WarrantyClaimsPage`, `WarrantyClaimPage`,
+`VendorStockPage`. Dialogs `AddLandedCostDialog`, `SerialEntryDialog`, `ClaimStepDialog`,
+`VendorStockReceiveDialog`, `VendorStockReturnDialog`, `QuickAddProductDialog` (D-39 inline
+create, mandatory fields only, same `createProduct` endpoint). API clients
+`api/purchase-plans.ts`, `api/warranty.ts`, `api/vendors.ts`.
+
+**Three UI rules settled while building this, binding beyond Phase 8:**
+
+- **`qtyText(raw)`** (`components/money/money-text.ts`) is how a quantity is drawn: `12`, not
+  `12.000`; at most two decimals; trailing zeros trimmed. It wraps `formatForDisplay` in
+  `shared-utils/scaled.ts`. `Qty(x).format()` is the **storage** form — the exact inverse of
+  `parseScaled` — and belongs in tests and round-trips, never on a screen. `taka()` already did
+  the same for paisa. Sentences a shopkeeper reads use it too; audit `before`/`after` values
+  deliberately keep the storage form.
+- **A `Select` option's value is never `null`.** PrimeVue cannot match a `null` model to a
+  `null` option, so the control draws blank and reopens instead of closing. "All"/"Unassigned"/
+  "on account" get a real sentinel string, converted back to `null` where the request is built.
+- **A list reloads from the control's own `@change`**, never from a `watch` on the bound ref, and
+  a load must not write back into the ref a `Select` is bound to.
+
+**`addDays(businessDate, days)` is now in `shared-utils/src/clock.ts`** — the only file allowed to
+touch `Date` (R-C8). Three callers wanted it; use it rather than parsing a date string again.
+
+**A cash account cannot pay out what it does not hold.** `resolvePaymentAccount` takes an optional
+`outflowMinor`; when it is set and the account is `CASH`, a payment larger than the live balance is
+refused with `CASH_ACCOUNT_SHORT`. Passed by the five outflow paths (purchase paid-now, pay
+supplier, expense, customer refund, landed cost) and by nothing that takes money **in** — a receipt
+must not be refused because the drawer is empty, and a bank account may legitimately be overdrawn.
+
+**Raw SQL is not typechecked.** Two Phase 8 queries shipped with column names that do not exist
+(`purchases.number`, `purchase_lines.location_id`) and only failed at runtime. After writing raw
+SQL, check the columns against `information_schema` rather than against the Drizzle schema.
+
+---
+
+## 12. Reporting, dashboard and Daybook — Phase 9 (§5.20 · §5.27 · D-27)
+
+**Domain.** `reporting/ageing.ts` — `reportAgeingBucket` (from the **document
+date**, 0–30/31–60/61–90/90+), `isOverdue`, `daysOutstanding`, `ageingTotals`,
+`REPORT_AGEING_BUCKETS`. `reporting/performance.ts` — `grossProfitMinor`,
+`marginBp`, `stockTurnBp`, `productPerformance`, `rankMovers`, `PERCENT_BASIS`.
+`reporting/target.ts` — `targetProgress` (run-rate projection). `sales/sale.ts`'s
+older `ageingBucket` answers a **different** question (what one invoice's header
+says about itself) and is deliberately untouched.
+
+**shared-utils.** `daysInMonth`, `monthOf`, `monthRange`, `weekdayOf` joined
+`addDays` in `clock.ts` — the only file allowed to touch `Date` (R-C8).
+
+**Application.** `ReportQueryService` (`sales`/`purchases`/`stock`/`money`/
+`performance`/`why`) · `ProfitTargetService` (`get`/`set`, WRITE CLASS M) ·
+`DashboardService` · `GetDaybookService` · `MarkDayReviewedService` ·
+`PrintDaybookService`. **None of them can post a business document**: they are
+constructed without a period guard, numbering service, outbox or idempotency
+store, which is the structural version of §5.27's "if `DaybookUpdateSaleService`
+ever appears, the module has become a back door".
+
+**Where a figure comes from — the rule to hold in mind.** Every *amount* is read
+from `journal_lines` with the posting kernel's sign convention (debit positive,
+so `SALES` and `AP` are negative). The journal has no product dimension, so the
+groupings that need one read the sale/purchase lines that produced those journal
+lines. Ageing is built from the **control account's lines**, oldest-debit-first
+against each party's credits — which is why the rows equal `AR`/`AP` exactly
+rather than approximately, and why the reconciliation line on the screen is a
+real check rather than decoration.
+
+**Repositories.** `ReportRepository`/`PostgresReportRepository`,
+`DaybookRepository`/`PostgresDaybookRepository`. Raw `db.execute(sql\`…\`)` for
+the aggregates; **bigints come back as strings** — `int()` in both files is the
+only sanctioned conversion, and `instant()` normalises `created_at`, which
+arrives as a `Date` from the builder and a string from a raw statement.
+
+**Permissions (12).** `report.sales.view` · `report.purchase.view` ·
+`report.stock.view` · `report.money.view` · `report.profit.view` ·
+`report.target.manage` · `dashboard.card.view` · `daybook.view` ·
+`daybook.view.all_users` · `daybook.view.entry_date` · `daybook.review.mark` ·
+`daybook.print`. Cost columns need `inventory.cost.view` and profit columns
+`report.profit.view`; both are **omitted from the response**, never blanked.
+
+**API.** `/api/v1/reports/{sales,purchases,stock,money,performance,why,target}`
+(`PUT` on target — one month, one target, no idempotency key), 
+`/api/v1/dashboard/cards`, `/api/v1/daybook` (+ `review`, `print`, `prints`).
+
+**Web.** Pages `SalesReportPage`, `PurchaseReportPage`, `MoneyReportPage`,
+`DaybookPage`, and the filled `DashboardPage`. **There is no stock report page**:
+`InventoryReportPage` is the stock report and gained cost-of-goods-sold and
+margin sections; `/reports/stock` redirects to it. `components/reports/`:
+`ReportScreen.vue` (the one filter-bar → tiles → table screen all the grouped
+reports share), `WhyDialog.vue`, `ProfitTargetDialog.vue`, `report-range.ts`
+(the preset buttons), `report-csv.ts` (reuses the domain's `toCsv`).
+`components/daybook/DaybookSheet.vue` is the A4/80mm day-end report, printed
+through the existing `printNode`. API clients `api/reports.ts`, `api/daybook.ts`.
+
+**A Daybook row's menu is built from `row.actions`, decided by the server** —
+the browser cannot know a document's status, its lot draw-down, the period lock
+and the user's permissions. A kind whose module has no correction path yet
+carries `blockedReason` naming where the shop does it instead, rather than a
+menu item the server cannot honour (`daybook/daybook-kinds.ts`).
+
+---
+
+## 13. Corrections and cancellations — Phase 9.2 (§2.5)
+
+**The rule the whole module is built on.** A posted document is **never**
+mutated and **never** deleted. "Edit" reverses what was posted and re-posts the
+corrected figures **under the same number**, in one transaction; "Delete" posts
+one reversing entry and leaves the document standing, marked `VOIDED` with a
+reason. Both facts stay in the journal, which is the only way a shopkeeper can
+be shown what a figure used to be, that it was corrected, and what it became.
+
+**Domain.** `corrections/correction-window.ts` — `correctionWindow(originalDate,
+today, originalPeriodOpen)` decides where a correction lands and whether a
+reason is compulsory; `cancellationDate(today)`. The owner's closed-period rule
+lives here and nowhere else: **open month → the original date; closed month →
+today, as a `PRIOR_PERIOD` adjustment carrying the original date**; a
+cancellation always carries the day it was made. `inventory/costing.ts` gained
+`averageUnitCostFrom(valueMinor, qtyRaw)` — the inverse of `stockValueMinor`,
+which every reversal needs to wind a cached average back.
+
+**Application.** `corrections/document-reversal-repository.ts` (port) and
+`corrections/reverse-money-document.ts` (the shared half of a cancellation).
+**One port for four document types** — expense, customer receipt, supplier
+payment, cash movement — because each posted exactly one balanced entry and
+moved no stock, so undoing any of them is the same three steps. It is a helper
+called *from* the owning service, not a service: each module still checks its
+own permission, applies its own refusals and writes its own audit entry, so
+there is no second writer (A11).
+
+**Who owns what:**
+
+| Document | Correct | Cancel | Where |
+|---|---|---|---|
+| Expense | ✓ | ✓ | `ManageExpensesService.correct` / `.void` |
+| Cash movement | ✓ | ✓ | `CashMovementService.correct` / `.void` |
+| Customer receipt | ✓ | ✓ | `ReceiveCustomerPaymentService.correct` / `.void` |
+| Supplier payment | ✓ | ✓ | `PaySupplierService.correct` / `.void` |
+| Stock adjustment | — | ✓ | `ManageInventoryService.voidAdjustment` |
+| Sales return | — | ✓ | `CreateSalesReturnService.void` |
+| Purchase return | — | ✓ | `CreatePurchaseReturnService.void` |
+| Purchase | ✓ (Phase 7) | ✓ (Phase 7) | `CreatePurchaseService.correctionOf` / `VoidPurchaseService` |
+| Sale | — | ✓ (Phase 6) | `CancelSaleService` |
+
+**Stock-bearing documents are not in the shared port and must not be.** A stock
+adjustment, a sales return and a purchase return each unwind lots and cost
+states as well, from the **stored** figures — an adjustment cancelled next
+month at today's average would take a different value off `INVENTORY` than it
+put on, and the account would stop equalling the valuation (INV-05). Their
+repository methods are `reverseAdjustment`, `reverseSalesReturn` and
+`reversePurchaseReturn`, each the mirror of its own insert.
+
+**Two refusals worth knowing**: cancelling an increase whose stock has been sold,
+and cancelling a customer return whose goods have been sold again — in both
+cases the goods are not there to take back, and the message says so.
+
+**Migrations 0037 and 0038.** 0037 adds `void_reason`, `correction_reason` and
+`original_business_date` to the nine document tables. **0038 fixes a latent
+Phase 7 bug**: `journal_entries_source_unique` allowed a document exactly one
+journal entry, which would have refused the first correction of a bill; it is
+replaced by a partial index over **original** postings only, so reversals
+(`*_REVERSAL`) and corrections (`*_CORRECTION`) are additive. Document numbers
+became unique among **live** rows only, which is what lets a corrected document
+keep the number on the paper the shop filed.
+
+**Permissions (7 new).** `sale.receipt.void` · `purchase.payment.void` ·
+`expense.void` · `cash.movement.void` · `stock.adjustment.void` ·
+`sales.return.void` · `purchase.return.void`. Correcting rides on the code that
+recorded the document; cancelling is separate (§5.26). Owner and Manager hold
+all seven, Accountant the four money ones, Cashier none.
+
+**API.** `PATCH …/:id` corrects and `POST …/:id/void` cancels, on
+`/api/v1/expenses`, `/api/v1/money/movements`, `/api/v1/customer-payments`,
+`/api/v1/suppliers/payments`, plus `POST` void on `/api/v1/inventory/adjustments`,
+`/api/v1/sales-returns` and `/api/v1/purchase-returns`.
+
+**Web.** `components/CancelDocumentDialog.vue` — one modal for every
+cancellation: what is being cancelled, what it will do in the shopkeeper's
+words, one compulsory reason. `RecordExpenseDialog` takes an optional
+`existing` and becomes a correction. `api/daybook.ts` holds `VOID_ROUTES`, the
+map from a daybook row's kind to the owning module's endpoint — Daybook opens
+the dialog and posts nothing itself (DR1). A row carries `documentVersion`, so a
+cancellation started there carries D-32's optimistic lock.
+
+**Migration 0039** adds `PRIOR_PERIOD` to the entry-mode check on eight tables.
+A correction into a closed month is not an ordinary `CORRECTED` entry and must
+not read as one: "why does August contain something that happened in July?" is
+the first question anybody asks of a prior-period adjustment, and the mode is
+what answers it.
+
+**A period guard covers the day a reversal posts on, and only that day.** The
+document's own month may be closed — that is precisely why the correction is
+dated today — so guarding it as well would refuse the case the rule exists for.
+`VoidPurchaseService` (Phase 7) still guards both and is the one path that
+behaves differently; it is recorded in §6.1.1 row 9.2 as an open question.
+
+**`period-repository` normalises `closed_at` through `parseInstant`.** It was
+typed as a `Date` and arrives as a string from a raw statement, so **closing a
+month crashed** before this. Any repository reading an instant out of raw SQL
+needs the same treatment — see `instant()` in `report-repository.ts`.
+
+---
+
+## 14. Account reconciliation — Phase 11 (§5.17 · UI-70 · D-43)
+
+**The rule to know before touching anything here: this module compares and links, and never posts.**
+Its service takes no posting service, no numbering service and no period guard; its repository has no
+write path to `journal_entries`, `journal_lines` or any document table. If reconciliation seems to
+need to create, correct, re-date or cancel a transaction, the answer is always the owning module's
+use case, called from the screen — never a new method on `ReconciliationRepository`.
+
+### Domain — pure, `packages/core-domain/src/reconciliation/`
+
+| Name | Location | What it does | When to reuse |
+|---|---|---|---|
+| `parseStatement` | `statement-parser.ts` | Positioned PDF text lines → `ParsedStatementLine[]` + problems + opening/closing/date range. Direction is read from the **running balance**, then a printed sign, then a keyword; a row nothing answers becomes a problem, never a guess | Any statement format work. Extend the patterns here, not in the extractor |
+| `ExtractedTextLine` | `statement-parser.ts` | `{ page, y, text }` — the whole contract between the PDF library and the domain | Writing another extractor (a CSV importer feeds `ParsedStatementLine` directly instead) |
+| `matchStatement` | `matching.ts` | Ledger rows × statement rows → `{ auto, suggested, conflicts }`, each pair carrying the reasons that produced it. Gates: equal amount **and** same direction; auto also needs reference-or-date agreement **and** uniqueness on both sides | Any matching. There is no second matcher |
+| `MATCH_RULES` | `matching.ts` | Every threshold and weight in one constant | Tuning confidence — change it here, and no UI moves |
+| `daysBetween`, `describeSimilarity` | `matching.ts` | Whole days between ISO dates; shared-word similarity 0…1 | Reusable, but similarity is a *supporting* signal only (never enough for a match) |
+
+### Application — `packages/core-application/src/reconciliation/`
+
+| Name | What it does | Notes |
+|---|---|---|
+| `ReconcileAccountService` | `start` · `workspace` · `list` · `saveMatch` · `removeMatch` · `complete` · `reopen` | Refuses CASH accounts (Daily Cash owns those), one draft per account, and every state a person may set. Auto matches are **computed on each read** and frozen only at completion |
+| `ImportStatementService` | `upload` (store + parse + preview) · `confirm` (import the approved rows) · `readFile` | Extraction runs outside the transaction; a file that cannot be opened is refused, one with no text is kept and reported `UNREADABLE` |
+| `StatementExtractor` (port) | Bytes → text lines | Implemented by `PdfTextExtractor` in `apps/api/src/infrastructure` |
+| `ReconciliationRepository` (port) | Reads the ledger; writes only the four Phase 11 tables | `listLedger` returns `postingCount` — the version snapshot the later-edit rule compares |
+
+### API and web
+
+| Where | What |
+|---|---|
+| `apps/api/src/money/reconciliations.controller.ts` | `POST /api/v1/money/reconciliations`, `GET /:id`, `POST /:id/statement`, `POST /:id/statement/confirm`, `GET /:id/statement/:fileId/file`, `POST /:id/matches`, `DELETE /:id/matches/:matchId`, `POST /:id/complete`, `POST /:id/reopen` |
+| `apps/api/src/infrastructure/pdf-text-extractor.ts` | pdf.js behind the port; groups text runs into visual lines by their y position. Loaded through a dynamic `import()` (the library is ESM, the API is CJS) |
+| `apps/api/src/main.ts` | JSON body limit raised to 12 MB — statements and CSV imports travel in the body |
+| `apps/web/src/pages/AccountReconcilePage.vue` | The two-pane workspace: our ledger left, the bank right, icon **plus word** for every status, sticky summary, click-to-highlight |
+| `apps/web/src/components/money/StartReconciliationDialog.vue` | Dates only — the closing balance is confirmed at the end |
+| `.../ImportStatementDialog.vue` | Upload → **editable preview** → import |
+| `.../AddMissingEntryDialog.vue` | Picks the right owning workflow for a statement-only row and opens **that** dialog prefilled; posts nothing itself |
+| `.../CompleteReconciliationDialog.vue` | Typed closing balance, live difference, and the blockers still in the way |
+| `prefill` props on `RecordExpenseDialog`, `ReceivePaymentDialog`, `PaySupplierDialog`, `MoveMoneyDialog` | Optional and additive — how a statement's figures reach an owning form without reconciliation writing anything |
+
+**Permissions:** `bank.reconciliation.view` · `bank.reconciliation.perform` · `bank.reconciliation.reopen`.
+
+**Fixtures:** `apps/api/test/support/fixtures/{statement,scanned,corrupt}.pdf` — a text statement, a
+scan with no text layer, and a file that is not a PDF. Reuse them rather than generating new ones.
+
+---
+
+## 12. Licence, backup and recovery — Phase 10 (§5.25 · §5.4 · D-15 · D-36)
+
+**The owner's reframing of 2026-08-30 governs this whole section.** V1 is a **single-business
+installation product**, not a shared SaaS service: one deployment, one database, one business, with
+many users, roles and locations. `tenant_id`, `TenantContext` and the tenant-scoped repository
+boundaries are untouched and must stay — they are architectural safety and future SaaS readiness.
+SaaS signup, platform-operator tooling, central subscriptions and the SMS wallet are **deferred**,
+disabled by configuration rather than deleted (§4.4).
+
+**Domain.** `backup/archive.ts` — `archiveCompatibility` (SAME · FORWARD_MIGRATE · TOO_NEW ·
+UNSUPPORTED_FORMAT), `archivesToDelete` (the 14-deep retention window), `archiveFileName`,
+`ARCHIVE_VERSION`, `MANUAL_EXPORT_REMINDER_DAYS`. **Contracts.** `modules.ts` —
+`LICENSED_MODULES`, `moduleOwning`, `licenceIncludes`. Most of SherERP is *not* in that registry
+and cannot be: selling, buying, stock, money, people, settings and backup are core, and no licence
+takes them away.
+
+**Application.** `BackupService` (status · exportNow · runAutomatic · replaceSecret) ·
+`RestoreService` (inspect · restore) · `ResetBusinessService.reset` · `LicenseStatusService`
+(status · notice). Four ports in `backup/backup-ports.ts`: `ArchiveCodec`, `BackupFileStore`,
+`BackupSecretStore`, `DatabaseDumpTool`. **None of these services posts a journal entry, allocates
+a number or consults a period guard** — like reconciliation, they are constructed without the
+collaborators that would let them.
+
+**Two backup mechanisms, and they are not alternatives:**
+
+```
+.sherdb   encrypted · versioned · logical · the owner's portable copy
+          restores across a version gap, refuses only into an empty installation
+pg_dump   automatic · exact · same-version-only · never the owner's copy
+          taken and verified before every migration and before every reset
+```
+
+**The archive's table list is discovered, never compiled in.** `PostgresBackupRepository` asks the
+database which tables carry a `tenant_id` and exports every one except an explicit exclusion list —
+ephemeral runtime state (`otp_codes`, `refresh_tokens`, `idempotency_keys`, `outbox`) and this
+module's own machine-local bookkeeping (`backup_runs`, `restore_events`). **The exclusions are what
+must justify themselves, not the inclusions**: a hand-kept include list is the list that silently
+omits next month's module, and the omission surfaces mid-recovery. `backup.spec.ts` asserts it.
+
+Write order comes from `pg_constraint` at run time, parents before children. A real cycle — a
+purchase naming the supplier order it came from, that order naming the purchase it became — is
+broken on a nullable column, written null, and filled by a second pass. Deleting walks it backwards.
+
+**Forward migration is the import loop, not a registry of steps.** A column the archive has and this
+build dropped is skipped; a column this build added takes its default; a column this build requires
+that the archive cannot supply stops the restore **by name**, not as a constraint violation.
+
+**Restore never deletes.** It refuses unless the installation is empty — "empty" meaning nothing
+outside the set of tables provisioning writes — and names Reset Business Data as the separate step.
+Restore adopts the archive's tenant inside one transaction via `runWithoutTenant`/`adoptTenant`, so
+every inserted row satisfies the same RLS policy as everything else; nothing escapes row-level
+security. Identity, users and credential hashes come from the archive; **entitlement comes only from
+the licence on the destination machine** (D-08).
+
+**Encryption.** AES-256-GCM, per-file salt and nonce, scrypt from one installation-level secret held
+in a key file **outside PostgreSQL**. Never in a row, an archive, a log, a diagnostic bundle or an
+API response, and never displayed. `WRONG_SECRET` / `DAMAGED` / `NOT_AN_ARCHIVE` are kept apart
+because they send a shopkeeper to three different places.
+
+**Where `modules[]` finally bites:** `PostgresAccessControl`, in one place, before the role check.
+Unlicensed + never used → hidden (`permissionsOf` withholds it, so navigation stops rendering it,
+UI-09). Unlicensed + holds data → readable, writes refused. Nothing else in the codebase asks about
+entitlement, and nothing else should.
+
+**Permissions (4):** `license.term.view` (permission only) · `backup.export`, `backup.restore`,
+`business.reset` (permission **and** step-up; reset also demands the typed phrase). Seeded to the
+**Owner alone**.
+
+**Web.** `SettingsBackupPage` (`/settings/backup`) and `SettingsLicensePage` (`/settings/license`),
+two plainly named Settings subcategories. Dialogs `RestoreDialog`, `ResetBusinessDialog`,
+`ReplaceBackupSecretDialog`. `LicenseNotice` sits under the top bar in `AppLayout` and draws nothing
+while the licence is healthy. Two dashboard warnings read `GET /api/v1/backup/status`.
+
+**Operations.** `pnpm db:upgrade` (`apps/api/src/upgrade.ts`) is the only sanctioned upgrade path:
+validate → dump and verify → migrate forward-only → health-check → automatic rollback on failure.
+The API refuses to boot when its schema version and the database's disagree, in **both** directions.
+It needs the PostgreSQL client tools (`pg_dump`, `pg_restore`) on the machine — as does Reset
+Business Data, which refuses rather than clearing anything if they are missing. New environment
+variables: `BACKUP_DIR`, `BACKUP_KEY_PATH`, `RECOVERY_DUMP_DIR`, `BACKUP_HOUR`.

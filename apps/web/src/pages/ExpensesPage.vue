@@ -9,6 +9,7 @@ import { computed, onMounted, ref } from 'vue';
 import { ApiError } from '../api/client';
 import {
   addExpenseCategory,
+  voidExpense,
   archiveExpenseCategory,
   fetchExpenses,
   renameExpenseCategory,
@@ -22,6 +23,7 @@ import ManageListDialog from '../components/ManageListDialog.vue';
 import SearchField from '../components/SearchField.vue';
 import StatCard from '../components/StatCard.vue';
 import AppShell from '../components/shell/AppShell.vue';
+import CancelDocumentDialog from '../components/CancelDocumentDialog.vue';
 import RecordExpenseDialog from '../components/money/RecordExpenseDialog.vue';
 import { taka } from '../components/money/money-text';
 import { onDataChanged } from '../state/data-freshness';
@@ -47,6 +49,15 @@ const fromDate = ref('');
 const toDate = ref('');
 const loading = ref(true);
 const recording = ref(false);
+/*
+ * Phase 9.2. A posted expense is corrected in the dialog that recorded it and
+ * cancelled in the one every module cancels with — the same two acts the
+ * daybook offers, on the screen where the expense lives (§5.27 concentrates
+ * visibility, it does not own the action).
+ */
+const correcting = ref<ExpenseResponse | null>(null);
+const cancelling = ref<ExpenseResponse | null>(null);
+
 const managing = ref(false);
 const failure = ref<{ code: string; message: string } | null>(null);
 
@@ -124,7 +135,15 @@ async function onArchiveCategory(id: string): Promise<string> {
   return name;
 }
 
+async function onCancelExpense(reason: string): Promise<void> {
+  const token = session.accessToken.value;
+  const expense = cancelling.value;
+  if (token === null || expense === null) return;
+  await voidExpense(token, expense.id, { version: expense.version, reason });
+}
+
 onMounted(() => {
+
   void load();
   onDataChanged(() => void load());
 });
@@ -230,7 +249,37 @@ onMounted(() => {
           </Column>
           <Column header="Amount" class="num">
             <template #body="{ data }">
-              <strong>{{ taka(data.amountMinor) }}</strong>
+              <strong :class="data.status === 'VOIDED' ? 'exp__void' : ''">
+                {{ taka(data.amountMinor) }}
+              </strong>
+              <small v-if="data.status === 'VOIDED'" class="exp__sub">
+                cancelled — {{ data.voidReason }}
+              </small>
+              <small v-else-if="data.entryMode === 'PRIOR_PERIOD'" class="exp__sub">
+                corrected into this month — for {{ data.originalBusinessDate }}
+              </small>
+              <small v-else-if="data.entryMode === 'CORRECTED'" class="exp__sub">corrected</small>
+            </template>
+          </Column>
+          <Column header="" class="no-print" style="width: 8rem">
+            <template #body="{ data }">
+              <div v-if="canRecord && data.status === 'POSTED'" class="exp__row-actions">
+                <Button
+                  label="Edit"
+                  icon="pi pi-pencil"
+                  text
+                  size="small"
+                  @click="correcting = data"
+                />
+                <Button
+                  label="Cancel"
+                  icon="pi pi-times-circle"
+                  text
+                  size="small"
+                  severity="danger"
+                  @click="cancelling = data"
+                />
+              </div>
             </template>
           </Column>
         </DataTable>
@@ -246,6 +295,24 @@ onMounted(() => {
       :categories="categories"
       @close="recording = false"
       @recorded="() => { recording = false; void load(); }"
+    />
+
+    <RecordExpenseDialog
+      v-if="correcting !== null"
+      :categories="categories"
+      :existing="correcting"
+      @close="correcting = null"
+      @recorded="() => { correcting = null; void load(); }"
+    />
+
+    <CancelDocumentDialog
+      v-if="cancelling !== null"
+      :title="`Expense ${cancelling.number} — ${cancelling.categoryName}`"
+      consequence="The money goes back into the account it was paid from."
+      :amount-minor="cancelling.amountMinor"
+      :submit="onCancelExpense"
+      @close="cancelling = null"
+      @cancelled="() => { cancelling = null; void load(); }"
     />
 
     <ManageListDialog
@@ -283,6 +350,9 @@ onMounted(() => {
   color: var(--sher-text-muted);
   font-size: 0.9rem;
 }
+
+.exp__row-actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+.exp__void { text-decoration: line-through; color: var(--sher-text-muted, #94a3b8); }
 
 .exp__head-actions {
   display: flex;

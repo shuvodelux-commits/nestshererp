@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { qtyText } from './money/money-text';
 import type { InventoryLot, InventoryLotSort, ProductResponse, SortDirection } from '@sher/core-contracts';
 import { Money, Qty, UnitCost } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
@@ -105,7 +106,7 @@ function sortBy(column: string): void {
 }
 
 const totalRemaining = computed(() =>
-  Qty(lots.value.reduce((sum, lot) => sum + lot.qtyRemaining, 0)).format(),
+  qtyText(lots.value.reduce((sum, lot) => sum + lot.qtyRemaining, 0)),
 );
 </script>
 
@@ -164,8 +165,8 @@ const totalRemaining = computed(() =>
                 <strong>{{ lot.sourceNumber }}</strong>
                 <small>{{ lot.sourceType.replaceAll('_', ' ').toLowerCase() }}</small>
               </td>
-              <td class="num">{{ Qty(lot.qtyReceived).format() }}</td>
-              <td class="num">{{ Qty(lot.qtyRemaining).format() }}</td>
+              <td class="num">{{ qtyText(lot.qtyReceived) }}</td>
+              <td class="num">{{ qtyText(lot.qtyRemaining) }}</td>
               <td>{{ lot.expiryDate ?? '—' }}</td>
               <td>
                 <span class="pill" :class="lot.status === 'OPEN' ? 'pill-ok' : ''">

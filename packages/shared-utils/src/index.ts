@@ -9,6 +9,7 @@ export {
   allocateLargestRemainder,
   divideRoundHalfUp,
   formatScaled,
+  formatForDisplay,
   multiplyScaled,
   parseScaled,
 } from './scaled';
@@ -22,6 +23,11 @@ export {
   startOfBusinessDay,
   SystemClock,
   FixedClock,
+  addDays,
+  daysInMonth,
+  weekdayOf,
+  monthOf,
+  monthRange,
 } from './clock';
 export type { Clock } from './clock';
 export { amountInWords, toBengaliDigits } from './amount-in-words';

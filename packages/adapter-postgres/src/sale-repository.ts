@@ -20,6 +20,7 @@ import type {
   SaleTotalsRow,
   TenantContext,
   Tx,
+  RepostCustomerReceipt,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { searchTokens } from '@sher/core-domain';
@@ -800,6 +801,75 @@ export class PostgresSaleRepository implements SaleRepository {
     return rows[0]?.id.trim() ?? null;
   }
 
+  async repostReceipt(
+    tx: Tx,
+    ctx: TenantContext,
+    receipt: RepostCustomerReceipt,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+
+    // Back to POSTED from the VOIDED the reversal left moments ago, inside the
+    // same transaction: no reader sees the receipt cancelled, and none sees the
+    // customer's balance without it.
+    const updated = await db
+      .update(customerReceipts)
+      .set({
+        customerPartyId: receipt.customerPartyId,
+        accountCode: receipt.accountCode,
+        amountMinor: receipt.amountMinor,
+        note: receipt.note,
+        sessionId: receipt.sessionId,
+        businessDate: receipt.businessDate,
+        entryMode: receipt.entryMode,
+        correctionReason: receipt.correctionReason,
+        originalBusinessDate: receipt.originalBusinessDate,
+        status: 'POSTED',
+        voidReason: null,
+        updatedAt: now,
+        updatedBy: ctx.userId,
+        version: receipt.expectedVersion + 1,
+      })
+      .where(
+        and(
+          eq(customerReceipts.tenantId, ctx.tenantId),
+          eq(customerReceipts.id, receipt.id),
+          eq(customerReceipts.version, receipt.expectedVersion),
+        ),
+      )
+      .returning({ id: customerReceipts.id, number: customerReceipts.receiptNumber });
+    const saved = updated[0];
+    if (saved === undefined) return false;
+
+    // The reversal released the old allocations, so the corrected amount is
+    // pointed at invoices again from scratch rather than patched.
+    for (const allocation of receipt.allocations) {
+      await db.insert(receiptAllocations).values({
+        id: allocation.id,
+        tenantId: ctx.tenantId,
+        receiptId: receipt.id,
+        saleId: allocation.saleId,
+        amountMinor: allocation.amountMinor,
+        createdAt: now,
+        createdBy: ctx.userId,
+      });
+    }
+
+    await this.insertJournal(
+      tx,
+      ctx,
+      receipt.journalEntryId,
+      receipt.businessDate,
+      receipt.entryMode,
+      'CUSTOMER_RECEIPT_CORRECTION',
+      receipt.id,
+      saved.number,
+      receipt.journalLines,
+    );
+
+    return true;
+  }
+
   async insertReceipt(tx: Tx, ctx: TenantContext, receipt: NewCustomerReceipt): Promise<void> {
     const db = txOf(tx);
     const now = this.clock.now();
@@ -865,6 +935,10 @@ export class PostgresSaleRepository implements SaleRepository {
         amountMinor: customerReceipts.amountMinor,
         businessDate: customerReceipts.businessDate,
         note: customerReceipts.note,
+        status: customerReceipts.status,
+        entryMode: customerReceipts.entryMode,
+        voidReason: customerReceipts.voidReason,
+        version: customerReceipts.version,
       })
       .from(customerReceipts)
       .innerJoin(
@@ -913,6 +987,10 @@ export class PostgresSaleRepository implements SaleRepository {
         saleNumber: allocation.saleNumber,
         amountMinor: Number(allocation.amountMinor),
       })),
+      status: row.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
+      entryMode: row.entryMode,
+      voidReason: row.voidReason,
+      version: row.version,
     };
   }
 

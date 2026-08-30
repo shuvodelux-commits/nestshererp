@@ -359,6 +359,13 @@ export const products = pgTable('products', {
   // neither — the CHECK constraint in the migration enforces the pair.
   conversionUnitId: char('conversion_unit_id', { length: 26 }),
   conversionFactorQty: bigint('conversion_factor_qty', { mode: 'number' }),
+  // Phase 8 (migrations 0031, 0033). All optional: a blank usual supplier falls
+  // back to purchase history, a blank minimum applies no minimum, and blank
+  // warranty months mean the product carries no warranty.
+  usualSupplierId: char('usual_supplier_id', { length: 26 }),
+  minOrderQty: bigint('min_order_qty', { mode: 'number' }),
+  warrantyMonths: integer('warranty_months'),
+  supplierWarrantyMonths: integer('supplier_warranty_months'),
   // One optional thumbnail (migration 0018), stored with the tenant's own data
   // so a backup carries it and an on-prem install needs no object store.
   // One precomputed, normalised line per product (migration 0026) — what the
@@ -423,6 +430,10 @@ export const stockAdjustments = pgTable('stock_adjustments', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const inventoryLots = pgTable('inventory_lots', {
@@ -656,6 +667,10 @@ export const cashMovements = pgTable('cash_movements', {
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 /**
@@ -669,6 +684,9 @@ export const purchases = pgTable('purchases', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   purchaseNumber: text('purchase_number').notNull(),
+  // Migration 0035: which supplier order this bill was raised against, when
+  // the shopkeeper pressed Convert rather than typing it from scratch.
+  supplierOrderId: char('supplier_order_id', { length: 26 }),
   supplierPartyId: char('supplier_party_id', { length: 26 }).notNull(),
   supplierBillRef: text('supplier_bill_ref'),
   locationId: char('location_id', { length: 26 }).notNull(),
@@ -692,12 +710,22 @@ export const purchases = pgTable('purchases', {
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const purchaseLines = pgTable('purchase_lines', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   purchaseId: char('purchase_id', { length: 26 }).notNull(),
+  // Phase 8. Which plan line this bought, so fulfilment is a SUM rather than a
+  // counter that would have to be unwound when a bill is voided (migration 0031),
+  // and the supplier's warranty terms for this delivery when they differ from
+  // the product's usual ones (migration 0033).
+  planLineId: char('plan_line_id', { length: 26 }),
+  supplierWarrantyMonths: integer('supplier_warranty_months'),
   lineNo: integer('line_no').notNull(),
   productId: char('product_id', { length: 26 }).notNull(),
   qty: bigint('qty', { mode: 'number' }).notNull(),
@@ -734,6 +762,10 @@ export const supplierPayments = pgTable('supplier_payments', {
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 /** Which bills a payment settled. Allocation moves no money (§5.9). */
@@ -770,6 +802,10 @@ export const sales = pgTable('sales', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const saleLines = pgTable('sale_lines', {
@@ -806,6 +842,10 @@ export const customerReceipts = pgTable('customer_receipts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const receiptAllocations = pgTable('receipt_allocations', {
@@ -957,6 +997,10 @@ export const salesReturns = pgTable('sales_returns', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const salesReturnLines = pgTable('sales_return_lines', {
@@ -989,6 +1033,10 @@ export const purchaseReturns = pgTable('purchase_returns', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const purchaseReturnLines = pgTable('purchase_return_lines', {
@@ -1028,6 +1076,10 @@ export const expenses = pgTable('expenses', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  voidReason: text('void_reason'),
+  correctionReason: text('correction_reason'),
+  originalBusinessDate: date('original_business_date', { mode: 'string' }),
+
 });
 
 export const stockCounts = pgTable('stock_counts', {
@@ -1056,4 +1108,286 @@ export const stockCountLines = pgTable('stock_count_lines', {
   valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
   adjustmentId: char('adjustment_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+// ------------------------------------------------------------------ Phase 8
+// Purchase planning (migration 0031). None of these tables posts anything —
+// there is no journal entry, no lot and no operation id, because a plan is a
+// decision about the future rather than a financial write (§5.9).
+export const purchasePlans = pgTable('purchase_plans', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  planNumber: text('plan_number').notNull(), title: text('title'),
+  lookBackDays: integer('look_back_days').notNull(), coverDays: integer('cover_days').notNull(),
+  budgetMinor: bigint('budget_minor', { mode: 'number' }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  closedAt: timestamp('closed_at', { withTimezone: true }), closedBy: char('closed_by', { length: 26 }),
+  // Migration 0035: a plan is agreed or it is not, and approving is what
+  // produces the supplier orders.
+  status: text('status').notNull(), notes: text('notes'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }), decidedBy: char('decided_by', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+export const purchasePlanLines = pgTable('purchase_plan_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  planId: char('plan_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  supplierPartyId: char('supplier_party_id', { length: 26 }),
+  suggestedQty: bigint('suggested_qty', { mode: 'number' }).notNull(),
+  plannedQty: bigint('planned_qty', { mode: 'number' }).notNull(),
+  priority: text('priority').notNull(),
+  stockQty: bigint('stock_qty', { mode: 'number' }).notNull(),
+  dailySalesQty: bigint('daily_sales_qty', { mode: 'number' }).notNull(),
+  coverDays: integer('cover_days'),
+  unitCostMinor: bigint('unit_cost_minor', { mode: 'number' }).notNull(),
+  sellingPriceMinor: bigint('selling_price_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+});
+
+export const supplierPurchaseOrders = pgTable('supplier_purchase_orders', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  planId: char('plan_id', { length: 26 }).notNull(),
+  supplierPartyId: char('supplier_party_id', { length: 26 }).notNull(),
+  orderNumber: text('order_number').notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(), note: text('note'),
+  // Migration 0035: Open until a bill is raised from it, then it names that bill.
+  status: text('status').notNull(), purchaseId: char('purchase_id', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+// No cost, price, stock or profit column exists here, and none may be added:
+// the supplier's copy never carries them (owner rule 2026-08-26).
+export const supplierPurchaseOrderLines = pgTable('supplier_purchase_order_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  orderId: char('order_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  productName: text('product_name').notNull(), unitName: text('unit_name').notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+// Landed cost (migration 0032).
+export const purchaseLandedCosts = pgTable('purchase_landed_costs', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  purchaseId: char('purchase_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
+  category: text('category').notNull(), method: text('method').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  inventoryShareMinor: bigint('inventory_share_minor', { mode: 'number' }).notNull(),
+  cogsShareMinor: bigint('cogs_share_minor', { mode: 'number' }).notNull(),
+  journalEntryId: char('journal_entry_id', { length: 26 }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+// Serialised units (migration 0033). A unit is not stock: quantity and value
+// stay in lots and movements, and nothing here reaches INV-01…INV-05.
+export const inventoryUnits = pgTable('inventory_units', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(), serialNo: text('serial_no').notNull(),
+  lotId: char('lot_id', { length: 26 }), purchaseId: char('purchase_id', { length: 26 }),
+  purchaseLineId: char('purchase_line_id', { length: 26 }),
+  supplierPartyId: char('supplier_party_id', { length: 26 }),
+  receivedDate: date('received_date', { mode: 'string' }).notNull(),
+  expiryDate: date('expiry_date', { mode: 'string' }),
+  supplierWarrantyMonths: integer('supplier_warranty_months'),
+  saleId: char('sale_id', { length: 26 }), saleLineId: char('sale_line_id', { length: 26 }),
+  customerPartyId: char('customer_party_id', { length: 26 }),
+  soldDate: date('sold_date', { mode: 'string' }),
+  customerWarrantyMonths: integer('customer_warranty_months'),
+  status: text('status').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+// Warranty claims (migration 0034). No receivable is ever created here — a
+// pending claim is a status, not an asset (§5.19).
+export const warrantyClaims = pgTable('warranty_claims', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  claimNumber: text('claim_number').notNull(),
+  customerPartyId: char('customer_party_id', { length: 26 }),
+  customerName: text('customer_name').notNull(), customerPhone: text('customer_phone'),
+  productId: char('product_id', { length: 26 }).notNull(),
+  inventoryUnitId: char('inventory_unit_id', { length: 26 }), serialNo: text('serial_no'),
+  saleId: char('sale_id', { length: 26 }), invoiceNumber: text('invoice_number'),
+  purchaseId: char('purchase_id', { length: 26 }),
+  supplierPartyId: char('supplier_party_id', { length: 26 }),
+  customerWarrantyEnd: date('customer_warranty_end', { mode: 'string' }),
+  supplierWarrantyEnd: date('supplier_warranty_end', { mode: 'string' }),
+  complaint: text('complaint').notNull(),
+  receivedDate: date('received_date', { mode: 'string' }).notNull(),
+  handling: text('handling').notNull(), courierName: text('courier_name'),
+  status: text('status').notNull(), settlementType: text('settlement_type'),
+  settlementNote: text('settlement_note'),
+  sentToSupplierDate: date('sent_to_supplier_date', { mode: 'string' }),
+  settledDate: date('settled_date', { mode: 'string' }),
+  replacementUnitId: char('replacement_unit_id', { length: 26 }),
+  replacementJournalEntryId: char('replacement_journal_entry_id', { length: 26 }),
+  recoveryJournalEntryId: char('recovery_journal_entry_id', { length: 26 }),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+});
+
+// Vendor-held stock (migration 0034). Neither table posts a journal entry: the
+// shop never bought these goods, and the money happens at the till (DR13.10).
+export const vendorStockReceipts = pgTable('vendor_stock_receipts', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  receiptNumber: text('receipt_number').notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  locationId: char('location_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  vendorUnitCost: bigint('vendor_unit_cost', { mode: 'number' }).notNull(),
+  lotId: char('lot_id', { length: 26 }).notNull(), movementId: char('movement_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+export const vendorStockReturns = pgTable('vendor_stock_returns', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnNumber: text('return_number').notNull(),
+  receiptId: char('receipt_id', { length: 26 }).notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/* ------------------------------------------- Phase 9: reporting and Daybook */
+
+/** One typed target per month for the whole shop (§5.20, O-10). */
+export const profitTargets = pgTable('profit_targets', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  month: char('month', { length: 7 }).notNull(),
+  basis: text('basis').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** That a day was checked against the notebook, by whom, with a note (§5.27). */
+export const daybookReviewMarks = pgTable('daybook_review_marks', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }).notNull(),
+  reviewedBy: char('reviewed_by', { length: 26 }).notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** Every day-end print, with the totals it showed, so a reprint can prove itself (§5.27). */
+export const daybookPrints = pgTable('daybook_prints', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  fromDate: date('from_date', { mode: 'string' }).notNull(),
+  toDate: date('to_date', { mode: 'string' }).notNull(),
+  format: text('format').notNull(),
+  printSerial: integer('print_serial').notNull(),
+  printedAt: timestamp('printed_at', { withTimezone: true }).notNull(),
+  printedBy: char('printed_by', { length: 26 }).notNull(),
+  openingCashMinor: bigint('opening_cash_minor', { mode: 'number' }).notNull(),
+  closingCashMinor: bigint('closing_cash_minor', { mode: 'number' }).notNull(),
+  transactionCount: integer('transaction_count').notNull(),
+  totalsJson: jsonb('totals_json').notNull(),
+  reprintOfId: char('reprint_of_id', { length: 26 }),
+});
+
+/* ------------------------------------------- Phase 11 — account reconciliation */
+
+/** The bank's own PDF, kept whole as the evidence a reconciliation rests on (§5.17). */
+export const bankStatementFiles = pgTable('bank_statement_files', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  accountId: char('account_id', { length: 26 }).notNull(),
+  reconciliationId: char('reconciliation_id', { length: 26 }),
+  fileName: text('file_name').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  content: bytea('content').notNull(),
+  parseStatus: text('parse_status').notNull(),
+  parsedFromDate: date('parsed_from_date', { mode: 'string' }),
+  parsedToDate: date('parsed_to_date', { mode: 'string' }),
+  parsedOpeningMinor: bigint('parsed_opening_minor', { mode: 'number' }),
+  parsedClosingMinor: bigint('parsed_closing_minor', { mode: 'number' }),
+  problemsJson: jsonb('problems_json').notNull(),
+  importedAt: timestamp('imported_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** That PDF parsed into rows: one signed amount, money in positive (§5.17). */
+export const statementLines = pgTable('statement_lines', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  fileId: char('file_id', { length: 26 }).notNull(),
+  reconciliationId: char('reconciliation_id', { length: 26 }).notNull(),
+  lineNo: integer('line_no').notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  description: text('description').notNull(),
+  reference: text('reference'),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  balanceMinor: bigint('balance_minor', { mode: 'number' }),
+  editedByUser: boolean('edited_by_user').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** The sign-off itself — the only place a reconciliation figure is stored (§5.17). */
+export const accountReconciliations = pgTable('account_reconciliations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  accountId: char('account_id', { length: 26 }).notNull(),
+  fromDate: date('from_date', { mode: 'string' }).notNull(),
+  toDate: date('to_date', { mode: 'string' }).notNull(),
+  status: text('status').notNull(),
+  statementOpeningMinor: bigint('statement_opening_minor', { mode: 'number' }),
+  statementClosingMinor: bigint('statement_closing_minor', { mode: 'number' }),
+  bookOpeningMinor: bigint('book_opening_minor', { mode: 'number' }),
+  reconciledBalanceMinor: bigint('reconciled_balance_minor', { mode: 'number' }),
+  differenceMinor: bigint('difference_minor', { mode: 'number' }),
+  note: text('note'),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  completedBy: char('completed_by', { length: 26 }),
+  reopenedReason: text('reopened_reason'),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** Which of our rows is which of theirs — a link, and only ever a link (§5.17). */
+export const reconciliationMatches = pgTable('reconciliation_matches', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  reconciliationId: char('reconciliation_id', { length: 26 }).notNull(),
+  statementLineId: char('statement_line_id', { length: 26 }),
+  journalLineId: char('journal_line_id', { length: 26 }),
+  state: text('state').notNull(),
+  score: integer('score'),
+  reasonsJson: jsonb('reasons_json').notNull(),
+  documentType: text('document_type'),
+  documentId: char('document_id', { length: 26 }),
+  documentVersion: integer('document_version'),
+  matchedAt: timestamp('matched_at', { withTimezone: true }).notNull(),
+  matchedBy: char('matched_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
 });

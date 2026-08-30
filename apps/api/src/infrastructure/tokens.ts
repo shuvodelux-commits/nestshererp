@@ -37,3 +37,33 @@ export const EXPENSE_REPOSITORY = Symbol('ExpenseRepository');
 export const STOCK_COUNT_REPOSITORY = Symbol('StockCountRepository');
 export const PERIOD_REPOSITORY = Symbol('PeriodRepository');
 export const PURCHASE_REPOSITORY = Symbol('PurchaseRepository');
+
+// Phase 8 (§5.9, §5.12, §5.19, §5.6 M07).
+export const PURCHASE_PLAN_REPOSITORY = Symbol('PurchasePlanRepository');
+export const LANDED_COST_REPOSITORY = Symbol('LandedCostRepository');
+export const SERIAL_REPOSITORY = Symbol('SerialRepository');
+export const WARRANTY_REPOSITORY = Symbol('WarrantyRepository');
+export const VENDOR_STOCK_REPOSITORY = Symbol('VendorStockRepository');
+
+// Phase 9 (§5.20, §5.27).
+export const REPORT_REPOSITORY = Symbol('ReportRepository');
+export const DAYBOOK_REPOSITORY = Symbol('DaybookRepository');
+
+// Phase 9.2 — cancelling and correcting posted documents.
+export const DOCUMENT_REVERSAL_REPOSITORY = Symbol('DocumentReversalRepository');
+
+// Phase 11 (§5.17) — reconciliation storage, and reading text out of a PDF.
+export const RECONCILIATION_REPOSITORY = Symbol('ReconciliationRepository');
+export const STATEMENT_EXTRACTOR = Symbol('StatementExtractor');
+
+// Phase 10 (§5.25, D-15, D-36) — backup, restore, reset and the licence.
+export const BACKUP_REPOSITORY = Symbol('BackupRepository');
+export const ARCHIVE_CODEC = Symbol('ArchiveCodec');
+export const BACKUP_FILE_STORE = Symbol('BackupFileStore');
+export const BACKUP_SECRET_STORE = Symbol('BackupSecretStore');
+export const DATABASE_DUMP_TOOL = Symbol('DatabaseDumpTool');
+export const BUILD_INFO = Symbol('BuildInfo');
+export const BACKUP_SERVICE = Symbol('BackupService');
+export const RESTORE_SERVICE = Symbol('RestoreService');
+export const RESET_BUSINESS_SERVICE = Symbol('ResetBusinessService');
+export const LICENSE_STATUS_SERVICE = Symbol('LicenseStatusService');

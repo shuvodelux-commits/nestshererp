@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PurchaseResponse } from '@sher/core-contracts';
+import type { PurchaseResponse, SerialProgressResponse } from '@sher/core-contracts';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import { computed, onMounted, ref } from 'vue';
@@ -10,6 +10,10 @@ import { fetchPurchase, voidPurchase } from '../api/purchasing';
 import { useSession } from '../auth/session';
 import { onDataChanged } from '../state/data-freshness';
 import AppCard from '../components/AppCard.vue';
+import { fetchAccounts } from '../api/money';
+import { fetchSerialProgress } from '../api/warranty';
+import AddLandedCostDialog from '../components/purchasing/AddLandedCostDialog.vue';
+import SerialEntryDialog from '../components/inventory/SerialEntryDialog.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import { taka } from '../components/money/money-text';
@@ -34,6 +38,16 @@ const router = useRouter();
 const session = useSession();
 
 const purchase = ref<PurchaseResponse | null>(null);
+
+/*
+ * Phase 8. Both are optional extras on a bill that is already posted: a cost
+ * that arrived after the goods, and the serial numbers somebody had no time to
+ * read on the night. Neither changes what the bill says it bought.
+ */
+const addingCost = ref(false);
+const accounts = ref<readonly { code: string; name: string }[]>([]);
+const serialLines = ref<readonly SerialProgressResponse[]>([]);
+const serialLine = ref<SerialProgressResponse | null>(null);
 const loading = ref(true);
 const failure = ref<{ code: string; message: string } | null>(null);
 const paying = ref(false);
@@ -60,6 +74,7 @@ async function load(): Promise<void> {
   failure.value = null;
   try {
     purchase.value = await fetchPurchase(token, id);
+    void loadExtras(token, id);
   } catch (cause) {
     failure.value =
       cause instanceof ApiError
@@ -112,6 +127,34 @@ async function onPaid(): Promise<void> {
 onMounted(load);
 // Any posting anywhere refreshes what this screen is showing.
 onDataChanged(load);
+
+/**
+ * The two Phase 8 extras, fetched separately so a bill still opens when either
+ * is switched off or the caller may not see it.
+ */
+async function loadExtras(token: string, id: string): Promise<void> {
+  try {
+    const progress = await fetchSerialProgress(token, id);
+    serialLines.value = progress.data;
+  } catch {
+    serialLines.value = [];
+  }
+  try {
+    const response = await fetchAccounts(token);
+    accounts.value = response.accounts.map((account) => ({
+      code: `CASH:${account.id}`,
+      name: account.name,
+    }));
+  } catch {
+    accounts.value = [];
+  }
+}
+
+function afterExtra(): void {
+  addingCost.value = false;
+  serialLine.value = null;
+  void load();
+}
 </script>
 
 <template>
@@ -217,6 +260,14 @@ onDataChanged(load);
             @click="router.push({ path: '/purchases/new', query: { correct: purchase.id } })"
           />
           <Button
+            v-if="canEdit && purchase.status === 'POSTED'"
+            icon="pi pi-truck"
+            label="Add extra cost"
+            size="small"
+            outlined
+            @click="addingCost = true"
+          />
+          <Button
             v-if="canVoid && purchase.status === 'POSTED'"
             icon="pi pi-times-circle"
             label="Cancel bill"
@@ -226,6 +277,36 @@ onDataChanged(load);
             @click="cancelling = true"
           />
         </div>
+      </AppCard>
+
+      <!--
+        Serial numbers still to be typed (§5.19, owner decision 2026-08-26).
+        The card only exists while something is outstanding: a bill whose
+        serials are all in has nothing to say here.
+      -->
+      <AppCard
+        v-if="serialLines.some((line) => line.outstanding > 0)"
+        title="Serial numbers to enter"
+        subtitle="সিরিয়াল নম্বর বাকি আছে"
+      >
+        <ul class="serial-progress">
+          <li v-for="line in serialLines" :key="line.purchaseLineId">
+            <span>
+              <strong>{{ line.displayName }}</strong>
+              — {{ line.recorded }} of {{ line.recorded + line.outstanding }} entered
+            </span>
+            <Button
+              v-if="line.outstanding > 0"
+              label="Enter serials"
+              size="small"
+              outlined
+              @click="serialLine = line"
+            />
+          </li>
+        </ul>
+        <p class="serial-note">
+          Units without a serial stay on the shelf but cannot be sold.
+        </p>
       </AppCard>
 
       <AppCard title="What came in">
@@ -330,11 +411,42 @@ onDataChanged(load);
         @paid="onPaid"
         @close="paying = false"
       />
+
+      <AddLandedCostDialog
+        :purchase-id="addingCost ? purchase.id : null"
+        :purchase-number="purchase.number"
+        :accounts="accounts"
+        @close="addingCost = false"
+        @added="afterExtra"
+      />
+      <SerialEntryDialog :line="serialLine" @close="serialLine = null" @saved="afterExtra" />
     </template>
   </AppShell>
 </template>
 
 <style scoped>
+.serial-progress {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sher-space-2);
+}
+
+.serial-progress li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sher-space-3);
+  flex-wrap: wrap;
+}
+
+.serial-note {
+  margin: var(--sher-space-2) 0 0;
+  font-size: 0.85rem;
+  color: var(--sher-text-muted);
+}
+
 .head {
   display: flex;
   align-items: flex-start;

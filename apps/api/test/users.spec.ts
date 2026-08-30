@@ -353,7 +353,10 @@ describe('permissions (R-E8)', () => {
      * is a permission somebody quietly gained. It has grown with each module —
      * the day and the drawer in Phase 4, the counter itself in Phase 6, and
      * customer returns in Phase 7, capped by the role's refund limits rather
-     * than by a permission (owner decision 2026-08-26).
+     * than by a permission (owner decision 2026-08-26), and in Phase 8 the
+     * ability to *see* warranty claims — the person at the counter is the one
+     * the faulty item is handed to. Handling a claim, which can charge the shop
+     * for a replacement, stays with the Manager.
      */
     expect([...asCashier.body.data.permissions].sort()).toEqual(
       [
@@ -362,6 +365,8 @@ describe('permissions (R-E8)', () => {
         'cash.session.close',
         'cash.session.start',
         'catalog.product.view',
+        'daybook.print',
+        'daybook.view',
         'invoice.presentation.edit',
         'party.customer.create',
         'party.customer.edit',
@@ -371,6 +376,7 @@ describe('permissions (R-E8)', () => {
         'sale.payment.record',
         'sales.return.create',
         'sales.return.view',
+        'warranty.claim.view',
       ].sort(),
     );
   });

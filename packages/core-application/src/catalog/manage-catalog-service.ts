@@ -255,6 +255,7 @@ export class ManageCatalogService {
         productOffers: isFeatureOn(values, SettingKey.PRODUCT_OFFERS_ENABLED),
         expiryTracking: isFeatureOn(values, SettingKey.EXPIRY_TRACKING_ENABLED),
         serialTracking: isFeatureOn(values, SettingKey.SERIAL_TRACKING_ENABLED),
+        warranty: isFeatureOn(values, SettingKey.WARRANTY_ENABLED),
         customerGroups: isFeatureOn(values, SettingKey.CUSTOMER_GROUPS_ENABLED),
         vendors: isFeatureOn(values, SettingKey.VENDOR_MANAGEMENT_ENABLED),
       },

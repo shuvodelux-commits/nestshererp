@@ -128,9 +128,83 @@ export interface PurchaseReturnFilter {
   readonly limit: number;
 }
 
+/**
+ * What a posted purchase return did, read back so it can be undone exactly
+ * (Phase 9.2, §2.5). The **stored** figures, never recomputed.
+ */
+export interface PurchaseReturnForReversal {
+  readonly id: string;
+  readonly number: string;
+  readonly status: string;
+  readonly businessDate: string;
+  readonly version: number;
+  readonly journalLines: readonly {
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly lotId: string;
+    readonly locationId: string;
+    readonly qty: number;
+    readonly costMinor: number;
+  }[];
+  readonly costStates: readonly {
+    readonly id: string;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  }[];
+}
+
+/** Undoing one purchase return — the mirror of `postPurchaseReturn`. */
+export interface PurchaseReturnReversal {
+  readonly returnId: string;
+  readonly expectedVersion: number;
+  readonly businessDate: string;
+  readonly entryMode: string;
+  readonly reason: string;
+  readonly journalEntryId: string;
+  readonly journalLines: readonly {
+    readonly id: string;
+    readonly account: string;
+    readonly amountMinor: number;
+    readonly partyId: string | null;
+  }[];
+  readonly lines: readonly {
+    readonly movementId: string;
+    readonly productId: string;
+    readonly lotId: string;
+    readonly locationId: string;
+    readonly qty: number;
+    readonly costMinor: number;
+  }[];
+  readonly costStates: readonly {
+    readonly id: string;
+    readonly exists: boolean;
+    readonly productId: string;
+    readonly locationId: string;
+    readonly qtyOnHand: number;
+    readonly avgUnitCost: number;
+  }[];
+}
+
 export interface PurchaseReturnRepository {
   findReturnableBill(tx: Tx, ctx: TenantContext, purchaseId: string): Promise<ReturnableBillRow | null>;
   postPurchaseReturn(tx: Tx, ctx: TenantContext, draft: NewPurchaseReturn): Promise<void>;
+  findReturnForReversal(
+    tx: Tx,
+    ctx: TenantContext,
+    returnId: string,
+  ): Promise<PurchaseReturnForReversal | null>;
+  /** Returns false when somebody else changed the return first (D-32). */
+  reversePurchaseReturn(
+    tx: Tx,
+    ctx: TenantContext,
+    reversal: PurchaseReturnReversal,
+  ): Promise<boolean>;
   findReturnById(tx: Tx, ctx: TenantContext, returnId: string): Promise<PurchaseReturnRow | null>;
   findReturnIdByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<string | null>;
   listReturns(

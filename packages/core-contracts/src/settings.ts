@@ -46,6 +46,15 @@ export const SettingKey = {
   CUSTOMER_FIELD_NID_VISIBLE: 'customer_field_nid_visible',
   CUSTOMER_FIELD_EMAIL_VISIBLE: 'customer_field_email_visible',
   CUSTOMER_FIELD_NOTES_VISIBLE: 'customer_field_notes_visible',
+
+  /**
+   * The Purchase Planner's two day-counts (Phase 8, owner decision
+   * 2026-08-26). They are the shop's normal way of buying; the planner shows
+   * both at the top of the screen and lets a single trip be planned differently
+   * without coming back here.
+   */
+  PLANNER_LOOK_BACK_DAYS: 'planner_look_back_days',
+  PLANNER_COVER_DAYS: 'planner_cover_days',
 } as const;
 
 export type SettingKey = (typeof SettingKey)[keyof typeof SettingKey];
@@ -100,6 +109,14 @@ const STOCK_POLICY_OPTIONS = ['BLOCK', 'WARN', 'ALLOW'] as const;
  * is safer than one typing 3650 by accident.
  */
 const EXPIRY_WARN_OPTIONS = ['7', '15', '30', '60', '90'] as const;
+
+/**
+ * Closed sets for the planner's two day-counts, like every other number in this
+ * catalogue: §5.21 has no free-text kind, and a shop typing 3650 by accident
+ * would get a suggestion nobody could pay for.
+ */
+const PLANNER_LOOK_BACK_OPTIONS = ['7', '15', '30', '60', '90'] as const;
+const PLANNER_COVER_OPTIONS = ['7', '15', '30', '45', '60', '90'] as const;
 
 /**
  * Every setting §5.21 and PART 5A define concretely, with the value set each
@@ -427,6 +444,34 @@ export const SETTING_CATALOGUE: readonly SettingDescriptor[] = [
     stepUp: false,
     consumedBy: 'Parties',
     inEffect: false,
+  },
+  {
+    key: SettingKey.PLANNER_LOOK_BACK_DAYS,
+    group: 'Purchasing',
+    label: 'Measure how fast things sell over',
+    detail:
+      'How many days of sales the purchase planner looks back at to work out how fast a product moves. A product that sold on fewer than three separate days falls back to its minimum stock level instead.',
+    kind: 'CHOICE',
+    options: PLANNER_LOOK_BACK_OPTIONS,
+    defaultValue: '30',
+    requires: [],
+    stepUp: false,
+    consumedBy: 'Purchasing',
+    inEffect: true,
+  },
+  {
+    key: SettingKey.PLANNER_COVER_DAYS,
+    group: 'Purchasing',
+    label: 'Keep enough stock to last',
+    detail:
+      'How many days of stock the purchase planner buys up to. It also sets the urgency bands: a quarter of this is Critical and half of it is High.',
+    kind: 'CHOICE',
+    options: PLANNER_COVER_OPTIONS,
+    defaultValue: '30',
+    requires: [],
+    stepUp: false,
+    consumedBy: 'Purchasing',
+    inEffect: true,
   },
 ];
 
