@@ -82,6 +82,13 @@ export const daybookActionsSchema = z
     receivePayment: z.boolean(),
     payBill: z.boolean(),
     returnGoods: z.boolean(),
+    /**
+     * Phase 11.2. Unlike the others this one may be offered on a row inside a
+     * closed month — a closed period is protected, not immutable, and the
+     * owner who may reach into one is told what that costs at the dialog
+     * (owner decision 2026-08-31).
+     */
+    changeDate: z.boolean(),
     print: z.boolean(),
     /** Why an action is unavailable, in one sentence a person can act on. */
     blockedReason: z.string().nullable(),
@@ -117,6 +124,14 @@ export const daybookRowSchema = z
     locked: z.boolean(),
     /** DR7 — recorded on a different day than the one it belongs to. */
     backdated: z.boolean(),
+    /**
+     * Phase 11.2 — the day this document sat on before it was moved, so the
+     * `CORRECTED` badge can say *moved from 12 Aug* rather than only that
+     * something was corrected. Null on a document that has never been moved.
+     */
+    originalBusinessDate: BUSINESS_DATE.nullable(),
+    /** Why it was corrected or moved, shown with the badge above. */
+    correctionReason: z.string().nullable(),
     entryMode: z.string(),
     /**
      * The owning document's version, so a cancellation started from here

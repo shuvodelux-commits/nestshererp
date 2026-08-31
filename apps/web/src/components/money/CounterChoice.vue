@@ -36,8 +36,8 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
       @click="emit('update:modelValue', option.value)"
     >
       <i :class="`pi ${option.icon}`" aria-hidden="true" />
-      <span class="choice-bn">{{ option.labelBn }}</span>
-      <span class="choice-en sher-bn">{{ option.labelEn }}</span>
+      <span class="choice-en">{{ option.labelEn }}</span>
+      <span class="choice-bn sher-bn">{{ option.labelBn }}</span>
     </button>
   </div>
 </template>
@@ -78,13 +78,18 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
   color: var(--sher-primary);
 }
 
-.choice-bn {
+/*
+ * English on top, Bangla under it (owner decision 2026-08-31): the counter
+ * workflow reads in one register from the launcher through to Save. The option
+ * fields keep their names — which language is which has not changed.
+ */
+.choice-en {
   font-size: 15px;
   font-weight: 600;
   text-align: center;
 }
 
-.choice-en {
+.choice-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
   text-align: center;

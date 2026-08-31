@@ -177,8 +177,8 @@ async function submit(): Promise<void> {
   >
     <template #header>
       <div class="counter-header">
-        <span class="head-bn">{{ MONEY_BN.moveMoney }}</span>
-        <span class="head-en sher-bn">{{ MONEY_EN.moveMoney }}</span>
+        <span class="head-en">{{ MONEY_EN.moveMoney }}</span>
+        <span class="head-bn sher-bn">{{ MONEY_BN.moveMoney }}</span>
       </div>
     </template>
 
@@ -195,17 +195,18 @@ async function submit(): Promise<void> {
       />
 
       <label class="note">
-        <span class="sher-bn">{{ MONEY_BN.note }}</span>
+        <span>{{ MONEY_EN.note }}</span>
+        <span class="note-bn sher-bn">{{ MONEY_BN.note }}</span>
         <InputText v-model="note" maxlength="500" />
       </label>
     </template>
 
     <template #footer>
-      <Button text :label="MONEY_BN.cancel" :disabled="busy" @click="emit('close')" />
+      <Button text :label="MONEY_EN.cancel" :disabled="busy" @click="emit('close')" />
       <Button
         class="primary-action"
         icon="pi pi-check"
-        :label="MONEY_BN.confirm"
+        :label="MONEY_EN.confirm"
         :loading="busy"
         :disabled="!canSubmit"
         @click="submit"
@@ -215,17 +216,23 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
+/* English first, Bangla under it (owner decision 2026-08-31). */
+.note-bn {
+  font-size: 11px;
+  color: var(--sher-text-muted);
+}
+
 .counter-header {
   display: flex;
   flex-direction: column;
 }
 
-.head-bn {
+.head-en {
   font-size: 20px;
   font-weight: 700;
 }
 
-.head-en {
+.head-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
 }

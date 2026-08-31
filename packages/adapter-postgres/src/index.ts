@@ -45,5 +45,6 @@ export { PostgresVendorStockRepository } from './vendor-stock-repository';
 export { PostgresReportRepository } from './report-repository';
 export { PostgresDaybookRepository } from './daybook-repository';
 export { PostgresDocumentReversalRepository } from './document-reversal-repository';
+export { PostgresDocumentRedateRepository } from './document-redate-repository';
 export { PostgresReconciliationRepository } from './reconciliation-repository';
 export { PostgresBackupRepository } from './backup-repository';

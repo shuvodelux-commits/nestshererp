@@ -29,6 +29,7 @@ import {
   PostgresReportRepository,
   PostgresDaybookRepository,
   PostgresReconciliationRepository,
+  PostgresDocumentRedateRepository,
   PostgresDocumentReversalRepository,
   PostgresPurchaseReturnRepository,
   PostgresSalesReturnRepository,
@@ -111,6 +112,7 @@ import {
   BACKUP_SECRET_STORE,
   DATABASE_DUMP_TOOL,
   BUILD_INFO,
+  DOCUMENT_REDATE_REPOSITORY,
   DOCUMENT_REVERSAL_REPOSITORY,
   PARTY_REPOSITORY,
   PRODUCT_REPOSITORY,
@@ -332,6 +334,18 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [CLOCK],
     },
     {
+      /*
+       * Phase 11.2. The sibling of the reversal repository above, and kept
+       * apart from it on purpose: that one undoes a document, this one puts it
+       * back on another day, and nothing that only cancels should be able to
+       * reach a re-post.
+       */
+      provide: DOCUMENT_REDATE_REPOSITORY,
+      useFactory: (clock: Clock): PostgresDocumentRedateRepository =>
+        new PostgresDocumentRedateRepository(clock),
+      inject: [CLOCK],
+    },
+    {
       provide: REPORT_REPOSITORY,
 
       useFactory: (): PostgresReportRepository => new PostgresReportRepository(),
@@ -495,7 +509,8 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     PERIOD_REPOSITORY,
     REPORT_REPOSITORY,
     DAYBOOK_REPOSITORY,
-    DOCUMENT_REVERSAL_REPOSITORY,
+    DOCUMENT_REDATE_REPOSITORY,
+  DOCUMENT_REVERSAL_REPOSITORY,
     BACKUP_REPOSITORY,
     ARCHIVE_CODEC,
     BACKUP_FILE_STORE,

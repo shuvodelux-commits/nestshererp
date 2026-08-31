@@ -100,19 +100,22 @@ async function submit(): Promise<void> {
   >
     <template #header>
       <div class="counter-header">
-        <span class="head-bn">{{ MONEY_BN.reopenDay }}</span>
-        <span class="head-en sher-bn">{{ MONEY_EN.reopenDay }}</span>
+        <span class="head-en">{{ MONEY_EN.reopenDay }}</span>
+        <span class="head-bn sher-bn">{{ MONEY_BN.reopenDay }}</span>
       </div>
     </template>
 
     <ErrorNotice v-if="failure" :code="failure.code" :message="failure.message" />
 
     <p v-if="activeClose" class="counted">
-      <span>আপনি লিখেছিলেন</span>
+      <span>You counted<small class="sher-bn">আপনি লিখেছিলেন</small></span>
       <strong>{{ taka(activeClose.countedClosingMinor) }}</strong>
     </p>
 
-    <p class="ask">{{ MONEY_BN.whyReopen }}</p>
+    <p class="ask">
+      {{ MONEY_EN.whyReopen }}
+      <span class="ask-bn sher-bn">{{ MONEY_BN.whyReopen }}</span>
+    </p>
     <CounterChoice v-model="picked" :options="options" />
 
     <label v-if="picked === 'OTHER'" class="note">
@@ -121,15 +124,18 @@ async function submit(): Promise<void> {
 
     <p class="keeps">
       <i class="pi pi-info-circle" aria-hidden="true" />
-      <span>আগের হিসাব মুছে যাবে না — দিনের ইতিহাসে দুটোই থাকবে।</span>
+      <span>
+        The earlier count is not erased — both stay in the day's history.
+        <small class="sher-bn">আগের হিসাব মুছে যাবে না — দিনের ইতিহাসে দুটোই থাকবে।</small>
+      </span>
     </p>
 
     <template #footer>
-      <Button text :label="MONEY_BN.cancel" :disabled="busy" @click="emit('close')" />
+      <Button text :label="MONEY_EN.cancel" :disabled="busy" @click="emit('close')" />
       <Button
         class="primary-action"
         icon="pi pi-replay"
-        :label="MONEY_BN.confirm"
+        :label="MONEY_EN.confirm"
         :loading="busy"
         :disabled="!canSubmit"
         @click="submit"
@@ -139,17 +145,33 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
+/* English first, Bangla under it (owner decision 2026-08-31). */
+.counted span small,
+.keeps span small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
+.ask-bn {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
 .counter-header {
   display: flex;
   flex-direction: column;
 }
 
-.head-bn {
+.head-en {
   font-size: 20px;
   font-weight: 700;
 }
 
-.head-en {
+.head-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
 }

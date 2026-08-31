@@ -13,6 +13,7 @@ import { PurchasingModule } from './purchasing/purchasing.module';
 import { VendorsModule } from './vendors/vendors.module';
 import { WarrantyModule } from './warranty/warranty.module';
 import { DaybookModule } from './daybook/daybook.module';
+import { CorrectionsModule } from './corrections/corrections.module';
 import { ReportsModule } from './reports/reports.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PeriodsModule } from './periods/periods.module';
@@ -56,6 +57,7 @@ import { UsersModule } from './users/users.module';
     PeriodsModule,
     ReportsModule,
     DaybookModule,
+    CorrectionsModule,
   ],
   controllers: [HealthController],
   providers: [

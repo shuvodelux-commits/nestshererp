@@ -207,6 +207,13 @@ const router = createRouter({
       component: () => import('./pages/MoneyReportPage.vue'),
     },
     { path: '/daybook', name: 'daybook', component: () => import('./pages/DaybookPage.vue') },
+    /*
+     * Phase 11.2 (§5.16, D-42, UI-53). Counter is a launcher: every button on
+     * it opens a dialog that already exists, under that module's own
+     * permission. It has a route of its own because it is a place a cashier
+     * stands, not a task they finish.
+     */
+    { path: '/counter', name: 'counter', component: () => import('./pages/CounterPage.vue') },
     { path: '/settings', name: 'settings', component: () => import('./pages/SettingsPage.vue') },
     {
       path: '/settings/security',

@@ -13,6 +13,7 @@ import { ApiError } from '../api/client';
 import {
   cancelDocument, canCancelKind, fetchDaybook, markDayReviewed, recordDaybookPrint,
 } from '../api/daybook';
+import { isRedatableKind } from '../api/corrections';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import DateOnlyPicker from '../components/DateOnlyPicker.vue';
@@ -21,6 +22,7 @@ import ErrorNotice from '../components/ErrorNotice.vue';
 import StatCard from '../components/StatCard.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import CancelDocumentDialog from '../components/CancelDocumentDialog.vue';
+import ChangeTransactionDateDialog from '../components/corrections/ChangeTransactionDateDialog.vue';
 import DaybookSheet from '../components/daybook/DaybookSheet.vue';
 import { printNode } from '../components/sales/invoice-output';
 import { taka } from '../components/money/money-text';
@@ -61,6 +63,12 @@ const sheet = ref<HTMLElement | null>(null);
 const showSheet = ref(false);
 
 const cancelling = ref<DaybookRow | null>(null);
+
+/*
+ * Phase 11.2 — the row whose date is being moved. Daybook opens the one
+ * authoritative dialog and posts nothing itself (DR1, DR8, UI-72).
+ */
+const redating = ref<DaybookRow | null>(null);
 const rowMenu = ref<InstanceType<typeof Menu> | null>(null);
 const menuRow = ref<DaybookRow | null>(null);
 
@@ -175,6 +183,15 @@ const menuItems = computed(() => {
   if (actions.receivePayment) items.push({ label: 'Receive payment — টাকা নিন', icon: 'pi pi-wallet', command: () => openRow(row) });
   if (actions.payBill) items.push({ label: 'Pay this bill — টাকা দিন', icon: 'pi pi-wallet', command: () => openRow(row) });
   if (actions.returnGoods) items.push({ label: 'Return goods — ফেরত', icon: 'pi pi-replay', command: () => openRow(row) });
+  if (actions.changeDate && isRedatableKind(row.kind)) {
+    items.push({
+      label: 'Change date — তারিখ বদলান',
+      icon: 'pi pi-calendar',
+      command: () => {
+        redating.value = row;
+      },
+    });
+  }
   if (actions.remove) {
     items.push({
       label: 'Delete — বাতিল করুন',
@@ -397,6 +414,10 @@ onMounted(() => {
                 {{ data.sourceNumber }}
                 <template v-if="data.reversedByNumber"> · cancelled by {{ data.reversedByNumber }}</template>
                 <template v-if="data.locked"> · month closed 🔒</template>
+                <template v-if="data.originalBusinessDate">
+                  · moved from {{ data.originalBusinessDate }}
+                  <template v-if="data.correctionReason"> — {{ data.correctionReason }}</template>
+                </template>
               </small>
             </template>
           </Column>
@@ -472,6 +493,15 @@ onMounted(() => {
       :submit="onCancelDocument"
       @close="cancelling = null"
       @cancelled="() => { cancelling = null; load(); }"
+    />
+
+    <!-- Moving a row to another day: one dialog, one endpoint, every screen -->
+    <ChangeTransactionDateDialog
+      :document-type="redating !== null && isRedatableKind(redating.kind) ? redating.kind : null"
+      :document-id="redating?.sourceId ?? null"
+      :label="redating?.description ?? ''"
+      @close="redating = null"
+      @changed="() => { redating = null; load(); }"
     />
 
     <!-- The printable sheet: off-screen until a print is asked for -->

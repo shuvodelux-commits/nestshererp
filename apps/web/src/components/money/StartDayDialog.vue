@@ -84,7 +84,7 @@ const options = computed<readonly CounterOption[]>(() => {
     ...others.map((account) => ({
       value: `${account.type === 'CASH' ? 'CASH' : 'BANK'}:${account.id}`,
       labelBn: labelFor(account, more),
-      labelEn: account.name,
+      labelEn: `${more ? 'From' : 'To'} ${account.name}`,
       icon: account.type === 'CASH' ? 'pi-lock' : 'pi-building-columns',
     })),
   ];
@@ -154,8 +154,8 @@ async function submit(): Promise<void> {
   >
     <template #header>
       <div class="counter-header">
-        <span class="head-bn">{{ MONEY_BN.startDay }}</span>
-        <span class="head-en sher-bn">{{ MONEY_EN.startDay }}</span>
+        <span class="head-en">{{ MONEY_EN.startDay }}</span>
+        <span class="head-bn sher-bn">{{ MONEY_BN.startDay }}</span>
       </div>
     </template>
 
@@ -163,7 +163,7 @@ async function submit(): Promise<void> {
 
     <p v-if="previousClosingMinor !== null" class="last-night">
       <i class="pi pi-moon" aria-hidden="true" />
-      <span>{{ MONEY_BN.lastNightCount }}</span>
+      <span>{{ MONEY_EN.lastNightCount }}<small class="sher-bn">{{ MONEY_BN.lastNightCount }}</small></span>
       <strong>{{ taka(previousClosingMinor) }}</strong>
     </p>
 
@@ -177,26 +177,30 @@ async function submit(): Promise<void> {
     <template v-if="needsCounterpart">
       <p class="difference" :class="differenceMinor > 0 ? 'over' : 'short'">
         <strong>{{ taka(Math.abs(differenceMinor)) }}</strong>
-        <span>{{ differenceMinor > 0 ? MONEY_BN.over : MONEY_BN.short }}</span>
+        <span>{{ differenceMinor > 0 ? MONEY_EN.over : MONEY_EN.short }}<small class="sher-bn">{{ differenceMinor > 0 ? MONEY_BN.over : MONEY_BN.short }}</small></span>
       </p>
 
       <p class="ask">
-        {{ differenceMinor > 0 ? MONEY_BN.whereFrom : MONEY_BN.whereGone }}
+        {{ differenceMinor > 0 ? MONEY_EN.whereFrom : MONEY_EN.whereGone }}
+        <span class="ask-bn sher-bn">
+          {{ differenceMinor > 0 ? MONEY_BN.whereFrom : MONEY_BN.whereGone }}
+        </span>
       </p>
       <CounterChoice v-model="counterpart" :options="options" />
 
       <label class="note">
-        <span class="sher-bn">{{ MONEY_BN.note }}</span>
+        <span>{{ MONEY_EN.note }}</span>
+        <span class="ask-bn sher-bn">{{ MONEY_BN.note }}</span>
         <InputText v-model="note" maxlength="500" />
       </label>
     </template>
 
     <template #footer>
-      <Button text :label="MONEY_BN.cancel" :disabled="busy" @click="emit('close')" />
+      <Button text :label="MONEY_EN.cancel" :disabled="busy" @click="emit('close')" />
       <Button
         class="primary-action"
         icon="pi pi-play"
-        :label="MONEY_BN.startDay"
+        :label="MONEY_EN.startDay"
         :loading="busy"
         :disabled="!canSubmit"
         @click="submit"
@@ -206,17 +210,33 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
+/* English first, Bangla under it (owner decision 2026-08-31). */
+.last-night span small,
+.difference span small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
+.ask-bn {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
 .counter-header {
   display: flex;
   flex-direction: column;
 }
 
-.head-bn {
+.head-en {
   font-size: 20px;
   font-weight: 700;
 }
 
-.head-en {
+.head-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
 }

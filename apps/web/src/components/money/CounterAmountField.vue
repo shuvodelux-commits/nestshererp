@@ -13,8 +13,9 @@ import { parseTaka, taka } from './money-text';
  * open that keypad rather than a QWERTY keyboard, which is the difference
  * between typing 64500 in two seconds and hunting for the number row.
  *
- * The Bangla question is the label at full size; the English sits under it in
- * the shared muted helper style. It echoes the amount back as `৳64,500` while
+ * The English question is the label at full size; the Bangla sits under it in
+ * the shared muted helper style (owner decision 2026-08-31, amending UI-74 for
+ * the counter workflow). It echoes the amount back as `৳64,500` while
  * you type, because a missing or extra zero is the mistake this field exists to
  * catch and it is invisible in a bare string of digits.
  */
@@ -33,8 +34,8 @@ const echo = computed(() => (minor.value === null ? null : taka(minor.value)));
 
 <template>
   <label class="amount-field">
-    <span class="ask-bn">{{ labelBn }}</span>
-    <span class="ask-en sher-bn">{{ labelEn }}</span>
+    <span class="ask-en">{{ labelEn }}</span>
+    <span class="ask-bn sher-bn">{{ labelBn }}</span>
     <InputText
       class="amount-input"
       :model-value="modelValue"
@@ -55,14 +56,19 @@ const echo = computed(() => (minor.value === null ? null : taka(minor.value)));
   gap: 4px;
 }
 
-/* The Bangla question is the label — UI-74 inverts UI-15 on this surface. */
-.ask-bn {
+/*
+ * The English question is the label, the Bangla the helper beneath it — the
+ * counter workflow reads the same way as the rest of the app (owner decision
+ * 2026-08-31). The props keep their names: which language is which has not
+ * changed, only which one is drawn large.
+ */
+.ask-en {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.ask-en {
+.ask-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
 }

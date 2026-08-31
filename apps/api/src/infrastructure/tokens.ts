@@ -51,6 +51,7 @@ export const DAYBOOK_REPOSITORY = Symbol('DaybookRepository');
 
 // Phase 9.2 — cancelling and correcting posted documents.
 export const DOCUMENT_REVERSAL_REPOSITORY = Symbol('DocumentReversalRepository');
+export const DOCUMENT_REDATE_REPOSITORY = Symbol('DocumentRedateRepository');
 
 // Phase 11 (§5.17) — reconciliation storage, and reading text out of a PDF.
 export const RECONCILIATION_REPOSITORY = Symbol('ReconciliationRepository');

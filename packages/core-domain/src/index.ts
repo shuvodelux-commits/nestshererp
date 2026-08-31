@@ -390,6 +390,8 @@ export { targetProgress } from './reporting/target';
 export type { TargetBasis, TargetProgress, TargetProgressInput } from './reporting/target';
 export { cancellationDate, correctionWindow } from './corrections/correction-window';
 export type { CorrectionEntryMode, CorrectionWindow } from './corrections/correction-window';
+export { isRedateRefusal, planRedate } from './corrections/redate';
+export type { RedateInput, RedatePlan, RedateRefusal } from './corrections/redate';
 export { parseStatement } from './reconciliation/statement-parser';
 export type {
   ExtractedTextLine,

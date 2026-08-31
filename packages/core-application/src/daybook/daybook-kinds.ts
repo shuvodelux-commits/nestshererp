@@ -69,6 +69,13 @@ export interface KindCapability {
   readonly receivePayment: string | null;
   readonly payBill: string | null;
   readonly returnGoods: string | null;
+  /**
+   * Phase 11.2 — the four money vouchers that can be moved to another day.
+   * Set on those kinds only: a sale or a purchase would also have to move its
+   * stock movements and re-run cost layering, so those keep the date field
+   * inside their own correction form.
+   */
+  readonly changeDate: string | null;
   readonly print: boolean;
   /** Set when an action a person expects is not built yet, and says so plainly. */
   readonly note: string | null;
@@ -76,7 +83,7 @@ export interface KindCapability {
 
 const NONE: KindCapability = {
   open: false, edit: null, remove: null, receivePayment: null, payBill: null,
-  returnGoods: null, print: false, note: null,
+  returnGoods: null, changeDate: null, print: false, note: null,
 };
 
 /**
@@ -132,6 +139,7 @@ export const CAPABILITIES: Readonly<Record<DaybookKind, KindCapability>> = {
   },
   CUSTOMER_RECEIPT: {
     ...NONE,
+    changeDate: Permission.TRANSACTION_DATE_CHANGE,
     open: true,
     print: true,
     edit: Permission.SALE_RECEIVE_PAYMENT,
@@ -139,6 +147,7 @@ export const CAPABILITIES: Readonly<Record<DaybookKind, KindCapability>> = {
   },
   SUPPLIER_PAYMENT: {
     ...NONE,
+    changeDate: Permission.TRANSACTION_DATE_CHANGE,
     open: true,
     print: true,
     edit: Permission.PURCHASE_PAY,
@@ -146,12 +155,14 @@ export const CAPABILITIES: Readonly<Record<DaybookKind, KindCapability>> = {
   },
   EXPENSE: {
     ...NONE,
+    changeDate: Permission.TRANSACTION_DATE_CHANGE,
     open: true,
     edit: Permission.EXPENSE_RECORD,
     remove: Permission.EXPENSE_VOID,
   },
   CASH_MOVEMENT: {
     ...NONE,
+    changeDate: Permission.TRANSACTION_DATE_CHANGE,
     open: true,
     edit: Permission.CASH_MOVEMENT_RECORD,
     remove: Permission.CASH_MOVEMENT_VOID,

@@ -54,6 +54,19 @@ export interface ReverseMoneyDocumentInput {
    * explains.
    */
   readonly businessDate?: string | undefined;
+  /**
+   * Set only by the date-change use case (Phase 11.2), which has already made a
+   * **stricter** decision than the one below: it checks *both* the day the
+   * document leaves and the day it arrives on, refuses a closed month outright
+   * for everyone but the Owner, and makes the Owner acknowledge the warning and
+   * re-enter their password before it will post. Re-checking one of those two
+   * days here would refuse the case that decision exists to allow.
+   *
+   * Nothing else may set it. A caller that has not made that decision and skips
+   * this guard is posting into a closed month by accident, which is the one
+   * thing §5.14 exists to prevent.
+   */
+  readonly periodDecidedByCaller?: boolean | undefined;
   readonly entityType: string;
   readonly eventType: string;
 }
@@ -95,7 +108,7 @@ export async function reverseMoneyDocument(
    * case the owner's rule exists for, and would leave a shop unable to undo
    * last month's mistake at all.
    */
-  await deps.periods.assertOpen(tx, ctx, businessDate);
+  if (input.periodDecidedByCaller !== true) await deps.periods.assertOpen(tx, ctx, businessDate);
 
   const reversal = posted.journalLines.map((line) => ({
     id: Ulid.generate(deps.clock),

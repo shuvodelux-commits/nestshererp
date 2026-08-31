@@ -228,6 +228,18 @@ export class GetDaybookService {
       receivePayment: changeable && may(capability.receivePayment),
       payBill: changeable && may(capability.payBill),
       returnGoods: changeable && may(capability.returnGoods),
+      /*
+       * Phase 11.2, and the one action a closed month does not hide. A closed
+       * period is protected, not immutable (owner decision 2026-08-31): the
+       * owner who holds `finance.transaction_date.change_locked` is offered
+       * the move and told at the dialog what it costs, and everybody else is
+       * refused by the service the moment they try.
+       */
+      changeDate:
+        status !== 'VOIDED' &&
+        status !== 'REVERSAL' &&
+        may(capability.changeDate) &&
+        (!locked || held.includes(Permission.TRANSACTION_DATE_CHANGE_LOCKED)),
       print: capability.print,
       blockedReason,
     };
@@ -256,6 +268,10 @@ export class GetDaybookService {
       // DR7 — typed on one day about another. The flag is what makes a late
       // entry findable rather than a surprise in next month's figures.
       backdated: entry.entryMode === 'BACKDATED',
+      // Phase 11.2 — what the CORRECTED badge opens into: the day this sat on
+      // before it was moved, and why somebody moved it.
+      originalBusinessDate: entry.originalBusinessDate,
+      correctionReason: entry.correctionReason,
       entryMode: entry.entryMode,
       documentVersion: entry.documentVersion,
       actions,

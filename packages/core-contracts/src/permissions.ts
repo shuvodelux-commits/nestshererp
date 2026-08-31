@@ -306,6 +306,27 @@ export const Permission = {
    * `license.term.view` is permission-only: reading when the term ends is not a
    * dangerous act, and a licence nobody may look at is one nobody renews.
    */
+  /**
+   * Phase 11.2 — moving a posted voucher to the day it actually happened
+   * (D-43, UI-70, owner decisions 2026-08-31).
+   *
+   * Its own code rather than a corner of the codes that record money, because
+   * re-dating is not recording: it takes a figure out of one month's totals and
+   * puts it into another's, after both have been read. Whoever enters an
+   * expense every day is not automatically the person who decides which month
+   * it belongs to — so this is seeded to Owner, Manager and Accountant, and
+   * withheld from the Cashier who records most of them.
+   *
+   * `finance.transaction_date.change_locked` is the second half of the owner's
+   * rule that **a closed period is protected, not immutable**. No seeded role
+   * but the Owner holds it, and the Owner holds it only because that role is
+   * the whole catalogue by construction. A shop that wants its accountant to
+   * reach into a closed month grants it deliberately, and the grant is audited
+   * — the same shape §5.3 gives the backup rights below.
+   */
+  TRANSACTION_DATE_CHANGE: 'finance.transaction_date.change',
+  TRANSACTION_DATE_CHANGE_LOCKED: 'finance.transaction_date.change_locked',
+
   LICENSE_VIEW: 'license.term.view',
   BACKUP_EXPORT: 'backup.export',
   BACKUP_RESTORE: 'backup.restore',
@@ -938,6 +959,20 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     detail: 'Add a bank, bKash or Nagad account, change its details, or take one out of use.',
   },
   {
+    code: Permission.TRANSACTION_DATE_CHANGE,
+    group: 'Money',
+    label: 'Change a transaction date',
+    detail:
+      'Move a receipt, payment, expense or cash movement to the day it really happened. The old posting is reversed and re-posted on the new day; the entry date never changes. A reason is required.',
+  },
+  {
+    code: Permission.TRANSACTION_DATE_CHANGE_LOCKED,
+    group: 'Money',
+    label: 'Change a transaction date inside a closed month',
+    detail:
+      'Move a transaction into or out of a month that has been closed. Asks for the password again, demands a reason, and puts any reconciliation covering those days back under review.',
+  },
+  {
     code: Permission.RECONCILIATION_VIEW,
     group: 'Money',
     label: 'See account reconciliations',
@@ -1169,6 +1204,12 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.STOCK_ADJUSTMENT_VOID,
       Permission.SALES_RETURN_VOID,
       Permission.PURCHASE_RETURN_VOID,
+      /*
+       * Phase 11.2. Re-dating is a floor correction — the manager is who a
+       * cashier fetches when a voucher went in on the wrong day. Not the
+       * `_locked` half: a closed month is the owner's to reopen.
+       */
+      Permission.TRANSACTION_DATE_CHANGE,
     ],
   },
   {
@@ -1345,6 +1386,11 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.PURCHASE_RETURN_VIEW,
       Permission.PERIOD_CLOSE,
       Permission.PERIOD_BACKDATE,
+      /*
+       * Phase 11.2. Which month a payment belongs in is the question this role
+       * exists to answer, so re-dating sits beside the period lock it respects.
+       */
+      Permission.TRANSACTION_DATE_CHANGE,
       Permission.PURCHASE_PLAN_VIEW,
       Permission.WARRANTY_CLAIM_VIEW,
       /*

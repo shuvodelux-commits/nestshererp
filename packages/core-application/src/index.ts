@@ -517,6 +517,15 @@ export type {
   PostedJournalLine,
   ReversibleDocument,
 } from './corrections/document-reversal-repository';
+export { ChangeTransactionDateService } from './corrections/change-transaction-date-service';
+export type { ChangeTransactionDateCommand } from './corrections/change-transaction-date-service';
+export type {
+  DocumentRedateInput,
+  DocumentRedateRepository,
+  RedatableFacts,
+  RedateAllocation,
+  RedateJournalLine,
+} from './corrections/document-redate-repository';
 export { ReconcileAccountService } from './reconciliation/reconcile-account-service';
 export type {
   CompleteReconciliationCommand,

@@ -95,8 +95,8 @@ async function submit(): Promise<void> {
   >
     <template #header>
       <div class="counter-header">
-        <span class="head-bn">{{ MONEY_BN.endDay }}</span>
-        <span class="head-en sher-bn">{{ MONEY_EN.endDay }}</span>
+        <span class="head-en">{{ MONEY_EN.endDay }}</span>
+        <span class="head-bn sher-bn">{{ MONEY_BN.endDay }}</span>
       </div>
     </template>
 
@@ -112,15 +112,15 @@ async function submit(): Promise<void> {
     <!-- Before the count is in, the screen deliberately shows no target. -->
     <div v-if="revealed" class="compare">
       <p class="line">
-        <span>{{ MONEY_BN.systemExpects }}</span>
+        <span>{{ MONEY_EN.systemExpects }}<small class="sher-bn">{{ MONEY_BN.systemExpects }}</small></span>
         <strong>{{ taka(expectedMinor) }}</strong>
       </p>
       <p class="line muted">
-        <span>{{ MONEY_BN.cashIn }}</span>
+        <span>{{ MONEY_EN.cashIn }}<small class="sher-bn">{{ MONEY_BN.cashIn }}</small></span>
         <strong>{{ taka(day.cashInMinor) }}</strong>
       </p>
       <p class="line muted">
-        <span>{{ MONEY_BN.cashOut }}</span>
+        <span>{{ MONEY_EN.cashOut }}<small class="sher-bn">{{ MONEY_BN.cashOut }}</small></span>
         <strong>{{ taka(day.cashOutMinor) }}</strong>
       </p>
 
@@ -133,15 +133,18 @@ async function submit(): Promise<void> {
           :class="`pi ${differenceMinor === 0 ? 'pi-check-circle' : 'pi-exclamation-triangle'}`"
           aria-hidden="true"
         />
-        <span v-if="differenceMinor === 0">{{ MONEY_BN.matched }}</span>
+        <span v-if="differenceMinor === 0">{{ MONEY_EN.matched }}<small class="sher-bn">{{ MONEY_BN.matched }}</small></span>
         <template v-else>
           <strong>{{ taka(Math.abs(differenceMinor)) }}</strong>
-          <span>{{ differenceMinor < 0 ? MONEY_BN.short : MONEY_BN.over }}</span>
+          <span>{{ differenceMinor < 0 ? MONEY_EN.short : MONEY_EN.over }}<small class="sher-bn">{{ differenceMinor < 0 ? MONEY_BN.short : MONEY_BN.over }}</small></span>
         </template>
       </p>
 
       <label v-if="needsReason" class="note">
         <span class="ask">{{
+          (differenceMinor ?? 0) < 0 ? MONEY_EN.whyShort : MONEY_EN.whyOver
+        }}</span>
+        <span class="ask-bn sher-bn">{{
           (differenceMinor ?? 0) < 0 ? MONEY_BN.whyShort : MONEY_BN.whyOver
         }}</span>
         <InputText v-model="reason" maxlength="500" autocomplete="off" />
@@ -149,12 +152,12 @@ async function submit(): Promise<void> {
     </div>
 
     <template #footer>
-      <Button text :label="MONEY_BN.cancel" :disabled="busy" @click="emit('close')" />
+      <Button text :label="MONEY_EN.cancel" :disabled="busy" @click="emit('close')" />
       <Button
         v-if="!revealed"
         class="primary-action"
         icon="pi pi-arrow-right"
-        :label="MONEY_BN.confirm"
+        :label="MONEY_EN.confirm"
         :disabled="!canReveal"
         @click="revealed = true"
       />
@@ -162,7 +165,7 @@ async function submit(): Promise<void> {
         v-else
         class="primary-action"
         icon="pi pi-check"
-        :label="MONEY_BN.endDay"
+        :label="MONEY_EN.endDay"
         :loading="busy"
         :disabled="!canSubmit"
         @click="submit"
@@ -172,17 +175,34 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
+/*
+ * English first, Bangla under it (owner decision 2026-08-31). The figure rows
+ * carry both because a cashier reading either one should land on the same line.
+ */
+.line span small,
+.verdict span small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sher-text-muted);
+}
+
+.ask-bn {
+  font-size: 11px;
+  color: var(--sher-text-muted);
+}
+
 .counter-header {
   display: flex;
   flex-direction: column;
 }
 
-.head-bn {
+.head-en {
   font-size: 20px;
   font-weight: 700;
 }
 
-.head-en {
+.head-bn {
   font-size: 11px;
   color: var(--sher-text-muted);
 }

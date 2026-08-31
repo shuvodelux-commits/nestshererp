@@ -96,6 +96,8 @@ const ENTRY_SELECT = sql`
          doc.status AS document_status,
          doc.version AS document_version,
          reversal.source_number AS reversed_by_number,
+         redate.original_business_date::text AS original_business_date,
+         redate.correction_reason AS correction_reason,
          note.text AS note
     FROM journal_entries je
     LEFT JOIN users u ON u.tenant_id = je.tenant_id AND u.id = je.created_by
@@ -174,6 +176,29 @@ const ENTRY_SELECT = sql`
                ELSE NULL
              END AS text
     ) note ON TRUE
+    /*
+     * Phase 11.2 — what the CORRECTED badge opens into. A document that has
+     * been corrected or moved to another day keeps the day it came from and the
+     * reason somebody gave, so the row can say *moved from 12 Aug* instead of
+     * only that something was corrected. The four money vouchers are the only
+     * documents a date can be changed on, so they are the only ones asked.
+     */
+    LEFT JOIN LATERAL (
+      SELECT CASE je.source_document_type
+               WHEN 'CUSTOMER_RECEIPT' THEN (SELECT r.original_business_date FROM customer_receipts r WHERE r.tenant_id = je.tenant_id AND r.id = je.source_document_id)
+               WHEN 'SUPPLIER_PAYMENT' THEN (SELECT sp.original_business_date FROM supplier_payments sp WHERE sp.tenant_id = je.tenant_id AND sp.id = je.source_document_id)
+               WHEN 'EXPENSE' THEN (SELECT e.original_business_date FROM expenses e WHERE e.tenant_id = je.tenant_id AND e.id = je.source_document_id)
+               WHEN 'CASH_MOVEMENT' THEN (SELECT cm.original_business_date FROM cash_movements cm WHERE cm.tenant_id = je.tenant_id AND cm.id = je.source_document_id)
+               ELSE NULL
+             END AS original_business_date,
+             CASE je.source_document_type
+               WHEN 'CUSTOMER_RECEIPT' THEN (SELECT r.correction_reason FROM customer_receipts r WHERE r.tenant_id = je.tenant_id AND r.id = je.source_document_id)
+               WHEN 'SUPPLIER_PAYMENT' THEN (SELECT sp.correction_reason FROM supplier_payments sp WHERE sp.tenant_id = je.tenant_id AND sp.id = je.source_document_id)
+               WHEN 'EXPENSE' THEN (SELECT e.correction_reason FROM expenses e WHERE e.tenant_id = je.tenant_id AND e.id = je.source_document_id)
+               WHEN 'CASH_MOVEMENT' THEN (SELECT cm.correction_reason FROM cash_movements cm WHERE cm.tenant_id = je.tenant_id AND cm.id = je.source_document_id)
+               ELSE NULL
+             END AS correction_reason
+    ) redate ON TRUE
 `;
 
 interface EntryRecord extends Record<string, unknown> {
@@ -184,6 +209,7 @@ interface EntryRecord extends Record<string, unknown> {
   account_code: string | null; account_label: string | null;
   amount_minor: string; cash_effect_minor: string;
   qty: string | null; document_status: string | null; reversed_by_number: string | null;
+  original_business_date: string | null; correction_reason: string | null;
   note: string | null;
 }
 
@@ -207,6 +233,8 @@ function toRow(row: EntryRecord): DaybookEntryRow {
     documentStatus: row.document_status,
     documentVersion: row.document_version,
     reversedByNumber: row.reversed_by_number,
+    originalBusinessDate: row.original_business_date,
+    correctionReason: row.correction_reason,
     qty: row.qty === null ? null : int(row.qty),
     note: row.note,
   };

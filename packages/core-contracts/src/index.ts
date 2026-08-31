@@ -725,6 +725,20 @@ export type {
   StatementPreviewResponse,
   UploadStatementRequest,
 } from './reconciliation';
+export {
+  changeTransactionDateRequestSchema,
+  changeTransactionDateResponseSchema,
+  redatableDocumentSchema,
+  redateReasonCodeSchema,
+  transactionDateContextSchema,
+} from './transaction-date';
+export type {
+  ChangeTransactionDateRequest,
+  ChangeTransactionDateResponse,
+  RedatableDocument,
+  RedateReasonCode,
+  TransactionDateContext,
+} from './transaction-date';
 
 export {
   archivePreviewResponseSchema,

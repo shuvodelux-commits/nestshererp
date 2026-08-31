@@ -70,7 +70,7 @@ describe('navigation architecture', () => {
     // `/warranty` and `/vendor-stock` are Phase 8's three. The list grows only
     // when a real implemented route ships; nothing is ever removed from it,
     // which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/parties', '/daily-cash', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/security']));
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/parties', '/daily-cash', '/counter', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

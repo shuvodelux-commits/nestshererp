@@ -50,6 +50,12 @@ export interface DaybookEntryRow {
   /** What this entry did to cash and bank accounts, signed: in (+), out (−). */
   readonly cashEffectMinor: number;
   readonly entryMode: string;
+  /**
+   * Phase 11.2 — the day the document sat on before it was last moved, and why.
+   * Null on one that has never been corrected or re-dated.
+   */
+  readonly originalBusinessDate: string | null;
+  readonly correctionReason: string | null;
   /** The document's own status, read from the module that owns it. */
   readonly documentStatus: string | null;
   /** The owning document's version, for the optimistic lock on a cancellation. */

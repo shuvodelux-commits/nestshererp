@@ -119,6 +119,28 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
        * filled now: the day's whole activity in one list, which is the screen
        * an owner opens at closing time.
        */
+      /*
+       * Phase 11.2. UI-67 reserved Counter's place here from the start and it
+       * is filled now: the manual money a shop handles between sales, in one
+       * screen, launching the dialogs that already own each action.
+       *
+       * `permissionMode: 'ANY'` because Counter is six actions and holding any
+       * one of them is a reason to stand here — while a person holding none
+       * would get a screen with a drawer figure and nothing to press, which is
+       * exactly the dead surface UI-09 refuses.
+       */
+      { id: 'daily.counter', label: 'Counter', icon: 'pi-inbox', features: [
+        {
+          ...feature('daily.counter.page', 'Counter', 'কাউন্টার', 'Take money, pay money, record what the shop spent', '/counter', [
+            'sale.payment.record',
+            'purchase.payment.record',
+            'expense.record',
+            'cash.movement.record',
+            'cash.session.start',
+          ]),
+          permissionMode: 'ANY' as const,
+        },
+      ] },
       { id: 'daily.daybook', label: 'Daybook', icon: 'pi-book', features: [
         feature('daily.daybook.page', 'Daybook', 'দিনের হিসাব', 'Everything that happened on a day, in the order it happened', '/daybook', ['daybook.view'], ['/daybook']),
       ] },
