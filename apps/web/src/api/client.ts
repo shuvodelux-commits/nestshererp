@@ -1,6 +1,7 @@
 import type { LoginResponse } from '@sher/core-contracts';
 
 import { useSession } from '../auth/session';
+import { markReachable, markUnreachable } from '../offline/connectivity';
 import { markDataChanged } from '../state/data-freshness';
 
 /**
@@ -78,6 +79,14 @@ interface RequestOptions {
    * nothing does.
    */
   readonly envelope?: boolean;
+  /**
+   * This browser profile's public key (Phase 12.1, §5.23, D-01).
+   *
+   * Sent as `X-Device-Key` so the server knows *which machine* is asking. It is
+   * an identity, never a credential: the private half never leaves the browser,
+   * and the header decides only which device row the call is about.
+   */
+  readonly deviceKey?: string | undefined;
 }
 
 /**
@@ -131,6 +140,7 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.token !== undefined) headers['authorization'] = `Bearer ${options.token}`;
   if (options.idempotencyKey !== undefined) headers['idempotency-key'] = options.idempotencyKey;
+  if (options.deviceKey !== undefined) headers['x-device-key'] = options.deviceKey;
 
   let response: Response;
   try {
@@ -141,8 +151,15 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
     });
   } catch {
     // A dead network is not a server error code, and must not be reported as one.
+    // Phase 12.3: it is also the most reliable offline signal there is —
+    // evidence rather than a probe — so the app is told at once, and the
+    // screens that can read the local copy switch to it without waiting.
+    markUnreachable();
     throw new ApiError('NETWORK_UNREACHABLE', 'Cannot reach the server. Check your connection.', 0);
   }
+
+  // Anything that came back at all proves the line is up, including a refusal.
+  markReachable();
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ErrorBody;

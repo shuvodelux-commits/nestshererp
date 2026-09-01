@@ -96,6 +96,9 @@ importers:
       '@primeuix/themes':
         specifier: 1.0.3
         version: 1.0.3
+      '@sher/adapter-sqlite-wasm':
+        specifier: workspace:*
+        version: link:../../packages/adapter-sqlite-wasm
       '@sher/core-contracts':
         specifier: workspace:*
         version: link:../../packages/core-contracts
@@ -105,6 +108,9 @@ importers:
       '@sher/shared-utils':
         specifier: workspace:*
         version: link:../../packages/shared-utils
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.53.0-build1
+        version: 3.53.0-build1
       html2canvas-pro:
         specifier: ^2.4.0
         version: 2.4.0
@@ -170,6 +176,22 @@ importers:
       '@types/pg':
         specifier: 8.11.10
         version: 8.11.10
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@20.19.9)(jsdom@25.0.1)
+
+  packages/adapter-sqlite-wasm:
+    dependencies:
+      '@sher/core-contracts':
+        specifier: workspace:*
+        version: link:../core-contracts
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.53.0-build1
+        version: 3.53.0-build1
+    devDependencies:
       typescript:
         specifier: 5.7.3
         version: 5.7.3
@@ -831,6 +853,10 @@ packages:
     resolution: {integrity: sha512-zD6NdeWEByGE9QF9vCrlJ5YQB4oq9q91kPZS37Jwj5hOkvR1lTBSpsKhKDw4IJtbQ35LsTS1HD9DZYGKIshU1Q==}
     cpu: [x64]
     os: [win32]
+
+  '@sqlite.org/sqlite-wasm@3.53.0-build1':
+    resolution: {integrity: sha512-PfWPWN2n+/37doa8oh2/oUXk4OOsRYZsxc1W1sDXIGb/Pu5Yrb+f2eyYpgQMGITVX7HVgxhs9P18Rc6I97ym/g==}
+    engines: {node: '>=22'}
 
   '@types/body-parser@1.19.6':
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
@@ -2977,6 +3003,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.4':
     optional: true
+
+  '@sqlite.org/sqlite-wasm@3.53.0-build1': {}
 
   '@types/body-parser@1.19.6':
     dependencies:

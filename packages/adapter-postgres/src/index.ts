@@ -34,6 +34,8 @@ export { PostgresPurchaseRepository } from './purchase-repository';
 export { PostgresSaleRepository } from './sale-repository';
 export { PostgresExpenseRepository } from './expense-repository';
 export { PostgresPeriodRepository } from './period-repository';
+/* Phase 12.1 — registered browser profiles and the shop's offline writer. */
+export { PostgresDeviceRepository } from './device-authorization-repository';
 export { PostgresStockCountRepository } from './stock-count-repository';
 export { PostgresPurchaseReturnRepository } from './purchase-return-repository';
 export { PostgresSalesReturnRepository } from './sales-return-repository';

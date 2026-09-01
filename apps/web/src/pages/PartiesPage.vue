@@ -33,7 +33,10 @@ import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import SearchField from '../components/SearchField.vue';
 import SortableHeader from '../components/SortableHeader.vue';
+import OfflineBar from '../components/offline/OfflineBar.vue';
+import { NEEDS_INTERNET, NEEDS_INTERNET_BN } from '../components/offline/offline-text';
 import AppShell from '../components/shell/AppShell.vue';
+import { useConnectivity } from '../offline/connectivity';
 import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
 import PartyFormPage from './PartyFormPage.vue';
 
@@ -51,6 +54,13 @@ import PartyFormPage from './PartyFormPage.vue';
 const session = useSession();
 const router = useRouter();
 const route = useRoute();
+
+/*
+ * Phase 12.3. The list needs no branch: `fetchParties` reads the local copy
+ * when the server cannot be reached and answers in the same shape. The page
+ * only has to say that it is offline and stop offering what cannot be saved.
+ */
+const { isOffline } = useConnectivity();
 
 function roleFromQuery(value: unknown): PartyRoleValue | null {
   return value === 'CUSTOMER' || value === 'SUPPLIER' || value === 'VENDOR' ? value : null;
@@ -565,6 +575,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
         v-if="showsGroups && canManageGroups"
         type="button"
         class="btn btn-ghost"
+        :disabled="isOffline"
         @click="managingGroups = true"
       >
         <i class="pi pi-tags" aria-hidden="true" />
@@ -577,6 +588,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
         v-if="canCreate && role !== 'VENDOR'"
         type="button"
         class="btn btn-ghost"
+        :disabled="isOffline"
         @click="router.push(`/import?type=${role === 'CUSTOMER' ? 'CUSTOMERS' : 'SUPPLIERS'}`)"
       >
         <i class="pi pi-upload" aria-hidden="true" />
@@ -586,12 +598,24 @@ async function removeGroup(id: string, name: string): Promise<void> {
         v-if="canCreate"
         type="button"
         class="btn btn-primary"
+        :disabled="isOffline"
         @click="adding = true"
       >
         <i class="pi pi-plus" aria-hidden="true" />
         Add {{ NOUN[role] }}
       </button>
+      <!--
+        Owner decision 2026-08-31: greyed out and told why, never hidden.
+        Hiding is for an action this person may not have; this one is simply
+        waiting for the line to come back.
+      -->
+      <span v-if="isOffline" class="needs-internet">
+        {{ NEEDS_INTERNET }}
+        <span class="label-bn">{{ NEEDS_INTERNET_BN }}</span>
+      </span>
     </template>
+
+    <OfflineBar />
 
     <form class="filters" @submit.prevent="load">
       <div class="field grow">
@@ -739,6 +763,8 @@ async function removeGroup(id: string, name: string): Promise<void> {
               class="row-menu-trigger card-menu"
               :aria-label="`Actions for ${party.name}`"
               aria-haspopup="menu"
+              :disabled="isOffline"
+              :title="isOffline ? NEEDS_INTERNET : ''"
               @click="openRowMenu($event, party)"
             >
               <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -852,6 +878,8 @@ async function removeGroup(id: string, name: string): Promise<void> {
                     class="row-menu-trigger"
                     :aria-label="`Actions for ${party.name}`"
                     aria-haspopup="menu"
+                    :disabled="isOffline"
+                    :title="isOffline ? NEEDS_INTERNET : ''"
                     @click="openRowMenu($event, party)"
                   >
                     <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -1031,6 +1059,15 @@ async function removeGroup(id: string, name: string): Promise<void> {
 </template>
 
 <style scoped>
+/* Phase 12.3 — the note under a saving action that is waiting for the line. */
+.needs-internet {
+  display: grid;
+  align-self: center;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--sher-text-muted);
+}
+
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
  * `design/components.css`. What is left is the filter bar, paging line and

@@ -360,6 +360,37 @@ export const Permission = {
   TRANSACTION_DATE_CHANGE: 'finance.transaction_date.change',
   TRANSACTION_DATE_CHANGE_LOCKED: 'finance.transaction_date.change_locked',
 
+  /**
+   * Phase 12.1 — the offline foundation (§5.23, D-01, D-24, owner decisions
+   * 2026-08-31).
+   *
+   * Five codes, because the five acts are five different sizes.
+   *
+   * `offline.device.register` is held by **every seeded role, the Cashier
+   * included**, and that is deliberate rather than lax: registering creates
+   * this browser's identity and lets it *ask*. It grants no offline authority
+   * whatsoever, so the counter machine can put itself forward without the owner
+   * having to sit at it — and a shop where only the owner's own browser could
+   * ever register is a shop that never gets offline working at all.
+   *
+   * Approving, renaming and revoking are the shop deciding **which single
+   * machine is its writer**, and sit with Owner and Manager. There is no
+   * separate view code: the list is the approve screen, and seeing which
+   * machine holds the shop's only offline authority is the same trust as
+   * moving it.
+   *
+   * `offline.device.force_revoke` is the **Owner's alone**. A normal revoke
+   * drains — the machine sends up what it holds and then goes read-only, losing
+   * nothing. Force revoke cuts authority where the machine cannot drain, and
+   * everything that device pushes afterwards is quarantined instead of posted.
+   * It asks for the password again, demands a reason, and is audited
+   * permanently. That is not a manager's decision to take alone.
+   */
+  DEVICE_REGISTER: 'offline.device.register',
+  DEVICE_APPROVE: 'offline.device.approve',
+  DEVICE_RENAME: 'offline.device.rename',
+  DEVICE_REVOKE: 'offline.device.revoke',
+  DEVICE_FORCE_REVOKE: 'offline.device.force_revoke',
   LICENSE_VIEW: 'license.term.view',
   BACKUP_EXPORT: 'backup.export',
   BACKUP_RESTORE: 'backup.restore',
@@ -1068,6 +1099,40 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
   },
 
   {
+    code: Permission.DEVICE_REGISTER,
+    group: 'Offline',
+    label: 'Register this computer',
+    detail:
+      'Let the browser you are sitting at identify itself to the shop and ask for permission to work without internet. Asking is all it does — nothing can work offline until somebody approves it.',
+  },
+  {
+    code: Permission.DEVICE_APPROVE,
+    group: 'Offline',
+    label: 'Approve the offline computer',
+    detail:
+      'See every computer that has registered, and choose the one that may work without internet. Only one computer in the shop holds it at a time.',
+  },
+  {
+    code: Permission.DEVICE_RENAME,
+    group: 'Offline',
+    label: 'Rename a computer',
+    detail: 'Give a registered computer a name the shop recognises, like “Counter PC — Chrome”.',
+  },
+  {
+    code: Permission.DEVICE_REVOKE,
+    group: 'Offline',
+    label: 'Take offline permission back',
+    detail:
+      'Stop a computer working offline. It first sends up everything it is still holding, then goes read-only, so nothing is lost.',
+  },
+  {
+    code: Permission.DEVICE_FORCE_REVOKE,
+    group: 'Offline',
+    label: 'Cut off a computer immediately',
+    detail:
+      'For a machine that is lost, stolen or dead: cut its permission at once, without waiting for it to send anything up. Anything it sends afterwards is held aside for review instead of going into the books. Asks for the password again and demands a reason.',
+  },
+  {
     code: Permission.LICENSE_VIEW,
     group: 'Licence & backup',
     label: 'See the licence',
@@ -1297,6 +1362,16 @@ export const SEED_ROLES: readonly SeedRole[] = [
        * `_locked` half: a closed month is the owner's to reopen.
        */
       Permission.TRANSACTION_DATE_CHANGE,
+      /*
+       * Phase 12.1. Which machine is the shop's offline computer is a floor
+       * decision — the manager is who sets up a new counter PC. Not
+       * `force_revoke`: cutting a machine off without letting it drain can
+       * strand a day's takings, and that stays the owner's.
+       */
+      Permission.DEVICE_REGISTER,
+      Permission.DEVICE_APPROVE,
+      Permission.DEVICE_RENAME,
+      Permission.DEVICE_REVOKE,
     ],
   },
   {
@@ -1371,6 +1446,13 @@ export const SEED_ROLES: readonly SeedRole[] = [
        */
       Permission.DAYBOOK_VIEW,
       Permission.DAYBOOK_PRINT,
+      /*
+       * Phase 12.1. The counter machine is usually the one that will work
+       * offline, and the cashier is who sits at it — so the cashier may put
+       * this browser forward. It grants nothing: an owner or manager still has
+       * to approve it before the machine can hold offline authority.
+       */
+      Permission.DEVICE_REGISTER,
     ],
   },
   {
@@ -1416,6 +1498,8 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.VENDOR_STOCK_MANAGE,
       /* Phase 9. The shelf's own report, and nothing about money (§5.26). */
       Permission.REPORT_STOCK_VIEW,
+      /* Phase 12.1. Registering asks; it never grants (see the code's note). */
+      Permission.DEVICE_REGISTER,
     ],
   },
   {
@@ -1512,6 +1596,8 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.SUPPLIER_PAYMENT_VOID,
       Permission.EXPENSE_VOID,
       Permission.CASH_MOVEMENT_VOID,
+      /* Phase 12.1. Registering asks; it never grants (see the code's note). */
+      Permission.DEVICE_REGISTER,
     ],
   },
   {
@@ -1532,6 +1618,14 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.PURCHASE_VIEW,
       Permission.PURCHASE_PLAN_VIEW,
       Permission.WARRANTY_CLAIM_VIEW,
+      /*
+       * Phase 12.1. Even a read-only account may register the browser it sits
+       * at — a shop whose stocktaker's laptop is the spare counter machine
+       * should not have to change somebody's role to find that out. Registering
+       * grants no offline authority, and this role holds none of the codes that
+       * would approve it.
+       */
+      Permission.DEVICE_REGISTER,
     ],
   },
 ];

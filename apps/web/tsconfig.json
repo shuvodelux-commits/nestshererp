@@ -30,7 +30,8 @@
     "paths": {
       "@sher/core-contracts": ["../../packages/core-contracts/src/index.ts"],
       "@sher/core-domain": ["../../packages/core-domain/src/index.ts"],
-      "@sher/shared-utils": ["../../packages/shared-utils/src/index.ts"]
+      "@sher/shared-utils": ["../../packages/shared-utils/src/index.ts"],
+      "@sher/adapter-sqlite-wasm": ["../../packages/adapter-sqlite-wasm/src/index.ts"]
     }
   },
   "include": [

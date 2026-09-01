@@ -449,3 +449,29 @@ export {
   MANUAL_EXPORT_REMINDER_DAYS,
 } from './backup/archive';
 export type { ArchiveCompatibility, ArchiveManifest } from './backup/archive';
+/* Phase 12.1 — the offline foundation (§5.23, D-01, D-24). */
+export {
+  canTransition,
+  holdsOfflineWrite,
+  nextStatus,
+  occupiesWriterSlot,
+  pushesAreQuarantined,
+  replacementRoute,
+} from './devices/authority';
+export type { DeviceStatus, DeviceTransition, ReplacementRoute } from './devices/authority';
+export { evaluateOfflineGate, OFFLINE_GATE_ORDER } from './devices/offline-gate';
+export type {
+  OfflineGateReport,
+  OfflineGateResult,
+  OfflineGateState,
+  OfflineGateStep,
+} from './devices/offline-gate';
+export {
+  estimateSnapshotBytes,
+  requiredOfflineBytes,
+  SNAPSHOT_BASE_BYTES,
+  SNAPSHOT_HEADROOM_MULTIPLE,
+  SNAPSHOT_MONTHS,
+  SNAPSHOT_ROW_BYTES,
+} from './devices/snapshot-size';
+export type { SnapshotCounts } from './devices/snapshot-size';

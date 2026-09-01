@@ -368,6 +368,14 @@ describe('permissions (R-E8)', () => {
         'daybook.print',
         'daybook.view',
         'invoice.presentation.edit',
+        /*
+         * Phase 12.1 (owner decision 2026-08-31). Registering this browser is
+         * held by every authenticated role, the Cashier included: the counter
+         * machine is usually the one that will work offline and the cashier is
+         * who sits at it. It creates identity and the right to *ask* — offline
+         * authority itself still needs an owner or manager to approve it.
+         */
+        'offline.device.register',
         'party.customer.create',
         'party.customer.edit',
         'party.customer.view',

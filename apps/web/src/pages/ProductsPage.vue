@@ -28,7 +28,15 @@ import SearchField from '../components/SearchField.vue';
 import SortableHeader from '../components/SortableHeader.vue';
 import StockAdjustDialog from '../components/StockAdjustDialog.vue';
 import StockLotsDialog from '../components/StockLotsDialog.vue';
+import OfflineBar from '../components/offline/OfflineBar.vue';
+import {
+  asOfText,
+  NEEDS_INTERNET,
+  NEEDS_INTERNET_BN,
+} from '../components/offline/offline-text';
 import AppShell from '../components/shell/AppShell.vue';
+import { useConnectivity } from '../offline/connectivity';
+import { useSnapshot } from '../offline/snapshot';
 
 /**
  * Products — the product working hub (§5.5, owner decision 2026-08-20).
@@ -48,6 +56,28 @@ import AppShell from '../components/shell/AppShell.vue';
  */
 const session = useSession();
 const router = useRouter();
+
+/*
+ * Phase 12.3. The list itself needs no branch here: `fetchProducts` reads the
+ * local copy when the server cannot be reached, and hands back the same
+ * response shape either way. What the page has to know is only what a person
+ * must be told — that it is offline, and how old the numbers are.
+ */
+const { isOffline } = useConnectivity();
+const { stored } = useSnapshot();
+
+/** The clock time on the copy, for the "as of" beside a stock figure. */
+const storedAt = computed<string | null>(() => {
+  const takenAt = stored.value?.takenAt;
+  if (takenAt === undefined) return null;
+  const taken = Date.parse(takenAt);
+  if (Number.isNaN(taken)) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(taken);
+});
 
 const canCreate = computed(() => session.can('catalog.product.create'));
 const canEdit = computed(() => session.can('catalog.product.edit'));
@@ -412,10 +442,29 @@ function stockPill(product: ProductResponse): string {
         label="Import"
         icon="pi pi-upload"
         severity="secondary"
+        :disabled="isOffline"
         @click="router.push('/import?type=PRODUCTS')"
       />
-      <Button v-if="canCreate" label="Add product" icon="pi pi-plus" @click="creating = true" />
+      <Button
+        v-if="canCreate"
+        label="Add product"
+        icon="pi pi-plus"
+        :disabled="isOffline"
+        @click="creating = true"
+      />
+      <!--
+        Owner decision 2026-08-31: a saving action greys out and says why, and
+        is never hidden. Hiding is what an unauthorised action gets; being
+        offline is a passing condition, and a button that vanished would read
+        as the feature being gone.
+      -->
+      <span v-if="isOffline" class="needs-internet">
+        {{ NEEDS_INTERNET }}
+        <span class="label-bn">{{ NEEDS_INTERNET_BN }}</span>
+      </span>
     </template>
+
+    <OfflineBar />
 
     <!-- UI-25: filters are visible, and what is filtered is readable at a glance -->
     <form class="filters" @submit.prevent="load">
@@ -655,6 +704,17 @@ function stockPill(product: ProductResponse): string {
                   >
                     {{ product.stockStatus === 'LOW_STOCK' ? 'Low' : product.stockStatus === 'ZERO_STOCK' ? 'Out' : 'Negative' }}
                   </span>
+                  <!--
+                    Owner decision 2026-08-31: offline, the number is shown as
+                    it stands with the time it was taken beside it. A
+                    shopkeeper knows their own shelf better than any screen and
+                    wants a starting figure; hiding it does not make the shelf
+                    less countable, and the bar above has already said the data
+                    is old.
+                  -->
+                  <span v-if="isOffline && storedAt !== null" class="as-of">
+                    {{ asOfText(storedAt) }}
+                  </span>
                 </td>
                 <td v-if="canSeeCost" class="num">{{ money(product.stockValueMinor) }}</td>
                 <td>
@@ -668,6 +728,8 @@ function stockPill(product: ProductResponse): string {
                     :aria-label="`Actions for ${product.displayName}`"
                     aria-haspopup="true"
                     v-tooltip.left="'Edit, stock, lots and more'"
+                    :disabled="isOffline"
+                    :title="isOffline ? NEEDS_INTERNET : ''"
                     @click="openMenu($event, product)"
                   >
                     <i class="pi pi-ellipsis-h" aria-hidden="true" />
@@ -794,6 +856,23 @@ function stockPill(product: ProductResponse): string {
 </template>
 
 <style scoped>
+/* Phase 12.3 — the offline markers. Both are quiet on purpose: the bar at the
+   top of the page is what states the condition, and these only stop a figure
+   or a button being read as something it is not. */
+.needs-internet {
+  display: grid;
+  align-self: center;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--sher-text-muted);
+}
+
+.as-of {
+  display: block;
+  font-size: 11px;
+  color: var(--sher-text-muted);
+}
+
 /*
  * Buttons, fields, tables, badges, dialogs and skeletons come from
  * `design/components.css`. What is left is the filter bar, the row menu trigger

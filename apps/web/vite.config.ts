@@ -12,11 +12,20 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
   plugins: [vue()],
+  /*
+   * SQLite WASM loads its own `.wasm` relative to itself and must not be
+   * rewritten by the dependency pre-bundler (Phase 12.1's storage check).
+   */
+  optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   resolve: {
     alias: {
       '@sher/core-contracts': resolve(__dirname, '../../packages/core-contracts/src/index.ts'),
       '@sher/core-domain': resolve(__dirname, '../../packages/core-domain/src/index.ts'),
       '@sher/shared-utils': resolve(__dirname, '../../packages/shared-utils/src/index.ts'),
+      '@sher/adapter-sqlite-wasm': resolve(
+        __dirname,
+        '../../packages/adapter-sqlite-wasm/src/index.ts',
+      ),
     },
   },
   /**

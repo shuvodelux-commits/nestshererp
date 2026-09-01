@@ -7,7 +7,10 @@ import type {
   UpdateProductRequest,
 } from '@sher/core-contracts';
 
+import { localProducts } from '@sher/adapter-sqlite-wasm';
+
 import { request } from './client';
+import { offlineFallback } from './offline-fallback';
 
 /**
  * Products (§5.5).
@@ -29,10 +32,14 @@ export function fetchProducts(token: string, query: ProductQuery): Promise<Produ
   if (query.direction !== undefined) params.set('direction', query.direction);
 
   const suffix = params.toString();
-  return request(`/api/v1/products${suffix === '' ? '' : `?${suffix}`}`, {
-    token,
-    envelope: true,
-  });
+  return offlineFallback(
+    () =>
+      request<ProductListResponse>(`/api/v1/products${suffix === '' ? '' : `?${suffix}`}`, {
+        token,
+        envelope: true,
+      }),
+    () => localProducts(query),
+  );
 }
 
 export function fetchProduct(token: string, id: string): Promise<ProductResponse> {

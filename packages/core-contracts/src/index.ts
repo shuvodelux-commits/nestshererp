@@ -817,5 +817,47 @@ export type {
   LicenseStatusResponse,
 } from './licensing';
 
+/* Phase 12.1 — offline devices and the D-24 gate (§5.23, D-01). */
+export {
+  approveDeviceRequestSchema,
+  deviceListResponseSchema,
+  deviceSchema,
+  deviceStatusSchema,
+  forceRevokeDeviceRequestSchema,
+  offlineGateStepSchema,
+  offlineStatusResponseSchema,
+  registerDeviceRequestSchema,
+  renameDeviceRequestSchema,
+  replaceWriterRequestSchema,
+  reportGateRequestSchema,
+  requestOfflineRwRequestSchema,
+  revokeDeviceRequestSchema,
+} from './devices';
+/* Phase 12.3 — the snapshot the offline device reads from (§5.23). */
+export {
+  offlineSnapshotResponseSchema,
+  reportSnapshotRequestSchema,
+  snapshotIncludesSchema,
+} from './devices';
+export type {
+  ApproveDeviceRequest,
+  DeviceListResponse,
+  DeviceResponse,
+  DeviceStatusValue,
+  ForceRevokeDeviceRequest,
+  OfflineGateStepValue,
+  OfflineStatusResponse,
+  RegisterDeviceRequest,
+  RenameDeviceRequest,
+  ReplaceWriterRequest,
+  ReportGateRequest,
+  RevokeDeviceRequest,
+} from './devices';
+export type {
+  OfflineSnapshotResponse,
+  ReportSnapshotRequest,
+  SnapshotIncludes,
+} from './devices';
+
 export { LICENSED_MODULES, licenceIncludes, moduleOwning } from './modules';
 export type { LicensedModule } from './modules';

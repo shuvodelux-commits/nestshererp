@@ -17,6 +17,7 @@ import { CorrectionsModule } from './corrections/corrections.module';
 import { ReportsModule } from './reports/reports.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PeriodsModule } from './periods/periods.module';
+import { DevicesModule } from './devices/devices.module';
 import { ReturnsModule } from './returns/returns.module';
 import { SalesModule } from './sales/sales.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
@@ -55,6 +56,8 @@ import { UsersModule } from './users/users.module';
     ReturnsModule,
     ExpensesModule,
     PeriodsModule,
+    /* Phase 12.1 — offline devices and the D-24 gate (§5.23). */
+    DevicesModule,
     ReportsModule,
     DaybookModule,
     CorrectionsModule,

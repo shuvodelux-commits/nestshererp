@@ -12,6 +12,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { SherPreset } from './design/preset';
 import { initTheme } from './design/theme';
+import { registerServiceWorker } from './offline/service-worker';
 import router from './router';
 
 /**
@@ -22,6 +23,13 @@ import router from './router';
 
 // Before mount, so a device set to dark never shows a white flash first.
 initTheme();
+
+/*
+ * Phase 12.1 (§5.23, D-24). The service worker is what makes the browser offer
+ * "Install SherERP" — the first rung of the D-24 ladder — and what lets the app
+ * shell open on a bad line. It never caches the API; see `public/sw.js`.
+ */
+registerServiceWorker();
 
 const app = createApp(App)
   .use(PrimeVue, {

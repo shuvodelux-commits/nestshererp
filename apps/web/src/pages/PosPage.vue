@@ -33,6 +33,7 @@ import {
   saveSaleDraft,
 } from '../api/sales';
 import { useSession } from '../auth/session';
+import { holdWhileBusy } from '../offline/app-busy';
 import Dialog from 'primevue/dialog';
 
 import ConfirmDialog from '../components/ConfirmDialog.vue';
@@ -91,6 +92,14 @@ const catalog = ref<CatalogResponse>(EMPTY_CATALOG);
 const loadingProducts = ref(false);
 
 const lines = ref<CartLine[]>([]);
+
+/*
+ * Phase 12.1 (owner decision 2026-08-31): a new app version never reloads this
+ * screen while there is something in the cart. The bill exists nowhere but this
+ * tab until it is posted, and losing it to an update is not a trade anybody
+ * would accept. The offer comes back the moment the cart is empty.
+ */
+holdWhileBusy(() => lines.value.length > 0);
 const discount = ref(0);
 const notes = ref('');
 const dueDate = ref('');

@@ -76,8 +76,9 @@ export const IMPORT_RULES: readonly ImportRule[] = [
   {
     id: 'no-adapter-import',
     scopes: [CORE_DOMAIN, CORE_APPLICATION],
-    isBanned: (s) => s === '@sher/adapter-postgres' || s.includes('adapter-postgres'),
-    message: 'adapter-postgres must never be imported by core-domain or core-application',
+    isBanned: (s) => s.includes('adapter-postgres') || s.includes('adapter-sqlite-wasm'),
+    message:
+      'no adapter may be imported by core-domain or core-application — Phase 12.3 added the SQLite WASM one, and the rule holds for every adapter, not just the first',
   },
 ];
 

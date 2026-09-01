@@ -47,6 +47,22 @@ const router = createRouter({
       name: 'settings-license',
       component: () => import('./pages/SettingsLicensePage.vue'),
     },
+    /*
+     * Phase 12.1 (§5.23, D-01, D-24). The page itself is open to anybody signed
+     * in — a cashier must be able to read why this machine cannot work offline
+     * — and every control on it is drawn only for whoever holds the code for
+     * it. The storage check beneath it is the O-6 spike, and is Owner-only.
+     */
+    {
+      path: '/settings/offline',
+      name: 'settings-offline',
+      component: () => import('./pages/SettingsOfflinePage.vue'),
+    },
+    {
+      path: '/settings/offline/storage-check',
+      name: 'settings-offline-storage-check',
+      component: () => import('./pages/StorageCheckPage.vue'),
+    },
     { path: '/catalog', name: 'catalog', component: () => import('./pages/CatalogPage.vue') },
     { path: '/products', name: 'products', component: () => import('./pages/ProductsPage.vue') },
     // §5.10: per-product stock work lives on the Products row menu; what is

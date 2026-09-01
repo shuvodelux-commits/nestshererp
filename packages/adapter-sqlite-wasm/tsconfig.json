@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    /*
+     * This adapter runs in the browser and nowhere else — it is the OPFS side
+     * of D-23. `module`/`moduleResolution` follow the app that loads it rather
+     * than the Node defaults the server packages use, because the dynamic
+     * `import()` of the SQLite WASM module has to survive into the bundle.
+     */
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src", "test"]
+}

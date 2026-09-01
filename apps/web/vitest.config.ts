@@ -15,6 +15,10 @@ export default defineConfig({
       '@sher/core-contracts': resolve(__dirname, '../../packages/core-contracts/src/index.ts'),
       '@sher/core-domain': resolve(__dirname, '../../packages/core-domain/src/index.ts'),
       '@sher/shared-utils': resolve(__dirname, '../../packages/shared-utils/src/index.ts'),
+      '@sher/adapter-sqlite-wasm': resolve(
+        __dirname,
+        '../../packages/adapter-sqlite-wasm/src/index.ts',
+      ),
     },
   },
   test: {

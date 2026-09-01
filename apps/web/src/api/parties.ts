@@ -14,7 +14,10 @@ import type {
   UpdatePartyRequest,
 } from '@sher/core-contracts';
 
+import { localParties } from '@sher/adapter-sqlite-wasm';
+
 import { request } from './client';
+import { offlineFallback } from './offline-fallback';
 
 /**
  * Parties — customers, suppliers and vendors (§5.6, D-04).
@@ -43,7 +46,14 @@ export function fetchParties(token: string, query: PartyQuery): Promise<PartyLis
   if (query.sort !== undefined) params.set('sort', query.sort);
   if (query.direction !== undefined) params.set('direction', query.direction);
 
-  return request(`/api/v1/parties?${params.toString()}`, { token, envelope: true });
+  return offlineFallback(
+    () =>
+      request<PartyListResponse>(`/api/v1/parties?${params.toString()}`, {
+        token,
+        envelope: true,
+      }),
+    () => localParties(query),
+  );
 }
 
 /**

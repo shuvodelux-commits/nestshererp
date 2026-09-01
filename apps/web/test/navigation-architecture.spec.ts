@@ -67,15 +67,19 @@ describe('navigation architecture', () => {
   it('preserves every current signed-in route through a hub and does not resurrect LIFO or V1 tax', () => {
     const routes = new Set(allFeatures().flatMap((feature) => feature.route === undefined ? [] : [feature.route.split('?')[0]]));
     // `/import` is §5.6's guided onboarding import, added with path 2.4.
-    // `/daily-cash` and `/settings/accounts` are Phase 4's money screens —
-    // Daily Cash under `Daily` per UI-67, the account setup under Settings per
-    // the owner's decision of 2026-08-24. `/pos` and `/sales` arrived with
-    // Phase 6, and `/sales-returns` with Phase 7 — a history page, because a
-    // return is always taken from the invoice it comes off. `/purchase-plans`,
-    // `/warranty` and `/vendor-stock` are Phase 8's three. The list grows only
-    // when a real implemented route ships; nothing is ever removed from it,
-    // which is what makes a lost route fail here.
-    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/parties', '/daily-cash', '/counter', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/settings/accounts', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/security']));
+    // `/daily-cash` is Phase 4's, under `Daily` per UI-67. `/pos` and
+    // `/sales` arrived with Phase 6, and `/sales-returns` with Phase 7 — a
+    // history page, because a return is always taken from the invoice it comes
+    // off. `/purchase-plans`, `/warranty` and `/vendor-stock` are Phase 8's
+    // three. The six `/finance/*` routes are Phase 12.2's.
+    //
+    // **`/settings/accounts` is the one route ever removed from this list**
+    // (owner decision 2026-08-31): Money Accounts moved to `/finance/accounts`
+    // and the old path is now a redirect, not a menu entry. A redirect keeps
+    // every bookmark working, which is the thing this assertion protects — a
+    // route silently *lost* still fails here, because it would be reachable
+    // from nowhere at all.
+    expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/vendors/workspace', '/parties', '/daily-cash', '/counter', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/finance', '/finance/accounts', '/finance/transfers', '/finance/capital-loans', '/finance/ledger', '/finance/reconciliation', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/offline', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);
   });

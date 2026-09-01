@@ -625,3 +625,17 @@ export type {
   StartRunInput,
 } from './backup/backup-repository';
 export type { ReplaceSecretCommand } from './backup/backup-service';
+
+/* Phase 12.1 — the offline foundation (§5.23, D-01, D-24). */
+export { OfflineStatusService } from './devices/offline-status-service';
+export { ManageDevicesService } from './devices/manage-devices-service';
+export { toDeviceResponse } from './devices/device-view';
+export type {
+  DeviceRepository,
+  DeviceRow,
+  DeviceStatusChange,
+  NewDevice,
+} from './devices/device-repository';
+
+/* Phase 12.3 — the snapshot the offline device reads from (§5.23). */
+export { SnapshotService, SNAPSHOT_SCHEMA_VERSION } from './devices/snapshot-service';

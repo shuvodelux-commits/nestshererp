@@ -54,6 +54,9 @@ export const DAYBOOK_REPOSITORY = Symbol('DaybookRepository');
 export const DOCUMENT_REVERSAL_REPOSITORY = Symbol('DocumentReversalRepository');
 export const DOCUMENT_REDATE_REPOSITORY = Symbol('DocumentRedateRepository');
 
+// Phase 12.1 (§5.23, D-01) — registered browser profiles and the offline writer.
+export const DEVICE_REPOSITORY = Symbol('DeviceRepository');
+
 // Phase 11 (§5.17) — reconciliation storage, and reading text out of a PDF.
 export const RECONCILIATION_REPOSITORY = Symbol('ReconciliationRepository');
 export const STATEMENT_EXTRACTOR = Symbol('StatementExtractor');

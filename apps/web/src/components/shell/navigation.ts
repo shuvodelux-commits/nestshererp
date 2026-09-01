@@ -352,6 +352,15 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.license', label: 'Licence', icon: 'pi-key', features: [
         feature('settings.license.page', 'Licence', 'লাইসেন্স', 'How long this SherERP licence runs, and what it includes', '/settings/license', ['license.term.view'], ['/settings/license']),
       ] },
+      /*
+       * Phase 12.1 (§5.23). One entry an owner finds by reading one word, next
+       * to Backup and Licence for the same reason those two are there. The
+       * storage check has no entry of its own: it is a diagnostic opened from
+       * this page, not a place anybody navigates to.
+       */
+      { id: 'settings.offline', label: 'Offline', icon: 'pi-wifi', features: [
+        feature('settings.offline.page', 'Offline & Devices', 'অফলাইন ও কম্পিউটার', 'Which computer may work without internet, and what it still needs', '/settings/offline', ['offline.device.register'], ['/settings/offline']),
+      ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),
       ] },
