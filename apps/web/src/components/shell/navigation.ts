@@ -202,6 +202,7 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       ] },
       { id: 'parties.vendors', label: 'Vendors', icon: 'pi-briefcase', features: [
         { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
+        { ...feature('parties.vendor_workspace', 'Vendor Workspace', 'ভেন্ডর অপারেশন', 'One vendor at a time: their stock, their money, and what is still open', '/vendors/workspace', ['party.vendor.view'], ['/vendors/workspace']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
         { ...feature('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Vendor-owned stock: what they left, what sold, what goes back', '/vendor-stock', ['vendor.stock.manage'], ['/vendor-stock']), featureFlag: SettingKey.VENDOR_CONSIGNMENT_ENABLED },
         { ...feature('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties'], false), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
       ] },

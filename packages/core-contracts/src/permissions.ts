@@ -234,6 +234,21 @@ export const Permission = {
   VENDOR_STOCK_MANAGE: 'vendor.stock.manage',
 
   /**
+   * Phase 8.3 — the Vendor Workspace (§5.6 M07, owner decision 2026-08-31).
+   *
+   * Three codes for three different risks rather than one `vendor.manage`.
+   * Money **out** is the dangerous one: `VENDOR_PAYABLE` has no bill behind it
+   * to check a payment against, so whoever may pay a vendor is not
+   * automatically whoever may lend the shop's goods out. Money **in** is its
+   * own code for the same reason it is on the customer side. Handing stock to
+   * a vendor moves no money at all when it is a temporary issue, which is why
+   * it is folded into neither.
+   */
+  VENDOR_PAYMENT_RECORD: 'vendor.payment.record',
+  VENDOR_RECEIPT_RECORD: 'vendor.receipt.record',
+  VENDOR_ISSUE_MANAGE: 'vendor.issue.manage',
+
+  /**
    * Phase 9 — reports, dashboard and Daybook (§5.20, §5.27).
    *
    * One code per report screen rather than one `report.view` for all four
@@ -766,6 +781,27 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
       'Record goods a vendor left to be sold on their behalf, and hand back what did not sell. Neither moves money — the vendor is owed only when an item sells.',
   },
   {
+    code: Permission.VENDOR_PAYMENT_RECORD,
+    group: 'Vendors',
+    label: 'Pay a vendor',
+    detail:
+      'Hand money to a vendor — either settling what selling their goods made the shop owe, or paying an advance before anything has sold.',
+  },
+  {
+    code: Permission.VENDOR_RECEIPT_RECORD,
+    group: 'Vendors',
+    label: 'Take money from a vendor',
+    detail:
+      'Record money coming back from a vendor: settling what they owe for goods charged to them, or handing back an advance the shop had paid.',
+  },
+  {
+    code: Permission.VENDOR_ISSUE_MANAGE,
+    group: 'Vendors',
+    label: 'Give products to a vendor and take them back',
+    detail:
+      'Send the shop’s own goods out to a vendor — charged to them as a sale, or on temporary issue where the goods are still the shop’s — and receive them back.',
+  },
+  {
     code: Permission.REPORT_SALES_VIEW,
     group: 'Reports',
     label: 'See sales reports',
@@ -1175,6 +1211,10 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.WARRANTY_CLAIM_VIEW,
       Permission.WARRANTY_CLAIM_MANAGE,
       Permission.VENDOR_STOCK_MANAGE,
+      /* Phase 8.3. The manager runs the vendor relationship end to end. */
+      Permission.VENDOR_PAYMENT_RECORD,
+      Permission.VENDOR_RECEIPT_RECORD,
+      Permission.VENDOR_ISSUE_MANAGE,
       /*
        * Phase 9. The manager reads every report and the whole daybook,
        * including profit — §5.26 puts cost and profit inside this role — and
@@ -1365,6 +1405,13 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_MOVEMENT_RECORD,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_DAILY_INVESTIGATE,
+      /*
+       * Phase 8.3. Paying a vendor and taking money back from one are payables
+       * and receipts, which is this role. Lending the shop's goods out is not:
+       * that moves stock, and this role does not move stock.
+       */
+      Permission.VENDOR_PAYMENT_RECORD,
+      Permission.VENDOR_RECEIPT_RECORD,
       /* Payables are this role in one word: they enter the bills and pay them. */
       Permission.PURCHASE_VIEW,
       Permission.SALE_VIEW,

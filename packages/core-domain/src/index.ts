@@ -254,6 +254,31 @@ export type {
   SupplierPaymentRejection,
 } from './purchasing/supplier-payment';
 export {
+  rejectVendorPayment,
+  rejectVendorReceipt,
+  vendorPaymentPosting,
+  vendorReceiptPosting,
+} from './vendors/vendor-money';
+export type {
+  VendorPaymentDraft,
+  VendorPaymentIntent,
+  VendorPaymentRejection,
+  VendorReceiptDraft,
+  VendorReceiptIntent,
+  VendorReceiptRejection,
+} from './vendors/vendor-money';
+export {
+  outstandingIssueQty,
+  rejectVendorIssueReturn,
+  restoreToLots,
+} from './vendors/vendor-issue';
+export type {
+  IssueLotOutstanding,
+  IssueLotRestore,
+  VendorIssueReturnDraft,
+  VendorIssueReturnRejection,
+} from './vendors/vendor-issue';
+export {
   ageingBucket,
   allocateReceipt,
   receiptPosting,

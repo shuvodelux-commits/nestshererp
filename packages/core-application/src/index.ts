@@ -471,6 +471,31 @@ export type {
   VendorStockRepository,
 } from './vendors/vendor-stock-repository';
 
+/* ------------------------------------------ Phase 8.3: the Vendor Workspace */
+export { VendorMoneyService } from './vendors/vendor-money-service';
+export type {
+  PayVendorCommand,
+  ReceiveFromVendorCommand,
+} from './vendors/vendor-money-service';
+export { VendorIssueService, issueResponseFrom } from './vendors/vendor-issue-service';
+export type {
+  GiveProductsToVendorCommand,
+  ReceiveProductsBackCommand,
+} from './vendors/vendor-issue-service';
+export { VendorWorkspaceService } from './vendors/vendor-workspace-service';
+export type {
+  NewIssueLot,
+  NewVendorIssueReturn,
+  NewVendorMoneyDocument,
+  NewVendorProductIssue,
+  VendorAccountBalances,
+  VendorActivityFilter,
+  VendorActivityRowData,
+  VendorMoneyDocumentRow,
+  VendorProductIssueRow,
+  VendorWorkspaceRepository,
+} from './vendors/vendor-workspace-repository';
+
 /* ------------------------------------------- Phase 9: reporting and Daybook */
 export { ReportQueryService } from './reporting/report-query-service';
 export { ProfitTargetService } from './reporting/profit-target-service';

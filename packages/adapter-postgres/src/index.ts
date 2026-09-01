@@ -42,6 +42,7 @@ export { PostgresLandedCostRepository } from './landed-cost-repository';
 export { PostgresSerialRepository } from './serial-repository';
 export { PostgresWarrantyRepository } from './warranty-repository';
 export { PostgresVendorStockRepository } from './vendor-stock-repository';
+export { PostgresVendorWorkspaceRepository } from './vendor-workspace-repository';
 export { PostgresReportRepository } from './report-repository';
 export { PostgresDaybookRepository } from './daybook-repository';
 export { PostgresDocumentReversalRepository } from './document-reversal-repository';

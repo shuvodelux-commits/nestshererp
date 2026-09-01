@@ -44,6 +44,7 @@ export const LANDED_COST_REPOSITORY = Symbol('LandedCostRepository');
 export const SERIAL_REPOSITORY = Symbol('SerialRepository');
 export const WARRANTY_REPOSITORY = Symbol('WarrantyRepository');
 export const VENDOR_STOCK_REPOSITORY = Symbol('VendorStockRepository');
+export const VENDOR_WORKSPACE_REPOSITORY = Symbol('VendorWorkspaceRepository');
 
 // Phase 9 (§5.20, §5.27).
 export const REPORT_REPOSITORY = Symbol('ReportRepository');

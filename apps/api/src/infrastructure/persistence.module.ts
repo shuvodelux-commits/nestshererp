@@ -26,6 +26,7 @@ import {
   PostgresSerialRepository,
   PostgresWarrantyRepository,
   PostgresVendorStockRepository,
+  PostgresVendorWorkspaceRepository,
   PostgresReportRepository,
   PostgresDaybookRepository,
   PostgresReconciliationRepository,
@@ -101,6 +102,7 @@ import {
   SERIAL_REPOSITORY,
   WARRANTY_REPOSITORY,
   VENDOR_STOCK_REPOSITORY,
+  VENDOR_WORKSPACE_REPOSITORY,
   PERIOD_REPOSITORY,
   REPORT_REPOSITORY,
   DAYBOOK_REPOSITORY,
@@ -444,6 +446,12 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [CLOCK],
     },
     {
+      provide: VENDOR_WORKSPACE_REPOSITORY,
+      useFactory: (clock: Clock): PostgresVendorWorkspaceRepository =>
+        new PostgresVendorWorkspaceRepository(clock),
+      inject: [CLOCK],
+    },
+    {
       provide: EXPENSE_REPOSITORY,
       useFactory: (clock: Clock): PostgresExpenseRepository => new PostgresExpenseRepository(clock),
       inject: [CLOCK],
@@ -506,6 +514,7 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     SERIAL_REPOSITORY,
     WARRANTY_REPOSITORY,
     VENDOR_STOCK_REPOSITORY,
+    VENDOR_WORKSPACE_REPOSITORY,
     PERIOD_REPOSITORY,
     REPORT_REPOSITORY,
     DAYBOOK_REPOSITORY,

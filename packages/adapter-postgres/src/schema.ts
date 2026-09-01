@@ -1391,3 +1391,86 @@ export const reconciliationMatches = pgTable('reconciliation_matches', {
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(),
 });
+
+/* ------------------------------------------ Phase 8.3: the Vendor Workspace */
+
+/**
+ * Money handed to a vendor: settling the consignment payable, or paying ahead
+ * of it. `intent` is stored because the ledger cannot recover it afterwards.
+ */
+export const vendorPayments = pgTable('vendor_payments', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  paymentNumber: text('payment_number').notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(),
+  intent: text('intent').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  accountCode: text('account_code').notNull(),
+  cashSessionId: char('cash_session_id', { length: 26 }),
+  journalEntryId: char('journal_entry_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** An advance handed back by a vendor. Money they owe for goods is a receipt. */
+export const vendorReceipts = pgTable('vendor_receipts', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  receiptNumber: text('receipt_number').notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(),
+  intent: text('intent').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  accountCode: text('account_code').notNull(),
+  cashSessionId: char('cash_session_id', { length: 26 }),
+  journalEntryId: char('journal_entry_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** The shop's own goods in a vendor's hands. No journal entry exists for one. */
+export const vendorProductIssues = pgTable('vendor_product_issues', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  issueNumber: text('issue_number').notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(),
+  productId: char('product_id', { length: 26 }).notNull(),
+  locationId: char('location_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  returnedQty: bigint('returned_qty', { mode: 'number' }).notNull(),
+  costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});
+
+/** Cost provenance: which lots the goods left from, and what is still out. */
+export const vendorProductIssueLots = pgTable('vendor_product_issue_lots', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  issueId: char('issue_id', { length: 26 }).notNull(),
+  lotId: char('lot_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  unitCost: bigint('unit_cost', { mode: 'number' }).notNull(),
+  qtyOutstanding: bigint('qty_outstanding', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const vendorProductIssueReturns = pgTable('vendor_product_issue_returns', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  returnNumber: text('return_number').notNull(),
+  issueId: char('issue_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+  movementId: char('movement_id', { length: 26 }).notNull(),
+  note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+});

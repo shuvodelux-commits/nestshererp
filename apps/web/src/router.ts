@@ -111,6 +111,14 @@ const router = createRouter({
       name: 'vendor-stock',
       component: () => import('./pages/VendorStockPage.vue'),
     },
+    // Phase 8.3 — the vendor's own hub (§5.6 M07, UI-52). `?vendor=` keeps
+    // which vendor is open in the URL, so the party list and a ledger row can
+    // link straight into it.
+    {
+      path: '/vendors/workspace',
+      name: 'vendor-workspace',
+      component: () => import('./pages/VendorWorkspacePage.vue'),
+    },
     // Phase 6 — §5.7, §5.8. The POS is its own full-screen path: a sale being
     // rung up is not a sale that exists, and the counter must not sit inside a
     // list it can navigate away from by accident.

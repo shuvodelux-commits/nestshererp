@@ -246,5 +246,11 @@ import {
       ],
     },
   ],
+  /*
+   * Phase 8.3. The Vendor Workspace charges goods to a vendor and settles what
+   * they owe — a sale and a customer receipt, posted by these very services
+   * rather than by a vendor-shaped copy of them (§5.6 M07, A11, A14).
+   */
+  exports: [CREATE_SALE_SERVICE, RECEIVE_CUSTOMER_PAYMENT_SERVICE],
 })
 export class SalesModule {}

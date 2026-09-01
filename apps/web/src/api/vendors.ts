@@ -1,8 +1,18 @@
 import type {
+  GiveProductsToVendorRequest,
+  PayVendorRequest,
+  ReceiveFromVendorRequest,
+  ReceiveProductsBackRequest,
   ReceiveVendorStockRequest,
   ReturnVendorStockRequest,
+  SaleResponse,
+  VendorActivityKind,
+  VendorActivityRow,
+  VendorMoneyDocumentResponse,
+  VendorProductIssueResponse,
   VendorSettlementResponse,
   VendorStockReceiptResponse,
+  VendorWorkspaceSummaryResponse,
 } from '@sher/core-contracts';
 
 import { request } from './client';
@@ -55,6 +65,92 @@ export function returnVendorStock(
   idempotencyKey: string,
 ): Promise<VendorStockReceiptResponse> {
   return request('/api/v1/vendor-stock/returns', {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+/* ------------------------------------------- Vendor Workspace (Phase 8.3) */
+
+/**
+ * The vendor's hub (§5.6 M07, UI-52).
+ *
+ * Four of the six actions on that screen do **not** appear here, because they
+ * are not the vendor module's writes: charging goods to a vendor posts through
+ * the sale endpoint, settling what they owe through the customer receipt
+ * endpoint, and taking charged goods back through the sales return the existing
+ * dialog already calls. Only the vendor's own money and its own custody of
+ * goods are below.
+ */
+export function fetchVendorWorkspace(
+  token: string,
+  vendorPartyId: string,
+): Promise<VendorWorkspaceSummaryResponse> {
+  return request(`/api/v1/vendor-workspace/summary/${vendorPartyId}`, { token });
+}
+
+export function fetchVendorActivity(
+  token: string,
+  vendorPartyId: string,
+  kinds: readonly VendorActivityKind[] = [],
+): Promise<{ data: readonly VendorActivityRow[] }> {
+  const params = new URLSearchParams();
+  if (kinds.length > 0) params.set('kinds', kinds.join(','));
+  const suffix = params.toString();
+  return request(
+    `/api/v1/vendor-workspace/activity/${vendorPartyId}${suffix === '' ? '' : `?${suffix}`}`,
+    { token, envelope: true },
+  );
+}
+
+export function payVendor(
+  token: string,
+  payload: PayVendorRequest,
+  idempotencyKey: string,
+): Promise<VendorMoneyDocumentResponse> {
+  return request('/api/v1/vendor-workspace/payments', {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+export function receiveFromVendor(
+  token: string,
+  payload: ReceiveFromVendorRequest,
+  idempotencyKey: string,
+): Promise<VendorMoneyDocumentResponse> {
+  return request('/api/v1/vendor-workspace/receipts', {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+/** Charged goods come back as the sale they created; a temporary issue as itself. */
+export function giveProductsToVendor(
+  token: string,
+  payload: GiveProductsToVendorRequest,
+  idempotencyKey: string,
+): Promise<SaleResponse | VendorProductIssueResponse> {
+  return request('/api/v1/vendor-workspace/issues', {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+export function receiveProductsBack(
+  token: string,
+  payload: ReceiveProductsBackRequest,
+  idempotencyKey: string,
+): Promise<VendorProductIssueResponse> {
+  return request('/api/v1/vendor-workspace/issues/returns', {
     method: 'POST',
     token,
     body: payload,

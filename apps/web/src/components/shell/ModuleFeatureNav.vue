@@ -23,7 +23,15 @@ function matchScore(target: string, prefixes: readonly string[]): number {
 }
 
 const pages = computed(() => {
-  const access = { can: session.can };
+  /*
+   * `featureEnabled` is passed for the same reason the sidebar passes it
+   * (bug found by the owner 2026-08-31): without it,
+   * `navigationFeatureAccessible` reads `access.featureEnabled?.(flag)` as
+   * `undefined` and **every capability behind a §5.21 setting disappears from
+   * this strip** — even one the shop has switched on. That silently hid all
+   * three vendor tabs, so the Vendor Workspace had no way in at all.
+   */
+  const access = { can: session.can, featureEnabled: session.featureEnabled };
   const candidates = SHER_NAVIGATION_ARCHITECTURE.flatMap((category) => category.subcategories)
     .map((subcategory) => {
       const features = subcategory.features.filter((feature) => navigationFeatureAccessible(feature, access));

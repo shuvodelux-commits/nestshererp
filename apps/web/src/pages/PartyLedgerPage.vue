@@ -200,28 +200,15 @@ const closingAmount = computed(() => {
   );
 });
 
-/**
- * §5.6's primary hub actions, none of which can post yet.
- *
- * Shown disabled rather than absent by owner decision (2026-08-22). UI-09 and
- * §5.6 both say an unimplemented action stays absent, so this is a recorded
- * deviation: the tooltip carries the reason so a disabled button is at least
- * explained rather than merely dead.
+/*
+ * §5.6's hub once carried buttons that were **disabled with a tooltip** for
+ * actions no module could perform yet (owner decision 2026-08-22). Phase 5,
+ * then 6, then 8.3 emptied that list one role at a time, and the vendor's
+ * `Pay vendor` was the last of it — paying a vendor is real now, in the Vendor
+ * Workspace this hub links to. With nothing left to explain, the placeholder
+ * and its recorded UI-09 deviation are both gone rather than kept as an empty
+ * loop.
  */
-const futureActions = computed(() => {
-  /*
-   * Phase 5 landed, then Phase 6: a supplier's and a customer's actions are
-   * real buttons now — `Pay supplier`, `Receive payment` and `New sale` are
-   * below, each opening the use case that exists. What is left here is only
-   * still-unbuilt work, which today is the vendor's (owner-reported
-   * 2026-08-26: these two had stayed disabled after Sales shipped).
-   */
-  if (role.value === 'SUPPLIER') return [];
-  if (role.value === 'VENDOR') {
-    return [{ label: 'Pay vendor', icon: 'pi-wallet', hint: 'Arrives with Consignment' }];
-  }
-  return [];
-});
 
 /**
  * §5.6's hub for a customer, now that Phase 6 exists.
@@ -243,6 +230,15 @@ const receiving = ref(false);
  * line behind it. `Pay this bill` on a purchase is the small secondary route to
  * the same use case (owner decision 2026-08-24).
  */
+/**
+ * Phase 8.3. A vendor's work — their consignment stock, their payable, the
+ * goods lent to them — is a hub of its own, so this one sends them there
+ * instead of growing a second copy of it (UI-52).
+ */
+const canOpenWorkspace = computed(
+  () => role.value === 'VENDOR' && session.can('party.vendor.view'),
+);
+
 const canPaySupplier = computed(
   () => role.value === 'SUPPLIER' && session.can('purchase.payment.record'),
 );
@@ -369,22 +365,18 @@ watch(partyId, () => {
       </div>
 
       <!--
-        §5.6's hub actions. Receive Payment / New Sale (and the supplier and
-        vendor equivalents) belong to modules that do not exist yet, so they are
-        shown disabled with a tooltip saying when they arrive — the owner's
-        decision of 2026-08-22, recorded in the change log because UI-09 and
-        §5.6 would otherwise leave them out entirely until then.
+        §5.6's hub actions, each opening the use case that owns it. Every button
+        here is real: an action a party's role cannot perform is absent (UI-09),
+        not disabled.
       -->
       <div v-if="party !== null" class="hub-actions no-print">
         <button
-          v-for="action in futureActions"
-          :key="action.label"
+          v-if="canOpenWorkspace"
           type="button"
           class="btn btn-primary"
-          disabled
-          :title="action.hint"
+          @click="router.push({ name: 'vendor-workspace', query: { vendor: party.id } })"
         >
-          <i :class="`pi ${action.icon}`" aria-hidden="true" /> {{ action.label }}
+          <i class="pi pi-briefcase" aria-hidden="true" /> Vendor workspace
         </button>
 
         <button
