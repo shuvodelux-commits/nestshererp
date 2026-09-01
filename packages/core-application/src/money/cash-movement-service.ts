@@ -3,13 +3,14 @@ import {
 } from '@sher/core-domain';
 import type { CashMovementRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
-import type { CashMovementResponse } from '@sher/core-contracts';
+import type { CashMovementKindValue, CashMovementResponse } from '@sher/core-contracts';
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
 import { reverseMoneyDocument } from '../corrections/reverse-money-document';
 import { entryModeFor } from '../notes/create-note-service';
+import { requireLoanVisibility } from './loan-visibility';
 import type { Outbox } from '../ports/outbox';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
@@ -36,15 +37,37 @@ import type { MoneyRepository } from './money-repository';
  * because what the owner takes out of the till is not a cost of running the
  * shop and putting it in the P&L would misstate the profit the shop is taxed and
  * judged on.
+ *
+ * **Loan money joins on the same path (Finance module, owner decision
+ * 2026-08-31).** Taking a loan and repaying it are the same two-sided movement
+ * — value arrives from `LOAN:{id}` or goes back to it — so they are two more
+ * kinds here rather than a second service posting into the same journal.
+ * Principal only: the interest inside an instalment is a cost of running the
+ * shop and is recorded in the Expenses module.
+ *
+ * **Which permission a movement needs is decided by its own kind**, and by the
+ * kind stored on the row when one is cancelled — never by what the caller says
+ * they are doing. Moving the day's takings to the bank, writing down what the
+ * owner took home and recording a loan instalment are three different sizes of
+ * trust, and a cancellation that trusted the request would let anyone holding
+ * `cash.movement.void` undo an owner withdrawal by calling it a transfer.
  */
+
+export type RecordableMovementKind =
+  | 'OWNER_INJECTION'
+  | 'OWNER_WITHDRAWAL'
+  | 'TRANSFER'
+  | 'LOAN_RECEIVED'
+  | 'LOAN_REPAYMENT';
 
 export interface RecordMovementCommand {
   readonly ctx: TenantContext;
-  readonly kind: 'OWNER_INJECTION' | 'OWNER_WITHDRAWAL' | 'TRANSFER';
+  readonly kind: RecordableMovementKind;
   readonly fromAccountCode: string;
   readonly toAccountCode: string;
   readonly amountMinor: number;
   readonly businessDate: string;
+  readonly reference: string | null;
   readonly note: string | null;
   readonly operationId: string;
 }
@@ -63,6 +86,27 @@ export interface CorrectMovementCommand extends RecordMovementCommand {
 }
 
 const OWNER_ACCOUNT = 'OWNER_CURRENT_ACCOUNT';
+
+/**
+ * The permission a movement of this kind needs to be written or undone.
+ *
+ * One table, read from the kind on the way in **and** from the kind stored on
+ * the row on the way out. `OPENING_ADJUSTMENT` is Start Day's own document and
+ * is never recorded or cancelled through this service, so it maps to the
+ * movement permission that path already holds.
+ */
+const PERMISSION_FOR_KIND: Record<CashMovementKindValue, string> = {
+  TRANSFER: Permission.CASH_MOVEMENT_RECORD,
+  OPENING_ADJUSTMENT: Permission.CASH_MOVEMENT_RECORD,
+  OWNER_INJECTION: Permission.OWNER_CAPITAL_RECORD,
+  OWNER_WITHDRAWAL: Permission.OWNER_CAPITAL_RECORD,
+  LOAN_RECEIVED: Permission.LOAN_MOVEMENT_RECORD,
+  LOAN_REPAYMENT: Permission.LOAN_MOVEMENT_RECORD,
+};
+
+/** Which kinds may name the owner account, and which may name a loan account. */
+const OWNER_KINDS: readonly string[] = ['OWNER_INJECTION', 'OWNER_WITHDRAWAL'];
+const LOAN_KINDS: readonly string[] = ['LOAN_RECEIVED', 'LOAN_REPAYMENT'];
 
 
 const REJECTION_MESSAGES: Record<CashMovementRejection, string> = {
@@ -96,7 +140,7 @@ export class CashMovementService {
     });
 
     return this.uow.run(ctx, async (tx) => {
-      await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_RECORD);
+      await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[command.kind]);
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
@@ -165,6 +209,7 @@ export class CashMovementService {
         fromAccountCode: from.code,
         toAccountCode: to.code,
         amountMinor: command.amountMinor,
+        reference: command.reference,
         note: command.note,
         sessionId: touchesDrawer ? (session?.id ?? null) : null,
         businessDate: command.businessDate,
@@ -211,6 +256,7 @@ export class CashMovementService {
         toAccountName: to.name,
         amountMinor: command.amountMinor,
         businessDate: command.businessDate,
+        reference: command.reference,
         note: command.note,
         createdAt: this.clock.now().toISOString(),
       };
@@ -240,7 +286,18 @@ export class CashMovementService {
   async void(command: VoidMovementCommand): Promise<void> {
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
+      /*
+       * Both codes, and the second one comes from the **stored** kind.
+       *
+       * `cash.movement.void` alone is not enough to undo an owner withdrawal
+       * or a loan instalment: the person must also be trusted to record that
+       * kind of movement in the first place. Reading the kind from the row
+       * rather than from the request is what makes that true — a request can
+       * claim anything, and this is the one call that reaches a posted
+       * document by id alone.
+       */
       await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_VOID);
+      await this.requireKindPermission(tx, ctx, command.movementId);
       await this.assertDrawerOpenFor(tx, ctx, command.movementId);
 
       await reverseMoneyDocument(
@@ -278,7 +335,14 @@ export class CashMovementService {
   async correct(command: CorrectMovementCommand): Promise<void> {
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
-      await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_RECORD);
+      /*
+       * The kind it is becoming **and** the kind it is now: a correction that
+       * only checked the new kind would let someone re-label an owner
+       * withdrawal as a transfer and thereby edit a document they were never
+       * allowed to touch.
+       */
+      await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[command.kind]);
+      await this.requireKindPermission(tx, ctx, command.movementId);
 
       const posted = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', command.movementId);
       if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
@@ -358,6 +422,7 @@ export class CashMovementService {
         fromAccountCode: from.code,
         toAccountCode: to.code,
         amountMinor: command.amountMinor,
+        reference: command.reference,
         note: command.note,
         sessionId: touchesDrawer ? (session?.id ?? null) : null,
         businessDate: placement.businessDate,
@@ -403,6 +468,25 @@ export class CashMovementService {
         source: 'API',
       });
     });
+  }
+
+  /**
+   * The permission the movement **already on the row** needs.
+   *
+   * Used by cancel and correct, and deliberately not by record: those two
+   * reach a posted document by id, so the kind in the request is a claim about
+   * something that already exists and the stored kind is the fact. Without
+   * this, `cash.movement.void` would be a master key over owner capital and
+   * loan movements alike (owner decision 2026-08-31).
+   */
+  private async requireKindPermission(
+    tx: Tx,
+    ctx: TenantContext,
+    movementId: string,
+  ): Promise<void> {
+    const stored = await this.money.findMovementKind(tx, ctx, movementId);
+    if (stored === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
+    await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[stored]);
   }
 
   /** Whether a business date's month still accepts postings (§5.14). */
@@ -454,7 +538,7 @@ export class CashMovementService {
     kind: RecordMovementCommand['kind'],
   ): Promise<{ readonly code: string; readonly name: string; readonly isDrawer: boolean }> {
     if (code === OWNER_ACCOUNT) {
-      if (kind === 'TRANSFER') {
+      if (!OWNER_KINDS.includes(kind)) {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
           'Money to or from the owner is recorded as owner money, not as a transfer',
@@ -472,11 +556,29 @@ export class CashMovementService {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'That is not an account of this shop');
     }
 
-    await this.accessControl.require(
-      tx,
-      ctx,
-      account.type === 'CASH' ? Permission.CASH_ACCOUNT_VIEW : Permission.BANK_ACCOUNT_VIEW,
-    );
+    /*
+     * A loan account may only ever be one side of a loan movement.
+     *
+     * Without this, a transfer could name `LOAN:{id}` and quietly move money
+     * onto a debt — which posts a real journal entry that no money screen
+     * would show and that the Capital & Loans history would not list either,
+     * because it is not a loan movement.
+     */
+    if (account.type === 'LOAN' && !LOAN_KINDS.includes(kind)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'A loan account can only be used for loan money received or repaid',
+      );
+    }
+    if (account.type === 'LOAN') {
+      await requireLoanVisibility(this.accessControl, tx, ctx);
+    } else {
+      await this.accessControl.require(
+        tx,
+        ctx,
+        account.type === 'CASH' ? Permission.CASH_ACCOUNT_VIEW : Permission.BANK_ACCOUNT_VIEW,
+      );
+    }
 
     if (account.status === 'INACTIVE') {
       throw new AppError(ErrorCode.VALIDATION_FAILED, `“${account.name}” is no longer in use`);

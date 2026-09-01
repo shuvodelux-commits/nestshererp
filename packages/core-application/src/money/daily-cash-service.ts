@@ -7,9 +7,10 @@ import type {
 } from '@sher/core-contracts';
 
 import type { AccessControl } from '../ports/access-control';
+import { requireLoanVisibility } from './loan-visibility';
 import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
-import type { MoneyRepository } from './money-repository';
+import type { MoneyRepository, StatementLineRow } from './money-repository';
 
 /**
  * Daily Cash, and an account's statement (Phase 4, §5.16.8, §5.17, UI-71).
@@ -39,6 +40,8 @@ export interface AccountStatementCommand {
   readonly accountId: string;
   readonly fromDate?: string | undefined;
   readonly toDate?: string | undefined;
+  readonly search?: string | undefined;
+  readonly kind?: 'ALL' | 'SALE' | 'PURCHASE' | 'EXPENSE' | 'MOVEMENT' | 'OTHER' | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
@@ -122,17 +125,31 @@ export class DailyCashService {
         throw new AppError(ErrorCode.NOT_FOUND, 'That account no longer exists');
       }
 
-      await this.accessControl.require(
-        tx,
-        ctx,
-        account.type === 'CASH' ? Permission.CASH_ACCOUNT_VIEW : Permission.BANK_ACCOUNT_VIEW,
-      );
+      /*
+       * The ledger route is protected **here**, not by the menu that hid it.
+       * A person who types `/finance/accounts/{id}/ledger` for an account they
+       * may not see reaches this line, and a loan is admitted by its own code
+       * so a cashier never reads what the shop owes (owner decision
+       * 2026-08-31).
+       */
+      if (account.type === 'LOAN') {
+        await requireLoanVisibility(this.accessControl, tx, ctx);
+      } else {
+        await this.accessControl.require(
+          tx,
+          ctx,
+          account.type === 'CASH' ? Permission.CASH_ACCOUNT_VIEW : Permission.BANK_ACCOUNT_VIEW,
+        );
+      }
 
       const limit = command.limit ?? DEFAULT_LIMIT;
+      const search = command.search?.trim() ?? '';
       const filter = {
         accountCode: accountCodeFor(account.type, account.id),
         fromDate: command.fromDate ?? null,
         toDate: command.toDate ?? null,
+        search: search === '' ? null : search,
+        kind: command.kind === undefined || command.kind === 'ALL' ? null : command.kind,
         cursor: command.cursor ?? null,
         limit: limit + 1,
       };
@@ -160,7 +177,21 @@ export class DailyCashService {
           createdAt: line.createdAt,
           sourceType: line.sourceType,
           sourceNumber: line.sourceNumber,
+          sourceId: line.sourceId,
+          description: describeStatementLine(line),
+          /*
+           * What the shopkeeper wrote on the slip, or the document number when
+           * they wrote nothing. Never both, and never the internal id: the
+           * column exists so a person can find the row they are holding a
+           * piece of paper about.
+           */
+          reference:
+            line.movementReference === null || line.movementReference.trim() === ''
+              ? line.sourceNumber
+              : line.movementReference,
           amountMinor: line.amountMinor,
+          debitMinor: line.amountMinor > 0 ? line.amountMinor : 0,
+          creditMinor: line.amountMinor < 0 ? -line.amountMinor : 0,
           runningBalanceMinor: running,
         };
       });
@@ -180,5 +211,117 @@ export class DailyCashService {
         },
       };
     });
+  }
+}
+
+/**
+ * The sentence a ledger row shows (Finance module, owner decision 2026-08-31).
+ *
+ * §2.4's account codes and source-document types are the internal vocabulary
+ * UI-21 says a screen never shows: `CUSTOMER_RECEIPT · RCP-2026-0043` means
+ * nothing to the person who took the money. So every row is rebuilt here as
+ * something a shopkeeper reads — *Money from Karim Store*, *Transfer to DBBL
+ * Bank*, *Expense — Electricity* — from the document type plus whichever of the
+ * party, the other account or the expense category the entry actually names.
+ *
+ * Built in the use case rather than in the browser because the same sentence
+ * has to be searchable: the query matches on the party, the account and the
+ * category, and a description assembled after the search would find rows the
+ * filter had already thrown away.
+ *
+ * The fallback is the document number, never a raw type name. A source this
+ * function has not been taught still reads as "Purchase PB-2026-0004" rather
+ * than as `PURCHASE_LANDED_COST`.
+ */
+/** One movement line, named the way the person who entered it would name it. */
+function describeMovement(
+  kind: string | null,
+  other: string | null,
+  incoming: boolean,
+): string {
+  const to = other === null ? '' : ` ${other}`;
+
+  switch (kind) {
+    case 'OWNER_INJECTION':
+      return 'Owner put money in';
+    case 'OWNER_WITHDRAWAL':
+      return 'Owner took money out';
+    case 'LOAN_RECEIVED':
+      return other === null ? 'Loan received' : `Loan received — ${other}`;
+    case 'LOAN_REPAYMENT':
+      return other === null ? 'Loan repayment' : `Loan repayment — ${other}`;
+    case 'OPENING_ADJUSTMENT':
+      return incoming ? `Opening difference from${to}` : `Opening difference to${to}`;
+    default:
+      if (other === null) return incoming ? 'Money in' : 'Money out';
+      return incoming ? `Transfer from${to}` : `Transfer to${to}`;
+  }
+}
+
+function describeStatementLine(line: StatementLineRow): string {
+  const party = line.counterpartyName;
+  const other = line.otherAccountName;
+  const category = line.expenseCategoryName;
+  /** Money arriving is described from where it came; money leaving, to where. */
+  const incoming = line.amountMinor > 0;
+  const named = (label: string, name: string | null): string =>
+    name === null ? label : `${label} — ${name}`;
+
+  switch (line.sourceType) {
+    case 'SALE':
+      return named('Sale', party);
+    case 'SALE_CANCELLATION':
+      return named('Sale cancelled', party);
+    case 'CUSTOMER_RECEIPT':
+      return named('Money from customer', party);
+    case 'CUSTOMER_RECEIPT_REVERSAL':
+      return named('Customer payment cancelled', party);
+    case 'SALES_RETURN':
+      return named('Sale returned', party);
+    case 'SALES_RETURN_REVERSAL':
+      return named('Sale return cancelled', party);
+    case 'PURCHASE':
+    case 'PURCHASE_LANDED_COST':
+      return named('Purchase', party);
+    case 'PURCHASE_REVERSAL':
+      return named('Purchase cancelled', party);
+    case 'SUPPLIER_PAYMENT':
+      return named('Money to supplier', party);
+    case 'SUPPLIER_PAYMENT_REVERSAL':
+      return named('Supplier payment cancelled', party);
+    case 'PURCHASE_RETURN':
+      return named('Goods returned to supplier', party);
+    case 'PURCHASE_RETURN_REVERSAL':
+      return named('Purchase return cancelled', party);
+    case 'EXPENSE':
+      return named('Expense', category);
+    case 'EXPENSE_CORRECTION':
+      return named('Expense corrected', category);
+    case 'EXPENSE_REVERSAL':
+      return named('Expense cancelled', category);
+    case 'ACCOUNT_OPENING':
+      return 'Opening balance';
+    case 'ACCOUNT_OPENING_CORRECTION':
+      return 'Opening balance corrected';
+    case 'CASH_SESSION_CLOSE':
+      return 'Day closed — counted difference';
+    case 'CASH_SESSION_REOPEN':
+      return 'Day reopened';
+    case 'CASH_MOVEMENT':
+    case 'CASH_MOVEMENT_CORRECTION':
+    case 'CASH_MOVEMENT_REVERSAL': {
+      const cancelled = line.sourceType === 'CASH_MOVEMENT_REVERSAL';
+      /*
+       * The kind, not the direction alone. All six kinds post the same
+       * two-sided entry, so a ledger that described them by direction would
+       * call an owner withdrawal and a bank deposit the same thing — and the
+       * row a shopkeeper is trying to explain is exactly the one where those
+       * differ.
+       */
+      const base = describeMovement(line.movementKind, other, incoming);
+      return cancelled ? `${base} — cancelled` : base;
+    }
+    default:
+      return `${line.sourceNumber}`;
   }
 }

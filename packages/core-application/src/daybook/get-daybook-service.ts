@@ -279,7 +279,22 @@ export class GetDaybookService {
   }
 }
 
+/**
+ * The row's own words.
+ *
+ * A reversal is named after **what it undid**, prefixed rather than renamed
+ * (owner-reported 2026-08-31): "Cancelled — Money received RCV-2026-000002"
+ * says in one line what `CUSTOMER_RECEIPT_REVERSAL RCV-2026-000002` said in
+ * the ledger's vocabulary and nobody's else. The number is kept, because the
+ * reversal carries the number of the document it reverses and that is what a
+ * shopkeeper searches for.
+ */
 function describe(kind: string, entry: DaybookEntryRow): string {
+  const base = describeKind(kind, entry);
+  return REVERSAL_SOURCE_TYPES.includes(entry.sourceType) ? `Cancelled — ${base}` : base;
+}
+
+function describeKind(kind: string, entry: DaybookEntryRow): string {
   const who = entry.partyName === null ? '' : ` — ${entry.partyName}`;
   switch (kind) {
     case 'SALE':

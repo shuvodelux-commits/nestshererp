@@ -1,5 +1,7 @@
 import { SettingKey } from '@sher/core-contracts';
 
+import { MONEY_BN } from '../money/money-text';
+
 export interface SherNavigationFeature {
   readonly id: string;
   readonly label: string;
@@ -156,6 +158,79 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
     ],
   },
   {
+    /*
+     * §5.16, §5.17 — the Finance module (owner decisions 2026-08-31).
+     *
+     * Everything **account-level** about money, in one place: what the shop
+     * holds, what it owes, moving money between its own accounts, the owner's
+     * capital, each account's ledger, and checking an account against the
+     * bank's statement.
+     *
+     * What is deliberately **not** here: Expenses and Daily Cash, which keep
+     * their own modules and their own routes, and Customer Receive and Supplier
+     * Payment, which are settled from the invoice they belong to. Finance is a
+     * way into money that is already recorded, never a second way to record it
+     * — so a duplicate entry here would be a second door to a workflow that
+     * only has one.
+     *
+     * Money Accounts moved out of Settings, where it sat because setting up a
+     * till is a once-a-year act. With loans, ledgers and transfers beside it,
+     * the shop now has a reason to open it on an ordinary day.
+     */
+    id: 'finance', label: 'Finance', icon: 'pi-wallet', subcategories: [
+      { id: 'finance.overview', label: 'Overview', icon: 'pi-chart-pie', features: [
+        {
+          ...feature('finance.overview.page', 'Overview', MONEY_BN.finance, 'Cash, bank, MFS and what the shop owes, with the day\'s money movements', '/finance', [
+            'cash.account.view',
+            'bank.account.view',
+          ], ['/finance'], true),
+          // ANY: a cashier sees the cash tiles, a bookkeeper the bank ones, and
+          // the page draws what each of them may actually read.
+          permissionMode: 'ANY' as const,
+        },
+      ] },
+      { id: 'finance.accounts', label: 'Money Accounts', icon: 'pi-wallet', features: [
+        {
+          ...feature('finance.accounts.page', 'Money Accounts', MONEY_BN.moneyAccounts, 'Every cash, bank, MFS and loan account with its balance', '/finance/accounts', [
+            'cash.account.view',
+            'bank.account.view',
+          ], ['/finance/accounts'], true),
+          permissionMode: 'ANY' as const,
+        },
+      ] },
+      { id: 'finance.transfers', label: 'Transfer Money', icon: 'pi-arrow-right-arrow-left', features: [
+        feature('finance.transfers.page', 'Transfer Money', MONEY_BN.transferMoney, 'Move money between the shop\'s own accounts', '/finance/transfers', ['cash.movement.record'], ['/finance/transfers']),
+      ] },
+      { id: 'finance.capital', label: 'Capital & Loans', icon: 'pi-briefcase', features: [
+        {
+          ...feature('finance.capital.page', 'Capital & Loans', MONEY_BN.capitalAndLoans, 'Money the owner put in or took out, and loans received or repaid', '/finance/capital-loans', [
+            'owner.capital.record',
+            'loan.movement.record',
+            'loan.account.manage',
+          ], ['/finance/capital-loans'], true),
+          /*
+           * ANY, and each action on the page still checks its own code — a
+           * person who may only enter loan instalments belongs on this screen
+           * and must not find owner capital on it (owner decision 2026-08-31).
+           */
+          permissionMode: 'ANY' as const,
+        },
+      ] },
+      { id: 'finance.ledger', label: 'Account Ledger', icon: 'pi-list', features: [
+        {
+          ...feature('finance.ledger.page', 'Account Ledger', MONEY_BN.accountLedger, 'Every line in and out of one account, with its running balance', '/finance/ledger', [
+            'cash.account.view',
+            'bank.account.view',
+          ], ['/finance/ledger'], true),
+          permissionMode: 'ANY' as const,
+        },
+      ] },
+      { id: 'finance.reconciliation', label: 'Reconciliation', icon: 'pi-check-square', features: [
+        { ...feature('finance.reconciliation.page', 'Reconciliation', MONEY_BN.reconciliation, 'Check an account against the statement the bank produced', '/finance/reconciliation', ['bank.reconciliation.view'], ['/finance/reconciliation']), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
+      ] },
+    ],
+  },
+  {
     // §5.7, §5.8: Sales is one business module — the counter, the invoices it
     // produced, how those invoices are printed, and what came back. `Sales
     // Return` is a **history** entry: a return is always taken from the invoice
@@ -254,17 +329,12 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.periods', label: 'Months', icon: 'pi-calendar', features: [
         feature('settings.periods.page', 'Months', 'হিসাবের মাস', 'Close a month so nothing more can post into it', '/settings/periods', ['settings.setting.view'], ['/settings/periods']),
       ] },
-      { id: 'settings.money', label: 'Money Accounts', icon: 'pi-wallet', features: [
-        feature('settings.money.cash', 'Cash Accounts', 'ক্যাশ ও সিন্দুক', 'The till, the safe and any other cash box', '/settings/accounts', ['cash.account.view'], ['/settings/accounts']),
-        { ...feature('settings.money.bank', 'Bank & bKash Accounts', 'ব্যাংক ও বিকাশ', 'Bank, bKash and Nagad accounts with their statements', '/settings/accounts', ['bank.account.view'], ['/settings/accounts'], false), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
-        /*
-         * Phase 11 (§5.17, UI-70). Reconciliation is an account hub workflow,
-         * not a destination of its own: it opens from the account's statement,
-         * like the party ledger opens from the party. Named here because the
-         * capability now ships, with no route of its own.
-         */
-        feature('settings.money.reconcile', 'Account Reconciliation', 'ব্যাংকের সাথে মিলিয়ে দেখা', 'Check an account against the statement the bank produced', '/settings/accounts', ['bank.reconciliation.view'], ['/settings/accounts'], false),
-      ] },
+      /*
+       * Money Accounts used to live here. It moved to Finance on 2026-08-31
+       * with the rest of the account-level money screens, and there is
+       * deliberately no shortcut left behind: one screen reachable from two
+       * menus is the thing that makes a menu hard to learn.
+       */
       { id: 'settings.invoice', label: 'Invoice Design', icon: 'pi-file', features: [
         feature('settings.invoice.design', 'Invoice Design', 'ইনভয়েসের ডিজাইন', 'What is printed on an invoice, and on which paper', '/settings/invoice-design', ['settings.setting.edit'], ['/settings/invoice-design']),
       ] },

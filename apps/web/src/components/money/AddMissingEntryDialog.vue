@@ -15,7 +15,7 @@ import { useSession } from '../../auth/session';
 import PaySupplierDialog from '../purchasing/PaySupplierDialog.vue';
 import ReceivePaymentDialog from '../sales/ReceivePaymentDialog.vue';
 import ErrorNotice from '../ErrorNotice.vue';
-import MoveMoneyDialog from './MoveMoneyDialog.vue';
+import TransferMoneyDialog from './TransferMoneyDialog.vue';
 import RecordExpenseDialog from './RecordExpenseDialog.vue';
 import { taka } from './money-text';
 
@@ -218,13 +218,18 @@ onMounted(async () => {
     @paid="emit('posted')"
   />
 
-  <MoveMoneyDialog
+  <!--
+    Repointed when Phase 12.2 replaced MoveMoneyDialog with TransferMoneyDialog.
+    NOTE for the owner: the new dialog has no `prefillAmountMinor` prop, so the
+    statement line's amount and date are no longer carried into the form — the
+    shopkeeper retypes them. Left as a repoint rather than a redesign, because
+    adding a prefill back is a Finance-module decision, not this one's.
+  -->
+  <TransferMoneyDialog
     v-else-if="kind === 'TRANSFER' && drawerAccountId !== null"
-    :drawer-account-id="drawerAccountId"
-    :business-date="row.businessDate"
-    :prefill-amount-minor="row.amountMinor"
+    :from-account-id="drawerAccountId"
     @close="emit('close')"
-    @recorded="emit('posted')"
+    @saved="emit('posted')"
   />
 </template>
 

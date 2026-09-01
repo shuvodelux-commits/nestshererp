@@ -165,6 +165,8 @@ export interface NewCashMovement {
   readonly fromAccountCode: string;
   readonly toAccountCode: string;
   readonly amountMinor: number;
+  /** The slip, cheque or bKash number typed on the form (Finance module). */
+  readonly reference: string | null;
   readonly note: string | null;
   readonly sessionId: string | null;
   readonly businessDate: string;
@@ -187,6 +189,7 @@ export interface RepostCashMovement {
   readonly fromAccountCode: string;
   readonly toAccountCode: string;
   readonly amountMinor: number;
+  readonly reference: string | null;
   readonly note: string | null;
   readonly sessionId: string | null;
   readonly businessDate: string;
@@ -209,10 +212,71 @@ export interface CashMovementRow {
   readonly createdAt: string;
 }
 
+/**
+ * What the Finance lists are asking for (owner decision 2026-08-31).
+ *
+ * `kinds` rather than a group name, because grouping is a screen's idea of the
+ * world and this port only knows documents: the use case turns "the Transfer
+ * Money page" into the kinds that page shows.
+ */
+export interface MovementHistoryFilter {
+  readonly kinds: readonly CashMovementKind[];
+  /** Either side of the movement, as an account **id**, not a code. */
+  readonly accountId: string | null;
+  readonly fromDate: string | null;
+  readonly toDate: string | null;
+  /** Matches the reference, the note or the movement number. */
+  readonly search: string | null;
+  /**
+   * The accounts this caller may see. A movement is returned only when every
+   * account side of it is one of these — the owner side is not an account and
+   * is not tested — so a transfer between two bank accounts never surfaces for
+   * someone who cannot open either of them.
+   */
+  readonly visibleAccountIds: readonly string[];
+  readonly cursor: string | null;
+  readonly limit: number;
+}
+
+/**
+ * One movement as the Finance lists read it.
+ *
+ * Carries the stored state — `status`, `correctionReason` — rather than a
+ * word for the screen: which of Posted, Corrected and Cancelled a row shows is
+ * a presentation decision the use case makes, and a repository that decided it
+ * would have to be changed the next time the wording does.
+ */
+export interface MovementHistoryRow {
+  readonly id: string;
+  readonly number: string;
+  readonly kind: CashMovementKind;
+  readonly businessDate: string;
+  readonly fromAccountCode: string;
+  readonly fromAccountName: string | null;
+  readonly toAccountCode: string;
+  readonly toAccountName: string | null;
+  readonly amountMinor: number;
+  readonly reference: string | null;
+  readonly note: string | null;
+  readonly status: string;
+  readonly correctionReason: string | null;
+  readonly createdAt: string;
+  readonly createdByName: string | null;
+  readonly version: number;
+}
+
 export interface StatementFilter {
   readonly accountCode: string;
   readonly fromDate: string | null;
   readonly toDate: string | null;
+  /** Matches the typed reference, the document number or the note. */
+  readonly search: string | null;
+  /**
+   * One family of source documents, or null for all of them. The families are
+   * the screen's words — sales, purchases, expenses, money movements — mapped
+   * to `source_document_type` values by the adapter.
+   */
+  readonly kind: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'MOVEMENT' | 'OTHER' | null;
   readonly cursor: string | null;
   readonly limit: number;
 }
@@ -223,7 +287,31 @@ export interface StatementLineRow {
   readonly createdAt: string;
   readonly sourceType: string;
   readonly sourceNumber: string;
+  readonly sourceId: string;
   readonly amountMinor: number;
+  /**
+   * Everything the use case needs to write the row's sentence, resolved in the
+   * same query as the line (Finance module).
+   *
+   * A ledger row has to say *what happened*, and a journal line on its own
+   * cannot: it knows an amount and an account code. The other side of the same
+   * entry is what names the event — the party on a sale, the account on a
+   * transfer, the category on an expense — so it is read here rather than in
+   * five follow-up queries per page.
+   */
+  readonly counterpartyName: string | null;
+  readonly otherAccountName: string | null;
+  readonly expenseCategoryName: string | null;
+  /** The typed reference and note, when the document is a money movement. */
+  readonly movementReference: string | null;
+  readonly movementNote: string | null;
+  /**
+   * The movement's own kind, so the ledger can say "Transfer from Main Cash"
+   * rather than "Money in from Main Cash" — a transfer, an owner withdrawal and
+   * a loan repayment all post the same two-sided entry, and the row is the only
+   * place that still knows which of them it was.
+   */
+  readonly movementKind: string | null;
 }
 
 export interface DailyCashFilter {
@@ -237,7 +325,16 @@ export interface MoneyRepository {
   listAccounts(
     tx: Tx,
     ctx: TenantContext,
-    filter: { readonly types: readonly MoneyAccountType[]; readonly includeInactive: boolean },
+    filter: {
+      readonly types: readonly MoneyAccountType[];
+      readonly includeInactive: boolean;
+      /**
+       * Balances as they stood at the end of this business date, or now when
+       * null (Finance Overview's date selector, and the "available balance as
+       * of" the transfer modal shows against the date being entered).
+       */
+      readonly asOf?: string | null;
+    },
   ): Promise<readonly MoneyAccountRow[]>;
   findAccountById(tx: Tx, ctx: TenantContext, accountId: string): Promise<MoneyAccountRow | null>;
   /** The one box the day is counted against, or `null` before setup. */
@@ -326,4 +423,29 @@ export interface MoneyRepository {
   ): Promise<readonly StatementLineRow[]>;
   /** The account's balance before the first line on this page (§3.9 keyset). */
   sumStatementBefore(tx: Tx, ctx: TenantContext, filter: StatementFilter): Promise<number>;
+
+  /**
+   * The kind stored on a posted movement, for the permission check that cannot
+   * trust the request (see `CashMovementService.requireKindPermission`).
+   */
+  findMovementKind(
+    tx: Tx,
+    ctx: TenantContext,
+    movementId: string,
+  ): Promise<CashMovementKind | null>;
+
+  /** Money movements for the Finance lists, newest first. */
+  listMovementHistory(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: MovementHistoryFilter,
+  ): Promise<readonly MovementHistoryRow[]>;
+
+  /** One account's balance at the end of a business date (INV-07, windowed). */
+  balanceAsOf(
+    tx: Tx,
+    ctx: TenantContext,
+    accountCode: string,
+    asOf: string | null,
+  ): Promise<number>;
 }

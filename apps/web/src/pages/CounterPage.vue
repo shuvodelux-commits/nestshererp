@@ -18,7 +18,7 @@ import EmptyState from '../components/EmptyState.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import EndDayDialog from '../components/money/EndDayDialog.vue';
-import MoveMoneyDialog from '../components/money/MoveMoneyDialog.vue';
+import TransferMoneyDialog from '../components/money/TransferMoneyDialog.vue';
 import RecordExpenseDialog from '../components/money/RecordExpenseDialog.vue';
 import StartDayDialog from '../components/money/StartDayDialog.vue';
 import PaySupplierDialog from '../components/purchasing/PaySupplierDialog.vue';
@@ -113,22 +113,22 @@ const actions = computed(() => {
       run: () => { showExpense.value = true; },
     });
   }
-  if (may('cash.movement.record') && status.value?.drawerAccountId != null) {
+  /*
+   * Moving money is Counter's, and it opens **Finance's** transfer dialog with
+   * the drawer already chosen as the source (owner decision 2026-08-31). One
+   * form, one set of rules, one posting path, whether the deposit is entered
+   * here or from Finance.
+   *
+   * Owner Money left this list on the same decision: it belongs to Capital &
+   * Loans, behind `owner.capital.record`, because recording what the owner took
+   * home is a different trust from banking the day's takings.
+   */
+  if (may('cash.movement.record')) {
     items.push({
       key: 'move',
       label: 'Move Money',
       bn: 'টাকা সরান — ব্যাংকে বা সিন্দুকে',
       icon: 'pi pi-arrows-h',
-      run: () => { showMove.value = true; },
-    });
-    items.push({
-      key: 'owner',
-      label: 'Owner Money',
-      bn: 'মালিকের টাকা — নেওয়া বা দেওয়া',
-      icon: 'pi pi-user',
-      // The same dialog: owner in, owner out and a transfer are one act with
-      // three destinations, and splitting them would be two screens that post
-      // the same entry (§5.16).
       run: () => { showMove.value = true; },
     });
   }
@@ -292,6 +292,13 @@ onDataChanged(load);
           {{ picking === 'PAY' ? 'Supplier' : 'Customer' }}
           <span>{{ picking === 'PAY' ? 'সাপ্লায়ার' : 'কাস্টমার' }}</span>
         </label>
+        <!--
+          Appended to the **body**, not to the dialog (owner-reported
+          2026-08-31). Inside the dialog the panel is clipped by its own box, so
+          a long party list cannot be scrolled, and the filter box collapses the
+          panel when it takes focus. Every other picker that lives in a dialog
+          already appends to the body — `PaySupplierDialog` and the rest.
+        -->
         <Select
           v-model="pickedPartyId"
           input-id="ctr-party"
@@ -299,7 +306,7 @@ onDataChanged(load);
           option-label="label"
           option-value="value"
           filter
-          append-to="self"
+          append-to="body"
           fluid
         />
       </div>
@@ -339,12 +346,11 @@ onDataChanged(load);
       @recorded="done"
     />
 
-    <MoveMoneyDialog
-      v-if="showMove && status?.drawerAccountId != null"
-      :drawer-account-id="status.drawerAccountId"
-      :business-date="today"
+    <TransferMoneyDialog
+      v-if="showMove"
+      :from-account-id="status?.drawerAccountId ?? null"
       @close="showMove = false"
-      @recorded="done"
+      @saved="done"
     />
 
     <StartDayDialog

@@ -59,6 +59,14 @@ export class AccountsController {
     return this.accounts.list({ ctx, ...parsed.data });
   }
 
+  /**
+   * One account's ledger — the same endpoint the statement always was, now
+   * carrying the Finance ledger's search and family filter (§5.17).
+   *
+   * Which accounts this caller may read is decided in the use case, not here:
+   * the route is reachable by typing it, so the check has to live below the
+   * menu that hid it.
+   */
   @Get(':id/statement')
   async statement(
     @Param('id') id: string,

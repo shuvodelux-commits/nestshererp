@@ -149,6 +149,24 @@ export const Permission = {
   BANK_ACCOUNT_MANAGE: 'bank.account.manage',
 
   /**
+   * Owner capital and loans (Finance module, owner decisions 2026-08-31).
+   *
+   * Three codes rather than reusing `cash.movement.record`, because moving the
+   * day's takings to the bank and recording what the owner took home are
+   * different sizes of trust. A cashier who can bank the cash should not
+   * thereby be able to write down an owner withdrawal, and a bookkeeper
+   * entering loan instalments should not thereby be able to open a new loan
+   * account.
+   *
+   * `LOAN_ACCOUNT_MANAGE` also carries **seeing** loan accounts and their
+   * balances: a loan is not one of the shop's money accounts, so
+   * `cash.account.view` and `bank.account.view` never expose one.
+   */
+  OWNER_CAPITAL_RECORD: 'owner.capital.record',
+  LOAN_MOVEMENT_RECORD: 'loan.movement.record',
+  LOAN_ACCOUNT_MANAGE: 'loan.account.manage',
+
+  /**
    * Reconciling an account against the bank's own statement (Phase 11, §5.17).
    *
    * Separate from `bank.account.view` because reading a statement and signing
@@ -995,6 +1013,27 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     detail: 'Add a bank, bKash or Nagad account, change its details, or take one out of use.',
   },
   {
+    code: Permission.OWNER_CAPITAL_RECORD,
+    group: 'Money',
+    label: 'Record money the owner puts in or takes out',
+    detail:
+      'Write down what the owner added to the business or took home. Cancelling one also needs “Cancel a money movement”.',
+  },
+  {
+    code: Permission.LOAN_MOVEMENT_RECORD,
+    group: 'Money',
+    label: 'Record a loan received or repaid',
+    detail:
+      'Write down loan money received and instalments paid back. Cancelling one also needs “Cancel a money movement”.',
+  },
+  {
+    code: Permission.LOAN_ACCOUNT_MANAGE,
+    group: 'Money',
+    label: 'See and set up loan accounts',
+    detail:
+      'Open the shop’s loans and what is still owed on each, add a new one, change its details or take one out of use.',
+  },
+  {
     code: Permission.TRANSACTION_DATE_CHANGE,
     group: 'Money',
     label: 'Change a transaction date',
@@ -1081,6 +1120,12 @@ export const SEED_EXPENSE_CATEGORIES: readonly { readonly code: string; readonly
   { code: 'TRANSPORT', name: 'Transport' },
   { code: 'TEA_SNACKS', name: 'Tea & snacks' },
   { code: 'REPAIRS', name: 'Repairs' },
+  /*
+   * Finance module, owner decision 2026-08-31: a loan instalment is recorded as
+   * principal against the loan account plus the interest here, so the category
+   * has to exist for the second half to have anywhere to go.
+   */
+  { code: 'LOAN_INTEREST', name: 'Loan interest' },
   { code: 'OTHER', name: 'Other' },
 ];
 
@@ -1164,6 +1209,8 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_SESSION_START,
       Permission.CASH_SESSION_CLOSE,
       Permission.CASH_MOVEMENT_RECORD,
+      Permission.LOAN_MOVEMENT_RECORD,
+      Permission.LOAN_ACCOUNT_MANAGE,
       Permission.CASH_DAILY_VIEW,
       Permission.CASH_DAILY_INVESTIGATE,
       /*

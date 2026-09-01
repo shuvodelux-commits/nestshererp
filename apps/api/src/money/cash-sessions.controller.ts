@@ -5,6 +5,7 @@ import type {
   CashMovementService,
   CashSessionService,
   DailyCashService,
+  MoneyMovementsService,
   TenantContext,
 } from '@sher/core-application';
 import type {
@@ -12,11 +13,13 @@ import type {
   CashSessionResponse,
   DailyCashResponse,
   DayStatusResponse,
+  MoneyMovementListResponse,
 } from '@sher/core-contracts';
 import {
   closeDayRequestSchema,
   correctCashMovementRequestSchema,
   dailyCashQuerySchema,
+  moneyMovementListQuerySchema,
   recordCashMovementRequestSchema,
   reopenDayRequestSchema,
   startDayRequestSchema,
@@ -25,7 +28,12 @@ import {
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
 import { invalidBody } from './accounts.controller';
-import { CASH_MOVEMENT_SERVICE, CASH_SESSION_SERVICE, DAILY_CASH_SERVICE } from './tokens';
+import {
+  CASH_MOVEMENT_SERVICE,
+  CASH_SESSION_SERVICE,
+  DAILY_CASH_SERVICE,
+  MONEY_MOVEMENTS_SERVICE,
+} from './tokens';
 
 /**
  * The business day at the drawer (Phase 4, §5.16).
@@ -42,6 +50,7 @@ export class CashSessionsController {
     @Inject(CASH_SESSION_SERVICE) private readonly sessions: CashSessionService,
     @Inject(CASH_MOVEMENT_SERVICE) private readonly movements: CashMovementService,
     @Inject(DAILY_CASH_SERVICE) private readonly daily: DailyCashService,
+    @Inject(MONEY_MOVEMENTS_SERVICE) private readonly movementHistory: MoneyMovementsService,
   ) {}
 
   @Get('day')
@@ -91,6 +100,21 @@ export class CashSessionsController {
     if (!parsed.success) throw invalidBody(parsed.error.issues);
 
     return { data: await this.sessions.reopenDay({ ctx, sessionId: id, ...parsed.data }) };
+  }
+
+  /**
+   * What the shop has moved — the Transfer Money list, both Capital & Loans
+   * sections and the Overview's recent list, by `group` (Finance module).
+   */
+  @Get('movements')
+  async listMovements(
+    @Query() query: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<MoneyMovementListResponse> {
+    const parsed = moneyMovementListQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+
+    return this.movementHistory.list({ ctx, ...parsed.data });
   }
 
   @Post('movements')

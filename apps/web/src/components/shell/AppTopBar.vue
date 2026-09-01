@@ -11,6 +11,7 @@ import { forgetMyAccess } from '../../auth/access';
 import { useSession } from '../../auth/session';
 import { useTheme } from '../../design/theme';
 import DayStatusChip from '../money/DayStatusChip.vue';
+import OfflineStatusChip from '../offline/OfflineStatusChip.vue';
 
 defineProps<{ collapsed: boolean }>();
 const emit = defineEmits<{ toggleSidebar: [] }>();
@@ -93,6 +94,14 @@ const accountItems = computed<MenuItem[]>(() => [
         the counter to start or close the day.
       -->
       <DayStatusChip />
+
+      <!--
+        Phase 12.1 (owner decision 2026-08-31). Beside the day chip and for the
+        same reason: whether this machine is ready to work without internet is a
+        fact about the machine, and a shop that finds it out during a power cut
+        has found out too late.
+      -->
+      <OfflineStatusChip />
 
       <div class="bizdate">
         <i class="pi pi-calendar" aria-hidden="true" />

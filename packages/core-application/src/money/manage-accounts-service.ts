@@ -12,6 +12,7 @@ import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import { entryModeFor } from '../notes/create-note-service';
+import { requireLoanVisibility, seesLoans } from './loan-visibility';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { IdempotencyStore } from '../ports/idempotency-store';
@@ -34,14 +35,20 @@ import type { MoneyAccountRow, MoneyRepository } from './money-repository';
  * was saved. That is why a period guard and a numbering service appear on a
  * path that is otherwise plain master data.
  *
- * **Two permissions, one table.** Cash and bank are separate trusts (§5.26): a
- * shop may let a manager see the till without letting them see the bank. `MFS`
- * follows bank — bKash is not something you can count at the counter.
+ * **Three permissions, one table.** Cash and bank are separate trusts (§5.26):
+ * a shop may let a manager see the till without letting them see the bank.
+ * `MFS` follows bank — bKash is not something you can count at the counter.
+ * `LOAN` follows neither: a loan is not one of the shop's money accounts but a
+ * debt it carries, so it is admitted by `loan.account.manage` alone and never
+ * appears for someone holding only the cash or the bank permission (owner
+ * decision 2026-08-31).
  */
 
 export interface ListAccountsCommand {
   readonly ctx: TenantContext;
   readonly includeInactive?: boolean | undefined;
+  /** Balances at the end of this business date; absent means now. */
+  readonly asOf?: string | undefined;
 }
 
 export interface AccountInput {
@@ -86,13 +93,23 @@ const REJECTION_MESSAGES: Record<MoneyAccountRejection, string> = {
   ACCOUNT_OPENING_DATE_REQUIRED: 'Say which date this opening balance is as at',
 };
 
-/** Which permission admits this kind of account — bank and MFS share one. */
+/**
+ * Which permission admits this kind of account — bank and MFS share one.
+ *
+ * Loans are **not** here: seeing one is satisfied by either loan code, which a
+ * single-code `require` cannot express, so they go through
+ * `requireLoanVisibility` instead.
+ */
 function viewPermissionFor(type: MoneyAccountType): string {
-  return type === 'CASH' ? Permission.CASH_ACCOUNT_VIEW : Permission.BANK_ACCOUNT_VIEW;
+  if (type === 'CASH') return Permission.CASH_ACCOUNT_VIEW;
+  return Permission.BANK_ACCOUNT_VIEW;
 }
 
+/** Setting an account up. A loan needs its own code, and only that one. */
 function managePermissionFor(type: MoneyAccountType): string {
-  return type === 'CASH' ? Permission.CASH_ACCOUNT_MANAGE : Permission.BANK_ACCOUNT_MANAGE;
+  if (type === 'CASH') return Permission.CASH_ACCOUNT_MANAGE;
+  if (type === 'LOAN') return Permission.LOAN_ACCOUNT_MANAGE;
+  return Permission.BANK_ACCOUNT_MANAGE;
 }
 
 export class ManageAccountsService {
@@ -127,6 +144,15 @@ export class ManageAccountsService {
       const types: MoneyAccountType[] = [];
       if (held.includes(Permission.CASH_ACCOUNT_VIEW)) types.push('CASH');
       if (banksOn && held.includes(Permission.BANK_ACCOUNT_VIEW)) types.push('BANK', 'MFS');
+      /*
+       * A loan is admitted by its own code and by nothing else, so a cashier
+       * holding `cash.account.view` never learns what the shop owes, and a
+       * bookkeeper holding `loan.account.manage` reaches the loans without
+       * being given the till (owner decision 2026-08-31). Deliberately not
+       * behind `bank_accounts_enabled`: a shop can carry a loan without
+       * running a bank account through SherERP.
+       */
+      if (seesLoans(held)) types.push('LOAN');
 
       if (types.length === 0) {
         throw new AppError(
@@ -138,12 +164,27 @@ export class ManageAccountsService {
       const accounts = await this.money.listAccounts(tx, ctx, {
         types,
         includeInactive: command.includeInactive ?? false,
+        asOf: command.asOf ?? null,
       });
 
       return {
         accounts: accounts.map(toResponse),
+        /*
+         * One total per type. `totalBankMinor` used to mean "everything that is
+         * not cash", which was the same thing while BANK and MFS were the only
+         * other types — with loans on the list it would have added a debt into
+         * the shop's bank balance and no screen could have taken it back out.
+         */
         totalCashMinor: sumWhere(accounts, (row) => row.type === 'CASH'),
-        totalBankMinor: sumWhere(accounts, (row) => row.type !== 'CASH'),
+        totalBankMinor: sumWhere(accounts, (row) => row.type === 'BANK'),
+        totalMfsMinor: sumWhere(accounts, (row) => row.type === 'MFS'),
+        /*
+         * Positive, because "owed" is how it is read and how it is displayed.
+         * A loan's journal balance is a credit, so it is negative here, and a
+         * tile showing ৳-75,000 would be asking a shopkeeper to translate a
+         * sign convention (UI-21).
+         */
+        totalLoanMinor: -sumWhere(accounts, (row) => row.type === 'LOAN'),
       };
     });
   }
@@ -380,7 +421,8 @@ export class ManageAccountsService {
     await this.periods.assertOpen(tx, ctx, businessDate);
 
     const account = accountCodeFor(type, accountId);
-    const journal = accountOpeningPosting({ account, amountMinor });
+    // A loan's opening is what the shop already owes, so it is credited.
+    const journal = accountOpeningPosting({ account, amountMinor, owed: type === 'LOAN' });
     const openingId = Ulid.generate(this.clock);
     const number = await this.numbering.allocate(
       tx,
@@ -465,6 +507,7 @@ export class ManageAccountsService {
       accountCodeFor(input.type, existing.id),
       had,
       wants,
+      input.type === 'LOAN',
     );
     if (journal === null) return;
 
@@ -526,7 +569,8 @@ export class ManageAccountsService {
     const account = await this.money.findAccountById(tx, ctx, accountId);
     if (account === null) throw new AppError(ErrorCode.NOT_FOUND, 'That account no longer exists');
 
-    await this.accessControl.require(tx, ctx, viewPermissionFor(account.type));
+    if (account.type === 'LOAN') await requireLoanVisibility(this.accessControl, tx, ctx);
+    else await this.accessControl.require(tx, ctx, viewPermissionFor(account.type));
     return account;
   }
 }

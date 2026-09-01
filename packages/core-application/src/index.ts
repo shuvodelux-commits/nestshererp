@@ -231,6 +231,9 @@ export type {
   StartDayCommand,
 } from './money/cash-session-service';
 export { DailyCashService } from './money/daily-cash-service';
+export { seesLoans } from './money/loan-visibility';
+export { MoneyMovementsService } from './money/money-movements-service';
+export type { ListMovementsCommand } from './money/money-movements-service';
 export type { AccountStatementCommand, DailyCashCommand } from './money/daily-cash-service';
 export { ManageAccountsService } from './money/manage-accounts-service';
 export type {
@@ -242,6 +245,8 @@ export type {
 } from './money/manage-accounts-service';
 export type {
   AccountOpeningCorrection,
+  MovementHistoryFilter,
+  MovementHistoryRow,
   CashMovementRow,
   CashSessionCloseRow,
   CashSessionRow,

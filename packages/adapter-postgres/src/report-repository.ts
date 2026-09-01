@@ -55,7 +55,8 @@ const EPOCH = parseInstant('1970-01-01T00:00:00.000Z') as Date;
 const EMPTY_ROW = { count: 0, qty: 0, amountMinor: 0, costMinor: 0, paidMinor: 0, dueMinor: 0 };
 
 /** A money account's journal code, rebuilt the way `accountCodeFor` builds it. */
-const ACCOUNT_CODE = sql`(CASE WHEN a.type = 'CASH' THEN 'CASH:' ELSE 'BANK:' END || a.id)`;
+const ACCOUNT_CODE = sql`(CASE WHEN a.type = 'CASH' THEN 'CASH:'
+  WHEN a.type = 'LOAN' THEN 'LOAN:' ELSE 'BANK:' END || a.id)`;
 
 export class PostgresReportRepository implements ReportRepository {
   async salesGrouped(

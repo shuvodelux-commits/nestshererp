@@ -121,7 +121,9 @@ const ENTRY_SELECT = sql`
     ) party ON TRUE
     LEFT JOIN parties pa ON pa.tenant_id = je.tenant_id AND pa.id = party.party_id
     LEFT JOIN accounts acct ON acct.tenant_id = je.tenant_id
-         AND money.account_code = (CASE WHEN acct.type = 'CASH' THEN 'CASH:' ELSE 'BANK:' END || acct.id)
+         AND money.account_code = (CASE WHEN acct.type = 'CASH' THEN 'CASH:'
+                                        WHEN acct.type = 'LOAN' THEN 'LOAN:'
+                                        ELSE 'BANK:' END || acct.id)
     LEFT JOIN LATERAL (
       SELECT SUM(sm.qty) AS qty
         FROM stock_movements sm

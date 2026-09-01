@@ -167,6 +167,7 @@ export {
   accountCodeFor,
   canDeactivate,
   isCountable,
+  isLiability,
   MONEY_ACCOUNT_TYPES,
   rejectMoneyAccount,
 } from './money/money-account';

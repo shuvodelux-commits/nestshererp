@@ -25,6 +25,16 @@ export const CASH_MOVEMENT_KINDS = [
   'OWNER_WITHDRAWAL',
   'TRANSFER',
   'OPENING_ADJUSTMENT',
+  /*
+   * Finance module, owner decision 2026-08-31. Taking a loan and repaying it
+   * are the same two-sided movement as everything above — money arrives from
+   * `LOAN:{id}` or goes back to it — so they are two more kinds rather than a
+   * second document with a posting path of its own. Principal only: the
+   * interest inside an instalment is a cost of running the shop and is
+   * recorded as an expense, in the module that already owns expenses.
+   */
+  'LOAN_RECEIVED',
+  'LOAN_REPAYMENT',
 ] as const;
 
 export type CashMovementKind = (typeof CASH_MOVEMENT_KINDS)[number];

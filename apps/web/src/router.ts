@@ -159,26 +159,79 @@ const router = createRouter({
       name: 'daily-cash',
       component: () => import('./pages/DailyCashPage.vue'),
     },
+    /*
+     * The Finance module (§5.16, §5.17, owner decisions 2026-08-31).
+     *
+     * Six screens over the money that is already recorded: what the shop holds,
+     * moving it between its own accounts, the owner's capital and the shop's
+     * loans, each account's ledger, and checking an account against the bank.
+     * Expenses and Daily Cash keep their own routes above — Finance links to
+     * nothing it does not own.
+     */
+    { path: '/finance', name: 'finance', component: () => import('./pages/FinanceOverviewPage.vue') },
     {
-      path: '/settings/accounts',
+      path: '/finance/accounts',
       name: 'money-accounts',
       component: () => import('./pages/MoneyAccountsPage.vue'),
     },
     {
-      path: '/settings/accounts/:id/statement',
-      name: 'account-statement',
-      component: () => import('./pages/AccountStatementPage.vue'),
+      path: '/finance/transfers',
+      name: 'money-transfers',
+      component: () => import('./pages/TransferMoneyPage.vue'),
+    },
+    {
+      path: '/finance/capital-loans',
+      name: 'capital-loans',
+      component: () => import('./pages/CapitalLoansPage.vue'),
+    },
+    /*
+     * Two paths, one page. `/finance/ledger` is the menu entry and opens with
+     * an account picker; `/finance/accounts/:id/ledger` is where a row on
+     * Money Accounts or the Overview lands, already on that account. A ledger
+     * always belongs to one account, and this is the difference between
+     * arriving to choose one and arriving to read one.
+     */
+    {
+      path: '/finance/ledger',
+      name: 'account-ledger',
+      component: () => import('./pages/AccountLedgerPage.vue'),
+    },
+    {
+      path: '/finance/accounts/:id/ledger',
+      name: 'account-ledger-for',
+      component: () => import('./pages/AccountLedgerPage.vue'),
+    },
+    {
+      path: '/finance/reconciliation',
+      name: 'reconciliation',
+      component: () => import('./pages/FinanceReconciliationPage.vue'),
     },
     /*
      * Phase 11 (§5.17, UI-70). A reconciliation is a workflow, not a one-task
      * modal: two lists to compare, a statement to import and a sign-off at the
-     * end. It opens from the account's statement, which is where the owner is
-     * standing when they decide to check it against the bank.
+     * end. It opens from the account, which is where the owner is standing when
+     * they decide to check it against the bank.
      */
     {
-      path: '/settings/accounts/:accountId/reconcile/:id',
+      path: '/finance/accounts/:accountId/reconcile/:id',
       name: 'account-reconcile',
       component: () => import('./pages/AccountReconcilePage.vue'),
+    },
+    /*
+     * The Settings addresses these screens used to live at. Kept as redirects
+     * rather than deleted: a bookmark, a printed note or a link in a message
+     * still lands on the screen the person meant, which costs three lines here
+     * and would otherwise cost them a dead page.
+     */
+    { path: '/settings/accounts', redirect: '/finance/accounts' },
+    {
+      path: '/settings/accounts/:id/statement',
+      redirect: (to) => `/finance/accounts/${String(to.params.id)}/ledger`,
+    },
+    {
+      path: '/settings/accounts/:accountId/reconcile/:id',
+      redirect: (to) =>
+        `/finance/accounts/${String(to.params.accountId)}/reconcile/${String(to.params.id)}`,
     },
     // §5.6's guided onboarding import, one screen for every file type.
     { path: '/import', name: 'import', component: () => import('./pages/ImportPage.vue') },

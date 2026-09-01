@@ -53,15 +53,26 @@ const typeOptions = [
   { value: 'CASH', label: 'Cash — ক্যাশ' },
   { value: 'BANK', label: 'Bank — ব্যাংক' },
   { value: 'MFS', label: 'bKash / Nagad — মোবাইল ব্যাংকিং' },
+  { value: 'LOAN', label: 'Loan — ঋণ' },
 ];
 
 /** Only cash can be counted at night, so only cash can be the drawer. */
 const isCash = computed(() => type.value === 'CASH');
+
+/**
+ * A loan is money the shop **owes**, so the same three fields mean the opposite
+ * thing and the form says so: the holder is the lender, and the opening figure
+ * is what is still owed rather than what is held. The type is fixed when the
+ * dialog is opened from Manage Loan Accounts — a loan is not something a
+ * shopkeeper turns into a bank account by changing a dropdown.
+ */
+const isLoan = computed(() => type.value === 'LOAN');
 const openingMinor = computed(() => parseTaka(openingAmount.value) ?? 0);
 const openingIsSet = computed(() => openingMinor.value > 0);
 
 const heading = computed(() => {
-  if (!isNew.value) return 'Edit account';
+  if (!isNew.value) return isLoan.value ? 'Edit loan account' : 'Edit account';
+  if (isLoan.value) return 'Add loan account';
   return isCash.value ? 'Add cash account' : 'Add bank account';
 });
 
@@ -171,6 +182,7 @@ async function save(): Promise<void> {
             option-label="label"
             option-value="value"
             append-to="self"
+            :disabled="startType === 'LOAN'"
             fluid
           />
         </div>
@@ -186,19 +198,23 @@ async function save(): Promise<void> {
 
       <div v-if="wantsHolder" class="grid">
         <div class="field">
-          <label for="account-holder">In the name of <span class="label-bn">কার নামে</span></label>
+          <label for="account-holder">
+            <template v-if="isLoan">Lender <span class="label-bn">কার কাছ থেকে ঋণ</span></template>
+            <template v-else>In the name of <span class="label-bn">কার নামে</span></template>
+          </label>
           <input
             id="account-holder"
             v-model="holderName"
             maxlength="80"
             autocomplete="off"
-            placeholder="Optional"
+            :placeholder="isLoan ? 'Dutch-Bangla Bank' : 'Optional'"
           />
         </div>
 
         <div class="field">
           <label for="account-reference">
-            Account or phone number <span class="label-bn">নম্বর</span>
+            <template v-if="isLoan">Loan number <span class="label-bn">ঋণের নম্বর</span></template>
+            <template v-else>Account or phone number <span class="label-bn">নম্বর</span></template>
           </label>
           <input
             id="account-reference"
@@ -213,7 +229,10 @@ async function save(): Promise<void> {
       <div class="grid opening">
         <div class="field">
           <label for="account-opening">
-            Opening balance <span class="label-bn">শুরুর টাকা</span>
+            <template v-if="isLoan">
+              Amount still owed <span class="label-bn">এখনো কত বাকি</span>
+            </template>
+            <template v-else>Opening balance <span class="label-bn">শুরুর টাকা</span></template>
           </label>
           <input
             id="account-opening"
@@ -223,7 +242,16 @@ async function save(): Promise<void> {
             placeholder="0"
           />
           <p class="hint">
-            <template v-if="openingIsSet">{{ taka(openingMinor) }} — money already in the account
+            <template v-if="isLoan">
+              <template v-if="openingIsSet">
+                {{ taka(openingMinor) }} still owed on the day this figure is true from. Leave it
+                empty for a loan that has not been drawn yet.
+              </template>
+              <template v-else>
+                What is still owed today. Money received later is recorded as “Loan received”.
+              </template>
+            </template>
+            <template v-else-if="openingIsSet">{{ taka(openingMinor) }} — money already in the account
               on the day the shop joined SherERP.</template>
             <template v-else>Only for money already in the account. Leave it empty otherwise.</template>
           </p>

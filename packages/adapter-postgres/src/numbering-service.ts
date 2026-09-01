@@ -41,6 +41,15 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   WARRANTY_CLAIM: 'WC',
   VENDOR_RECEIPT: 'VR',
   VENDOR_RETURN: 'VRT',
+  /*
+   * Phase 8.3. `VR`/`VRT` above are the consignment documents and are left
+   * alone; the workspace's own four are numbered apart because a shopkeeper
+   * asking about "VR-2026-000012" must get exactly one document back.
+   */
+  VENDOR_PAYMENT: 'VPY',
+  VENDOR_ADVANCE_REFUND: 'VAR',
+  VENDOR_ISSUE: 'VI',
+  VENDOR_ISSUE_RETURN: 'VIR',
 };
 
 /**

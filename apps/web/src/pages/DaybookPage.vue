@@ -6,7 +6,7 @@ import DataTable from 'primevue/datatable';
 import Dialog from 'primevue/dialog';
 import Menu from 'primevue/menu';
 import Select from 'primevue/select';
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
@@ -203,14 +203,32 @@ const menuItems = computed(() => {
       },
     });
   }
-  if (items.length === 0 && actions.blockedReason !== null) {
-    items.push({ label: actions.blockedReason, disabled: true });
+  /*
+   * **A menu never opens empty** (owner-reported 2026-08-31: the ⋯ showed a
+   * blank white box). A row with no actions and no reason from the server is a
+   * gap in the capability table, not something to render as an empty popup —
+   * so the row says the honest general thing and the shopkeeper is not left
+   * clicking at nothing.
+   */
+  if (items.length === 0) {
+    items.push({
+      label: actions.blockedReason ?? 'Nothing can be done on this row from here',
+      disabled: true,
+    });
   }
   return items;
 });
 
-function openMenu(event: Event, row: DaybookRow): void {
+async function openMenu(event: Event, row: DaybookRow): Promise<void> {
   menuRow.value = row;
+  /*
+   * The menu is opened only **after** the model has been rebuilt for this row
+   * (owner-reported 2026-08-31: the ⋯ showed an empty white box). `menuItems`
+   * is computed from `menuRow`, and toggling in the same tick handed PrimeVue
+   * the previous value — on the first click that is the initial `[]`, which
+   * renders as an empty popup, and on every click after it, the row before.
+   */
+  await nextTick();
   rowMenu.value?.toggle(event);
 }
 

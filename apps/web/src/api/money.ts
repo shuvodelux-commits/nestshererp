@@ -1,9 +1,12 @@
 import type {
   AccountStatementQuery,
+  MoneyMovementListQuery,
+  MoneyMovementListResponse,
   AccountStatementResponse,
   CashMovementResponse,
   CashSessionResponse,
   CloseDayRequest,
+  CorrectCashMovementRequest,
   CreateMoneyAccountRequest,
   DailyCashQuery,
   DailyCashResponse,
@@ -72,12 +75,62 @@ export function fetchDailyCash(
   return request(`/api/v1/money/daily-cash${queryString(query)}`, { token, envelope: true });
 }
 
+/**
+ * Every account this user may see, with its balance.
+ *
+ * `asOf` is what the Finance Overview's date selector and the transfer modal's
+ * "available balance as of" both pass: the balance at the end of that business
+ * date rather than now, so the figure shown beside a backdated entry is the
+ * figure that entry actually meets.
+ */
 export function fetchAccounts(
   token: string,
   includeInactive = false,
+  asOf?: string,
 ): Promise<MoneyAccountListResponse> {
-  const suffix = includeInactive ? '?includeInactive=true' : '';
+  const suffix = queryString({ includeInactive: includeInactive ? 'true' : undefined, asOf });
   return request(`/api/v1/money/accounts${suffix}`, { token, envelope: true });
+}
+
+/**
+ * What the shop has moved — transfers, owner capital, loan money.
+ *
+ * One endpoint for the Transfer Money list, both Capital & Loans sections and
+ * the Overview's recent list, told apart by `group`. Read-only: recording and
+ * correcting still go through `recordMovement`, `correctMovement` and
+ * `voidMovement`, which remain the only writing paths there are.
+ */
+export function fetchMovements(
+  token: string,
+  query: MoneyMovementListQuery = {},
+): Promise<MoneyMovementListResponse> {
+  return request(`/api/v1/money/movements${queryString(query)}`, { token, envelope: true });
+}
+
+/** Correcting a posted movement — the whole movement, re-stated (§2.5). */
+export function correctMovement(
+  token: string,
+  movementId: string,
+  payload: CorrectCashMovementRequest,
+): Promise<{ ok: true }> {
+  return request(`/api/v1/money/movements/${movementId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  });
+}
+
+/** Cancelling a posted movement. The reason is required by the server. */
+export function voidMovement(
+  token: string,
+  movementId: string,
+  payload: { readonly version: number; readonly reason: string },
+): Promise<{ ok: true }> {
+  return request(`/api/v1/money/movements/${movementId}/void`, {
+    method: 'POST',
+    token,
+    body: payload,
+  });
 }
 
 export function fetchAccountStatement(
@@ -122,7 +175,7 @@ export function deactivateAccount(
   });
 }
 
-function queryString(query: Record<string, string | number | undefined>): string {
+function queryString(query: Record<string, string | number | boolean | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined) params.set(key, String(value));

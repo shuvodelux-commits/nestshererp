@@ -577,6 +577,8 @@ export class CashSessionService {
         Number(businessDate.slice(0, 4)),
       ),
       kind: 'OPENING_ADJUSTMENT',
+      // No slip to quote: Start Day's own difference, not something banked.
+      reference: null,
       fromAccountCode: sides.fromAccount,
       toAccountCode: sides.toAccount,
       amountMinor: sides.amountMinor,

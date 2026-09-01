@@ -57,8 +57,16 @@ export type FixedAccount = (typeof FIXED_ACCOUNTS)[number];
  * the drawer and may add a safe or a second counter, which is what makes "cash
  * left the drawer" always have a named destination instead of disappearing into
  * an adjustment. `EXPENSE` is per category for the same reason on the cost side.
+ *
+ * `LOAN` is per loan account (owner decision 2026-08-31, Finance module). It is
+ * a **liability**: a credit balance is money the shop owes that lender. It is
+ * deliberately not `BANK:{id}` — a loan inside the bank family would be added
+ * into Total Bank and into every cash-and-bank figure the shop is judged on,
+ * overstating what it holds by exactly what it owes. Its own family is also
+ * what keeps loans out of those sums for free: the report and daybook queries
+ * select on the `CASH:%` and `BANK:%` prefixes.
  */
-export const PARAMETERISED_ACCOUNTS = ['CASH', 'BANK', 'EXPENSE'] as const;
+export const PARAMETERISED_ACCOUNTS = ['CASH', 'BANK', 'EXPENSE', 'LOAN'] as const;
 
 export type ParameterisedAccount = (typeof PARAMETERISED_ACCOUNTS)[number];
 

@@ -34,6 +34,35 @@ export const KIND_BY_SOURCE_TYPE: Readonly<Record<string, DaybookKind>> = {
   WARRANTY_CLAIM: 'WARRANTY',
   VENDOR_STOCK_RECEIPT: 'VENDOR_STOCK',
   VENDOR_STOCK_RETURN: 'VENDOR_STOCK',
+
+  /*
+   * **Phase 9.2's own entries, which this table had never been told about**
+   * (owner-reported 2026-08-31: the ⋯ menu opened as an empty box and the rows
+   * read `CUSTOMER_RECEIPT_REVERSAL RCV-2026-000002`).
+   *
+   * Correcting or cancelling a receipt, a payment, an expense, a cash movement,
+   * a stock adjustment or either return writes an entry of its own — and every
+   * one of those source types fell through to `OTHER`, which can do nothing and
+   * explains nothing. The row then had no actions **and** no reason, which is
+   * the one combination that renders as a menu with nothing in it, and its
+   * description fell back to the ledger's raw vocabulary — the exact leak this
+   * file exists to stop.
+   *
+   * A reversal and a correction are grouped with the document they belong to,
+   * so the filter, the label and the actions all follow the thing a shopkeeper
+   * thinks they are looking at.
+   */
+  CUSTOMER_RECEIPT_REVERSAL: 'CUSTOMER_RECEIPT',
+  CUSTOMER_RECEIPT_CORRECTION: 'CUSTOMER_RECEIPT',
+  SUPPLIER_PAYMENT_REVERSAL: 'SUPPLIER_PAYMENT',
+  SUPPLIER_PAYMENT_CORRECTION: 'SUPPLIER_PAYMENT',
+  EXPENSE_REVERSAL: 'EXPENSE',
+  EXPENSE_CORRECTION: 'EXPENSE',
+  CASH_MOVEMENT_REVERSAL: 'CASH_MOVEMENT',
+  CASH_MOVEMENT_CORRECTION: 'CASH_MOVEMENT',
+  STOCK_ADJUSTMENT_REVERSAL: 'STOCK_ADJUSTMENT',
+  SALES_RETURN_REVERSAL: 'SALES_RETURN',
+  PURCHASE_RETURN_REVERSAL: 'PURCHASE_RETURN',
 };
 
 export function kindOf(sourceType: string): DaybookKind {
@@ -47,6 +76,20 @@ export const REVERSAL_SOURCE_TYPES: readonly string[] = [
   'OPENING_BALANCE_CORRECTION',
   'ACCOUNT_OPENING_CORRECTION',
   'CASH_SESSION_REOPEN',
+  /*
+   * Phase 9.2's reversals, added 2026-08-31 with the kinds above. The
+   * `_CORRECTION` halves are deliberately **not** here: a correction reverses
+   * and then re-posts under the same number, and this second entry is the
+   * document as it now stands — the live thing, which may be corrected again.
+   * Only the undoing half is a reversal.
+   */
+  'CUSTOMER_RECEIPT_REVERSAL',
+  'SUPPLIER_PAYMENT_REVERSAL',
+  'EXPENSE_REVERSAL',
+  'CASH_MOVEMENT_REVERSAL',
+  'STOCK_ADJUSTMENT_REVERSAL',
+  'SALES_RETURN_REVERSAL',
+  'PURCHASE_RETURN_REVERSAL',
 ];
 
 /**

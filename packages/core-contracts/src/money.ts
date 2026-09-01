@@ -20,6 +20,13 @@ export const moneyAccountTypeSchema = z.union([
   z.literal('CASH'),
   z.literal('BANK'),
   z.literal('MFS'),
+  /*
+   * A loan is money the shop **owes**, not money it holds (Finance module,
+   * owner decision 2026-08-31). It is a money account on this wire only in the
+   * sense that it has a name, a balance and a ledger; it is never part of a
+   * money total and never a way to pay for anything.
+   */
+  z.literal('LOAN'),
 ]);
 export type MoneyAccountTypeValue = z.infer<typeof moneyAccountTypeSchema>;
 
@@ -92,9 +99,20 @@ export type MoneyAccountResponse = z.infer<typeof moneyAccountResponseSchema>;
 
 export const moneyAccountListResponseSchema = z.object({
   accounts: z.array(moneyAccountResponseSchema),
-  /** What the shop holds in cash and in bank/MFS, so the screen need not add up. */
+  /**
+   * What the shop holds, so the screen need not add up — **one total per type**.
+   *
+   * `totalBankMinor` used to mean "everything that is not cash", which was the
+   * same thing while BANK and MFS were the only other types. With loans on the
+   * list it would have quietly added a debt into the shop's bank balance, so
+   * each type now has its own figure and `totalLoanMinor` is deliberately not
+   * part of any of the others.
+   */
   totalCashMinor: z.number().int(),
   totalBankMinor: z.number().int(),
+  totalMfsMinor: z.number().int(),
+  /** Positive: what is still owed across every loan account. */
+  totalLoanMinor: z.number().int(),
 });
 
 export type MoneyAccountListResponse = z.infer<typeof moneyAccountListResponseSchema>;
@@ -299,6 +317,8 @@ export const cashMovementKindSchema = z.union([
   z.literal('OWNER_WITHDRAWAL'),
   z.literal('TRANSFER'),
   z.literal('OPENING_ADJUSTMENT'),
+  z.literal('LOAN_RECEIVED'),
+  z.literal('LOAN_REPAYMENT'),
 ]);
 export type CashMovementKindValue = z.infer<typeof cashMovementKindSchema>;
 
@@ -322,11 +342,21 @@ export const recordCashMovementRequestSchema = z
       z.literal('OWNER_INJECTION'),
       z.literal('OWNER_WITHDRAWAL'),
       z.literal('TRANSFER'),
+      z.literal('LOAN_RECEIVED'),
+      z.literal('LOAN_REPAYMENT'),
     ]),
     fromAccountCode: z.string().min(1).max(80),
     toAccountCode: z.string().min(1).max(80),
     amountMinor: z.number().int().positive(),
     businessDate: z.string().date(),
+    /**
+     * The slip, cheque or bKash transaction number (Finance module).
+     *
+     * Its own field rather than a convention inside the note, because it is the
+     * thing a shopkeeper searches by and the thing a reconciliation matches on;
+     * text buried in a sentence can be neither.
+     */
+    reference: z.string().trim().max(64).nullable().default(null),
     note: z.string().trim().max(500).nullable().default(null),
     operationId: ULID,
   })
@@ -364,11 +394,99 @@ export const cashMovementResponseSchema = z.object({
   toAccountName: z.string(),
   amountMinor: z.number().int(),
   businessDate: z.string(),
+  reference: z.string().nullable(),
   note: z.string().nullable(),
   createdAt: z.string(),
 });
 
 export type CashMovementResponse = z.infer<typeof cashMovementResponseSchema>;
+
+/* ------------------------------------------------------- movement history */
+
+/**
+ * What the shop has moved, for the Finance lists (owner decision 2026-08-31).
+ *
+ * A row of the Transfer Money list or of one Capital & Loans section. It is
+ * read-only history: the same movements the Daybook shows, narrowed to the
+ * money-movement documents and filterable by what the person is looking for.
+ *
+ * `status` is the shopkeeper's word for the row, derived by the use case from
+ * the stored state — a movement that was reversed reads `CANCELLED`, one that
+ * was reversed and re-posted reads `CORRECTED`, and everything else reads
+ * `POSTED`. The screen never sees `VOIDED` or a correction reason column it
+ * would have to explain.
+ */
+export const moneyMovementStatusSchema = z.union([
+  z.literal('POSTED'),
+  z.literal('CORRECTED'),
+  z.literal('CANCELLED'),
+]);
+
+export type MoneyMovementStatusValue = z.infer<typeof moneyMovementStatusSchema>;
+
+export const moneyMovementRowSchema = z.object({
+  id: ULID,
+  number: z.string(),
+  kind: cashMovementKindSchema,
+  businessDate: z.string(),
+  fromAccountCode: z.string(),
+  fromAccountName: z.string(),
+  toAccountCode: z.string(),
+  toAccountName: z.string(),
+  amountMinor: z.number().int(),
+  reference: z.string().nullable(),
+  note: z.string().nullable(),
+  status: moneyMovementStatusSchema,
+  /** Plain sentence for the Overview list: "Transfer to DBBL Bank". */
+  description: z.string(),
+  createdAt: z.string(),
+  createdByName: z.string().nullable(),
+  /** D-32's optimistic lock, so a row can be edited or cancelled from the list. */
+  version: z.number().int().positive(),
+});
+
+export type MoneyMovementRow = z.infer<typeof moneyMovementRowSchema>;
+
+export const moneyMovementListResponseSchema = z.object({
+  rows: z.array(moneyMovementRowSchema),
+  page: z.object({ nextCursor: z.string().nullable(), hasMore: z.boolean() }),
+});
+
+export type MoneyMovementListResponse = z.infer<typeof moneyMovementListResponseSchema>;
+
+/**
+ * Which movements a Finance screen is asking for.
+ *
+ * `group` is what separates the three lists that share this endpoint: the
+ * Transfer Money page asks for `TRANSFER`, the two Capital & Loans sections ask
+ * for `OWNER` and `LOAN`, and the Overview asks for everything. Grouping here
+ * rather than passing raw kinds keeps the screens from having to know that an
+ * opening adjustment is a movement too.
+ */
+export const moneyMovementGroupSchema = z.union([
+  z.literal('ALL'),
+  z.literal('TRANSFER'),
+  z.literal('OWNER'),
+  z.literal('LOAN'),
+]);
+
+export type MoneyMovementGroupValue = z.infer<typeof moneyMovementGroupSchema>;
+
+export const moneyMovementListQuerySchema = z
+  .object({
+    group: moneyMovementGroupSchema.optional(),
+    /** Only movements touching this account, either side. */
+    accountId: ULID.optional(),
+    fromDate: z.string().date().optional(),
+    toDate: z.string().date().optional(),
+    /** Matches the reference, the note or the movement number. */
+    search: z.string().trim().max(80).optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+export type MoneyMovementListQuery = z.infer<typeof moneyMovementListQuerySchema>;
 
 /* --------------------------------------------------------------- statement */
 
@@ -386,8 +504,22 @@ export const accountStatementRowSchema = z.object({
   createdAt: z.string(),
   sourceType: z.string(),
   sourceNumber: z.string(),
+  /** The id of the document this line came from, so the row can link to it. */
+  sourceId: ULID.nullable(),
+  /**
+   * What a person reads: "Transfer from Main Cash", "Sale INV-2026-0143 —
+   * Karim Store", "Expense — Electricity". Built by the use case from the
+   * document, because §2.4's account codes and source-type constants are
+   * exactly the internal vocabulary UI-21 says a screen never shows.
+   */
+  description: z.string(),
+  /** The typed slip/cheque number where there is one, else the document number. */
+  reference: z.string(),
   /** Signed: positive is money in, negative is money out. */
   amountMinor: z.number().int(),
+  /** The same figure split the way a ledger is read. One of them is always 0. */
+  debitMinor: z.number().int(),
+  creditMinor: z.number().int(),
   runningBalanceMinor: z.number().int(),
 });
 
@@ -417,7 +549,15 @@ export type AccountStatementResponse = z.infer<typeof accountStatementResponseSc
  * beside the handler could drift from the response type it feeds.
  */
 export const accountListQuerySchema = z
-  .object({ includeInactive: z.coerce.boolean().optional() })
+  .object({
+    includeInactive: z.coerce.boolean().optional(),
+    /**
+     * Balances as they stood at the end of this business date (Finance
+     * Overview's date selector, and the transfer modal's "available balance as
+     * of"). Absent means now, which is what every other caller wants.
+     */
+    asOf: z.string().date().optional(),
+  })
   .strict();
 
 export type AccountListQuery = z.infer<typeof accountListQuerySchema>;
@@ -426,6 +566,25 @@ export const accountStatementQuerySchema = z
   .object({
     fromDate: z.string().date().optional(),
     toDate: z.string().date().optional(),
+    /**
+     * Matches the reference, the document number or the note (Finance module).
+     *
+     * Applied in the query rather than in the browser: an account with three
+     * thousand lines would otherwise search only the page already downloaded,
+     * and the totals under the table would stop describing what is above it.
+     */
+    search: z.string().trim().max(80).optional(),
+    /** One family of documents — sales, purchases, expenses, money movements. */
+    kind: z
+      .union([
+        z.literal('ALL'),
+        z.literal('SALE'),
+        z.literal('PURCHASE'),
+        z.literal('EXPENSE'),
+        z.literal('MOVEMENT'),
+        z.literal('OTHER'),
+      ])
+      .optional(),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
   })

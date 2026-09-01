@@ -7,7 +7,7 @@ import { fetchDayStatus } from '../../api/money';
 import { useSession } from '../../auth/session';
 import { onDataChanged } from '../../state/data-freshness';
 import EndDayDialog from './EndDayDialog.vue';
-import MoveMoneyDialog from './MoveMoneyDialog.vue';
+import TransferMoneyDialog from './TransferMoneyDialog.vue';
 import ReopenDayDialog from './ReopenDayDialog.vue';
 import StartDayDialog from './StartDayDialog.vue';
 import { MONEY_BN, taka } from './money-text';
@@ -151,11 +151,15 @@ defineExpose({ refresh });
       @reopened="done"
       @close="showReopen = false"
     />
-    <MoveMoneyDialog
+    <!--
+      Repointed when Phase 12.2 replaced MoveMoneyDialog with TransferMoneyDialog:
+      the new dialog takes the source account as `from-account-id`, owns its own
+      date field, and emits `saved`.
+    -->
+    <TransferMoneyDialog
       v-if="showMove && status.drawerAccountId"
-      :drawer-account-id="status.drawerAccountId"
-      :business-date="status.businessDate"
-      @recorded="done"
+      :from-account-id="status.drawerAccountId"
+      @saved="done"
       @close="showMove = false"
     />
   </div>

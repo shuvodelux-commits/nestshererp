@@ -63,6 +63,29 @@ export const MONEY_BN = {
   moveMoney: 'টাকা সরান',
   amount: 'টাকার পরিমাণ',
   note: 'কিছু লিখতে চাইলে',
+
+  /* Finance module (owner decisions 2026-08-31) */
+  finance: 'সব টাকার সারসংক্ষেপ',
+  moneyAccounts: 'ক্যাশ, ব্যাংক ও বিকাশ',
+  transferMoney: 'টাকা সরান',
+  capitalAndLoans: 'মালিক ও ঋণ',
+  accountLedger: 'অ্যাকাউন্টের খতিয়ান',
+  reconciliation: 'ব্যাংকের সাথে মিলিয়ে দেখা',
+  totalCash: 'নগদ টাকা',
+  totalBank: 'ব্যাংকে আছে',
+  totalMfs: 'বিকাশ/নগদে আছে',
+  loansOwed: 'ঋণ বাকি',
+  fromAccount: 'কোথা থেকে',
+  toAccount: 'কোথায়',
+  transactionDate: 'তারিখ',
+  reference: 'রেফারেন্স',
+  availableBalance: 'এখন আছে',
+  newTransfer: 'নতুন টাকা সরানো',
+  newEntry: 'নতুন এন্ট্রি',
+  ownerCapital: 'মালিকের টাকা',
+  loanReceived: 'ঋণ নিলাম',
+  loanRepaid: 'ঋণ শোধ দিলাম',
+  manageLoanAccounts: 'ঋণের হিসাব ঠিক করুন',
 } as const;
 
 /**
@@ -110,6 +133,28 @@ export const MONEY_EN: Record<keyof typeof MONEY_BN, string> = {
   moveMoney: 'Move money',
   amount: 'Amount',
   note: 'Note (optional)',
+
+  finance: 'Overview',
+  moneyAccounts: 'Money Accounts',
+  transferMoney: 'Transfer Money',
+  capitalAndLoans: 'Capital & Loans',
+  accountLedger: 'Account Ledger',
+  reconciliation: 'Reconciliation',
+  totalCash: 'Total Cash',
+  totalBank: 'Total Bank',
+  totalMfs: 'Total MFS',
+  loansOwed: 'Outstanding Loans',
+  fromAccount: 'From Account',
+  toAccount: 'To Account',
+  transactionDate: 'Transaction Date',
+  reference: 'Reference',
+  availableBalance: 'Available balance',
+  newTransfer: 'New Transfer',
+  newEntry: 'New Entry',
+  ownerCapital: 'Owner capital',
+  loanReceived: 'Loan received',
+  loanRepaid: 'Loan repaid',
+  manageLoanAccounts: 'Manage Loan Accounts',
 };
 
 /** `৳64,500` — Western digits, grouped, two decimals only when there are any. */

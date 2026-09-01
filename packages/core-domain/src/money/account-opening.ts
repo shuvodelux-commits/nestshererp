@@ -15,10 +15,20 @@ import type { JournalEntryDraft } from '../accounting/journal-entry';
  */
 
 export interface AccountOpeningDraft {
-  /** `CASH:{id}` or `BANK:{id}` — built by `accountCodeFor`, never by hand. */
+  /** `CASH:{id}`, `BANK:{id}` or `LOAN:{id}` — built by `accountCodeFor`. */
   readonly account: AccountCode;
   /** Always positive; there is no direction, so there is no sign to carry. */
   readonly amountMinor: number;
+  /**
+   * True for a liability — a loan the shop already owes on day one.
+   *
+   * The figure a shopkeeper types is the same positive number, but it means the
+   * opposite thing: the account is **credited** and `OPENING_EQUITY` debited,
+   * because a shop starting with a ৳50,000 loan starts ৳50,000 poorer, not
+   * richer. Without this the loan would open as an asset and every money total
+   * would be wrong by the size of the debt.
+   */
+  readonly owed?: boolean;
 }
 
 export type AccountOpeningRejection =
@@ -44,10 +54,11 @@ export function accountOpeningPosting(draft: AccountOpeningDraft): JournalEntryD
   const rejection = rejectAccountOpening(draft);
   if (rejection !== null) throw new Error(`Account opening refused: ${rejection}`);
 
+  const signed = draft.owed === true ? -draft.amountMinor : draft.amountMinor;
   const journal: JournalEntryDraft = {
     lines: [
-      { account: draft.account, amountMinor: draft.amountMinor, partyId: null },
-      { account: fixedAccount('OPENING_EQUITY'), amountMinor: -draft.amountMinor, partyId: null },
+      { account: draft.account, amountMinor: signed, partyId: null },
+      { account: fixedAccount('OPENING_EQUITY'), amountMinor: -signed, partyId: null },
     ],
   };
 
@@ -71,9 +82,12 @@ export function accountOpeningCorrectionPosting(
   account: AccountCode,
   previousAmountMinor: number,
   nextAmountMinor: number,
+  /** True for a loan: a bigger opening debt is a bigger credit, not a debit. */
+  owed = false,
 ): JournalEntryDraft | null {
-  const deltaMinor = nextAmountMinor - previousAmountMinor;
-  if (deltaMinor === 0) return null;
+  const change = nextAmountMinor - previousAmountMinor;
+  if (change === 0) return null;
+  const deltaMinor = owed ? -change : change;
 
   const journal: JournalEntryDraft = {
     lines: [

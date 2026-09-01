@@ -2,21 +2,27 @@ import { parameterisedAccount } from '../accounting/account';
 import type { AccountCode } from '../accounting/account';
 
 /**
- * An account money sits in: the drawer, the safe, a bank account, bKash (§2.4,
- * §5.17).
+ * An account money sits in — or, for a loan, money the shop owes: the drawer,
+ * the safe, a bank account, bKash, a loan (§2.4, §5.17).
  *
- * **Three types, two account codes.** `CASH` posts to `CASH:{id}` and `BANK`
- * and `MFS` both post to `BANK:{id}`. That is not a shortcut — §2.4's closed
- * list has no `MFS` member, and bKash is not drawer cash by the only test that
- * matters here: you cannot count it at the end of the day. The distinction the
- * shop cares about is the label on the screen, and a label never changes
- * accounting semantics (UI-21).
+ * **Four types, three account codes.** `CASH` posts to `CASH:{id}`, `BANK` and
+ * `MFS` both post to `BANK:{id}`, and `LOAN` posts to `LOAN:{id}`. Folding
+ * `MFS` into `BANK` is not a shortcut — §2.4's closed list has no `MFS`
+ * member, and bKash is not drawer cash by the only test that matters here: you
+ * cannot count it at the end of the day. The distinction the shop cares about
+ * is the label on the screen, and a label never changes accounting semantics
+ * (UI-21).
+ *
+ * `LOAN` is the one type that does **not** fold in, because it is not money the
+ * shop holds at all. It is a liability, never counted in Total Cash, Total Bank
+ * or Total MFS, and never a way to pay for anything — a different accounting
+ * meaning, not a different label.
  *
  * Pure: no clock, no I/O. Naming, uniqueness and permissions belong to the
  * application layer; what an account *is*, and where it posts, belongs here.
  */
 
-export const MONEY_ACCOUNT_TYPES = ['CASH', 'BANK', 'MFS'] as const;
+export const MONEY_ACCOUNT_TYPES = ['CASH', 'BANK', 'MFS', 'LOAN'] as const;
 export type MoneyAccountType = (typeof MONEY_ACCOUNT_TYPES)[number];
 
 export type MoneyAccountStatus = 'ACTIVE' | 'INACTIVE';
@@ -56,7 +62,14 @@ export interface MoneyAccountDraft {
  * unparseable afterwards.
  */
 export function accountCodeFor(type: MoneyAccountType, accountId: string): AccountCode {
-  return parameterisedAccount(type === 'CASH' ? 'CASH' : 'BANK', accountId);
+  if (type === 'CASH') return parameterisedAccount('CASH', accountId);
+  if (type === 'LOAN') return parameterisedAccount('LOAN', accountId);
+  return parameterisedAccount('BANK', accountId);
+}
+
+/** Whether this account is money the shop owes rather than money it holds. */
+export function isLiability(type: MoneyAccountType): boolean {
+  return type === 'LOAN';
 }
 
 /** Whether this account is one the shop can physically count. */

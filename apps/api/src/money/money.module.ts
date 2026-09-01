@@ -19,6 +19,7 @@ import {
   DailyCashService,
   ImportStatementService,
   ManageAccountsService,
+  MoneyMovementsService,
   ReconcileAccountService,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
@@ -47,6 +48,7 @@ import {
   DAILY_CASH_SERVICE,
   IMPORT_STATEMENT_SERVICE,
   MANAGE_ACCOUNTS_SERVICE,
+  MONEY_MOVEMENTS_SERVICE,
   RECONCILE_ACCOUNT_SERVICE,
 } from './tokens';
 
@@ -220,6 +222,22 @@ import {
         AUDIT_WRITER,
         CLOCK,
       ],
+    },
+    {
+      /*
+       * Finance module. Read-only, and the injection list says so: no
+       * numbering, no period guard, no idempotency store — nothing it would
+       * need to write. The Finance lists cannot become a second way to record
+       * a movement, because this service has nothing to record one with.
+       */
+      provide: MONEY_MOVEMENTS_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        money: MoneyRepository,
+        settings: SettingsRepository,
+      ): MoneyMovementsService => new MoneyMovementsService(uow, accessControl, money, settings),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, MONEY_REPOSITORY, SETTINGS_REPOSITORY],
     },
     {
       provide: DAILY_CASH_SERVICE,

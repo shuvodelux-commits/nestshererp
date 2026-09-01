@@ -654,6 +654,8 @@ export const cashMovements = pgTable('cash_movements', {
   fromAccountCode: text('from_account_code').notNull(),
   toAccountCode: text('to_account_code').notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  // Migration 0043: the slip, cheque or bKash number, searchable on its own.
+  reference: text('reference'),
   note: text('note'),
   sessionId: char('session_id', { length: 26 }),
   businessDate: date('business_date', { mode: 'string' }).notNull(),

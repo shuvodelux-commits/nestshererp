@@ -29,13 +29,18 @@ describe('navigation architecture', () => {
     /*
      * `sales` was a placeholder with no shipped route until Phase 6 gave it the
      * POS, the invoice list and the returns history, so it now resolves like any
-     * other category. `finance` still has no entry at all, and this assertion is
-     * what would notice if one were invented before its screens exist (UI-09).
+     * other category. `finance` was the same kind of placeholder until Phase
+     * 12.2 shipped its six screens, so the assertion that it stays absent has
+     * become the assertion that it resolves to exactly those six — still the
+     * thing that would notice an invented entry (UI-09).
      */
     expect(resolved.find((category) => category.id === 'sales')?.subcategories.map((item) => item.id)).toEqual([
       'sales.counter',
     ]);
-    expect(resolved.find((category) => category.id === 'finance')).toBeUndefined();
+    expect(resolved.find((category) => category.id === 'finance')?.subcategories.map((item) => item.id)).toEqual([
+      'finance.overview', 'finance.accounts', 'finance.transfers',
+      'finance.capital', 'finance.ledger', 'finance.reconciliation',
+    ]);
   });
 
   it('hides empty subcategories and categories after permission and feature filtering', () => {

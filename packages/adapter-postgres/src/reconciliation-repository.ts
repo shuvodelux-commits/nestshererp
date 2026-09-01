@@ -180,7 +180,8 @@ export class PostgresReconciliationRepository implements ReconciliationRepositor
         accounts,
         and(
           eq(accounts.tenantId, journalLines.tenantId),
-          sql`${journalLines.accountCode} = CASE WHEN ${accounts.type} = 'CASH' THEN 'CASH:' ELSE 'BANK:' END || ${accounts.id}`,
+          sql`${journalLines.accountCode} = CASE WHEN ${accounts.type} = 'CASH' THEN 'CASH:'
+            WHEN ${accounts.type} = 'LOAN' THEN 'LOAN:' ELSE 'BANK:' END || ${accounts.id}`,
         ),
       )
       .where(
