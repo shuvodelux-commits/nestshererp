@@ -73,6 +73,20 @@ export interface NewPurchase {
   readonly journalEntryId: string;
   readonly journalLines: readonly NewJournalLine[];
   readonly lines: readonly NewPurchaseLine[];
+  /** Named costs entered with the bill; their value is already in the lines/lots. */
+  readonly landedCosts?: readonly {
+    readonly id: string;
+    readonly lineNo: number;
+    readonly category: string;
+    readonly method: string;
+    readonly amountMinor: number;
+    readonly description: string | null;
+    readonly allocations: readonly {
+      readonly id: string;
+      readonly purchaseLineId: string;
+      readonly amountMinor: number;
+    }[];
+  }[] | undefined;
 }
 
 export interface PurchaseLineRow {

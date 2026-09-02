@@ -10,6 +10,8 @@ import type {
   VendorActivityRow,
   VendorMoneyDocumentResponse,
   VendorProductIssueResponse,
+  VendorProductSettlementRequest,
+  VendorProductSettlementResponse,
   VendorSettlementResponse,
   VendorStockReceiptResponse,
   VendorWorkspaceSummaryResponse,
@@ -151,6 +153,19 @@ export function receiveProductsBack(
   idempotencyKey: string,
 ): Promise<VendorProductIssueResponse> {
   return request('/api/v1/vendor-workspace/issues/returns', {
+    method: 'POST',
+    token,
+    body: payload,
+    idempotencyKey,
+  });
+}
+
+export function settleVendorWithProducts(
+  token: string,
+  payload: VendorProductSettlementRequest,
+  idempotencyKey: string,
+): Promise<VendorProductSettlementResponse> {
+  return request('/api/v1/vendor-workspace/product-settlements', {
     method: 'POST',
     token,
     body: payload,

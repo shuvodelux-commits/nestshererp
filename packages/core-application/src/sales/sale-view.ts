@@ -34,6 +34,21 @@ export function toSaleResponse(
     vendorPartyId: line.vendorPartyId,
     vendorName: line.vendorName,
     isProvisionalCost: line.isProvisionalCost,
+    tracksSerial: line.tracksSerial,
+    allocations: line.allocations.map((allocation) => ({
+      id: allocation.id,
+      sourceType: allocation.sourceType,
+      qty: allocation.qty,
+      vendorPartyId: allocation.vendorPartyId,
+      serialUnitIds:
+        allocation.inventoryUnitId === null ? [] : [allocation.inventoryUnitId],
+      ownedLotId: allocation.ownedLotId,
+      vendorStockReceiptId: allocation.vendorStockReceiptId,
+      vendorLotId: allocation.vendorLotId,
+      inventoryUnitId: allocation.inventoryUnitId,
+      serialNo: allocation.serialNo,
+      unitCostUsed: allocation.unitCostUsed,
+    })),
     ...(showCost ? { costMinor: line.costMinor } : {}),
   }));
 

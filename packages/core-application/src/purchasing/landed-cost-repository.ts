@@ -74,6 +74,14 @@ export interface NewLandedCost {
   readonly businessDate: string;
   readonly operationId: string | null;
   readonly journalEntryId: string | null;
+  readonly description: string | null;
+  readonly paidAccountCode: string | null;
+  readonly sessionId: string | null;
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly purchaseLineId: string;
+    readonly amountMinor: number;
+  }[];
 }
 
 export interface LandedCostRepository {

@@ -55,7 +55,7 @@ const selected = computed(
   () => props.issues.find((issue) => issue.id === issueId.value) ?? null,
 );
 /** What is still at the vendor's, in display units. */
-const outstanding = computed(() => (selected.value?.openQty ?? 0) / 10000);
+const outstanding = computed(() => (selected.value?.openQty ?? 0) / 1000);
 const overOutstanding = computed(() => qty.value > outstanding.value + 1e-9);
 const ready = computed(
   () => issueId.value !== null && qty.value > 0 && !overOutstanding.value,
@@ -67,7 +67,7 @@ const ready = computed(
 watch(
   selected,
   (issue) => {
-    qty.value = issue === null ? 0 : issue.openQty / 10000;
+    qty.value = issue === null ? 0 : issue.openQty / 1000;
   },
   { immediate: true },
 );
@@ -83,7 +83,7 @@ async function save(): Promise<void> {
       token,
       {
         issueId: issueId.value,
-        qty: Math.round(qty.value * 10000),
+        qty: Math.round(qty.value * 1000),
         note: note.value.trim() === '' ? null : note.value.trim(),
         businessDate: businessDate.value,
       },

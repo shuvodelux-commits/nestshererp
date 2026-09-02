@@ -20,7 +20,7 @@ import type { IdempotencyStore } from '../ports/idempotency-store';
 import type { Outbox } from '../ports/outbox';
 import type { PeriodGuard } from '../ports/period-guard';
 import type { TenantContext } from '../ports/tenant-context';
-import type { UnitOfWork } from '../ports/unit-of-work';
+import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import { resolvePaymentAccount } from './payment-account';
 import type { CostStateUpdate, LandedCostRepository, LotCostUpdate } from './landed-cost-repository';
 
@@ -60,6 +60,11 @@ export interface AddLandedCostCommand {
   readonly amountMinor: number;
   readonly paidAccountCode: string | null;
   readonly note: string | null;
+  readonly description: string | null;
+  readonly manualAllocations: readonly {
+    readonly purchaseLineId: string;
+    readonly amountMinor: number;
+  }[];
   readonly businessDate?: string | undefined;
 }
 
@@ -69,6 +74,9 @@ const REFUSALS: Record<LandedCostRejection, string> = {
   LANDED_COST_HAS_NO_TARGET: 'That bill has no items to spread this cost over',
   LANDED_COST_TARGET_HAS_NO_WEIGHT:
     'This cost cannot be spread over that bill — its items have no quantity or value',
+  LANDED_COST_MANUAL_ALLOCATION_INVALID: 'Enter a manual allocation for every purchase line',
+  LANDED_COST_MANUAL_ALLOCATION_MISMATCH:
+    'Manual allocations must add up exactly to the landed cost amount',
 };
 
 /** The scale-4 unit cost a value spread over a quantity comes to, rounded once. */
@@ -92,16 +100,22 @@ export class AddLandedCostService {
   ) {}
 
   async add(command: AddLandedCostCommand): Promise<LandedCostResponse> {
+    return this.uow.run(command.ctx, (tx) => this.addWithin(tx, command));
+  }
+
+  /** Authoritative landed-cost writer reused by atomic vendor settlement. */
+  async addWithin(tx: Tx, command: AddLandedCostCommand): Promise<LandedCostResponse> {
     const fingerprint = JSON.stringify([
       command.purchaseId,
       command.category,
       command.method,
       command.amountMinor,
       command.paidAccountCode,
+      command.description,
+      command.manualAllocations,
       command.businessDate ?? null,
     ]);
 
-    return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
       // Changing what a posted bill's goods cost is an edit of that bill by any
       // honest reading, so it is gated on the permission that already means so.
@@ -126,6 +140,9 @@ export class AddLandedCostService {
           'That bill has been cancelled — there is nothing to add a cost to',
         );
       }
+      if (command.category === 'OTHER' && (command.description ?? '').trim() === '') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Describe what the Other landed cost was for');
+      }
 
       const today = this.clock.businessDate(ctx.timezone);
       const businessDate = command.businessDate ?? today;
@@ -140,10 +157,16 @@ export class AddLandedCostService {
       }
       await this.periods.assertOpen(tx, ctx, businessDate);
 
+      const manual = new Map(
+        command.manualAllocations.map((allocation) => [allocation.purchaseLineId, allocation.amountMinor]),
+      );
       const targets = purchase.lines.map((line) => ({
         purchaseLineId: line.purchaseLineId,
         qty: line.qty,
         lineTotalMinor: line.lineTotalMinor,
+        ...(command.method === 'MANUAL'
+          ? { manualShareMinor: manual.get(line.purchaseLineId) }
+          : {}),
       }));
       const rejection = rejectLandedCost(command.amountMinor, targets, command.method);
       if (rejection !== null) throw new AppError(ErrorCode.VALIDATION_FAILED, REFUSALS[rejection]);
@@ -286,6 +309,14 @@ export class AddLandedCostService {
         businessDate,
         operationId: command.operationId,
         journalEntryId: Ulid.generate(this.clock),
+        description: command.description,
+        paidAccountCode: paidAccount?.code ?? null,
+        sessionId: paidAccount?.sessionId ?? null,
+        allocations: shares.map((share) => ({
+          id: Ulid.generate(this.clock),
+          purchaseLineId: share.purchaseLineId,
+          amountMinor: share.shareMinor,
+        })),
       };
 
       await this.costs.recordLandedCost(tx, ctx, {
@@ -332,6 +363,11 @@ export class AddLandedCostService {
         cogsShareMinor: cost.cogsShareMinor,
         businessDate,
         addedLater: true,
+        description: command.description,
+        allocations: shares.map((share) => ({
+          purchaseLineId: share.purchaseLineId,
+          amountMinor: share.shareMinor,
+        })),
       };
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
@@ -339,6 +375,5 @@ export class AddLandedCostService {
         response,
       });
       return response;
-    });
   }
 }

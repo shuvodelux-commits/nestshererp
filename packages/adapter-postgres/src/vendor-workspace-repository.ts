@@ -2,6 +2,7 @@ import type {
   NewVendorIssueReturn,
   NewVendorMoneyDocument,
   NewVendorProductIssue,
+  NewVendorProductSettlement,
   TenantContext,
   Tx,
   VendorAccountBalances,
@@ -9,6 +10,7 @@ import type {
   VendorActivityRowData,
   VendorMoneyDocumentRow,
   VendorProductIssueRow,
+  VendorProductSettlementRow,
   VendorWorkspaceRepository,
 } from '@sher/core-application';
 import type { VendorActivityKind } from '@sher/core-contracts';
@@ -25,6 +27,8 @@ import {
   vendorProductIssueLots,
   vendorProductIssueReturns,
   vendorProductIssues,
+  vendorProductSettlements,
+  vendorReceivableSettlementAllocations,
   vendorReceipts,
 } from './schema';
 import { txOf } from './unit-of-work';
@@ -122,6 +126,124 @@ function toIssue(row: RawIssue): VendorProductIssueRow {
 
 export class PostgresVendorWorkspaceRepository implements VendorWorkspaceRepository {
   constructor(private readonly clock: Clock) {}
+
+  async insertProductSettlement(
+    tx: Tx,
+    ctx: TenantContext,
+    settlement: NewVendorProductSettlement,
+  ): Promise<void> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+    await db.insert(journalEntries).values({
+      id: settlement.journalEntryId,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      createdBy: ctx.userId,
+      businessDate: settlement.businessDate,
+      sourceDocumentType: 'VENDOR_PRODUCT_SETTLEMENT',
+      sourceDocumentId: settlement.id,
+      sourceNumber: settlement.number,
+      entryMode: settlement.entryMode,
+    });
+    await db.insert(journalLines).values(
+      settlement.journalLines.map((line) => ({
+        id: line.id,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        journalEntryId: settlement.journalEntryId,
+        accountCode: line.account,
+        amountMinor: line.amountMinor,
+        partyId: line.partyId,
+      })),
+    );
+    await db.insert(vendorProductSettlements).values({
+      id: settlement.id,
+      tenantId: ctx.tenantId,
+      settlementNumber: settlement.number,
+      operationId: settlement.operationId,
+      vendorPartyId: settlement.vendorPartyId,
+      purchaseId: settlement.purchaseId,
+      grossProductMinor: settlement.grossProductMinor,
+      discountMinor: settlement.discountMinor,
+      netProductMinor: settlement.netProductMinor,
+      landedCostMinor: settlement.landedCostMinor,
+      receivableBeforeMinor: settlement.receivableBeforeMinor,
+      receivableAfterMinor: settlement.receivableAfterMinor,
+      journalEntryId: settlement.journalEntryId,
+      businessDate: settlement.businessDate,
+      createdAt: now,
+      createdBy: ctx.userId,
+    });
+    if (settlement.allocations.length > 0) {
+      await db.insert(vendorReceivableSettlementAllocations).values(
+        settlement.allocations.map((allocation) => ({
+          id: allocation.id,
+          tenantId: ctx.tenantId,
+          settlementId: settlement.id,
+          saleId: allocation.saleId,
+          amountMinor: allocation.amountMinor,
+          createdAt: now,
+          createdBy: ctx.userId,
+        })),
+      );
+    }
+  }
+
+  async findProductSettlementByOperationId(
+    tx: Tx,
+    ctx: TenantContext,
+    operationId: string,
+  ): Promise<VendorProductSettlementRow | null> {
+    const db = txOf(tx);
+    const heads = await db.execute<{
+      id: string; number: string; vendor_party_id: string; purchase_id: string;
+      purchase_number: string; gross_product_minor: string; discount_minor: string;
+      net_product_minor: string; landed_cost_minor: string; receivable_before_minor: string;
+      receivable_after_minor: string; business_date: string;
+    }>(sql`
+      SELECT vps.id, vps.settlement_number AS number, vps.vendor_party_id,
+             vps.purchase_id, p.purchase_number, vps.gross_product_minor::text,
+             vps.discount_minor::text, vps.net_product_minor::text,
+             vps.landed_cost_minor::text, vps.receivable_before_minor::text,
+             vps.receivable_after_minor::text, vps.business_date::text
+        FROM vendor_product_settlements vps
+        JOIN purchases p ON p.tenant_id = vps.tenant_id AND p.id = vps.purchase_id
+       WHERE vps.tenant_id = ${ctx.tenantId} AND vps.operation_id = ${operationId}
+       LIMIT 1
+    `);
+    const head = heads.rows[0];
+    if (head === undefined) return null;
+    const allocations = await db.execute<{
+      id: string; sale_id: string; sale_number: string; amount_minor: string;
+    }>(sql`
+      SELECT a.id, a.sale_id, s.sale_number, a.amount_minor::text
+        FROM vendor_receivable_settlement_allocations a
+        JOIN sales s ON s.tenant_id = a.tenant_id AND s.id = a.sale_id
+       WHERE a.tenant_id = ${ctx.tenantId} AND a.settlement_id = ${head.id}
+       ORDER BY s.business_date, s.id
+    `);
+    return {
+      id: head.id,
+      number: head.number,
+      vendorPartyId: head.vendor_party_id,
+      purchaseId: head.purchase_id,
+      purchaseNumber: head.purchase_number,
+      grossProductMinor: Number(head.gross_product_minor),
+      discountMinor: Number(head.discount_minor),
+      netProductMinor: Number(head.net_product_minor),
+      landedCostMinor: Number(head.landed_cost_minor),
+      receivableBeforeMinor: Number(head.receivable_before_minor),
+      receivableAfterMinor: Number(head.receivable_after_minor),
+      businessDate: head.business_date,
+      allocations: allocations.rows.map((row) => ({
+        id: row.id,
+        saleId: row.sale_id,
+        saleNumber: row.sale_number,
+        amountMinor: Number(row.amount_minor),
+      })),
+    };
+  }
 
   /**
    * INV-06 in three sums.
@@ -723,6 +845,19 @@ export class PostgresVendorWorkspaceRepository implements VendorWorkspaceReposit
                'customer_receipt' AS source_type, cr.id AS source_id
           FROM customer_receipts cr
          WHERE cr.tenant_id = ${ctx.tenantId} AND cr.customer_party_id = ${filter.vendorPartyId}
+      `);
+    }
+
+    if (wanted('PRODUCT_SETTLEMENT')) {
+      parts.push(sql`
+        SELECT vps.id, 'PRODUCT_SETTLEMENT' AS kind, vps.business_date::text AS business_date,
+               vps.settlement_number AS number,
+               'Products received against receivable' AS description,
+               NULL::text AS qty, vps.net_product_minor::text AS amount_minor,
+               NULL::text AS open_qty, 'Posted' AS status,
+               'purchase' AS source_type, vps.purchase_id AS source_id
+          FROM vendor_product_settlements vps
+         WHERE vps.tenant_id = ${ctx.tenantId} AND vps.vendor_party_id = ${filter.vendorPartyId}
       `);
     }
 

@@ -1,4 +1,4 @@
-import { unitCostFromMoneyMinor } from '@sher/core-domain';
+import { normalizeSerial, rejectSerialBatch, unitCostFromMoneyMinor } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type {
   VendorSettlementResponse,
@@ -8,6 +8,8 @@ import { Money, QTY_SCALE, Qty, Ulid, formatForDisplay } from '@sher/shared-util
 import type { Clock } from '@sher/shared-utils';
 
 import type { InventoryRepository } from '../inventory/inventory-repository';
+import type { SerialRepository } from '../inventory/serial-repository';
+import type { ProductRepository } from '../catalog/product-repository';
 import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
@@ -46,6 +48,7 @@ export interface ReceiveVendorStockCommand {
   readonly productId: string;
   readonly qty: number;
   readonly vendorUnitCostMinor: number;
+  readonly serials: readonly string[];
   readonly note: string | null;
   readonly businessDate?: string | undefined;
 }
@@ -68,6 +71,8 @@ export class VendorStockService {
     private readonly vendors: VendorStockRepository,
     private readonly parties: PartyRepository,
     private readonly inventory: InventoryRepository,
+    private readonly products: ProductRepository,
+    private readonly serials: SerialRepository,
     private readonly settings: SettingsRepository,
     private readonly numbering: NumberingService,
     private readonly audit: AuditWriter,
@@ -81,6 +86,7 @@ export class VendorStockService {
       command.productId,
       command.qty,
       command.vendorUnitCostMinor,
+      command.serials,
       command.businessDate ?? null,
     ]);
 
@@ -104,6 +110,31 @@ export class VendorStockService {
 
       const vendor = await this.parties.findById(tx, ctx, command.vendorPartyId);
       if (vendor === null) throw new AppError(ErrorCode.NOT_FOUND, 'That vendor was not found');
+      if (!vendor.roles.includes('VENDOR')) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'That party is not a vendor');
+      }
+      const product = await this.products.findById(tx, ctx, command.productId);
+      if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'That product was not found');
+      const normalisedSerials = command.serials.map(normalizeSerial);
+      if (product.tracksSerial) {
+        const rejection = rejectSerialBatch({
+          serials: normalisedSerials,
+          qty: command.qty,
+          alreadyRecorded: 0,
+        });
+        if (rejection !== null || normalisedSerials.length * 1000 !== command.qty) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'A serialized vendor receipt needs exactly one manufacturer serial for every unit received',
+          );
+        }
+        const clashes = await this.serials.findActiveSerials(tx, ctx, product.id, normalisedSerials);
+        if (clashes.length > 0) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, `Serial ${clashes[0] ?? ''} is already active`);
+        }
+      } else if (normalisedSerials.length > 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This product is not tracked by serial number');
+      }
 
       const today = this.clock.businessDate(ctx.timezone);
       const businessDate = command.businessDate ?? today;
@@ -123,6 +154,7 @@ export class VendorStockService {
       }
 
       const receiptId = Ulid.generate(this.clock);
+      const lotId = Ulid.generate(this.clock);
       await this.vendors.insertReceipt(tx, ctx, {
         id: receiptId,
         receiptNumber: await this.numbering.allocate(
@@ -136,12 +168,33 @@ export class VendorStockService {
         locationId: location.id,
         qty: command.qty,
         vendorUnitCost: unitCostFromMoneyMinor(command.vendorUnitCostMinor),
-        lotId: Ulid.generate(this.clock),
+        lotId,
         movementId: Ulid.generate(this.clock),
         note: command.note,
         businessDate,
         operationId: command.operationId,
       });
+      if (normalisedSerials.length > 0) {
+        await this.serials.insertSerialUnits(
+          tx,
+          ctx,
+          normalisedSerials.map((serialNo) => ({
+            id: Ulid.generate(this.clock),
+            productId: product.id,
+            serialNo,
+            lotId,
+            purchaseId: null,
+            purchaseLineId: null,
+            supplierPartyId: null,
+            vendorPartyId: vendor.id,
+            vendorStockReceiptId: receiptId,
+            vendorLotId: lotId,
+            receivedDate: businessDate,
+            expiryDate: null,
+            supplierWarrantyMonths: product.supplierWarrantyMonths,
+          })),
+        );
+      }
 
       await this.audit.append(tx, ctx, {
         entityType: 'vendor_stock_receipt',

@@ -488,16 +488,20 @@ export type {
   ReceiveProductsBackCommand,
 } from './vendors/vendor-issue-service';
 export { VendorWorkspaceService } from './vendors/vendor-workspace-service';
+export { VendorProductSettlementService } from './vendors/vendor-product-settlement-service';
+export type { CreateVendorProductSettlementCommand } from './vendors/vendor-product-settlement-service';
 export type {
   NewIssueLot,
   NewVendorIssueReturn,
   NewVendorMoneyDocument,
   NewVendorProductIssue,
+  NewVendorProductSettlement,
   VendorAccountBalances,
   VendorActivityFilter,
   VendorActivityRowData,
   VendorMoneyDocumentRow,
   VendorProductIssueRow,
+  VendorProductSettlementRow,
   VendorWorkspaceRepository,
 } from './vendors/vendor-workspace-repository';
 

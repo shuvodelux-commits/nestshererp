@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { landedCostLineRequestSchema } from './purchase-plans';
+
 /**
  * Buying goods (Phase 5, §5.9, §5.11).
  *
@@ -50,6 +52,8 @@ export const createPurchaseRequestSchema = z
     dueDate: BUSINESS_DATE.nullable().default(null),
     lines: z.array(purchaseLineRequestSchema).min(1).max(200),
     discountMinor: z.number().int().nonnegative().default(0),
+    /** Repeatable named landed costs. `extraCostMinor` remains for old clients. */
+    landedCosts: z.array(landedCostLineRequestSchema).max(50).default([]),
     extraCostMinor: z.number().int().nonnegative().default(0),
     paidMinor: z.number().int().nonnegative().default(0),
     paidAccountCode: ACCOUNT_CODE.nullable().default(null),

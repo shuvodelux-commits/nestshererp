@@ -3,6 +3,8 @@ import type { LandedCostCategoryValue, LandedCostMethodValue } from '@sher/core-
 import { DEFAULT_LANDED_COST_METHOD } from '@sher/core-domain';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
+import InputNumber from 'primevue/inputnumber';
+import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import { computed, ref, watch } from 'vue';
 
@@ -28,6 +30,7 @@ const props = defineProps<{
   purchaseNumber: string;
   /** Where money may leave from. Empty leaves the cost owed to the supplier. */
   accounts: readonly { readonly code: string; readonly name: string }[];
+  purchaseLines: readonly { readonly id: string; readonly productName: string }[];
 }>();
 const emit = defineEmits<{ (event: 'close'): void; (event: 'added'): void }>();
 
@@ -46,11 +49,14 @@ const categories: Array<{ label: string; value: LandedCostCategoryValue }> = [
 const methods: Array<{ label: string; value: LandedCostMethodValue }> = [
   { label: 'By quantity — মালের পরিমাণ অনুযায়ী', value: 'BY_QTY' },
   { label: 'By value — দামের অনুপাতে', value: 'BY_VALUE' },
+  { label: 'Manual — নিজে ভাগ করুন', value: 'MANUAL' },
 ];
 
 const category = ref<LandedCostCategoryValue>('TRANSPORT');
 const method = ref<LandedCostMethodValue>(DEFAULT_LANDED_COST_METHOD.TRANSPORT);
 const amountTaka = ref(0);
+const description = ref('');
+const manual = ref<number[]>([]);
 /** See the planner: a `null` option value cannot be matched, so it draws blank. */
 const ON_ACCOUNT = 'ON_ACCOUNT';
 const paidAccountCode = ref<string>(ON_ACCOUNT);
@@ -83,6 +89,8 @@ watch(
     category.value = 'TRANSPORT';
     method.value = DEFAULT_LANDED_COST_METHOD.TRANSPORT;
     amountTaka.value = 0;
+    description.value = '';
+    manual.value = props.purchaseLines.map(() => 0);
     paidAccountCode.value = ON_ACCOUNT;
     businessDate.value = '';
     error.value = null;
@@ -99,6 +107,18 @@ async function save(): Promise<void> {
     error.value = { code: 'VALIDATION_FAILED', message: 'Enter how much the extra cost was' };
     return;
   }
+  if (category.value === 'OTHER' && description.value.trim() === '') {
+    error.value = { code: 'VALIDATION_FAILED', message: 'Describe what this Other cost was for' };
+    return;
+  }
+  const allocatedMinor = manual.value.reduce((sum, amount) => sum + Math.round((amount ?? 0) * 100), 0);
+  if (method.value === 'MANUAL' && allocatedMinor !== amountMinor) {
+    error.value = {
+      code: 'VALIDATION_FAILED',
+      message: `Manual allocations must equal the cost. Remaining: ${((amountMinor - allocatedMinor) / 100).toFixed(2)}`,
+    };
+    return;
+  }
 
   busy.value = true;
   error.value = null;
@@ -112,6 +132,14 @@ async function save(): Promise<void> {
         amountMinor,
         paidAccountCode: paidAccountCode.value === ON_ACCOUNT ? null : paidAccountCode.value,
         note: null,
+        description: category.value === 'OTHER' ? description.value.trim() : null,
+        manualAllocations:
+          method.value === 'MANUAL'
+            ? props.purchaseLines.map((line, index) => ({
+                purchaseLineId: line.id,
+                amountMinor: Math.round((manual.value[index] ?? 0) * 100),
+              }))
+            : [],
         ...(businessDate.value === '' ? {} : { businessDate: businessDate.value }),
       },
       operationId.value,
@@ -126,6 +154,12 @@ async function save(): Promise<void> {
     busy.value = false;
   }
 }
+
+const manualRemainingMinor = computed(
+  () =>
+    Math.round(amountTaka.value * 100) -
+    manual.value.reduce((sum, amount) => sum + Math.round((amount ?? 0) * 100), 0),
+);
 </script>
 
 <template>
@@ -154,6 +188,34 @@ async function save(): Promise<void> {
             append-to="self"
             fluid
           />
+        </div>
+
+        <div v-if="category === 'OTHER'" class="field full">
+          <label for="cost-description">Description <span class="label-bn">কীসের খরচ</span></label>
+          <InputText
+            id="cost-description"
+            v-model="description"
+            maxlength="300"
+            placeholder="Required for Other"
+            fluid
+          />
+        </div>
+
+        <div v-if="method === 'MANUAL'" class="manual full">
+          <div v-for="(line, index) in purchaseLines" :key="line.id" class="manual-line">
+            <label :for="`cost-manual-${line.id}`">{{ line.productName }}</label>
+            <InputNumber
+              v-model="manual[index]"
+              :input-id="`cost-manual-${line.id}`"
+              :min="0"
+              :min-fraction-digits="2"
+              :max-fraction-digits="2"
+              fluid
+            />
+          </div>
+          <div class="remaining" :class="{ done: manualRemainingMinor === 0 }">
+            Remaining <strong>৳{{ (manualRemainingMinor / 100).toFixed(2) }}</strong>
+          </div>
         </div>
 
         <div class="field">
@@ -240,6 +302,35 @@ async function save(): Promise<void> {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sher-space-3);
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.manual {
+  display: grid;
+  gap: var(--sher-space-2);
+  padding: var(--sher-space-2);
+  border: 1px solid var(--sher-border);
+  border-radius: var(--sher-radius);
+}
+
+.manual-line,
+.remaining {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.6fr);
+  align-items: center;
+  gap: var(--sher-space-2);
+}
+
+.remaining {
+  color: var(--sher-danger);
+  font-weight: 600;
+}
+
+.remaining.done {
+  color: var(--sher-success);
 }
 
 @media (max-width: 40rem) {

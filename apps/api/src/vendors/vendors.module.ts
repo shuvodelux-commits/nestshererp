@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import type {
   AccessControl,
+  AddLandedCostService,
   AuditWriter,
+  CreatePurchaseService,
   CreateSaleService,
   IdempotencyStore,
   InventoryRepository,
@@ -12,14 +14,18 @@ import type {
   PeriodGuard,
   ProductRepository,
   ReceiveCustomerPaymentService,
+  SaleRepository,
   SettingsRepository,
+  SerialRepository,
   UnitOfWork,
   VendorStockRepository,
+  VendorProductSettlementService,
   VendorWorkspaceRepository,
 } from '@sher/core-application';
 import {
   VendorIssueService,
   VendorMoneyService,
+  VendorProductSettlementService as VendorProductSettlementServiceClass,
   VendorStockService,
   VendorWorkspaceService,
 } from '@sher/core-application';
@@ -37,11 +43,15 @@ import {
   PARTY_REPOSITORY,
   PERIOD_GUARD,
   PRODUCT_REPOSITORY,
+  SALE_REPOSITORY,
   SETTINGS_REPOSITORY,
+  SERIAL_REPOSITORY,
   UNIT_OF_WORK,
   VENDOR_STOCK_REPOSITORY,
   VENDOR_WORKSPACE_REPOSITORY,
 } from '../infrastructure/tokens';
+import { PurchasingModule } from '../purchasing/purchasing.module';
+import { ADD_LANDED_COST_SERVICE, CREATE_PURCHASE_SERVICE } from '../purchasing/tokens';
 import { CREATE_SALE_SERVICE, RECEIVE_CUSTOMER_PAYMENT_SERVICE } from '../sales/tokens';
 import { SalesModule } from '../sales/sales.module';
 import { VendorStockController } from './vendors.controller';
@@ -49,6 +59,7 @@ import { VendorWorkspaceController } from './vendor-workspace.controller';
 import {
   VENDOR_ISSUE_SERVICE,
   VENDOR_MONEY_SERVICE,
+  VENDOR_PRODUCT_SETTLEMENT_SERVICE,
   VENDOR_STOCK_SERVICE,
   VENDOR_WORKSPACE_SERVICE,
 } from './tokens';
@@ -64,9 +75,54 @@ import {
  * application, and the workspace is a caller of them (A11, A14, R-D).
  */
 @Module({
-  imports: [SalesModule],
+  imports: [SalesModule, PurchasingModule],
   controllers: [VendorStockController, VendorWorkspaceController],
   providers: [
+    {
+      provide: VENDOR_PRODUCT_SETTLEMENT_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        workspace: VendorWorkspaceRepository,
+        sales: SaleRepository,
+        products: ProductRepository,
+        serials: SerialRepository,
+        purchases: CreatePurchaseService,
+        landedCosts: AddLandedCostService,
+        numbering: NumberingService,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): VendorProductSettlementService =>
+        new VendorProductSettlementServiceClass(
+          uow,
+          accessControl,
+          workspace,
+          sales,
+          products,
+          serials,
+          purchases,
+          landedCosts,
+          numbering,
+          audit,
+          outbox,
+          clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        VENDOR_WORKSPACE_REPOSITORY,
+        SALE_REPOSITORY,
+        PRODUCT_REPOSITORY,
+        SERIAL_REPOSITORY,
+        CREATE_PURCHASE_SERVICE,
+        ADD_LANDED_COST_SERVICE,
+        NUMBERING_SERVICE,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
+    },
     {
       provide: VENDOR_STOCK_SERVICE,
       useFactory: (
@@ -77,6 +133,8 @@ import {
         vendors: VendorStockRepository,
         parties: PartyRepository,
         inventory: InventoryRepository,
+        products: ProductRepository,
+        serials: SerialRepository,
         settings: SettingsRepository,
         numbering: NumberingService,
         audit: AuditWriter,
@@ -91,6 +149,8 @@ import {
           vendors,
           parties,
           inventory,
+          products,
+          serials,
           settings,
           numbering,
           audit,
@@ -105,6 +165,8 @@ import {
         VENDOR_STOCK_REPOSITORY,
         PARTY_REPOSITORY,
         INVENTORY_REPOSITORY,
+        PRODUCT_REPOSITORY,
+        SERIAL_REPOSITORY,
         SETTINGS_REPOSITORY,
         NUMBERING_SERVICE,
         AUDIT_WRITER,

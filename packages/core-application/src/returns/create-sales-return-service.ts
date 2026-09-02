@@ -162,6 +162,98 @@ export class CreateSalesReturnService {
         }
       }
 
+      /*
+       * What each line put back into the shop's **own** stock, and what it put
+       * back somewhere else. One line may have been served from the shelf, from
+       * a vendor's consignment and from nothing at all (§5.7) at once; only the
+       * owned and negative parts ever entered the valuation, so only those parts
+       * leave it again. The vendor's goods go back out of the vendor's own lot,
+       * and a serial goes back to the customer it was sold to.
+       */
+      const ownedByLine = new Map<string, { qty: number; costMinor: number }>();
+      const vendorTakes: { lotId: string; qty: number }[] = [];
+      const serialRestores: {
+        unitId: string;
+        status: string;
+        saleId: string | null;
+        saleLineId: string | null;
+        customerPartyId: string | null;
+        soldDate: string | null;
+        customerWarrantyMonths: number | null;
+      }[] = [];
+      for (const line of original.lines) {
+        const origins = original.sourceOrigins.filter(
+          (origin) => origin.saleLineId === line.saleLineId,
+        );
+        if (origins.length === 0) {
+          // Returns taken before migration 0045 have no origin trail, and every
+          // one of them was own stock — which is what that path recorded.
+          ownedByLine.set(line.saleLineId, { qty: line.qty, costMinor: line.costMinor });
+          continue;
+        }
+
+        let ownedQty = 0;
+        let ownedCostMinor = 0;
+        for (const origin of origins) {
+          if (origin.sourceType === 'VENDOR') {
+            if (origin.vendorLotId === null) {
+              throw new AppError(ErrorCode.INTERNAL_ERROR, 'Vendor sale allocation lost its lot');
+            }
+            if (origin.vendorLotRemaining < origin.qty) {
+              throw new AppError(
+                ErrorCode.VALIDATION_FAILED,
+                'Some of these returned goods have been sold again — they are not on the shelf to take back',
+              );
+            }
+            vendorTakes.push({ lotId: origin.vendorLotId, qty: origin.qty });
+          } else {
+            ownedQty = Qty(ownedQty).add(Qty(origin.qty)).raw;
+            ownedCostMinor += stockValueMinor(origin.qty, origin.unitCostUsed);
+          }
+          if (origin.inventoryUnitId !== null && origin.serialPreviousStatus !== null) {
+            serialRestores.push({
+              unitId: origin.inventoryUnitId,
+              status: origin.serialPreviousStatus,
+              saleId: origin.serialSaleId,
+              saleLineId: origin.serialSaleLineId,
+              customerPartyId: origin.serialCustomerPartyId,
+              soldDate: origin.serialSoldDate,
+              customerWarrantyMonths: origin.serialCustomerWarrantyMonths,
+            });
+          }
+        }
+        ownedByLine.set(line.saleLineId, { qty: ownedQty, costMinor: ownedCostMinor });
+      }
+
+      /*
+       * The exact poisha that came back into the valuation is on the return's
+       * own `INVENTORY` line. Recomputing it from unit costs can land a poisha
+       * away when an earlier partial return already took the remainder off the
+       * same allocation, so the recomputed shares decide the split between
+       * products and the stored total decides the sum — the valuation and the
+       * `INVENTORY` account then move by the same number (INV-05).
+       */
+      const ownedTotalMinor = original.journalLines
+        .filter((line) => line.account === 'INVENTORY')
+        .reduce((sum, line) => sum + line.amountMinor, 0);
+      const residualMinor =
+        ownedTotalMinor - [...ownedByLine.values()].reduce((sum, owned) => sum + owned.costMinor, 0);
+      if (residualMinor !== 0) {
+        let largest: { saleLineId: string; qty: number; costMinor: number } | null = null;
+        for (const [saleLineId, owned] of ownedByLine) {
+          if (owned.qty === 0) continue;
+          if (largest === null || owned.costMinor > largest.costMinor) {
+            largest = { saleLineId, ...owned };
+          }
+        }
+        if (largest !== null) {
+          ownedByLine.set(largest.saleLineId, {
+            qty: largest.qty,
+            costMinor: largest.costMinor + residualMinor,
+          });
+        }
+      }
+
       const reversalLines = original.journalLines.map((line) => ({
         id: Ulid.generate(this.clock),
         account: line.account as AccountCode,
@@ -181,10 +273,13 @@ export class CreateSalesReturnService {
         const returned = original.lines
           .filter((line) => line.productId === state.productId)
           .reduce(
-            (totals, line) => ({
-              qty: Qty(totals.qty).add(Qty(line.qty)).raw,
-              valueMinor: totals.valueMinor + line.costMinor,
-            }),
+            (totals, line) => {
+              const owned = ownedByLine.get(line.saleLineId) ?? { qty: 0, costMinor: 0 };
+              return {
+                qty: Qty(totals.qty).add(Qty(owned.qty)).raw,
+                valueMinor: totals.valueMinor + owned.costMinor,
+              };
+            },
             { qty: 0, valueMinor: 0 },
           );
         const qtyAfter = Qty(state.qtyOnHand).subtract(Qty(returned.qty)).raw;
@@ -215,6 +310,8 @@ export class CreateSalesReturnService {
           costMinor: line.costMinor,
           takeBack: line.refills.map((refill) => ({ lotId: refill.lotId, qty: refill.qty })),
         })),
+        vendorTakes,
+        serialRestores,
         costStates,
       });
       if (!ok) {
@@ -288,13 +385,7 @@ export class CreateSalesReturnService {
         );
       }
 
-      /*
-       * Consignment lines are shown on the modal and refused here: the goods
-       * were never the shop's stock (INV-04), so there is no lot of its own to
-       * put them back into and no COGS of its own to unwind.
-       */
-      const own = invoice.lines.filter((line) => line.source === 'OWN_STOCK');
-      const sold: ReturnableLine[] = own.map((line) => ({
+      const sold: ReturnableLine[] = invoice.lines.map((line) => ({
         saleLineId: line.saleLineId,
         productId: line.productId,
         qtySold: line.qtySold,
@@ -354,28 +445,111 @@ export class CreateSalesReturnService {
         guardianName: command.customerGuardianName,
       });
 
-      const journal = salesReturnPosting(totals, {
-        partyId: creditParty.partyId,
-        refundAccount,
-        settledMinor,
-      });
-
       const consumptions = await this.returns.lineConsumptions(tx, ctx, invoice.saleId);
       const already = await this.returns.refillsSoFar(tx, ctx, invoice.saleId);
+      const sourceOrigins = await this.returns.sourceAllocations(tx, ctx, invoice.saleId);
 
       const positions = new Map<
         string,
         { qtyOnHand: number; avgUnitCost: number; costStateId: string; exists: boolean; locationId: string }
       >();
       const lines = [];
+      const vendorReturnCosts = new Map<string, number>();
+      let exactReturnCostMinor = 0;
+      let ownedReturnCostMinor = 0;
       let lineNo = 0;
       for (const line of totals.lines) {
-        const source = own.find((row) => row.saleLineId === line.saleLineId);
+        const source = invoice.lines.find((row) => row.saleLineId === line.saleLineId);
         if (source === undefined) {
           throw new AppError(ErrorCode.VALIDATION_FAILED, 'That item is not on this invoice');
         }
 
-        if (!positions.has(source.productId)) {
+        const durable = sourceOrigins.filter((origin) => origin.saleLineId === line.saleLineId);
+        let left = line.qty;
+        let ownedPositionQty = 0;
+        let ownedCostMinor = 0;
+        let lineCostMinor = 0;
+        const refills: LotRefill[] = [];
+        const vendorRestorations = new Map<string, number>();
+        const sourceReversals: { id: string; sourceAllocationId: string; qty: number }[] = [];
+        const serialUnitIds: string[] = [];
+
+        for (const origin of durable) {
+          if (left === 0) break;
+          const available = Qty(origin.qty).subtract(Qty(origin.reversedQty)).raw;
+          if (available <= 0) continue;
+          const qty = Math.min(left, available);
+          const costMinor =
+            qty === available
+              ? stockValueMinor(origin.qty, origin.unitCostUsed) -
+                stockValueMinor(origin.reversedQty, origin.unitCostUsed)
+              : stockValueMinor(qty, origin.unitCostUsed);
+          lineCostMinor += costMinor;
+          sourceReversals.push({
+            id: Ulid.generate(this.clock),
+            sourceAllocationId: origin.id,
+            qty,
+          });
+          if (origin.inventoryUnitId !== null) serialUnitIds.push(origin.inventoryUnitId);
+          if (origin.sourceType === 'OWNED') {
+            if (origin.ownedLotId === null) {
+              throw new AppError(ErrorCode.INTERNAL_ERROR, 'Owned sale allocation lost its lot');
+            }
+            ownedPositionQty = Qty(ownedPositionQty).add(Qty(qty)).raw;
+            ownedCostMinor += costMinor;
+            refills.push({ lotId: origin.ownedLotId, qty, unitCostUsed: origin.unitCostUsed });
+          } else if (origin.sourceType === 'NEGATIVE') {
+            ownedPositionQty = Qty(ownedPositionQty).add(Qty(qty)).raw;
+            ownedCostMinor += costMinor;
+          } else {
+            if (origin.vendorLotId === null || origin.vendorPartyId === null) {
+              throw new AppError(ErrorCode.INTERNAL_ERROR, 'Vendor sale allocation lost its origin');
+            }
+            vendorRestorations.set(
+              origin.vendorLotId,
+              (vendorRestorations.get(origin.vendorLotId) ?? 0) + qty,
+            );
+            vendorReturnCosts.set(
+              origin.vendorPartyId,
+              (vendorReturnCosts.get(origin.vendorPartyId) ?? 0) + costMinor,
+            );
+          }
+          left = Qty(left).subtract(Qty(qty)).raw;
+        }
+
+        if (durable.length === 0) {
+          // Historical invoices predate migration 0045 and keep their existing
+          // exact-owned-lot behaviour.
+          if (source.source !== 'OWN_STOCK') {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'This historical vendor-sourced line cannot be returned automatically',
+            );
+          }
+          ownedPositionQty = line.qty;
+          ownedCostMinor = line.costMinor;
+          lineCostMinor = line.costMinor;
+          refills.push(
+            ...refillLots(
+              line.qty,
+              consumptions
+                .filter((row) => row.saleLineId === line.saleLineId)
+                .map((row) => ({ lotId: row.lotId, qty: row.qty, unitCostUsed: row.unitCostUsed })),
+              already
+                .filter((row) => row.saleLineId === line.saleLineId)
+                .map((row) => ({ lotId: row.lotId, qty: row.qty, unitCostUsed: 0 })),
+            ),
+          );
+          left = 0;
+        }
+        if (left !== 0) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'More is being returned than remains from this line');
+        }
+
+        exactReturnCostMinor += lineCostMinor;
+        ownedReturnCostMinor += ownedCostMinor;
+
+        if (ownedPositionQty > 0 && !positions.has(source.productId)) {
           const stored = await this.inventory.findStockPosition(tx, ctx, source.productId);
           positions.set(source.productId, {
             qtyOnHand: stored?.qtyOnHand ?? 0,
@@ -386,22 +560,12 @@ export class CreateSalesReturnService {
           });
         }
         const position = positions.get(source.productId);
-        if (position !== undefined) {
+        if (position !== undefined && ownedPositionQty > 0) {
           positions.set(source.productId, {
             ...position,
-            qtyOnHand: Qty(position.qtyOnHand).add(Qty(line.qty)).raw,
+            qtyOnHand: Qty(position.qtyOnHand).add(Qty(ownedPositionQty)).raw,
           });
         }
-
-        const refills: readonly LotRefill[] = refillLots(
-          line.qty,
-          consumptions
-            .filter((row) => row.saleLineId === line.saleLineId)
-            .map((row) => ({ lotId: row.lotId, qty: row.qty, unitCostUsed: row.unitCostUsed })),
-          already
-            .filter((row) => row.saleLineId === line.saleLineId)
-            .map((row) => ({ lotId: row.lotId, qty: row.qty, unitCostUsed: 0 })),
-        );
 
         lineNo += 1;
         lines.push({
@@ -412,11 +576,26 @@ export class CreateSalesReturnService {
           locationId: source.locationId,
           qty: line.qty,
           valueMinor: line.valueMinor,
-          costMinor: line.costMinor,
+          costMinor: lineCostMinor,
           movementId: Ulid.generate(this.clock),
           refills,
+          vendorRestorations: [...vendorRestorations].map(([lotId, qty]) => ({ lotId, qty })),
+          sourceReversals,
+          serialUnitIds,
         });
       }
+
+      const exactTotals = { ...totals, returnCostMinor: exactReturnCostMinor };
+      const journal = salesReturnPosting(exactTotals, {
+        partyId: creditParty.partyId,
+        refundAccount,
+        settledMinor,
+        ownedReturnCostMinor,
+        vendorReturns: [...vendorReturnCosts].map(([vendorPartyId, costMinor]) => ({
+          vendorPartyId,
+          costMinor,
+        })),
+      });
 
       const returnId = Ulid.generate(this.clock);
       const number = await this.numbering.allocate(
@@ -439,7 +618,7 @@ export class CreateSalesReturnService {
         refundMinor: totals.refundMinor,
         creditMinor: totals.creditMinor,
         settledMinor,
-        cogsMinor: totals.returnCostMinor,
+        cogsMinor: exactReturnCostMinor,
         refundAccountCode: refundAccount,
         approvedBy,
         businessDate,

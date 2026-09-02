@@ -323,7 +323,7 @@ export const landedCostCategorySchema = z.enum([
 ]);
 export type LandedCostCategoryValue = z.infer<typeof landedCostCategorySchema>;
 
-export const landedCostMethodSchema = z.enum(['BY_VALUE', 'BY_QTY']);
+export const landedCostMethodSchema = z.enum(['BY_VALUE', 'BY_QTY', 'MANUAL']);
 export type LandedCostMethodValue = z.infer<typeof landedCostMethodSchema>;
 
 /** A named cost carried on the bill itself, entered with it. */
@@ -332,8 +332,20 @@ export const landedCostLineRequestSchema = z
     category: landedCostCategorySchema,
     method: landedCostMethodSchema,
     amountMinor: z.number().int().positive(),
+    description: z.string().trim().max(300).nullable().default(null),
+    manualAllocations: z
+      .array(
+        z.object({ lineIndex: z.number().int().nonnegative(), amountMinor: z.number().int().nonnegative() }).strict(),
+      )
+      .max(200)
+      .default([]),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.category === 'OTHER' && (value.description === null || value.description === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['description'], message: 'Description is required for Other' });
+    }
+  });
 export type LandedCostLineRequest = z.infer<typeof landedCostLineRequestSchema>;
 
 /**
@@ -348,9 +360,21 @@ export const addLandedCostRequestSchema = z
     /** Where the money went out of, or null to leave it owed to the supplier. */
     paidAccountCode: z.string().max(60).nullable().default(null),
     note: z.string().trim().max(300).nullable().default(null),
+    description: z.string().trim().max(300).nullable().default(null),
+    manualAllocations: z
+      .array(
+        z.object({ purchaseLineId: ULID, amountMinor: z.number().int().nonnegative() }).strict(),
+      )
+      .max(200)
+      .default([]),
     businessDate: BUSINESS_DATE.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.category === 'OTHER' && (value.description === null || value.description === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['description'], message: 'Description is required for Other' });
+    }
+  });
 export type AddLandedCostRequest = z.infer<typeof addLandedCostRequestSchema>;
 
 export const landedCostResponseSchema = z
@@ -363,6 +387,8 @@ export const landedCostResponseSchema = z
     cogsShareMinor: z.number().int(),
     businessDate: BUSINESS_DATE,
     addedLater: z.boolean(),
+    description: z.string().nullable().default(null),
+    allocations: z.array(z.object({ purchaseLineId: ULID, amountMinor: z.number().int() }).strict()).default([]),
   })
   .strict();
 export type LandedCostResponse = z.infer<typeof landedCostResponseSchema>;

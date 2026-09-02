@@ -71,6 +71,14 @@ export interface VendorStockRepository {
     options: { readonly vendorPartyId?: string | undefined; readonly limit: number },
   ): Promise<readonly VendorReceiptRow[]>;
 
+  /** Recorded sellable stock for one vendor/product, FIFO/FEFO order. */
+  listSellableLots(
+    tx: Tx,
+    ctx: TenantContext,
+    vendorPartyId: string,
+    productId: string,
+  ): Promise<readonly VendorReceiptRow[]>;
+
   findReceiptByOperationId(
     tx: Tx,
     ctx: TenantContext,

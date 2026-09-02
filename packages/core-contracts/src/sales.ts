@@ -24,6 +24,27 @@ export const saleSourceSchema = z.union([
 ]);
 export type SaleSource = z.infer<typeof saleSourceSchema>;
 
+export const saleInventoryAllocationSchema = z
+  .object({
+    sourceType: z.enum(['OWNED', 'VENDOR', 'NEGATIVE']),
+    qty: z.number().int().positive(),
+    vendorPartyId: ULID.nullable().default(null),
+    /** Exact units determine quantity for serialized products. */
+    serialUnitIds: z.array(ULID).max(200).default([]),
+  })
+  .strict();
+export type SaleInventoryAllocation = z.infer<typeof saleInventoryAllocationSchema>;
+
+export const saleInventoryAllocationResponseSchema = saleInventoryAllocationSchema.extend({
+  id: ULID,
+  ownedLotId: ULID.nullable(),
+  vendorStockReceiptId: ULID.nullable(),
+  vendorLotId: ULID.nullable(),
+  inventoryUnitId: ULID.nullable(),
+  serialNo: z.string().nullable(),
+  unitCostUsed: z.number().int().nullable(),
+});
+
 export const saleLineRequestSchema = z
   .object({
     productId: ULID,
@@ -35,6 +56,8 @@ export const saleLineRequestSchema = z
     /** Required for a consignment line, refused on an own-stock one (§5.7). */
     vendorPartyId: ULID.nullable().default(null),
     vendorUnitCostMinor: z.number().int().nonnegative().nullable().default(null),
+    /** Durable mixed-origin allocation. Empty keeps old clients backward-compatible. */
+    allocations: z.array(saleInventoryAllocationSchema).max(202).default([]),
   })
   .strict();
 export type SaleLineRequest = z.infer<typeof saleLineRequestSchema>;
@@ -86,6 +109,8 @@ export const createSaleRequestSchema = z
     notes: z.string().trim().max(500).nullable().default(null),
     sourceQuotationId: ULID.nullable().default(null),
     sourceOrderId: ULID.nullable().default(null),
+    correctionOf: ULID.nullable().default(null),
+    correctionVersion: z.number().int().positive().nullable().default(null),
   })
   .strict();
 export type CreateSaleRequest = z.infer<typeof createSaleRequestSchema>;
@@ -108,6 +133,8 @@ export const saleLineResponseSchema = z
     vendorPartyId: ULID.nullable(),
     vendorName: z.string().nullable(),
     isProvisionalCost: z.boolean(),
+    tracksSerial: z.boolean(),
+    allocations: z.array(saleInventoryAllocationResponseSchema).default([]),
     /* Cost, and therefore absent without `inventory.cost.view` (UI-40, R-E8). */
     costMinor: z.number().int().optional(),
   })
@@ -359,6 +386,7 @@ export const posProductSchema = z
     /** The customer group's price when dealer pricing is on and one applies. */
     groupPriceMinor: z.number().int().nullable(),
     qtyOnHand: z.number().int(),
+    sellableOwnedQty: z.number().int().nonnegative(),
     minStockQty: z.number().int(),
     stockStatus: z.union([
       z.literal('IN_STOCK'),
@@ -367,6 +395,7 @@ export const posProductSchema = z
       z.literal('NEGATIVE_STOCK'),
     ]),
     hasImage: z.boolean(),
+    tracksSerial: z.boolean(),
     /**
      * The precomputed, normalised line this product is found by (0026).
      *
@@ -385,6 +414,7 @@ export const posProductListSchema = z
   .object({
     items: z.array(posProductSchema),
     nextCursor: z.string().nullable(),
+    negativeStockPolicy: z.enum(['BLOCK', 'WARN', 'ALLOW']),
   })
   .strict();
 export type PosProductList = z.infer<typeof posProductListSchema>;

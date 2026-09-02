@@ -35,6 +35,8 @@ export interface PurchaseDraft {
   readonly lines: readonly PurchaseLineDraft[];
   readonly discountMinor: number;
   readonly extraCostMinor: number;
+  /** Exact aggregate landed-cost share per line; absent for legacy clients. */
+  readonly extraCostShares?: readonly number[] | undefined;
   /** The "Paid now" box. Zero is a bill entirely on credit. */
   readonly paidMinor: number;
 }
@@ -117,6 +119,15 @@ export function rejectPurchase(draft: PurchaseDraft): PurchaseRejection | null {
   if (draft.discountMinor > itemsTotal) return 'DISCOUNT_EXCEEDS_ITEMS';
 
   const grandTotal = itemsTotal - draft.discountMinor + draft.extraCostMinor;
+  if (draft.extraCostShares !== undefined) {
+    if (
+      draft.extraCostShares.length !== draft.lines.length ||
+      draft.extraCostShares.some((share) => !Number.isSafeInteger(share) || share < 0) ||
+      draft.extraCostShares.reduce((sum, share) => sum + share, 0) !== draft.extraCostMinor
+    ) {
+      return 'AMOUNT_NOT_INTEGER_MINOR';
+    }
+  }
   // A bill worth nothing has nothing to post: `rejectEntry` would refuse the
   // zero lines it produces, and a lot with no value cannot be sold from.
   if (grandTotal <= 0) return 'PURCHASE_HAS_NO_VALUE';
@@ -142,7 +153,10 @@ export function purchaseCosts(draft: PurchaseDraft): PurchaseCosts {
    */
   const weights = itemsTotalMinor > 0 ? lineTotals : draft.lines.map((line) => line.qty);
   const discountShares = shareOut(draft.discountMinor, weights, 'Purchase discount');
-  const extraShares = shareOut(draft.extraCostMinor, weights, 'Purchase extra cost');
+  const extraShares =
+    draft.extraCostShares === undefined
+      ? shareOut(draft.extraCostMinor, weights, 'Purchase extra cost')
+      : draft.extraCostShares;
 
   const lines = draft.lines.map((line, index) => {
     const lineTotalMinor = lineTotals[index] ?? 0;

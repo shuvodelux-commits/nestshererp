@@ -48,6 +48,9 @@ export const serialUnitResponseSchema = z
     receivedDate: BUSINESS_DATE,
     soldDate: BUSINESS_DATE.nullable(),
     supplierName: z.string().nullable(),
+    vendorPartyId: ULID.nullable(),
+    vendorStockReceiptId: ULID.nullable(),
+    vendorLotId: ULID.nullable(),
     customerName: z.string().nullable(),
     invoiceNumber: z.string().nullable(),
     /** Both ends, already worked out: the customer's from the sale, the shop's from the delivery. */

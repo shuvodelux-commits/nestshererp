@@ -14,7 +14,9 @@ import type {
   ProductRepository,
   SaleRepository,
   SettingsRepository,
+  SerialRepository,
   UnitOfWork,
+  VendorStockRepository,
 } from '@sher/core-application';
 import {
   CancelSaleService,
@@ -41,7 +43,9 @@ import {
   PRODUCT_REPOSITORY,
   SALE_REPOSITORY,
   SETTINGS_REPOSITORY,
+  SERIAL_REPOSITORY,
   UNIT_OF_WORK,
+  VENDOR_STOCK_REPOSITORY,
 } from '../infrastructure/tokens';
 import { PartiesModule } from '../parties/parties.module';
 import { MANAGE_PARTIES_SERVICE } from '../parties/tokens';
@@ -80,6 +84,8 @@ import {
         partyService: ManagePartiesService,
         products: ProductRepository,
         inventory: InventoryRepository,
+        serials: SerialRepository,
+        vendorStock: VendorStockRepository,
         money: MoneyRepository,
         sales: SaleRepository,
         settings: SettingsRepository,
@@ -87,6 +93,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        cancellations: CancelSaleService,
       ): CreateSaleService =>
         new CreateSaleService(
           uow,
@@ -97,6 +104,8 @@ import {
           partyService,
           products,
           inventory,
+          serials,
+          vendorStock,
           money,
           sales,
           settings,
@@ -104,6 +113,7 @@ import {
           audit,
           outbox,
           clock,
+          cancellations,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -114,6 +124,8 @@ import {
         MANAGE_PARTIES_SERVICE,
         PRODUCT_REPOSITORY,
         INVENTORY_REPOSITORY,
+        SERIAL_REPOSITORY,
+        VENDOR_STOCK_REPOSITORY,
         MONEY_REPOSITORY,
         SALE_REPOSITORY,
         SETTINGS_REPOSITORY,
@@ -121,6 +133,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        CANCEL_SALE_SERVICE,
       ],
     },
     {

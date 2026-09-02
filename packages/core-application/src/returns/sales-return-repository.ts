@@ -60,6 +60,19 @@ export interface LineConsumptionRow {
   readonly unitCostUsed: number;
 }
 
+export interface ReturnableSourceAllocationRow {
+  readonly id: string;
+  readonly saleLineId: string;
+  readonly sourceType: 'OWNED' | 'VENDOR' | 'NEGATIVE';
+  readonly qty: number;
+  readonly reversedQty: number;
+  readonly ownedLotId: string | null;
+  readonly vendorPartyId: string | null;
+  readonly vendorLotId: string | null;
+  readonly inventoryUnitId: string | null;
+  readonly unitCostUsed: number;
+}
+
 export interface NewSalesReturnLine {
   readonly id: string;
   readonly lineNo: number;
@@ -72,6 +85,13 @@ export interface NewSalesReturnLine {
   readonly movementId: string;
   /** Which lots this quantity goes back into, and at what cost. */
   readonly refills: readonly { readonly lotId: string; readonly qty: number; readonly unitCostUsed: number }[];
+  readonly vendorRestorations: readonly { readonly lotId: string; readonly qty: number }[];
+  readonly sourceReversals: readonly {
+    readonly id: string;
+    readonly sourceAllocationId: string;
+    readonly qty: number;
+  }[];
+  readonly serialUnitIds: readonly string[];
 }
 
 export interface NewSalesReturn {
@@ -192,6 +212,7 @@ export interface SalesReturnForReversal {
     readonly partyId: string | null;
   }[];
   readonly lines: readonly {
+    readonly saleLineId: string;
     readonly productId: string;
     readonly locationId: string;
     readonly qty: number;
@@ -203,6 +224,23 @@ export interface SalesReturnForReversal {
       /** What is in that lot now — less than `qty` means it has been re-sold. */
       readonly lotRemaining: number;
     }[];
+  }[];
+  readonly sourceOrigins: readonly {
+    readonly saleLineId: string;
+    readonly sourceType: 'OWNED' | 'VENDOR' | 'NEGATIVE';
+    readonly qty: number;
+    readonly ownedLotId: string | null;
+    readonly vendorLotId: string | null;
+    /** What is in that vendor lot now — the vendor mirror of `lotRemaining`. */
+    readonly vendorLotRemaining: number;
+    readonly inventoryUnitId: string | null;
+    readonly unitCostUsed: number;
+    readonly serialPreviousStatus: string | null;
+    readonly serialSaleId: string | null;
+    readonly serialSaleLineId: string | null;
+    readonly serialCustomerPartyId: string | null;
+    readonly serialSoldDate: string | null;
+    readonly serialCustomerWarrantyMonths: number | null;
   }[];
   readonly costStates: readonly {
     readonly id: string;
@@ -235,6 +273,16 @@ export interface SalesReturnReversal {
     readonly costMinor: number;
     readonly takeBack: readonly { readonly lotId: string; readonly qty: number }[];
   }[];
+  readonly vendorTakes: readonly { readonly lotId: string; readonly qty: number }[];
+  readonly serialRestores: readonly {
+    readonly unitId: string;
+    readonly status: string;
+    readonly saleId: string | null;
+    readonly saleLineId: string | null;
+    readonly customerPartyId: string | null;
+    readonly soldDate: string | null;
+    readonly customerWarrantyMonths: number | null;
+  }[];
   readonly costStates: readonly {
     readonly id: string;
     readonly exists: boolean;
@@ -262,6 +310,11 @@ export interface SalesReturnRepository {
   findReturnableInvoice(tx: Tx, ctx: TenantContext, saleId: string): Promise<ReturnableInvoiceRow | null>;
   /** The lots those lines consumed, in the order they were consumed. */
   lineConsumptions(tx: Tx, ctx: TenantContext, saleId: string): Promise<readonly LineConsumptionRow[]>;
+  sourceAllocations(
+    tx: Tx,
+    ctx: TenantContext,
+    saleId: string,
+  ): Promise<readonly ReturnableSourceAllocationRow[]>;
   /** What each lot has already had put back, so a second return cannot overfill it. */
   refillsSoFar(
     tx: Tx,

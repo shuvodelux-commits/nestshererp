@@ -1,12 +1,14 @@
 import {
+  allocateLandedCost,
   averageAfterReceipt,
   purchaseCosts,
   purchasePosting,
   rejectEntry,
+  rejectLandedCost,
   rejectPurchase,
   stockValueMinor,
 } from '@sher/core-domain';
-import type { AccountCode, PurchaseRejection } from '@sher/core-domain';
+import type { AccountCode, LandedCostMethod, PurchaseRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { PurchaseResponse } from '@sher/core-contracts';
 import { Money, Qty, Ulid } from '@sher/shared-utils';
@@ -61,6 +63,13 @@ export interface CreatePurchaseCommand {
   readonly dueDate: string | null;
   readonly lines: readonly PurchaseLineInput[];
   readonly discountMinor: number;
+  readonly landedCosts?: readonly {
+    readonly category: string;
+    readonly method: LandedCostMethod;
+    readonly amountMinor: number;
+    readonly description: string | null;
+    readonly manualAllocations: readonly { readonly lineIndex: number; readonly amountMinor: number }[];
+  }[] | undefined;
   readonly extraCostMinor: number;
   readonly paidMinor: number;
   readonly paidAccountCode: string | null;
@@ -79,6 +88,8 @@ export interface CreatePurchaseCommand {
   readonly correctionOf: string | null;
   /** The supplier order being converted, when the bill came from one. */
   readonly supplierOrderId?: string | null | undefined;
+  /** Internal reuse: receive owned stock from a party whose role is Vendor. */
+  readonly vendorSettlement?: boolean | undefined;
 }
 
 /**
@@ -266,6 +277,46 @@ export class CreatePurchaseService {
   }
 
   async create(command: CreatePurchaseCommand): Promise<PurchaseResponse> {
+    return this.uow.run(command.ctx, (tx) => this.createWithin(tx, command));
+  }
+
+  /** Authoritative purchase writer reused inside another Class-T transaction. */
+  async createWithin(tx: Tx, command: CreatePurchaseCommand): Promise<PurchaseResponse> {
+    const costTargets = command.lines.map((line, index) => ({
+      purchaseLineId: String(index),
+      qty: line.qty,
+      lineTotalMinor: Money(line.unitPriceMinor).multiply(Qty(line.qty)).minor,
+    }));
+    const namedCosts = (command.landedCosts ?? []).map((cost) => {
+      if (cost.category === 'OTHER' && (cost.description ?? '').trim() === '') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Describe what the Other landed cost was for');
+      }
+      const manual = new Map(cost.manualAllocations.map((row) => [row.lineIndex, row.amountMinor]));
+      const targets = costTargets.map((target, index) => ({
+        ...target,
+        ...(cost.method === 'MANUAL' ? { manualShareMinor: manual.get(index) } : {}),
+      }));
+      const rejected = rejectLandedCost(cost.amountMinor, targets, cost.method);
+      if (rejected !== null) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          rejected === 'LANDED_COST_MANUAL_ALLOCATION_MISMATCH'
+            ? 'Manual landed-cost allocations must add up exactly to the cost amount'
+            : 'Enter a valid landed-cost allocation for every purchase line',
+        );
+      }
+      return { ...cost, shares: allocateLandedCost(cost.amountMinor, targets, cost.method) };
+    });
+    const legacyShares =
+      command.extraCostMinor === 0
+        ? costTargets.map((target) => ({ purchaseLineId: target.purchaseLineId, shareMinor: 0 }))
+        : allocateLandedCost(command.extraCostMinor, costTargets, 'BY_VALUE');
+    const namedTotal = namedCosts.reduce((sum, cost) => sum + cost.amountMinor, 0);
+    const aggregateShares = costTargets.map(
+      (_target, index) =>
+        (legacyShares[index]?.shareMinor ?? 0) +
+        namedCosts.reduce((sum, cost) => sum + (cost.shares[index]?.shareMinor ?? 0), 0),
+    );
     const draft = {
       lines: command.lines.map((line) => ({
         productId: line.productId,
@@ -273,7 +324,8 @@ export class CreatePurchaseService {
         unitPriceMinor: line.unitPriceMinor,
       })),
       discountMinor: command.discountMinor,
-      extraCostMinor: command.extraCostMinor,
+      extraCostMinor: command.extraCostMinor + namedTotal,
+      extraCostShares: aggregateShares,
       paidMinor: command.paidMinor,
     };
     const rejection = rejectPurchase(draft);
@@ -285,12 +337,12 @@ export class CreatePurchaseService {
       command.dueDate,
       command.lines,
       command.discountMinor,
+      command.landedCosts ?? [],
       command.extraCostMinor,
       command.paidMinor,
       command.paidAccountCode,
     ]);
 
-    return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
       await this.access.require(
         tx,
@@ -337,8 +389,16 @@ export class CreatePurchaseService {
 
       const supplier = await this.parties.findById(tx, ctx, command.supplierPartyId);
       if (supplier === null) throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
-      if (!supplier.roles.includes('SUPPLIER')) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, `“${supplier.name}” is not a supplier`);
+      if (
+        !supplier.roles.includes('SUPPLIER') &&
+        !(command.vendorSettlement === true && supplier.roles.includes('VENDOR'))
+      ) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          command.vendorSettlement === true
+            ? `“${supplier.name}” is not a vendor`
+            : `“${supplier.name}” is not a supplier`,
+        );
       }
       if (supplier.status === 'INACTIVE') {
         throw new AppError(
@@ -522,6 +582,19 @@ export class CreatePurchaseService {
         journalEntryId: Ulid.generate(this.clock),
         journalLines: posting.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
         lines: purchaseLines,
+        landedCosts: namedCosts.map((cost, costIndex) => ({
+          id: Ulid.generate(this.clock),
+          lineNo: costIndex + 1,
+          category: cost.category,
+          method: cost.method,
+          amountMinor: cost.amountMinor,
+          description: cost.description,
+          allocations: cost.shares.map((share, lineIndex) => ({
+            id: Ulid.generate(this.clock),
+            purchaseLineId: purchaseLines[lineIndex]?.id ?? '',
+            amountMinor: share.shareMinor,
+          })),
+        })),
       });
 
       /*
@@ -568,7 +641,6 @@ export class CreatePurchaseService {
         response,
       });
       return response;
-    });
   }
 
   private async detail(

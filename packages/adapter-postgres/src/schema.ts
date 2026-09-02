@@ -826,6 +826,32 @@ export const saleLines = pgTable('sale_lines', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });
 
+/** Immutable origin facts for a mixed-source sale line (migration 0045). */
+export const saleLineSourceAllocations = pgTable('sale_line_source_allocations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  saleId: char('sale_id', { length: 26 }).notNull(), saleLineId: char('sale_line_id', { length: 26 }).notNull(),
+  sourceType: text('source_type').notNull(), qty: bigint('qty', { mode: 'number' }).notNull(),
+  ownedLotId: char('owned_lot_id', { length: 26 }), vendorPartyId: char('vendor_party_id', { length: 26 }),
+  vendorStockReceiptId: char('vendor_stock_receipt_id', { length: 26 }),
+  vendorLotId: char('vendor_lot_id', { length: 26 }), inventoryUnitId: char('inventory_unit_id', { length: 26 }),
+  unitCostUsed: bigint('unit_cost_used', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+/** Append-only proof that an exact origin allocation was restored. */
+export const saleSourceAllocationReversals = pgTable('sale_source_allocation_reversals', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  sourceAllocationId: char('source_allocation_id', { length: 26 }).notNull(),
+  sourceDocumentType: text('source_document_type').notNull(), sourceDocumentId: char('source_document_id', { length: 26 }).notNull(),
+  qty: bigint('qty', { mode: 'number' }).notNull(),
+  serialPreviousStatus: text('serial_previous_status'),
+  serialSaleId: char('serial_sale_id', { length: 26 }), serialSaleLineId: char('serial_sale_line_id', { length: 26 }),
+  serialCustomerPartyId: char('serial_customer_party_id', { length: 26 }),
+  serialSoldDate: date('serial_sold_date', { mode: 'string' }),
+  serialCustomerWarrantyMonths: integer('serial_customer_warranty_months'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
 export const salePayments = pgTable('sale_payments', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   saleId: char('sale_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
@@ -1184,9 +1210,19 @@ export const purchaseLandedCosts = pgTable('purchase_landed_costs', {
   journalEntryId: char('journal_entry_id', { length: 26 }),
   businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }),
+  description: text('description'), paidAccountCode: text('paid_account_code'),
+  sessionId: char('session_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(),
+});
+
+export const purchaseLandedCostAllocations = pgTable('purchase_landed_cost_allocations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  landedCostId: char('landed_cost_id', { length: 26 }).notNull(),
+  purchaseLineId: char('purchase_line_id', { length: 26 }).notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });
 
 // Serialised units (migration 0033). A unit is not stock: quantity and value
@@ -1204,6 +1240,9 @@ export const inventoryUnits = pgTable('inventory_units', {
   customerPartyId: char('customer_party_id', { length: 26 }),
   soldDate: date('sold_date', { mode: 'string' }),
   customerWarrantyMonths: integer('customer_warranty_months'),
+  vendorPartyId: char('vendor_party_id', { length: 26 }),
+  vendorStockReceiptId: char('vendor_stock_receipt_id', { length: 26 }),
+  vendorLotId: char('vendor_lot_id', { length: 26 }),
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
@@ -1475,4 +1514,27 @@ export const vendorProductIssueReturns = pgTable('vendor_product_issue_returns',
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
   version: integer('version').notNull(),
+});
+
+/** Products received from a vendor and applied against that vendor's AR (0045). */
+export const vendorProductSettlements = pgTable('vendor_product_settlements', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  settlementNumber: text('settlement_number').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
+  vendorPartyId: char('vendor_party_id', { length: 26 }).notNull(), purchaseId: char('purchase_id', { length: 26 }).notNull(),
+  grossProductMinor: bigint('gross_product_minor', { mode: 'number' }).notNull(),
+  discountMinor: bigint('discount_minor', { mode: 'number' }).notNull(),
+  netProductMinor: bigint('net_product_minor', { mode: 'number' }).notNull(),
+  landedCostMinor: bigint('landed_cost_minor', { mode: 'number' }).notNull(),
+  receivableBeforeMinor: bigint('receivable_before_minor', { mode: 'number' }).notNull(),
+  receivableAfterMinor: bigint('receivable_after_minor', { mode: 'number' }).notNull(),
+  journalEntryId: char('journal_entry_id', { length: 26 }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+});
+
+export const vendorReceivableSettlementAllocations = pgTable('vendor_receivable_settlement_allocations', {
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
+  settlementId: char('settlement_id', { length: 26 }).notNull(), saleId: char('sale_id', { length: 26 }).notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });

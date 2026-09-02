@@ -292,5 +292,6 @@ import {
       ],
     },
   ],
+  exports: [CREATE_PURCHASE_SERVICE, ADD_LANDED_COST_SERVICE],
 })
 export class PurchasingModule {}

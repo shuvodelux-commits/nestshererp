@@ -261,6 +261,24 @@ export class PostgresVendorStockRepository implements VendorStockRepository {
     return rows.rows.map(toReceipt);
   }
 
+  async listSellableLots(
+    tx: Tx,
+    ctx: TenantContext,
+    vendorPartyId: string,
+    productId: string,
+  ): Promise<readonly VendorReceiptRow[]> {
+    const rows = await txOf(tx).execute<RawReceipt>(sql`
+      ${RECEIPT_SELECT}
+       WHERE vsr.tenant_id = ${ctx.tenantId}
+         AND vsr.vendor_party_id = ${vendorPartyId}
+         AND vsr.product_id = ${productId}
+         AND il.qty_remaining > 0
+         AND il.status = 'OPEN'
+       ORDER BY il.expiry_date ASC NULLS LAST, vsr.business_date ASC, vsr.created_at ASC, vsr.id ASC
+    `);
+    return rows.rows.map(toReceipt);
+  }
+
   async findReceiptByOperationId(
     tx: Tx,
     ctx: TenantContext,

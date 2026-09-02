@@ -10,6 +10,7 @@ import type {
   SaleLineRequest,
   SalePaymentRequest,
   SaleResponse,
+  SerialUnitResponse,
 } from '@sher/core-contracts';
 import { searchProducts, searchTokens } from '@sher/core-domain';
 import { amountInWords, SystemClock, Ulid } from '@sher/shared-utils';
@@ -22,8 +23,9 @@ import { ApiError } from '../api/client';
 import { EMPTY_CATALOG, fetchCatalog } from '../api/catalog';
 import { fetchAccounts, fetchDayStatus } from '../api/money';
 import { fetchParties } from '../api/parties';
+import { fetchVendorStock } from '../api/vendors';
+import { fetchAvailableSerials } from '../api/warranty';
 import {
-  cancelSale,
   createSale,
   deleteSaleDraft,
   fetchCustomerStanding,
@@ -45,6 +47,7 @@ import AppShell from '../components/shell/AppShell.vue';
 import { MONEY_BN, taka } from '../components/money/money-text';
 import StartDayDialog from '../components/money/StartDayDialog.vue';
 import InvoicePreviewDialog from '../components/sales/InvoicePreviewDialog.vue';
+import VendorStockReceiveDialog from '../components/vendors/VendorStockReceiveDialog.vue';
 import { cartTotals, type CartLine } from '../components/sales/cart';
 
 /**
@@ -118,6 +121,10 @@ const customers = ref<readonly PartyResponse[]>([]);
 const vendors = ref<readonly PartyResponse[]>([]);
 const addingVendor = ref(false);
 const vendorLineIndex = ref<number | null>(null);
+const recordingVendorStock = ref(false);
+const vendorStockLineIndex = ref<number | null>(null);
+const negativeStockPolicy = ref<'BLOCK' | 'WARN' | 'ALLOW'>('BLOCK');
+const availableSerials = ref<Record<string, readonly SerialUnitResponse[]>>({});
 
 const accounts = ref<readonly MoneyAccountResponse[]>([]);
 const payments = ref<{ accountId: string; amount: number }[]>([]);
@@ -158,6 +165,7 @@ const showDrafts = ref(false);
 const resumedDraftId = ref<string | null>(null);
 
 const correctingSaleId = ref<string | null>(null);
+const correctingVersion = ref<number | null>(null);
 const correctingNumber = ref('');
 const confirmingNegative = ref(false);
 
@@ -195,6 +203,7 @@ const readyToSell = computed(
     lines.value.length > 0 &&
     grandTotalMinor.value > 0 &&
     lines.value.every((line) => line.qty > 0) &&
+    lines.value.every(lineAllocationReady) &&
     payments.value.every((payment) => payment.amount <= 0 || payment.accountId !== '') &&
     (dueMinor.value === 0 || customerReady.value),
 );
@@ -204,6 +213,10 @@ const readyToSell = computed(
 const customerReady = computed(
   () => customerId.value !== '' || (customerName.value.trim() !== '' && customerPhone.value.trim() !== ''),
 );
+const selectedParty = computed(() =>
+  [...customers.value, ...vendors.value].find((party) => party.id === customerId.value),
+);
+const vendorCreditSale = computed(() => selectedParty.value?.roles.includes('VENDOR') === true);
 
 const accountOptions = computed(() =>
   accounts.value.map((account) => ({
@@ -219,9 +232,9 @@ const moreAccounts = computed(() => accountOptions.value.slice(3));
 const showMoreAccounts = ref(false);
 
 const customerOptions = computed(() =>
-  customers.value.map((party) => ({
+  [...customers.value, ...vendors.value.filter((vendor) => !customers.value.some((customer) => customer.id === vendor.id))].map((party) => ({
     value: party.id,
-    label: party.phone === null ? party.name : `${party.name} · ${party.phone}`,
+    label: `${party.phone === null ? party.name : `${party.name} · ${party.phone}`}${party.roles.includes('VENDOR') ? ' · Vendor' : ''}`,
   })),
 );
 
@@ -242,6 +255,18 @@ const consignmentOn = computed(() => session.featureEnabled('vendor_consignment_
 const canAddVendor = computed(
   () => consignmentOn.value && session.can('party.vendor.create'),
 );
+const canRecordVendorStock = computed(
+  () => consignmentOn.value && session.can('vendor.stock.manage'),
+);
+
+const vendorReceiptProducts = computed(() =>
+  lines.value.map((line) => ({
+    id: line.productId,
+    displayName: line.productName,
+    baseUnitName: line.unitName,
+    tracksSerial: line.tracksSerial,
+  })),
+);
 
 function openAddVendor(index: number): void {
   vendorLineIndex.value = index;
@@ -253,8 +278,59 @@ async function onVendorCreated(party: PartyResponse): Promise<void> {
   addingVendor.value = false;
   await loadSetup();
   const line = vendorLineIndex.value === null ? undefined : lines.value[vendorLineIndex.value];
-  if (line !== undefined) line.vendorPartyId = party.id;
+  if (line !== undefined) {
+    line.vendorPartyId = party.id;
+    line.vendorAvailableQty = 0;
+    line.vendorAllocation = 0;
+    line.allocationConfirmed = false;
+  }
   vendorLineIndex.value = null;
+}
+
+async function loadVendorAvailability(line: CartLine): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null || line.vendorPartyId === '') {
+    line.vendorAvailableQty = 0;
+    line.vendorAllocation = 0;
+    return;
+  }
+  try {
+    const response = await fetchVendorStock(token, line.vendorPartyId);
+    line.vendorAvailableQty = line.correctionVendorRestoreQty +
+      response.data
+        .filter((receipt) => receipt.productId === line.productId)
+        .reduce((sum, receipt) => sum + receipt.onHandQty, 0) / 1000;
+    line.vendorAllocation = Math.min(line.vendorAllocation, line.vendorAvailableQty);
+    line.allocationConfirmed = false;
+    if (line.tracksSerial) await loadAvailableSerials(line.productId);
+  } catch (cause) {
+    failure.value = describe(cause, 'Could not refresh vendor stock');
+  }
+}
+
+function openRecordVendorStock(index: number): void {
+  vendorStockLineIndex.value = index;
+  recordingVendorStock.value = true;
+}
+
+async function onVendorStockReceived(): Promise<void> {
+  recordingVendorStock.value = false;
+  const line = vendorStockLineIndex.value === null ? undefined : lines.value[vendorStockLineIndex.value];
+  if (line !== undefined) await loadVendorAvailability(line);
+  vendorStockLineIndex.value = null;
+}
+
+async function loadAvailableSerials(productId: string): Promise<void> {
+  const token = session.accessToken.value;
+  if (token === null) return;
+  try {
+    availableSerials.value = {
+      ...availableSerials.value,
+      [productId]: (await fetchAvailableSerials(token, productId)).data,
+    };
+  } catch (cause) {
+    failure.value = describe(cause, 'Could not load available serial numbers');
+  }
 }
 
 const categoryChips = computed(() => [
@@ -277,7 +353,7 @@ async function loadSetup(): Promise<void> {
       fetchParties(token, { role: 'CUSTOMER', status: 'ACTIVE', limit: 200 }),
       // Vendors are only asked for when a line is short, but fetching them with
       // everything else keeps that moment instant at the counter.
-      session.featureEnabled('vendor_consignment_enabled') && session.can('party.vendor.view')
+      session.featureEnabled('vendor_management_enabled') && session.can('party.vendor.view')
         ? fetchParties(token, { role: 'VENDOR', status: 'ACTIVE', limit: 200 })
         : Promise.resolve({ data: [] as readonly PartyResponse[] }),
     ]);
@@ -309,6 +385,7 @@ async function loadProducts(): Promise<void> {
       limit: 24,
     });
     products.value = page.items;
+    negativeStockPolicy.value = page.negativeStockPolicy;
   } catch (cause) {
     failure.value = describe(cause, 'Could not load products');
   } finally {
@@ -331,10 +408,13 @@ watch(customerId, async (value) => {
   standing.value = null;
   const token = session.accessToken.value;
   if (token === null || value === '') return;
-  const party = customers.value.find((row) => row.id === value);
+  const party = [...customers.value, ...vendors.value].find((row) => row.id === value);
   if (party !== undefined) {
     customerName.value = party.name;
     customerPhone.value = party.phone ?? '';
+  }
+  if (party?.roles.includes('VENDOR') === true) {
+    payments.value = payments.value.slice(0, 1).map((payment) => ({ ...payment, amount: 0 }));
   }
   try {
     standing.value = await fetchCustomerStanding(token, value);
@@ -357,6 +437,8 @@ function addToCart(product: PosProduct): void {
   // second one (§5.7's barcode rule); tapping a tile behaves the same way.
   if (existing !== undefined) {
     existing.qty += 1;
+    existing.allocationConfirmed = false;
+    existing.allocationOpen = true;
     return;
   }
   lines.value.push({
@@ -367,51 +449,114 @@ function addToCart(product: PosProduct): void {
     price: priceOf(product),
     lineDiscount: 0,
     qtyOnHand: product.qtyOnHand,
+    sellableOwnedQty: product.sellableOwnedQty,
     purchasePriceMinor: product.purchasePriceMinor ?? null,
+    tracksSerial: product.tracksSerial,
     source: 'OWN_STOCK',
     allowNegative: false,
     vendorPartyId: '',
     vendorUnitCost: 0,
+    vendorAllocation: 0,
+    negativeAllocation: 0,
+    vendorAvailableQty: 0,
+    correctionVendorRestoreQty: 0,
+    selectedOwnedSerialIds: [],
+    selectedVendorSerialIds: [],
+    correctionSerials: [],
+    allocationConfirmed: !product.tracksSerial && product.sellableOwnedQty >= 1000,
+    allocationOpen: product.tracksSerial || product.sellableOwnedQty < 1000,
     showDetail: false,
   });
+  if (product.tracksSerial) void loadAvailableSerials(product.id);
 }
 
-/**
- * Answering a shortage.
- *
- * **Own Stock** means "sell only what is on the shelf", so it brings the
- * quantity down to what is actually there — the shortage disappears because the
- * sale changed, which is what the shopkeeper asked for by choosing it.
- *
- * **With nothing on the shelf, "what is actually there" is no line at all**, so
- * the item leaves the cart. It used to be clamped to a floor of 0.001 to keep a
- * quantity from reaching zero, which put a thousandth of a fridge on the bill
- * (owner-reported 2026-08-26) — a sale nobody meant to make and a figure nobody
- * could read.
- *
- * **Negative Stock** marks *this* line, so the sale posts with the cost
- * provisional (D-19). **Vendor Sourcing** hands the line to a vendor instead.
- */
-function useOwnStock(line: CartLine): void {
-  const available = Math.round(line.qtyOnHand) / 1000;
-  if (available <= 0) {
-    const index = lines.value.indexOf(line);
-    if (index !== -1) removeLine(index);
-    return;
+function requestedRaw(line: CartLine): number {
+  return Math.round(line.qty * 1000);
+}
+
+/** Owned quantity is a display fact for non-serial goods and cannot be edited. */
+function ownedAllocationRaw(line: CartLine): number {
+  if (line.tracksSerial) return line.selectedOwnedSerialIds.length * 1000;
+  return Math.min(line.sellableOwnedQty, requestedRaw(line));
+}
+
+function vendorAllocationRaw(line: CartLine): number {
+  return line.tracksSerial
+    ? line.selectedVendorSerialIds.length * 1000
+    : Math.round(line.vendorAllocation * 1000);
+}
+
+function negativeAllocationRaw(line: CartLine): number {
+  return line.tracksSerial ? 0 : Math.round(line.negativeAllocation * 1000);
+}
+
+function allocationRemainingRaw(line: CartLine): number {
+  return (
+    requestedRaw(line) -
+    ownedAllocationRaw(line) -
+    vendorAllocationRaw(line) -
+    negativeAllocationRaw(line)
+  );
+}
+
+function lineAllocationReady(line: CartLine): boolean {
+  if (line.tracksSerial) {
+    return (
+      line.allocationConfirmed &&
+      allocationRemainingRaw(line) === 0 &&
+      (line.selectedVendorSerialIds.length === 0 || line.vendorPartyId !== '')
+    );
   }
-  line.source = 'OWN_STOCK';
-  line.allowNegative = false;
-  line.qty = available;
+  if (shortageOf(line) === 0) return true;
+  return (
+    line.allocationConfirmed &&
+    allocationRemainingRaw(line) === 0 &&
+    vendorAllocationRaw(line) <= Math.round(line.vendorAvailableQty * 1000) &&
+    (negativeAllocationRaw(line) === 0 || negativeStockPolicy.value !== 'BLOCK')
+  );
 }
 
-function useVendor(line: CartLine): void {
-  line.source = 'VENDOR_CONSIGNMENT';
-  line.allowNegative = false;
+function onAllocationChanged(line: CartLine): void {
+  line.allocationConfirmed = false;
+  line.allowNegative = negativeAllocationRaw(line) > 0;
 }
 
-function useNegative(line: CartLine): void {
-  line.source = 'OWN_STOCK';
-  line.allowNegative = true;
+function onQtyChanged(line: CartLine): void {
+  line.allocationConfirmed = false;
+  line.allocationOpen = line.tracksSerial || shortageOf(line) > 0;
+  line.vendorAllocation = Math.min(
+    line.vendorAllocation,
+    Math.max(shortageOf(line) / 1000, 0),
+  );
+  line.negativeAllocation = Math.min(
+    line.negativeAllocation,
+    Math.max(shortageOf(line) / 1000 - line.vendorAllocation, 0),
+  );
+}
+
+function confirmAllocation(line: CartLine): void {
+  if (allocationRemainingRaw(line) !== 0) return;
+  if (vendorAllocationRaw(line) > Math.round(line.vendorAvailableQty * 1000)) return;
+  if (line.tracksSerial && requestedRaw(line) !==
+      (line.selectedOwnedSerialIds.length + line.selectedVendorSerialIds.length) * 1000) return;
+  line.allowNegative = negativeAllocationRaw(line) > 0;
+  line.allocationConfirmed = true;
+  line.allocationOpen = false;
+}
+
+function serialsFor(line: CartLine, source: 'OWNED' | 'VENDOR'): readonly { id: string; serialNo: string }[] {
+  const available = (availableSerials.value[line.productId] ?? []).filter((unit) =>
+    source === 'OWNED'
+      ? unit.vendorPartyId === null
+      : line.vendorPartyId !== '' && unit.vendorPartyId === line.vendorPartyId,
+  ).map((unit) => ({ id: unit.id, serialNo: unit.serialNo }));
+  const known = new Set(available.map((unit) => unit.id));
+  return [
+    ...available,
+    ...line.correctionSerials
+      .filter((unit) => unit.source === source && !known.has(unit.id))
+      .map((unit) => ({ id: unit.id, serialNo: unit.serialNo })),
+  ];
 }
 
 function removeLine(index: number): void {
@@ -420,7 +565,7 @@ function removeLine(index: number): void {
 
 /** Stock left after this cart — the number the fulfilment block asks about. */
 function shortageOf(line: CartLine): number {
-  return Math.max(line.qty * 1000 - line.qtyOnHand, 0);
+  return Math.max(line.qty * 1000 - line.sellableOwnedQty, 0);
 }
 
 /**
@@ -470,20 +615,42 @@ async function completeSale(force = false): Promise<void> {
   saving.value = true;
   failure.value = null;
   try {
-    if (correctingSaleId.value !== null) {
-      const original = await fetchSale(token, correctingSaleId.value);
-      await cancelSale(token, original.id, original.version, 'Corrected at the counter');
-      correctingSaleId.value = null;
-    }
     const saleLines: SaleLineRequest[] = lines.value.map((line) => ({
       productId: line.productId,
       qty: Math.round(line.qty * 1000),
       unitPriceMinor: Math.round(line.price * 100),
       lineDiscountMinor: Math.round(line.lineDiscount * 100),
-      source: line.source,
-      vendorPartyId: line.source === 'VENDOR_CONSIGNMENT' ? line.vendorPartyId : null,
-      vendorUnitCostMinor:
-        line.source === 'VENDOR_CONSIGNMENT' ? Math.round(line.vendorUnitCost * 100) : null,
+      source: ownedAllocationRaw(line) + negativeAllocationRaw(line) > 0
+        ? 'OWN_STOCK'
+        : 'VENDOR_CONSIGNMENT',
+      vendorPartyId: vendorAllocationRaw(line) > 0 ? line.vendorPartyId : null,
+      vendorUnitCostMinor: null,
+      allocations: [
+        ...(ownedAllocationRaw(line) > 0
+          ? [{
+              sourceType: 'OWNED' as const,
+              qty: ownedAllocationRaw(line),
+              vendorPartyId: null,
+              serialUnitIds: [...line.selectedOwnedSerialIds],
+            }]
+          : []),
+        ...(vendorAllocationRaw(line) > 0
+          ? [{
+              sourceType: 'VENDOR' as const,
+              qty: vendorAllocationRaw(line),
+              vendorPartyId: line.vendorPartyId === '' ? null : line.vendorPartyId,
+              serialUnitIds: [...line.selectedVendorSerialIds],
+            }]
+          : []),
+        ...(negativeAllocationRaw(line) > 0
+          ? [{
+              sourceType: 'NEGATIVE' as const,
+              qty: negativeAllocationRaw(line),
+              vendorPartyId: null,
+              serialUnitIds: [],
+            }]
+          : []),
+      ],
     }));
 
     const salePayments: SalePaymentRequest[] = payments.value
@@ -513,6 +680,8 @@ async function completeSale(force = false): Promise<void> {
         notes: notes.value.trim() === '' ? null : notes.value.trim(),
         sourceQuotationId: null,
         sourceOrderId: null,
+        correctionOf: correctingSaleId.value,
+        correctionVersion: correctingVersion.value,
       },
       operationId.value,
     );
@@ -600,7 +769,12 @@ function resumeDraft(draft: SaleDraftResponse): void {
     dueDate?: string;
     notes?: string;
   };
-  lines.value = cart.lines ?? [];
+  lines.value = (cart.lines ?? []).map((line) => ({
+    ...line,
+    sellableOwnedQty: line.sellableOwnedQty ?? Math.max(line.qtyOnHand, 0),
+    correctionVendorRestoreQty: line.correctionVendorRestoreQty ?? 0,
+    correctionSerials: line.correctionSerials ?? [],
+  }));
   discount.value = cart.discount ?? 0;
   payments.value = cart.payments ?? payments.value;
   customerId.value = cart.customerId ?? '';
@@ -667,6 +841,8 @@ function startNextSale(): void {
   standing.value = null;
   payments.value = payments.value.slice(0, 1).map((payment) => ({ ...payment, amount: 0 }));
   operationId.value = Ulid.generate(clock);
+  correctingSaleId.value = null;
+  correctingVersion.value = null;
   void loadProducts();
   void focusSearch();
 }
@@ -764,6 +940,7 @@ async function loadForCorrection(saleId: string): Promise<void> {
     }
 
     correctingSaleId.value = sale.id;
+    correctingVersion.value = sale.version;
     correctingNumber.value = sale.number;
     customerId.value = sale.isWalkIn ? '' : sale.partyId;
     customerName.value = sale.customerName;
@@ -774,7 +951,22 @@ async function loadForCorrection(saleId: string): Promise<void> {
     notes.value = sale.notes ?? '';
     discount.value = sale.discountMinor / 100;
 
-    lines.value = sale.lines.map((line) => ({
+    lines.value = sale.lines.map((line) => {
+      const restoredOwnedPositionQty = line.allocations.length === 0 && line.source === 'OWN_STOCK'
+        ? line.qty
+        : line.allocations
+            .filter((allocation) => allocation.sourceType !== 'VENDOR')
+            .reduce((sum, allocation) => sum + allocation.qty, 0);
+      const restoredOwnedLotQty = line.allocations.length === 0 && line.source === 'OWN_STOCK'
+        ? line.qty
+        : line.allocations
+            .filter((allocation) => allocation.sourceType === 'OWNED')
+            .reduce((sum, allocation) => sum + allocation.qty, 0);
+      const restoredVendorQty = line.allocations
+        .filter((allocation) => allocation.sourceType === 'VENDOR')
+        .reduce((sum, allocation) => sum + allocation.qty, 0);
+      const current = products.value.find((product) => product.id === line.productId);
+      return {
       productId: line.productId,
       productName: line.productName,
       unitName: line.unitName,
@@ -783,14 +975,48 @@ async function loadForCorrection(saleId: string): Promise<void> {
       lineDiscount: line.lineDiscountMinor / 100,
       // Refreshed by the grid as soon as it loads; the posted line carries no
       // stock figure, and guessing one would show a false shortage.
-      qtyOnHand: 0,
+      qtyOnHand: (current?.qtyOnHand ?? 0) + restoredOwnedPositionQty,
+      sellableOwnedQty: (current?.sellableOwnedQty ?? 0) + restoredOwnedLotQty,
       purchasePriceMinor: null,
+      tracksSerial: line.tracksSerial,
       source: line.source,
       allowNegative: line.isProvisionalCost,
       vendorPartyId: line.vendorPartyId ?? '',
       vendorUnitCost: 0,
+      vendorAllocation:
+        line.allocations
+          .filter((allocation) => allocation.sourceType === 'VENDOR')
+          .reduce((sum, allocation) => sum + allocation.qty, 0) / 1000,
+      negativeAllocation:
+        line.allocations
+          .filter((allocation) => allocation.sourceType === 'NEGATIVE')
+          .reduce((sum, allocation) => sum + allocation.qty, 0) / 1000,
+      vendorAvailableQty: 0,
+      correctionVendorRestoreQty: restoredVendorQty / 1000,
+      selectedOwnedSerialIds: line.allocations.flatMap((allocation) =>
+        allocation.sourceType === 'OWNED' ? allocation.serialUnitIds : [],
+      ),
+      selectedVendorSerialIds: line.allocations.flatMap((allocation) =>
+        allocation.sourceType === 'VENDOR' ? allocation.serialUnitIds : [],
+      ),
+      correctionSerials: line.allocations.flatMap((allocation) =>
+        allocation.inventoryUnitId === null || allocation.serialNo === null || allocation.sourceType === 'NEGATIVE'
+          ? []
+          : [{
+              id: allocation.inventoryUnitId,
+              serialNo: allocation.serialNo,
+              source: allocation.sourceType,
+            }],
+      ),
+      allocationConfirmed: true,
+      allocationOpen: false,
       showDetail: false,
-    }));
+      };
+    });
+    for (const line of lines.value) {
+      if (line.vendorPartyId !== '') await loadVendorAvailability(line);
+      line.allocationConfirmed = true;
+    }
 
     payments.value = sale.payments.map((payment) => ({
       accountId: payment.accountCode.slice(payment.accountCode.indexOf(':') + 1),
@@ -1102,6 +1328,7 @@ onBeforeUnmount(() => {
                     show-buttons
                     align="left"
                     class="cart__qty"
+                    @update:model-value="onQtyChanged(line)"
                   />
                   <AmountInput v-model="line.price" :disabled="!canEditPrice" class="cart__price" />
                   <span class="cart__line-total">
@@ -1139,40 +1366,51 @@ onBeforeUnmount(() => {
                   />
                 </div>
 
-                <!-- Not enough on the shelf: say so, and offer the three ways out. -->
-                <div v-if="shortageOf(line) > 0" class="shortage">
+                <button
+                  v-if="(line.tracksSerial || shortageOf(line) > 0) && !line.allocationOpen"
+                  type="button"
+                  class="allocation-summary"
+                  :class="{ 'allocation-summary--ready': lineAllocationReady(line) }"
+                  @click="line.allocationOpen = true"
+                >
+                  <span>
+                    {{ lineAllocationReady(line) ? 'Stock allocation confirmed' : 'Stock allocation unresolved' }}
+                  </span>
+                  <strong>Review</strong>
+                </button>
+
+                <!-- Requested quantity never changes here; only its exact origins do. -->
+                <div
+                  v-if="(line.tracksSerial || shortageOf(line) > 0) && line.allocationOpen"
+                  class="shortage"
+                >
                   <div class="shortage__head">
-                    <strong>Stock short by {{ qtyText(shortageOf(line)) }}</strong>
-                    <span>{{ qtyText(line.qtyOnHand) }} own stock available</span>
+                    <strong>
+                      {{ line.tracksSerial ? 'Select exact serial units' : `Stock short by ${qtyText(shortageOf(line))}` }}
+                    </strong>
+                    <span>Requested {{ line.qty }}</span>
                   </div>
-                  <div class="chips">
-                    <button
-                      type="button"
-                      class="chip chip--sm"
-                      :class="{ 'chip--on': line.source === 'OWN_STOCK' && !line.allowNegative }"
-                      @click="useOwnStock(line)"
-                    >
-                      Own Stock
-                    </button>
-                    <button
-                      v-if="consignmentOn"
-                      type="button"
-                      class="chip chip--sm"
-                      :class="{ 'chip--on': line.source === 'VENDOR_CONSIGNMENT' }"
-                      @click="useVendor(line)"
-                    >
-                      Vendor Sourcing
-                    </button>
-                    <button
-                      type="button"
-                      class="chip chip--sm"
-                      :class="{ 'chip--on': line.allowNegative }"
-                      @click="useNegative(line)"
-                    >
-                      Negative Stock
-                    </button>
+
+                  <div class="allocation-row">
+                    <span>Own Stock <span class="label-bn">নিজের স্টক</span></span>
+                    <strong>{{ qtyText(ownedAllocationRaw(line)) }}</strong>
+                    <small>{{ line.tracksSerial ? 'Selected units' : 'Available stock used first' }}</small>
                   </div>
-                  <div v-if="consignmentOn && line.source === 'VENDOR_CONSIGNMENT'" class="shortage__vendor">
+
+                  <div v-if="line.tracksSerial" class="serial-list">
+                    <label v-for="unit in serialsFor(line, 'OWNED')" :key="unit.id">
+                      <input
+                        v-model="line.selectedOwnedSerialIds"
+                        type="checkbox"
+                        :value="unit.id"
+                        @change="onAllocationChanged(line)"
+                      />
+                      <span>{{ unit.serialNo }}</span>
+                    </label>
+                    <small v-if="serialsFor(line, 'OWNED').length === 0">No sellable owned serials.</small>
+                  </div>
+
+                  <div v-if="consignmentOn" class="shortage__vendor">
                     <Select
                       v-model="line.vendorPartyId"
                       :options="vendorOptions"
@@ -1181,6 +1419,7 @@ onBeforeUnmount(() => {
                       filter
                       placeholder="Which vendor — কোন ভেন্ডার"
                       class="shortage__vendor-pick"
+                      @change="loadVendorAvailability(line)"
                     />
                     <button
                       v-if="canAddVendor"
@@ -1192,10 +1431,80 @@ onBeforeUnmount(() => {
                       <i class="pi pi-plus" />
                     </button>
                     <AmountInput
-                      v-model="line.vendorUnitCost"
-                      placeholder="Their cost / unit"
+                      v-if="!line.tracksSerial"
+                      v-model="line.vendorAllocation"
+                      :min="0"
+                      :max="line.vendorAvailableQty"
+                      :fraction-digits="3"
+                      placeholder="Vendor quantity"
                       class="shortage__vendor-cost"
+                      @update:model-value="onAllocationChanged(line)"
                     />
+                    <span class="vendor-available">
+                      Available {{ line.vendorAvailableQty }}
+                    </span>
+                    <button
+                      v-if="canRecordVendorStock && line.vendorPartyId !== ''"
+                      type="button"
+                      class="linkish"
+                      @click="openRecordVendorStock(index)"
+                    >
+                      Record Vendor Stock
+                    </button>
+                  </div>
+
+                  <div v-if="line.tracksSerial && line.vendorPartyId !== ''" class="serial-list">
+                    <label v-for="unit in serialsFor(line, 'VENDOR')" :key="unit.id">
+                      <input
+                        v-model="line.selectedVendorSerialIds"
+                        type="checkbox"
+                        :value="unit.id"
+                        @change="onAllocationChanged(line)"
+                      />
+                      <span>{{ unit.serialNo }}</span>
+                    </label>
+                    <small v-if="serialsFor(line, 'VENDOR').length === 0">No sellable serials recorded for this vendor.</small>
+                  </div>
+
+                  <div v-if="!line.tracksSerial && negativeStockPolicy !== 'BLOCK'" class="allocation-row">
+                    <label>
+                      Negative Stock <span class="label-bn">নেগেটিভ স্টক</span>
+                    </label>
+                    <AmountInput
+                      v-model="line.negativeAllocation"
+                      :min="0"
+                      :fraction-digits="3"
+                      placeholder="Negative quantity"
+                      class="shortage__vendor-cost"
+                      @update:model-value="onAllocationChanged(line)"
+                    />
+                    <small>Final own stock {{ qtyText(line.qtyOnHand - ownedAllocationRaw(line) - negativeAllocationRaw(line)) }}</small>
+                  </div>
+
+                  <div class="allocation-total">
+                    <span>Requested <strong>{{ line.qty }}</strong></span>
+                    <span>Allocated <strong>{{ qtyText(requestedRaw(line) - allocationRemainingRaw(line)) }}</strong></span>
+                    <span :class="{ 'allocation-total__bad': allocationRemainingRaw(line) !== 0 }">
+                      Remaining <strong>{{ qtyText(allocationRemainingRaw(line)) }}</strong>
+                    </span>
+                  </div>
+
+                  <p v-if="negativeAllocationRaw(line) > 0" class="negative-warning">
+                    Warning: this quantity will be recorded as an audited negative-stock sale.
+                  </p>
+
+                  <div class="allocation-actions">
+                    <button type="button" class="btn btn-ghost" @click="line.allocationOpen = false">
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      :disabled="allocationRemainingRaw(line) !== 0 || vendorAllocationRaw(line) > Math.round(line.vendorAvailableQty * 1000)"
+                      @click="confirmAllocation(line)"
+                    >
+                      Confirm Allocation
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1220,7 +1529,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Payment: the method, then the account the money actually landed in. -->
-          <div class="pay">
+          <div v-if="!vendorCreditSale" class="pay">
             <div v-for="(payment, index) in payments" :key="index" class="pay__row">
               <Select
                 v-model="payment.accountId"
@@ -1260,6 +1569,9 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+          <p v-else class="hint">
+            Vendor credit sale: the full invoice posts to vendor receivable. Record payment separately from Vendor Workspace after completing the sale.
+          </p>
 
           <div class="totals totals--settle">
             <div class="totals__row">
@@ -1388,6 +1700,16 @@ onBeforeUnmount(() => {
         @close="addingVendor = false"
       />
     </Dialog>
+
+    <VendorStockReceiveDialog
+      :open="recordingVendorStock"
+      :vendors="vendors"
+      :products="vendorReceiptProducts"
+      :initial-vendor-id="vendorStockLineIndex === null ? undefined : lines[vendorStockLineIndex]?.vendorPartyId"
+      :initial-product-id="vendorStockLineIndex === null ? undefined : lines[vendorStockLineIndex]?.productId"
+      @close="recordingVendorStock = false"
+      @received="onVendorStockReceived"
+    />
 
     <Dialog
       v-model:visible="addingProduct"
@@ -2107,6 +2429,80 @@ onBeforeUnmount(() => {
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--sher-danger, #b91c1c);
+}
+
+.allocation-summary {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--sher-space-2);
+  padding: var(--sher-space-2);
+  border: 1px solid var(--sher-warn);
+  border-radius: var(--sher-radius-md);
+  background: var(--sher-warn-soft);
+  color: var(--sher-warn-text);
+  cursor: pointer;
+}
+
+.allocation-summary--ready {
+  border-color: var(--sher-ok);
+  background: var(--sher-ok-soft);
+  color: var(--sher-ok);
+}
+
+.allocation-row,
+.allocation-total,
+.allocation-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sher-space-2);
+  margin-top: var(--sher-space-2);
+}
+
+.allocation-row > :first-child {
+  flex: 1;
+}
+
+.allocation-row small,
+.vendor-available {
+  color: var(--sher-text-muted);
+  font-size: var(--sher-text-xs);
+}
+
+.allocation-total {
+  justify-content: space-between;
+  padding-top: var(--sher-space-2);
+  border-top: 1px solid var(--sher-line);
+  font-size: var(--sher-text-xs);
+}
+
+.allocation-total__bad,
+.negative-warning {
+  color: var(--sher-danger);
+}
+
+.negative-warning {
+  margin: var(--sher-space-2) 0 0;
+  font-size: var(--sher-text-xs);
+}
+
+.allocation-actions {
+  justify-content: flex-end;
+}
+
+.serial-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sher-space-1);
+  margin-top: var(--sher-space-2);
+}
+
+.serial-list label {
+  display: flex;
+  gap: var(--sher-space-1);
+  align-items: center;
+  min-width: 0;
+  font-size: var(--sher-text-xs);
 }
 
 /* ------------------------------------------------------------------ totals */

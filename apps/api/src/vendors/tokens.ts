@@ -4,3 +4,4 @@ export const VENDOR_STOCK_SERVICE = Symbol('VendorStockService');
 export const VENDOR_WORKSPACE_SERVICE = Symbol('VendorWorkspaceService');
 export const VENDOR_MONEY_SERVICE = Symbol('VendorMoneyService');
 export const VENDOR_ISSUE_SERVICE = Symbol('VendorIssueService');
+export const VENDOR_PRODUCT_SETTLEMENT_SERVICE = Symbol('VendorProductSettlementService');

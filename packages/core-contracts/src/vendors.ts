@@ -28,6 +28,7 @@ export const receiveVendorStockRequestSchema = z
     qty: z.number().int().positive(),
     /** What the vendor is owed per unit when one sells, in poisha. */
     vendorUnitCostMinor: z.number().int().nonnegative(),
+    serials: z.array(z.string().trim().min(1).max(120)).max(200).default([]),
     note: z.string().trim().max(300).nullable().default(null),
     businessDate: BUSINESS_DATE.optional(),
   })
@@ -259,6 +260,7 @@ export const VENDOR_ACTIVITY_KINDS = [
   'RECEIVED_BACK',
   'PAYMENT',
   'RECEIPT',
+  'PRODUCT_SETTLEMENT',
 ] as const;
 export type VendorActivityKind = (typeof VENDOR_ACTIVITY_KINDS)[number];
 
@@ -305,3 +307,84 @@ export const vendorWorkspaceSummaryResponseSchema = z
   })
   .strict();
 export type VendorWorkspaceSummaryResponse = z.infer<typeof vendorWorkspaceSummaryResponseSchema>;
+
+/* -------------------------------------- products received as AR settlement */
+
+export const vendorProductSettlementRequestSchema = z
+  .object({
+    vendorPartyId: ULID,
+    businessDate: BUSINESS_DATE.optional(),
+    supplierBillRef: z.string().trim().max(80).nullable().default(null),
+    discountMinor: z.number().int().nonnegative().default(0),
+    lines: z
+      .array(
+        z
+          .object({
+            productId: ULID,
+            qty: z.number().int().positive(),
+            unitPriceMinor: z.number().int().nonnegative(),
+            expiryDate: BUSINESS_DATE.nullable().default(null),
+            serials: z.array(z.string().trim().min(1).max(64)).max(500).default([]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200),
+    landedCosts: z
+      .array(
+        z
+          .object({
+            category: z.enum(['TRANSPORT', 'LABOUR', 'LOADING', 'DELIVERY', 'CUSTOMS', 'OTHER']),
+            amountMinor: z.number().int().positive(),
+            method: z.enum(['BY_VALUE', 'BY_QTY', 'MANUAL']),
+            description: z.string().trim().max(300).nullable().default(null),
+            paidAccountCode: z.string().trim().min(3).max(40),
+            manualAllocations: z
+              .array(
+                z.object({ lineIndex: z.number().int().nonnegative(), amountMinor: z.number().int().nonnegative() }).strict(),
+              )
+              .max(200)
+              .default([]),
+          })
+          .strict(),
+      )
+      .max(20)
+      .default([]),
+    notes: z.string().trim().max(500).nullable().default(null),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    value.landedCosts.forEach((cost, index) => {
+      if (cost.category === 'OTHER' && (cost.description ?? '').trim() === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['landedCosts', index, 'description'], message: 'Describe the Other landed cost' });
+      }
+      if (cost.method === 'MANUAL') {
+        const total = cost.manualAllocations.reduce((sum, row) => sum + row.amountMinor, 0);
+        if (total !== cost.amountMinor) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['landedCosts', index, 'manualAllocations'], message: 'Manual allocations must equal the landed cost' });
+        }
+      }
+    });
+  });
+export type VendorProductSettlementRequest = z.infer<typeof vendorProductSettlementRequestSchema>;
+
+export const vendorProductSettlementResponseSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    vendorPartyId: ULID,
+    purchaseId: ULID,
+    purchaseNumber: z.string(),
+    businessDate: BUSINESS_DATE,
+    grossProductMinor: z.number().int(),
+    discountMinor: z.number().int(),
+    netProductMinor: z.number().int(),
+    landedCostMinor: z.number().int(),
+    receivableBeforeMinor: z.number().int(),
+    receivableAfterMinor: z.number().int(),
+    allocations: z.array(
+      z.object({ saleId: ULID, saleNumber: z.string(), amountMinor: z.number().int().positive() }).strict(),
+    ),
+  })
+  .strict();
+export type VendorProductSettlementResponse = z.infer<typeof vendorProductSettlementResponseSchema>;

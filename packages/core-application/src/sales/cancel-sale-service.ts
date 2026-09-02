@@ -12,7 +12,7 @@ import type { AuditWriter } from '../ports/audit-writer';
 import type { Outbox } from '../ports/outbox';
 import type { PeriodGuard } from '../ports/period-guard';
 import type { TenantContext } from '../ports/tenant-context';
-import type { UnitOfWork } from '../ports/unit-of-work';
+import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import type { SaleRepository } from './sale-repository';
 import { toSaleResponse } from './sale-view';
 
@@ -56,7 +56,11 @@ export class CancelSaleService {
   ) {}
 
   async cancel(command: CancelSaleCommand): Promise<SaleResponse> {
-    return this.uow.run(command.ctx, async (tx) => {
+    return this.uow.run(command.ctx, (tx) => this.cancelWithin(tx, command));
+  }
+
+  /** The same authoritative reversal, composed into sale correction atomically. */
+  async cancelWithin(tx: Tx, command: CancelSaleCommand): Promise<SaleResponse> {
       const { ctx } = command;
       await this.access.require(tx, ctx, Permission.SALE_VOID);
 
@@ -105,16 +109,18 @@ export class CancelSaleService {
         });
       }
 
-      const movements = sale.lines
-        // Consignment goods were never the shop's, so cancelling puts nothing
-        // back on its shelf — the vendor payable is undone by the entry alone.
-        .filter((line) => line.source === 'OWN_STOCK')
-        .map((line) => {
+      const movements = sale.lines.map((line) => {
+          const originQty =
+            line.allocations.length === 0
+              ? line.source === 'OWN_STOCK' ? line.qty : 0
+              : line.allocations
+                  .filter((allocation) => allocation.sourceType !== 'VENDOR')
+                  .reduce((sum, allocation) => sum + allocation.qty, 0);
           const position = positions.get(line.productId);
-          if (position !== undefined) {
+          if (position !== undefined && originQty > 0) {
             positions.set(line.productId, {
               ...position,
-              qtyOnHand: Qty(position.qtyOnHand).add(Qty(line.qty)).raw,
+              qtyOnHand: Qty(position.qtyOnHand).add(Qty(originQty)).raw,
             });
           }
           return {
@@ -122,10 +128,49 @@ export class CancelSaleService {
             saleLineId: line.id,
             productId: line.productId,
             locationId: line.locationId,
+            // The original movement records the whole line crossing the
+            // counter. Ownership is restored separately below, but its audit
+            // mirror must carry that same whole quantity.
             qty: line.qty,
-            unitCost: position?.avgUnitCost ?? 0,
+            unitCost:
+              line.qty === 0
+                ? 0
+                : Number(
+                    (BigInt(line.costMinor) * 100_000n + BigInt(line.qty) / 2n) /
+                      BigInt(line.qty),
+                  ),
           };
         });
+
+      const ownRestorations = new Map<string, number>();
+      const vendorRestorations = new Map<string, number>();
+      const hasDurableOrigins = sale.lines.some((line) => line.allocations.length > 0);
+      if (hasDurableOrigins) {
+        for (const line of sale.lines) {
+          for (const allocation of line.allocations) {
+            if (allocation.sourceType === 'OWNED' && allocation.ownedLotId !== null) {
+              ownRestorations.set(
+                allocation.ownedLotId,
+                (ownRestorations.get(allocation.ownedLotId) ?? 0) + allocation.qty,
+              );
+            }
+            if (allocation.sourceType === 'VENDOR' && allocation.vendorLotId !== null) {
+              vendorRestorations.set(
+                allocation.vendorLotId,
+                (vendorRestorations.get(allocation.vendorLotId) ?? 0) + allocation.qty,
+              );
+            }
+          }
+        }
+      } else {
+        for (const consumption of sale.consumptions) {
+          if (byLine.get(consumption.saleLineId)?.source !== 'OWN_STOCK') continue;
+          ownRestorations.set(
+            consumption.lotId,
+            (ownRestorations.get(consumption.lotId) ?? 0) + consumption.qty,
+          );
+        }
+      }
 
       const ok = await this.sales.reverseSale(tx, ctx, {
         saleId: sale.id,
@@ -135,9 +180,20 @@ export class CancelSaleService {
         journalEntryId: Ulid.generate(this.clock),
         journalLines: reversal,
         movements,
-        restorations: sale.consumptions
-          .filter((consumption) => byLine.get(consumption.saleLineId)?.source === 'OWN_STOCK')
-          .map((consumption) => ({ lotId: consumption.lotId, qty: consumption.qty })),
+        restorations: [...ownRestorations].map(([lotId, qty]) => ({ lotId, qty })),
+        vendorRestorations: [...vendorRestorations].map(([lotId, qty]) => ({ lotId, qty })),
+        allocationReversals: sale.lines.flatMap((line) =>
+          line.allocations.map((allocation) => ({
+            id: Ulid.generate(this.clock),
+            sourceAllocationId: allocation.id,
+            qty: allocation.qty,
+          })),
+        ),
+        serialUnitIds: sale.lines.flatMap((line) =>
+          line.allocations.flatMap((allocation) =>
+            allocation.inventoryUnitId === null ? [] : [allocation.inventoryUnitId],
+          ),
+        ),
         costStates: [...positions].map(([productId, position]) => ({
           id: position.costStateId,
           exists: position.exists,
@@ -173,6 +229,5 @@ export class CancelSaleService {
       if (updated === null) throw new AppError(ErrorCode.NOT_FOUND, 'Sale not found');
       const showCost = (await this.access.permissionsOf(tx, ctx)).includes(Permission.COST_VIEW);
       return toSaleResponse(updated, showCost, [], today);
-    });
   }
 }

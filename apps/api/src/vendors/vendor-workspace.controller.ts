@@ -15,6 +15,7 @@ import type {
   VendorIssueService,
   VendorMoneyService,
   VendorWorkspaceService,
+  VendorProductSettlementService,
 } from '@sher/core-application';
 import type {
   SaleResponse,
@@ -22,6 +23,7 @@ import type {
   VendorActivityRow,
   VendorMoneyDocumentResponse,
   VendorProductIssueResponse,
+  VendorProductSettlementResponse,
   VendorWorkspaceSummaryResponse,
 } from '@sher/core-contracts';
 import {
@@ -32,10 +34,16 @@ import {
   payVendorRequestSchema,
   receiveFromVendorRequestSchema,
   receiveProductsBackRequestSchema,
+  vendorProductSettlementRequestSchema,
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
-import { VENDOR_ISSUE_SERVICE, VENDOR_MONEY_SERVICE, VENDOR_WORKSPACE_SERVICE } from './tokens';
+import {
+  VENDOR_ISSUE_SERVICE,
+  VENDOR_MONEY_SERVICE,
+  VENDOR_PRODUCT_SETTLEMENT_SERVICE,
+  VENDOR_WORKSPACE_SERVICE,
+} from './tokens';
 
 /**
  * The vendor's hub (Phase 8.3, §5.6 M07, UI-52).
@@ -57,7 +65,23 @@ export class VendorWorkspaceController {
     @Inject(VENDOR_WORKSPACE_SERVICE) private readonly workspace: VendorWorkspaceService,
     @Inject(VENDOR_MONEY_SERVICE) private readonly money: VendorMoneyService,
     @Inject(VENDOR_ISSUE_SERVICE) private readonly issues: VendorIssueService,
+    @Inject(VENDOR_PRODUCT_SETTLEMENT_SERVICE)
+    private readonly productSettlements: VendorProductSettlementService,
   ) {}
+
+  @Post('product-settlements')
+  @HttpCode(201)
+  async settleWithProducts(
+    @Body() body: unknown,
+    @Headers('idempotency-key') operationId: string | undefined,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: VendorProductSettlementResponse }> {
+    const parsed = vendorProductSettlementRequestSchema.safeParse(body);
+    if (!parsed.success || operationId === undefined || operationId.length !== 26) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid vendor product settlement request');
+    }
+    return { data: await this.productSettlements.create({ ctx, operationId, ...parsed.data }) };
+  }
 
   /** The four tiles, the open items, and whether this vendor may be sold to. */
   @Get('summary/:vendorPartyId')

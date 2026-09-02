@@ -233,10 +233,12 @@ export class SaleQueryService {
             sellingPriceMinor: row.sellingPriceMinor,
             groupPriceMinor: dealerPricingOn ? row.groupPriceMinor : null,
             qtyOnHand: row.qtyOnHand,
+            sellableOwnedQty: row.sellableOwnedQty,
             minStockQty: row.minStockQty,
             stockStatus: status,
             hasImage: row.hasImage,
             searchText: row.searchText,
+            tracksSerial: row.tracksSerial,
           };
           return showCost ? { ...base, purchasePriceMinor: row.purchasePriceMinor } : base;
         })
@@ -245,6 +247,9 @@ export class SaleQueryService {
       return {
         items,
         nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+        negativeStockPolicy: String(
+          values.get(SettingKey.NEGATIVE_STOCK_POLICY) ?? 'BLOCK',
+        ) as PosProductList['negativeStockPolicy'],
       };
     });
   }

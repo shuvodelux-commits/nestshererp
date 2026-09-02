@@ -11,6 +11,9 @@ export interface NewSerialUnit {
   readonly purchaseId: string | null;
   readonly purchaseLineId: string | null;
   readonly supplierPartyId: string | null;
+  readonly vendorPartyId: string | null;
+  readonly vendorStockReceiptId: string | null;
+  readonly vendorLotId: string | null;
   readonly receivedDate: string;
   readonly expiryDate: string | null;
   readonly supplierWarrantyMonths: number | null;
@@ -47,6 +50,10 @@ export interface SerialUnitRow {
   readonly saleId: string | null;
   readonly invoiceNumber: string | null;
   readonly purchaseId: string | null;
+  readonly lotId: string | null;
+  readonly vendorPartyId: string | null;
+  readonly vendorStockReceiptId: string | null;
+  readonly vendorLotId: string | null;
   readonly customerWarrantyMonths: number | null;
   readonly supplierWarrantyMonths: number | null;
 }
@@ -92,6 +99,13 @@ export interface SerialRepository {
     limit: number,
   ): Promise<readonly SerialUnitRow[]>;
 
+  findAvailableByIds(
+    tx: Tx,
+    ctx: TenantContext,
+    productId: string,
+    unitIds: readonly string[],
+  ): Promise<readonly SerialUnitRow[]>;
+
   /**
    * How many units of a product have no serial yet.
    *
@@ -112,7 +126,7 @@ export interface SerialRepository {
       readonly soldDate: string;
       readonly customerWarrantyMonths: number | null;
     },
-  ): Promise<void>;
+  ): Promise<number>;
 
   setStatus(
     tx: Tx,

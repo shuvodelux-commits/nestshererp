@@ -30,8 +30,6 @@ const props = defineProps<{
   vendorId: string;
   vendorName: string;
   products: readonly ProductResponse[];
-  /** Charging goods needs the party to be a customer too — D-04 allows both. */
-  isAlsoCustomer: boolean;
 }>();
 
 const emit = defineEmits<{ (event: 'given'): void; (event: 'close'): void }>();
@@ -39,7 +37,7 @@ const emit = defineEmits<{ (event: 'given'): void; (event: 'close'): void }>();
 const session = useSession();
 const clock = new SystemClock();
 
-const mode = ref<VendorIssueMode>(props.isAlsoCustomer ? 'CHARGED' : 'TEMPORARY');
+const mode = ref<VendorIssueMode>('CHARGED');
 const productId = ref<string | null>(null);
 const qty = ref(0);
 const unitValue = ref('');
@@ -67,12 +65,10 @@ const unitValueMinor = computed(() => parseTaka(unitValue.value) ?? 0);
 /** Instant recalculation: the line total moves with every keystroke. */
 const totalMinor = computed(() => Math.round(unitValueMinor.value * qty.value));
 
-const blockedByRole = computed(() => charging.value && !props.isAlsoCustomer);
 const ready = computed(
   () =>
     productId.value !== null &&
     qty.value > 0 &&
-    !blockedByRole.value &&
     (!charging.value || unitValueMinor.value > 0),
 );
 
@@ -94,8 +90,7 @@ async function save(): Promise<void> {
         vendorPartyId: props.vendorId,
         mode: mode.value,
         productId: productId.value,
-        /* Quantities are stored at scale 4, as everywhere else. */
-        qty: Math.round(qty.value * 10000),
+        qty: Math.round(qty.value * 1000),
         unitValueMinor: charging.value ? unitValueMinor.value : 0,
         note: note.value.trim() === '' ? null : note.value.trim(),
         businessDate: businessDate.value,
@@ -177,11 +172,7 @@ async function save(): Promise<void> {
       </div>
     </div>
 
-    <p v-if="blockedByRole" class="notice is-warn">
-      {{ vendorName }} is not registered as a customer, so goods cannot be charged to them.
-      Add the Customer role on their party form, or send these on temporary issue.
-    </p>
-    <p v-else-if="charging" class="notice is-ok">
+    <p v-if="charging" class="notice is-ok">
       Raises an invoice for <strong>{{ taka(totalMinor) }}</strong> and puts it on their account.
       <span class="label-bn">বিক্রি হিসেবে বিল হবে</span>
     </p>

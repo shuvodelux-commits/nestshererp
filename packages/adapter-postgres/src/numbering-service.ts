@@ -50,6 +50,12 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   VENDOR_ADVANCE_REFUND: 'VAR',
   VENDOR_ISSUE: 'VI',
   VENDOR_ISSUE_RETURN: 'VIR',
+  /*
+   * Phase 8.2. Without a prefix of its own a settlement would be numbered
+   * VENDOR_PRODUCT_SETTLEMENT-2026-000001 — the exact shape the Phase 7 note
+   * above says will not fit where a document number is printed.
+   */
+  VENDOR_PRODUCT_SETTLEMENT: 'VPS',
 };
 
 /**

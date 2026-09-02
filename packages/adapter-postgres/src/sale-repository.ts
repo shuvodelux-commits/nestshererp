@@ -33,6 +33,7 @@ import {
   categories,
   customerReceipts,
   inventoryLots,
+  inventoryUnits,
   invoiceLinePresentation,
   invoicePresentation,
   invoiceSettings,
@@ -46,6 +47,8 @@ import {
   quotations,
   receiptAllocations,
   saleDrafts,
+  saleLineSourceAllocations,
+  saleSourceAllocationReversals,
   saleLines,
   salePayments,
   sales,
@@ -73,6 +76,10 @@ function allocatedMinor(saleId: SQL): SQL<number> {
     SELECT SUM(ra.amount_minor)
       FROM receipt_allocations ra
      WHERE ra.sale_id = ${saleId}
+  ), 0)::bigint + COALESCE((
+    SELECT SUM(vrsa.amount_minor)
+      FROM vendor_receivable_settlement_allocations vrsa
+     WHERE vrsa.sale_id = ${saleId}
   ), 0)::bigint`;
 }
 
@@ -273,6 +280,63 @@ export class PostgresSaleRepository implements SaleRepository {
         createdAt: now,
         createdBy: ctx.userId,
       });
+
+      for (const allocation of line.sourceAllocations) {
+        if (allocation.sourceType === 'VENDOR') {
+          if (allocation.vendorLotId === null) {
+            throw new Error('Vendor sale allocation has no vendor lot');
+          }
+          const changed = await db
+            .update(inventoryLots)
+            .set({
+              qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${allocation.qty}`,
+              updatedAt: now,
+              updatedBy: ctx.userId,
+              version: sql`${inventoryLots.version} + 1`,
+            })
+            .where(
+              and(
+                eq(inventoryLots.tenantId, ctx.tenantId),
+                eq(inventoryLots.id, allocation.vendorLotId),
+                eq(inventoryLots.ownerType, 'VENDOR'),
+                sql`${inventoryLots.qtyRemaining} >= ${allocation.qty}`,
+              ),
+            )
+            .returning({ qtyRemaining: inventoryLots.qtyRemaining });
+          const remaining = changed[0]?.qtyRemaining;
+          if (remaining === undefined) {
+            throw new Error('Recorded vendor stock changed before this sale could post');
+          }
+          if (Number(remaining) === 0) {
+            await db
+              .update(inventoryLots)
+              .set({ status: 'CLOSED', updatedAt: now, updatedBy: ctx.userId })
+              .where(
+                and(
+                  eq(inventoryLots.tenantId, ctx.tenantId),
+                  eq(inventoryLots.id, allocation.vendorLotId),
+                ),
+              );
+          }
+        }
+
+        await db.insert(saleLineSourceAllocations).values({
+          id: allocation.id,
+          tenantId: ctx.tenantId,
+          saleId: sale.id,
+          saleLineId: line.id,
+          sourceType: allocation.sourceType,
+          qty: allocation.qty,
+          ownedLotId: allocation.ownedLotId,
+          vendorPartyId: allocation.vendorPartyId,
+          vendorStockReceiptId: allocation.vendorStockReceiptId,
+          vendorLotId: allocation.vendorLotId,
+          inventoryUnitId: allocation.inventoryUnitId,
+          unitCostUsed: allocation.unitCostUsed,
+          createdAt: now,
+          createdBy: ctx.userId,
+        });
+      }
     }
 
     for (const payment of sale.payments) {
@@ -353,6 +417,7 @@ export class PostgresSaleRepository implements SaleRepository {
         source: saleLines.source,
         vendorPartyId: saleLines.vendorPartyId,
         isProvisionalCost: saleLines.isProvisionalCost,
+        tracksSerial: products.tracksSerial,
       })
       .from(saleLines)
       .innerJoin(
@@ -384,6 +449,36 @@ export class PostgresSaleRepository implements SaleRepository {
                 .where(and(eq(parties.tenantId, ctx.tenantId), inArray(parties.id, vendorIds)))
             ).map((party) => [party.id.trim(), party.name]),
           );
+
+    const allocationRows = await db
+      .select({
+        id: saleLineSourceAllocations.id,
+        saleLineId: saleLineSourceAllocations.saleLineId,
+        sourceType: saleLineSourceAllocations.sourceType,
+        qty: saleLineSourceAllocations.qty,
+        ownedLotId: saleLineSourceAllocations.ownedLotId,
+        vendorPartyId: saleLineSourceAllocations.vendorPartyId,
+        vendorStockReceiptId: saleLineSourceAllocations.vendorStockReceiptId,
+        vendorLotId: saleLineSourceAllocations.vendorLotId,
+        inventoryUnitId: saleLineSourceAllocations.inventoryUnitId,
+        serialNo: inventoryUnits.serialNo,
+        unitCostUsed: saleLineSourceAllocations.unitCostUsed,
+      })
+      .from(saleLineSourceAllocations)
+      .leftJoin(
+        inventoryUnits,
+        and(
+          eq(inventoryUnits.tenantId, saleLineSourceAllocations.tenantId),
+          eq(inventoryUnits.id, saleLineSourceAllocations.inventoryUnitId),
+        ),
+      )
+      .where(
+        and(
+          eq(saleLineSourceAllocations.tenantId, ctx.tenantId),
+          eq(saleLineSourceAllocations.saleId, row.id),
+        ),
+      )
+      .orderBy(saleLineSourceAllocations.id);
 
     const locationRows = await db
       .select({ id: sales.locationId })
@@ -512,6 +607,22 @@ export class PostgresSaleRepository implements SaleRepository {
         vendorName:
           line.vendorPartyId === null ? null : (vendorNames.get(line.vendorPartyId.trim()) ?? null),
         isProvisionalCost: line.isProvisionalCost,
+        tracksSerial: line.tracksSerial,
+        allocations: allocationRows
+          .filter((allocation) => allocation.saleLineId.trim() === line.id.trim())
+          .map((allocation) => ({
+            id: allocation.id.trim(),
+            sourceType: allocation.sourceType as 'OWNED' | 'VENDOR' | 'NEGATIVE',
+            qty: Number(allocation.qty),
+            ownedLotId: allocation.ownedLotId?.trim() ?? null,
+            vendorPartyId: allocation.vendorPartyId?.trim() ?? null,
+            vendorStockReceiptId: allocation.vendorStockReceiptId?.trim() ?? null,
+            vendorLotId: allocation.vendorLotId?.trim() ?? null,
+            inventoryUnitId: allocation.inventoryUnitId?.trim() ?? null,
+            serialNo: allocation.serialNo,
+            unitCostUsed:
+              allocation.unitCostUsed === null ? null : Number(allocation.unitCostUsed),
+          })),
       })),
       payments: paymentRows.map((payment) => ({
         id: payment.id.trim(),
@@ -656,7 +767,7 @@ export class PostgresSaleRepository implements SaleRepository {
     }
 
     for (const restoration of reversal.restorations) {
-      await db
+      const restored = await db
         .update(inventoryLots)
         .set({
           qtyRemaining: sql`${inventoryLots.qtyRemaining} + ${restoration.qty}`,
@@ -668,7 +779,77 @@ export class PostgresSaleRepository implements SaleRepository {
         })
         .where(
           and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, restoration.lotId)),
-        );
+        )
+        .returning({ id: inventoryLots.id });
+      if (restored.length !== 1) throw new Error('Owned sale origin lot was not found');
+    }
+
+    for (const restoration of reversal.vendorRestorations) {
+      const restored = await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: sql`${inventoryLots.qtyRemaining} + ${restoration.qty}`,
+          status: 'OPEN',
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(
+          and(
+            eq(inventoryLots.tenantId, ctx.tenantId),
+            eq(inventoryLots.id, restoration.lotId),
+            eq(inventoryLots.ownerType, 'VENDOR'),
+          ),
+        )
+        .returning({ id: inventoryLots.id });
+      if (restored.length !== 1) throw new Error('Vendor sale origin lot was not found');
+    }
+
+    for (const reversalRow of reversal.allocationReversals) {
+      await db.insert(saleSourceAllocationReversals).values({
+        id: reversalRow.id,
+        tenantId: ctx.tenantId,
+        sourceAllocationId: reversalRow.sourceAllocationId,
+        sourceDocumentType: 'SALE_CANCELLATION',
+        sourceDocumentId: reversal.saleId,
+        qty: reversalRow.qty,
+        serialPreviousStatus: null,
+        serialSaleId: null,
+        serialSaleLineId: null,
+        serialCustomerPartyId: null,
+        serialSoldDate: null,
+        serialCustomerWarrantyMonths: null,
+        createdAt: now,
+        createdBy: ctx.userId,
+      });
+    }
+
+    if (reversal.serialUnitIds.length > 0) {
+      const restored = await db
+        .update(inventoryUnits)
+        .set({
+          status: 'IN_STOCK',
+          saleId: null,
+          saleLineId: null,
+          customerPartyId: null,
+          soldDate: null,
+          customerWarrantyMonths: null,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryUnits.version} + 1`,
+        })
+        .where(
+          and(
+            eq(inventoryUnits.tenantId, ctx.tenantId),
+            inArray(inventoryUnits.id, [...reversal.serialUnitIds]),
+            eq(inventoryUnits.saleId, reversal.saleId),
+            eq(inventoryUnits.status, 'SOLD'),
+          ),
+        )
+        .returning({ id: inventoryUnits.id });
+      if (restored.length !== reversal.serialUnitIds.length) {
+        throw new Error('One or more exact sale serials could not be restored');
+      }
     }
 
     for (const state of reversal.costStates) {
@@ -1050,6 +1231,7 @@ export class PostgresSaleRepository implements SaleRepository {
         purchasePriceMinor: products.purchasePriceMinor,
         minStockQty: products.minStockQty,
         tracksExpiry: products.tracksExpiry,
+        tracksSerial: products.tracksSerial,
         hasImage: sql<boolean>`(${products.imageMime} IS NOT NULL)`,
         searchText: products.searchText,
         /*
@@ -1072,8 +1254,18 @@ export class PostgresSaleRepository implements SaleRepository {
                 SELECT SUM(il.qty_remaining) FROM inventory_lots il
                  WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
                    AND il.deleted_at IS NULL AND il.qty_remaining > 0
+                   AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
                    AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})
               ), 0)::bigint`,
+        sellableOwnedQty: sql<number>`COALESCE((
+          SELECT SUM(il.qty_remaining) FROM inventory_lots il
+           WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
+             AND il.deleted_at IS NULL AND il.qty_remaining > 0
+             AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
+             ${filter.expiredOn === null
+               ? sql``
+               : sql`AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})`}
+        ), 0)::bigint`,
         groupPriceMinor: groupPrice,
       })
       .from(products)
@@ -1099,10 +1291,12 @@ export class PostgresSaleRepository implements SaleRepository {
       purchasePriceMinor: Number(row.purchasePriceMinor),
       groupPriceMinor: row.groupPriceMinor === null ? null : Number(row.groupPriceMinor),
       qtyOnHand: Number(row.qtyOnHand),
+      sellableOwnedQty: Number(row.sellableOwnedQty),
       minStockQty: Number(row.minStockQty),
       hasImage: row.hasImage,
       searchText: row.searchText,
       tracksExpiry: row.tracksExpiry,
+      tracksSerial: row.tracksSerial,
     }));
   }
 

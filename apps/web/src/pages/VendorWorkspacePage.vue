@@ -12,6 +12,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
+import { fetchAccounts } from '../api/money';
 import { fetchParties } from '../api/parties';
 import { fetchProducts } from '../api/products';
 import { fetchVendorActivity, fetchVendorWorkspace } from '../api/vendors';
@@ -28,6 +29,7 @@ import ReceiveFromVendorDialog from '../components/vendors/ReceiveFromVendorDial
 import ReceiveProductsBackDialog from '../components/vendors/ReceiveProductsBackDialog.vue';
 import VendorStockReceiveDialog from '../components/vendors/VendorStockReceiveDialog.vue';
 import VendorStockReturnDialog from '../components/vendors/VendorStockReturnDialog.vue';
+import VendorProductSettlementDrawer from '../components/vendors/VendorProductSettlementDrawer.vue';
 
 /**
  * The vendor's hub · ভেন্ডর অপারেশন (§5.6 M07, UI-52, Phase 8.3).
@@ -63,12 +65,19 @@ const giving = ref(false);
 const receivingBack = ref(false);
 const receivingStock = ref(false);
 const returningStock = ref<string | null>(null);
+const settlingWithProducts = ref(false);
+const settlementAccounts = ref<readonly { code: string; label: string }[]>([]);
 
 /* UI-09: an action the user may not perform is absent, never disabled. */
 const canPay = computed(() => session.can('vendor.payment.record'));
 const canReceiveMoney = computed(() => session.can('vendor.receipt.record'));
 const canIssue = computed(() => session.can('vendor.issue.manage'));
 const canManageStock = computed(() => session.can('vendor.stock.manage'));
+const canSettleWithProducts = computed(
+  () =>
+    session.can('vendor.stock.manage') &&
+    session.can('purchase.bill.create'),
+);
 
 const vendorOptions = computed(() =>
   vendors.value.map((vendor) => ({ label: vendor.name, value: vendor.id })),
@@ -82,6 +91,7 @@ const FILTERS: readonly { value: VendorActivityKind | 'ALL'; label: string }[] =
   { value: 'RECEIVED_BACK', label: 'Received back' },
   { value: 'PAYMENT', label: 'Payments' },
   { value: 'RECEIPT', label: 'Receipts' },
+  { value: 'PRODUCT_SETTLEMENT', label: 'Product settlements' },
 ];
 
 const openConsignments = computed(() => summary.value?.openConsignments ?? []);
@@ -94,12 +104,19 @@ async function loadVendors(): Promise<void> {
   const token = session.accessToken.value;
   if (token === null) return;
   try {
-    const [vendorList, productList] = await Promise.all([
+    const [vendorList, productList, money] = await Promise.all([
       fetchParties(token, { role: 'VENDOR', limit: 200 }),
       fetchProducts(token, { limit: 200 }),
+      fetchAccounts(token),
     ]);
     vendors.value = vendorList.data;
     products.value = productList.data;
+    settlementAccounts.value = money.accounts
+      .filter((account) => account.status === 'ACTIVE')
+      .map((account) => ({
+        code: `${account.type}:${account.id}`,
+        label: account.name,
+      }));
 
     /* A vendor named in the URL wins, so the hub can be linked to from the
      * party list and from a ledger row without losing which vendor. */
@@ -163,6 +180,7 @@ async function onChanged(): Promise<void> {
   receivingBack.value = false;
   receivingStock.value = false;
   returningStock.value = null;
+  settlingWithProducts.value = false;
   await loadVendor();
 }
 
@@ -176,6 +194,8 @@ function openSource(row: VendorActivityRow): void {
     void router.push({ name: 'party-ledger', params: { id: vendorId.value ?? '' } });
   } else if (row.sourceType === 'vendor_stock_receipt' || row.sourceType === 'vendor_stock_return') {
     void router.push({ name: 'vendor-stock' });
+  } else if (row.sourceType === 'purchase') {
+    void router.push({ name: 'purchase', params: { id: row.sourceId } });
   }
 }
 
@@ -315,6 +335,13 @@ onMounted(async () => {
               @click="receivingMoney = true"
             />
             <Button
+              v-if="canSettleWithProducts && summary.receivableMinor > 0"
+              icon="pi pi-box"
+              label="Receive products as settlement"
+              severity="secondary"
+              @click="settlingWithProducts = true"
+            />
+            <Button
               v-if="canIssue"
               icon="pi pi-send"
               label="Give products"
@@ -446,7 +473,6 @@ onMounted(async () => {
           :vendor-id="summary.vendorPartyId"
           :vendor-name="summary.vendorName"
           :products="products"
-          :is-also-customer="summary.isAlsoCustomer"
           @given="onChanged"
           @close="giving = false"
         />
@@ -472,6 +498,18 @@ onMounted(async () => {
           :receipt="openConsignments.find((item) => item.id === returningStock) ?? null"
           @returned="onChanged"
           @close="returningStock = null"
+        />
+
+        <VendorProductSettlementDrawer
+          :open="settlingWithProducts"
+          :vendor-id="summary.vendorPartyId"
+          :vendor-name="summary.vendorName"
+          :receivable-minor="summary.receivableMinor"
+          :products="products"
+          :accounts="settlementAccounts"
+          :can-add-landed-costs="session.can('purchase.bill.edit')"
+          @settled="onChanged"
+          @close="settlingWithProducts = false"
         />
       </template>
     </template>

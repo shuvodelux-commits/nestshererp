@@ -24,9 +24,12 @@ export interface CartLine {
   /** Taka, as typed. Converted to poisha only here and when posting. */
   price: number;
   lineDiscount: number;
-  /** Scale-3 quantity on hand, for the "stock short by" block. */
+  /** Net owned position, used for the final-stock warning. */
   readonly qtyOnHand: number;
+  /** Physical sellable OWNED lots; allocation must not use the net position. */
+  readonly sellableOwnedQty: number;
   readonly purchasePriceMinor: number | null;
+  readonly tracksSerial: boolean;
   source: 'OWN_STOCK' | 'VENDOR_CONSIGNMENT';
   /**
    * Set when the shopkeeper answered a shortage with **Negative Stock**.
@@ -39,6 +42,16 @@ export interface CartLine {
   allowNegative: boolean;
   vendorPartyId: string;
   vendorUnitCost: number;
+  /** Display quantities in base units; converted to scale-3 only at the API edge. */
+  vendorAllocation: number;
+  negativeAllocation: number;
+  vendorAvailableQty: number;
+  correctionVendorRestoreQty: number;
+  selectedOwnedSerialIds: string[];
+  selectedVendorSerialIds: string[];
+  correctionSerials: { id: string; serialNo: string; source: 'OWNED' | 'VENDOR' }[];
+  allocationConfirmed: boolean;
+  allocationOpen: boolean;
   showDetail: boolean;
 }
 

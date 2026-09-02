@@ -30,7 +30,7 @@ export const LANDED_COST_CATEGORIES = [
 
 export type LandedCostCategory = (typeof LANDED_COST_CATEGORIES)[number];
 
-export type LandedCostMethod = 'BY_VALUE' | 'BY_QTY';
+export type LandedCostMethod = 'BY_VALUE' | 'BY_QTY' | 'MANUAL';
 
 /**
  * What each category spreads by unless the shopkeeper says otherwise.
@@ -59,6 +59,8 @@ export interface LandedCostTarget {
   readonly qty: number;
   /** What the line came to before any spreading — the BY_VALUE weight. */
   readonly lineTotalMinor: number;
+  /** Exact poisha assigned by the operator when `method` is MANUAL. */
+  readonly manualShareMinor?: number | undefined;
 }
 
 export interface LandedCostShare {
@@ -70,7 +72,9 @@ export type LandedCostRejection =
   | 'LANDED_COST_NOT_POSITIVE'
   | 'LANDED_COST_NOT_INTEGER_MINOR'
   | 'LANDED_COST_HAS_NO_TARGET'
-  | 'LANDED_COST_TARGET_HAS_NO_WEIGHT';
+  | 'LANDED_COST_TARGET_HAS_NO_WEIGHT'
+  | 'LANDED_COST_MANUAL_ALLOCATION_INVALID'
+  | 'LANDED_COST_MANUAL_ALLOCATION_MISMATCH';
 
 export function rejectLandedCost(
   amountMinor: number,
@@ -80,6 +84,15 @@ export function rejectLandedCost(
   if (!Number.isSafeInteger(amountMinor)) return 'LANDED_COST_NOT_INTEGER_MINOR';
   if (amountMinor <= 0) return 'LANDED_COST_NOT_POSITIVE';
   if (targets.length === 0) return 'LANDED_COST_HAS_NO_TARGET';
+
+  if (method === 'MANUAL') {
+    const shares = targets.map((target) => target.manualShareMinor);
+    if (shares.some((share) => share === undefined || !Number.isSafeInteger(share) || share < 0)) {
+      return 'LANDED_COST_MANUAL_ALLOCATION_INVALID';
+    }
+    const total = shares.reduce<number>((sum, share) => sum + (share ?? 0), 0);
+    return total === amountMinor ? null : 'LANDED_COST_MANUAL_ALLOCATION_MISMATCH';
+  }
 
   // Nothing to spread across: a bill whose lines are all free cannot carry a
   // fare by value, and one with no quantity cannot carry it by weight. Refusing
@@ -110,6 +123,14 @@ export function allocateLandedCost(
   targets: readonly LandedCostTarget[],
   method: LandedCostMethod,
 ): readonly LandedCostShare[] {
+  if (method === 'MANUAL') {
+    const rejection = rejectLandedCost(amountMinor, targets, method);
+    if (rejection !== null) throw new RangeError(`Landed cost refused: ${rejection}`);
+    return targets.map((target) => ({
+      purchaseLineId: target.purchaseLineId,
+      shareMinor: target.manualShareMinor ?? 0,
+    }));
+  }
   const shares = allocateLargestRemainder(
     Money(amountMinor).minor,
     weightsFor(targets, method),

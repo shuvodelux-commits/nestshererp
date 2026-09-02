@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { PartyResponse, ProductResponse } from '@sher/core-contracts';
+import type { PartyResponse } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
 import { computed, ref, watch } from 'vue';
 
 import { ApiError } from '../../api/client';
@@ -27,7 +28,14 @@ import ErrorNotice from '../ErrorNotice.vue';
 const props = defineProps<{
   open: boolean;
   vendors: readonly PartyResponse[];
-  products: readonly ProductResponse[];
+  products: readonly {
+    id: string;
+    displayName: string;
+    baseUnitName: string;
+    tracksSerial: boolean;
+  }[];
+  initialVendorId?: string | undefined;
+  initialProductId?: string | undefined;
 }>();
 const emit = defineEmits<{ (event: 'close'): void; (event: 'received'): void }>();
 
@@ -39,6 +47,7 @@ const productId = ref<string | null>(null);
 const qty = ref(0);
 const costTaka = ref(0);
 const note = ref('');
+const serialText = ref('');
 const businessDate = ref('');
 const busy = ref(false);
 const error = ref<{ code: string; message: string } | null>(null);
@@ -60,16 +69,24 @@ const productOptions = computed(() =>
 const unitName = computed(
   () => props.products.find((product) => product.id === productId.value)?.baseUnitName ?? '',
 );
+const selectedProduct = computed(() => props.products.find((product) => product.id === productId.value));
+const serials = computed(() =>
+  serialText.value
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter((value) => value !== ''),
+);
 
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    vendorPartyId.value = null;
-    productId.value = null;
+    vendorPartyId.value = props.initialVendorId ?? null;
+    productId.value = props.initialProductId ?? null;
     qty.value = 0;
     costTaka.value = 0;
     note.value = '';
+    serialText.value = '';
     businessDate.value = '';
     error.value = null;
     operationId.value = Ulid.generate(clock);
@@ -85,6 +102,13 @@ async function save(): Promise<void> {
     error.value = { code: 'VALIDATION_FAILED', message: 'Enter how many they left' };
     return;
   }
+  if (selectedProduct.value?.tracksSerial && serials.value.length !== Math.round(qty.value)) {
+    error.value = {
+      code: 'VALIDATION_FAILED',
+      message: `Enter exactly ${Math.round(qty.value)} manufacturer serial numbers`,
+    };
+    return;
+  }
 
   busy.value = true;
   error.value = null;
@@ -96,6 +120,7 @@ async function save(): Promise<void> {
         productId: productId.value,
         qty: Math.round(qty.value * 1000),
         vendorUnitCostMinor: Math.round(costTaka.value * 100),
+        serials: serials.value,
         note: note.value.trim() === '' ? null : note.value.trim(),
         ...(businessDate.value === '' ? {} : { businessDate: businessDate.value }),
       },
@@ -157,6 +182,20 @@ async function save(): Promise<void> {
         <div class="field">
           <label for="vs-qty">Quantity <span class="label-bn">কতটা</span> {{ unitName }}</label>
           <AmountInput input-id="vs-qty" v-model="qty" :min="0" :fraction-digits="3" />
+        </div>
+
+        <div v-if="selectedProduct?.tracksSerial" class="field full">
+          <label for="vs-serials">
+            Manufacturer serials <span class="label-bn">প্রতি লাইনে একটি সিরিয়াল</span>
+          </label>
+          <Textarea
+            id="vs-serials"
+            v-model="serialText"
+            rows="5"
+            placeholder="One serial per line"
+            fluid
+          />
+          <small>{{ serials.length }} selected · quantity {{ Math.round(qty) }}</small>
         </div>
 
         <div class="field">
@@ -221,6 +260,10 @@ async function save(): Promise<void> {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sher-space-3);
+}
+
+.full {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 40rem) {

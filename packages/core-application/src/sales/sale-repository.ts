@@ -33,6 +33,18 @@ export interface NewLotConsumption {
   readonly closesLot: boolean;
 }
 
+export interface NewSaleSourceAllocation {
+  readonly id: string;
+  readonly sourceType: 'OWNED' | 'VENDOR' | 'NEGATIVE';
+  readonly qty: number;
+  readonly ownedLotId: string | null;
+  readonly vendorPartyId: string | null;
+  readonly vendorStockReceiptId: string | null;
+  readonly vendorLotId: string | null;
+  readonly inventoryUnitId: string | null;
+  readonly unitCostUsed: number | null;
+}
+
 export interface NewSaleLine {
   readonly id: string;
   readonly lineNo: number;
@@ -58,6 +70,8 @@ export interface NewSaleLine {
    */
   readonly vendorLot: { readonly id: string; readonly unitCost: number } | null;
   readonly consumptions: readonly NewLotConsumption[];
+  readonly sourceAllocations: readonly NewSaleSourceAllocation[];
+  readonly serialUnitIds: readonly string[];
   /** The moving-average cache for this product after this line (DR13.5). */
   readonly costState: {
     readonly id: string;
@@ -120,6 +134,19 @@ export interface SaleLineRow {
   readonly vendorPartyId: string | null;
   readonly vendorName: string | null;
   readonly isProvisionalCost: boolean;
+  readonly tracksSerial: boolean;
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly sourceType: 'OWNED' | 'VENDOR' | 'NEGATIVE';
+    readonly qty: number;
+    readonly ownedLotId: string | null;
+    readonly vendorPartyId: string | null;
+    readonly vendorStockReceiptId: string | null;
+    readonly vendorLotId: string | null;
+    readonly inventoryUnitId: string | null;
+    readonly serialNo: string | null;
+    readonly unitCostUsed: number | null;
+  }[];
 }
 
 export interface SalePaymentRow {
@@ -292,12 +319,16 @@ export interface PosProductRow {
   readonly sellingPriceMinor: number;
   readonly purchasePriceMinor: number;
   readonly groupPriceMinor: number | null;
+  /** Net owned position, which may be negative. */
   readonly qtyOnHand: number;
+  /** Physical, sellable OWNED lots; distinct from the net owned position. */
+  readonly sellableOwnedQty: number;
   readonly minStockQty: number;
   readonly hasImage: boolean;
   /** The precomputed line the search matches and ranks against (0026). */
   readonly searchText: string;
   readonly tracksExpiry: boolean;
+  readonly tracksSerial: boolean;
 }
 
 export interface PosProductFilter {
@@ -439,6 +470,15 @@ export interface SaleReversal {
     readonly lotId: string;
     readonly qty: number;
   }[];
+  /** Vendor-owned quantity returns only to the exact recorded consignment lot. */
+  readonly vendorRestorations: readonly { readonly lotId: string; readonly qty: number }[];
+  /** Append-only reversal facts; source allocation rows remain immutable. */
+  readonly allocationReversals: readonly {
+    readonly id: string;
+    readonly sourceAllocationId: string;
+    readonly qty: number;
+  }[];
+  readonly serialUnitIds: readonly string[];
   readonly costStates: readonly {
     readonly id: string;
     readonly exists: boolean;

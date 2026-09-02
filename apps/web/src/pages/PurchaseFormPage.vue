@@ -3,6 +3,8 @@ import type {
   CatalogResponse,
   DayStatusResponse,
   MoneyAccountResponse,
+  LandedCostCategoryValue,
+  LandedCostMethodValue,
   PartyResponse,
   ProductResponse,
   PurchaseLineRequest,
@@ -12,6 +14,7 @@ import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -85,7 +88,14 @@ const notes = ref('');
 const lines = ref<Line[]>([]);
 const categoryId = ref('');
 const discount = ref(0);
-const extraCost = ref(0);
+interface LandedCostRow {
+  category: LandedCostCategoryValue;
+  method: LandedCostMethodValue;
+  amount: number;
+  description: string;
+  manual: number[];
+}
+const landedCosts = ref<LandedCostRow[]>([]);
 const paid = ref(0);
 const paidAccountId = ref('');
 
@@ -170,8 +180,11 @@ function lineTotalMinor(line: Line): number {
 const subtotalMinor = computed(() =>
   lines.value.reduce((sum, line) => sum + lineTotalMinor(line), 0),
 );
+const landedCostMinor = computed(() =>
+  landedCosts.value.reduce((sum, row) => sum + minor(row.amount), 0),
+);
 const grandTotalMinor = computed(
-  () => subtotalMinor.value - minor(discount.value) + minor(extraCost.value),
+  () => subtotalMinor.value - minor(discount.value) + landedCostMinor.value,
 );
 const dueMinor = computed(() => Math.max(grandTotalMinor.value - minor(paid.value), 0));
 
@@ -183,8 +196,51 @@ const readyToSave = computed(
     lines.value.every((line) => line.qty > 0) &&
     grandTotalMinor.value > 0 &&
     minor(paid.value) <= grandTotalMinor.value &&
-    (minor(paid.value) === 0 || accountCode.value !== null),
+    (minor(paid.value) === 0 || accountCode.value !== null) &&
+    landedCosts.value.every(
+      (row) =>
+        minor(row.amount) > 0 &&
+        (row.category !== 'OTHER' || row.description.trim() !== '') &&
+        (row.method !== 'MANUAL' ||
+          row.manual.slice(0, lines.value.length).reduce((sum, amount) => sum + minor(amount ?? 0), 0) ===
+            minor(row.amount)),
+    ),
 );
+
+const landedCostCategories = [
+  { label: 'Transport', value: 'TRANSPORT' },
+  { label: 'Labour', value: 'LABOUR' },
+  { label: 'Loading / Unloading', value: 'LOADING' },
+  { label: 'Delivery', value: 'DELIVERY' },
+  { label: 'Customs', value: 'CUSTOMS' },
+  { label: 'Other', value: 'OTHER' },
+];
+const landedCostMethods = [
+  { label: 'Purchase Value', value: 'BY_VALUE' },
+  { label: 'Quantity', value: 'BY_QTY' },
+  { label: 'Manual', value: 'MANUAL' },
+];
+
+function addLandedCost(): void {
+  landedCosts.value.push({
+    category: 'TRANSPORT',
+    method: 'BY_QTY',
+    amount: 0,
+    description: '',
+    manual: lines.value.map(() => 0),
+  });
+}
+
+function removeLandedCost(index: number): void {
+  landedCosts.value.splice(index, 1);
+}
+
+function manualRemainingMinor(row: LandedCostRow): number {
+  return minor(row.amount) - row.manual.slice(0, lines.value.length).reduce(
+    (sum, amount) => sum + minor(amount ?? 0),
+    0,
+  );
+}
 
 async function loadSetup(): Promise<void> {
   const token = session.accessToken.value;
@@ -299,7 +355,6 @@ async function loadForCorrection(token: string, purchaseId: string): Promise<voi
   businessDate.value = bill.businessDate;
   dueDate.value = bill.dueDate ?? '';
   discount.value = (bill.discountMinor ?? 0) / 100;
-  extraCost.value = (bill.extraCostMinor ?? 0) / 100;
   paid.value = (bill.paidMinor ?? 0) / 100;
   notes.value = bill.notes ?? '';
 
@@ -317,6 +372,16 @@ async function loadForCorrection(token: string, purchaseId: string): Promise<voi
     // going to; re-linking it to the plan would count the goods twice.
     planLineId: null,
   }));
+  landedCosts.value =
+    (bill.extraCostMinor ?? 0) > 0
+      ? [{
+          category: 'TRANSPORT',
+          method: 'BY_VALUE',
+          amount: (bill.extraCostMinor ?? 0) / 100,
+          description: '',
+          manual: lines.value.map(() => 0),
+        }]
+      : [];
 }
 
 /**
@@ -467,7 +532,20 @@ async function save(): Promise<void> {
           }),
         ),
         discountMinor: minor(discount.value),
-        extraCostMinor: minor(extraCost.value),
+        landedCosts: landedCosts.value.map((row) => ({
+          category: row.category,
+          method: row.method,
+          amountMinor: minor(row.amount),
+          description: row.category === 'OTHER' ? row.description.trim() : null,
+          manualAllocations:
+            row.method === 'MANUAL'
+              ? lines.value.map((_line, lineIndex) => ({
+                  lineIndex,
+                  amountMinor: minor(row.manual[lineIndex] ?? 0),
+                }))
+              : [],
+        })),
+        extraCostMinor: 0,
         paidMinor: minor(paid.value),
         paidAccountCode: minor(paid.value) === 0 ? null : accountCode.value,
         notes: notes.value.trim() === '' ? null : notes.value.trim(),
@@ -719,25 +797,77 @@ onMounted(loadSetup);
                 fluid
               />
             </div>
-            <div class="total-row">
+            <div class="landed-heading">
               <span>
-                Extra Cost <span class="label-bn">অতিরিক্ত খরচ (যেমন: ভাড়া)</span>
+                Landed Costs <span class="label-bn">মাল আনতে খরচ</span>
                 <HelpTip
-                  label="Extra Cost"
-                  text="Transport, labour and anything else paid to get the goods here. It is added to what the stock cost."
-                  text-bn="মাল আনতে যে খরচ হলো — এটা মালের দামের সাথে যোগ হবে"
+                  label="Landed Costs"
+                  text="Add transport, labour and other costs as separate rows. Each row becomes part of inventory cost."
+                  text-bn="প্রতিটি খরচ আলাদা লাইনে দিন — সবগুলো মালের খরচে যোগ হবে"
                 />
               </span>
+              <Button icon="pi pi-plus" label="Add Cost" outlined size="small" @click="addLandedCost" />
+            </div>
+            <div v-for="(cost, costIndex) in landedCosts" :key="costIndex" class="landed-row">
+              <Select
+                v-model="cost.category"
+                :options="landedCostCategories"
+                option-label="label"
+                option-value="value"
+                aria-label="Landed cost category"
+                fluid
+              />
               <InputNumber
-                v-model="extraCost"
+                v-model="cost.amount"
                 :min="0"
                 :min-fraction-digits="2"
                 :max-fraction-digits="2"
-                :input-props="{ 'aria-label': 'Extra cost' }"
-                input-class="cell-input"
-                class="total-input"
+                :input-props="{ 'aria-label': 'Landed cost amount' }"
                 fluid
               />
+              <Select
+                v-model="cost.method"
+                :options="landedCostMethods"
+                option-label="label"
+                option-value="value"
+                aria-label="Landed cost allocation method"
+                fluid
+              />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                :aria-label="`Remove landed cost ${costIndex + 1}`"
+                @click="removeLandedCost(costIndex)"
+              />
+              <InputText
+                v-if="cost.category === 'OTHER'"
+                v-model="cost.description"
+                class="landed-description"
+                placeholder="Describe this cost (required)"
+                maxlength="300"
+                fluid
+              />
+              <div v-if="cost.method === 'MANUAL'" class="manual-allocation">
+                <div v-for="(line, lineIndex) in lines" :key="`${line.productId}-${lineIndex}`" class="manual-line">
+                  <span>{{ line.productName }}</span>
+                  <InputNumber
+                    v-model="cost.manual[lineIndex]"
+                    :min="0"
+                    :min-fraction-digits="2"
+                    :max-fraction-digits="2"
+                    :input-props="{ 'aria-label': `Manual landed cost for ${line.productName}` }"
+                    fluid
+                  />
+                </div>
+                <div class="manual-remaining" :class="{ 'is-zero': manualRemainingMinor(cost) === 0 }">
+                  Remaining <strong>{{ taka(manualRemainingMinor(cost)) }}</strong>
+                </div>
+              </div>
+            </div>
+            <div v-if="landedCosts.length > 0" class="total-row">
+              <span>Landed cost total</span>
+              <span class="figure">{{ taka(landedCostMinor) }}</span>
             </div>
             <div class="total-row is-grand">
               <span>Grand Total <span class="label-bn">সর্বমোট</span></span>
@@ -1068,6 +1198,54 @@ onMounted(loadSetup);
   color: var(--sher-primary, #2563eb);
 }
 
+.landed-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sher-space-3);
+  padding-top: var(--sher-space-2);
+  border-top: 1px solid var(--sher-border);
+}
+
+.landed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) auto;
+  gap: var(--sher-space-2);
+  padding: var(--sher-space-2);
+  border: 1px solid var(--sher-border);
+  border-radius: var(--sher-radius);
+  background: var(--sher-surface);
+}
+
+.landed-description,
+.manual-allocation {
+  grid-column: 1 / -1;
+}
+
+.manual-allocation {
+  display: grid;
+  gap: var(--sher-space-2);
+  padding-top: var(--sher-space-2);
+  border-top: 1px solid var(--sher-border);
+}
+
+.manual-line,
+.manual-remaining {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.6fr);
+  align-items: center;
+  gap: var(--sher-space-2);
+}
+
+.manual-remaining {
+  color: var(--sher-danger);
+  font-weight: 600;
+}
+
+.manual-remaining.is-zero {
+  color: var(--sher-success);
+}
+
 /* --------------------------------------------------------------- payment */
 .notes-field {
   position: relative;
@@ -1149,6 +1327,15 @@ onMounted(loadSetup);
 
   .totals {
     max-width: none;
+  }
+
+  .landed-row {
+    grid-template-columns: 1fr;
+  }
+
+  .landed-description,
+  .manual-allocation {
+    grid-column: 1;
   }
 }
 </style>

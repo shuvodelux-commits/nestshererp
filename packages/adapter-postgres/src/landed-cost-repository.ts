@@ -16,6 +16,7 @@ import {
   journalLines,
   productCostState,
   purchaseLandedCosts,
+  purchaseLandedCostAllocations,
   purchaseLines,
 } from './schema';
 import { txOf } from './unit-of-work';
@@ -130,6 +131,10 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
       businessDate: row.businessDate,
       operationId: row.operationId,
       journalEntryId: row.journalEntryId,
+      description: row.description,
+      paidAccountCode: row.paidAccountCode,
+      sessionId: row.sessionId,
+      allocations: [],
     }));
   }
 
@@ -200,12 +205,29 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
       journalEntryId: input.cost.journalEntryId,
       businessDate: input.cost.businessDate,
       operationId: input.cost.operationId,
+      description: input.cost.description,
+      paidAccountCode: input.cost.paidAccountCode,
+      sessionId: input.cost.sessionId,
       createdAt: now,
       updatedAt: now,
       createdBy: ctx.userId,
       updatedBy: ctx.userId,
       version: 1,
     });
+
+    if (input.cost.allocations.length > 0) {
+      await db.insert(purchaseLandedCostAllocations).values(
+        input.cost.allocations.map((allocation) => ({
+          id: allocation.id,
+          tenantId: ctx.tenantId,
+          landedCostId: input.cost.id,
+          purchaseLineId: allocation.purchaseLineId,
+          amountMinor: allocation.amountMinor,
+          createdAt: now,
+          createdBy: ctx.userId,
+        })),
+      );
+    }
 
     for (const lot of input.lots) {
       await db

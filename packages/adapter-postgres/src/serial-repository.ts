@@ -39,6 +39,10 @@ interface RawUnit extends Record<string, unknown> {
   sale_id: string | null;
   invoice_number: string | null;
   purchase_id: string | null;
+  lot_id: string | null;
+  vendor_party_id: string | null;
+  vendor_stock_receipt_id: string | null;
+  vendor_lot_id: string | null;
   customer_warranty_months: number | null;
   supplier_warranty_months: number | null;
 }
@@ -51,7 +55,8 @@ const UNIT_SELECT = sql`
          iu.status, iu.received_date::text, iu.sold_date::text,
          iu.supplier_party_id, sup.name AS supplier_name,
          iu.customer_party_id, cus.name AS customer_name,
-         iu.sale_id, s.sale_number AS invoice_number, iu.purchase_id,
+         iu.sale_id, s.sale_number AS invoice_number, iu.purchase_id, iu.lot_id,
+         iu.vendor_party_id, iu.vendor_stock_receipt_id, iu.vendor_lot_id,
          iu.customer_warranty_months, iu.supplier_warranty_months
     FROM inventory_units iu
     JOIN products p ON p.id = iu.product_id AND p.tenant_id = iu.tenant_id
@@ -77,6 +82,10 @@ function toUnit(row: RawUnit): SerialUnitRow {
     saleId: row.sale_id,
     invoiceNumber: row.invoice_number,
     purchaseId: row.purchase_id,
+    lotId: row.lot_id,
+    vendorPartyId: row.vendor_party_id,
+    vendorStockReceiptId: row.vendor_stock_receipt_id,
+    vendorLotId: row.vendor_lot_id,
     customerWarrantyMonths: row.customer_warranty_months,
     supplierWarrantyMonths: row.supplier_warranty_months,
   };
@@ -215,6 +224,9 @@ export class PostgresSerialRepository implements SerialRepository {
           purchaseId: unit.purchaseId,
           purchaseLineId: unit.purchaseLineId,
           supplierPartyId: unit.supplierPartyId,
+          vendorPartyId: unit.vendorPartyId,
+          vendorStockReceiptId: unit.vendorStockReceiptId,
+          vendorLotId: unit.vendorLotId,
           receivedDate: unit.receivedDate,
           expiryDate: unit.expiryDate,
           supplierWarrantyMonths: unit.supplierWarrantyMonths,
@@ -307,6 +319,24 @@ export class PostgresSerialRepository implements SerialRepository {
     return rows.rows.map(toUnit);
   }
 
+  async findAvailableByIds(
+    tx: Tx,
+    ctx: TenantContext,
+    productId: string,
+    unitIds: readonly string[],
+  ): Promise<readonly SerialUnitRow[]> {
+    if (unitIds.length === 0) return [];
+    const rows = await txOf(tx).execute<RawUnit>(sql`
+      ${UNIT_SELECT}
+       WHERE iu.tenant_id = ${ctx.tenantId}
+         AND iu.product_id = ${productId}
+         AND iu.status = 'IN_STOCK'
+         AND iu.id IN (${sql.join(unitIds.map((id) => sql`${id}`), sql`, `)})
+       ORDER BY iu.received_date ASC, iu.id ASC
+    `);
+    return rows.rows.map(toUnit);
+  }
+
   /**
    * Stock on the shelf that no serial has been typed for yet.
    *
@@ -344,10 +374,10 @@ export class PostgresSerialRepository implements SerialRepository {
       readonly soldDate: string;
       readonly customerWarrantyMonths: number | null;
     },
-  ): Promise<void> {
-    if (input.unitIds.length === 0) return;
+  ): Promise<number> {
+    if (input.unitIds.length === 0) return 0;
 
-    await txOf(tx)
+    const changed = await txOf(tx)
       .update(inventoryUnits)
       .set({
         status: 'SOLD',
@@ -366,8 +396,11 @@ export class PostgresSerialRepository implements SerialRepository {
         and(
           eq(inventoryUnits.tenantId, ctx.tenantId),
           inArray(inventoryUnits.id, [...input.unitIds]),
+          eq(inventoryUnits.status, 'IN_STOCK'),
         ),
-      );
+      )
+      .returning({ id: inventoryUnits.id });
+    return changed.length;
   }
 
   async setStatus(

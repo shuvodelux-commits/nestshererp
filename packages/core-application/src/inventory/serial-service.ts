@@ -94,6 +94,9 @@ export class SerialService {
           purchaseId: line.purchaseId,
           purchaseLineId: line.purchaseLineId,
           supplierPartyId: line.supplierPartyId,
+          vendorPartyId: null,
+          vendorStockReceiptId: null,
+          vendorLotId: null,
           // The supplier's cover runs from the day the goods arrived, not from
           // the day somebody found time to type the numbers in.
           receivedDate: line.businessDate,
@@ -199,6 +202,9 @@ export function toUnitResponse(unit: SerialUnitRow, today: string): SerialUnitRe
     receivedDate: unit.receivedDate,
     soldDate: unit.soldDate,
     supplierName: unit.supplierName,
+    vendorPartyId: unit.vendorPartyId,
+    vendorStockReceiptId: unit.vendorStockReceiptId,
+    vendorLotId: unit.vendorLotId,
     customerName: unit.customerName,
     invoiceNumber: unit.invoiceNumber,
     customerWarrantyEnd: customerEnd,

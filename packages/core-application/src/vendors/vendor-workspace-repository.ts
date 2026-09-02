@@ -136,6 +136,36 @@ export interface VendorActivityRowData {
   readonly sourceId: string;
 }
 
+export interface NewVendorProductSettlement {
+  readonly id: string;
+  readonly number: string;
+  readonly operationId: string;
+  readonly vendorPartyId: string;
+  readonly purchaseId: string;
+  readonly purchaseNumber: string;
+  readonly grossProductMinor: number;
+  readonly discountMinor: number;
+  readonly netProductMinor: number;
+  readonly landedCostMinor: number;
+  readonly receivableBeforeMinor: number;
+  readonly receivableAfterMinor: number;
+  readonly businessDate: string;
+  readonly entryMode: 'ON_TIME' | 'LATE_ENTRY' | 'BACKDATED' | 'CORRECTED';
+  readonly journalEntryId: string;
+  readonly journalLines: readonly NewJournalLine[];
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly saleId: string;
+    readonly saleNumber: string;
+    readonly amountMinor: number;
+  }[];
+}
+
+export type VendorProductSettlementRow = Omit<
+  NewVendorProductSettlement,
+  'operationId' | 'entryMode' | 'journalEntryId' | 'journalLines'
+>;
+
 export interface VendorWorkspaceRepository {
   /** Split by account, because the tiles and the payment guard need them apart. */
   accountBalances(
@@ -185,6 +215,17 @@ export interface VendorWorkspaceRepository {
     ctx: TenantContext,
     operationId: string,
   ): Promise<string | null>;
+
+  insertProductSettlement(
+    tx: Tx,
+    ctx: TenantContext,
+    settlement: NewVendorProductSettlement,
+  ): Promise<void>;
+  findProductSettlementByOperationId(
+    tx: Tx,
+    ctx: TenantContext,
+    operationId: string,
+  ): Promise<VendorProductSettlementRow | null>;
 
   /**
    * One history list across six kinds of document, in business-date order.

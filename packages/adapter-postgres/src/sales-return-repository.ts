@@ -20,6 +20,7 @@ import type { SQL } from 'drizzle-orm';
 import {
   accounts,
   inventoryLots,
+  inventoryUnits,
   journalEntries,
   journalLines,
   lotConsumptions,
@@ -28,6 +29,8 @@ import {
   products,
   roles,
   saleLines,
+  saleLineSourceAllocations,
+  saleSourceAllocationReversals,
   sales,
   salesReturnLines,
   salesReturns,
@@ -81,6 +84,7 @@ function creditedMinor(saleId: SQL): SQL<number> {
 const INVOICE_DUE_MINOR = sql<number>`(
   ${sales.grandTotalMinor} - ${sales.paidMinor}
   - COALESCE((SELECT SUM(ra.amount_minor) FROM receipt_allocations ra WHERE ra.sale_id = ${sales.id}), 0)
+  - COALESCE((SELECT SUM(vrsa.amount_minor) FROM vendor_receivable_settlement_allocations vrsa WHERE vrsa.sale_id = ${sales.id}), 0)
   - ${creditedMinor(sql`${sales.id}`)}
 )::bigint`;
 
@@ -204,6 +208,52 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
       lotId: row.lotId.trim(),
       qty: Number(row.qty),
       unitCostUsed: Number(row.unitCostUsed),
+    }));
+  }
+
+  async sourceAllocations(tx: Tx, ctx: TenantContext, saleId: string) {
+    const rows = await txOf(tx)
+      .select({
+        id: saleLineSourceAllocations.id,
+        saleLineId: saleLineSourceAllocations.saleLineId,
+        sourceType: saleLineSourceAllocations.sourceType,
+        qty: saleLineSourceAllocations.qty,
+        ownedLotId: saleLineSourceAllocations.ownedLotId,
+        vendorPartyId: saleLineSourceAllocations.vendorPartyId,
+        vendorLotId: saleLineSourceAllocations.vendorLotId,
+        inventoryUnitId: saleLineSourceAllocations.inventoryUnitId,
+        unitCostUsed: saleLineSourceAllocations.unitCostUsed,
+        reversedQty: sql<number>`COALESCE((
+          SELECT SUM(sar.qty)
+            FROM sale_source_allocation_reversals sar
+            JOIN sales_returns sr
+              ON sr.tenant_id = sar.tenant_id AND sr.id = sar.source_document_id
+           WHERE sar.tenant_id = ${ctx.tenantId}
+             AND sar.source_allocation_id = ${saleLineSourceAllocations.id}
+             AND sar.source_document_type = 'SALES_RETURN'
+             AND sr.status = 'POSTED' AND sr.deleted_at IS NULL
+        ), 0)::bigint`,
+      })
+      .from(saleLineSourceAllocations)
+      .where(
+        and(
+          eq(saleLineSourceAllocations.tenantId, ctx.tenantId),
+          eq(saleLineSourceAllocations.saleId, saleId),
+        ),
+      )
+      .orderBy(asc(saleLineSourceAllocations.createdAt), asc(saleLineSourceAllocations.id));
+
+    return rows.map((row) => ({
+      id: row.id.trim(),
+      saleLineId: row.saleLineId.trim(),
+      sourceType: row.sourceType as 'OWNED' | 'VENDOR' | 'NEGATIVE',
+      qty: Number(row.qty),
+      reversedQty: Number(row.reversedQty),
+      ownedLotId: row.ownedLotId?.trim() ?? null,
+      vendorPartyId: row.vendorPartyId?.trim() ?? null,
+      vendorLotId: row.vendorLotId?.trim() ?? null,
+      inventoryUnitId: row.inventoryUnitId?.trim() ?? null,
+      unitCostUsed: Number(row.unitCostUsed ?? 0),
     }));
   }
 
@@ -380,9 +430,9 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
     `);
 
     const lines = await db.execute<{
-      product_id: string; location_id: string; qty: string; cost_minor: string;
+      sale_line_id: string; product_id: string; location_id: string; qty: string; cost_minor: string;
     }>(sql`
-      SELECT l.product_id, r.location_id, l.qty::text AS qty, l.cost_minor::text AS cost_minor
+      SELECT l.sale_line_id, l.product_id, r.location_id, l.qty::text AS qty, l.cost_minor::text AS cost_minor
         FROM sales_return_lines l
         JOIN sales_returns r ON r.tenant_id = l.tenant_id AND r.id = l.return_id
        WHERE l.tenant_id = ${ctx.tenantId} AND l.return_id = ${returnId}
@@ -395,16 +445,42 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
      * since been sold again.
      */
     const refills = await db.execute<{
-      product_id: string; lot_id: string; qty: string; lot_remaining: string;
+      sale_line_id: string; product_id: string; lot_id: string; qty: string; lot_remaining: string;
     }>(sql`
       SELECT lc.lot_id, c.qty::text AS qty, il.qty_remaining::text AS lot_remaining,
-             il.product_id
+             il.product_id, srl.sale_line_id
         FROM lot_consumptions c
         JOIN lot_consumptions lc ON lc.id = c.id
         JOIN inventory_lots il ON il.tenant_id = c.tenant_id AND il.id = c.lot_id
+        JOIN sales_return_lines srl ON srl.tenant_id = c.tenant_id AND srl.movement_id = c.movement_id
        WHERE c.tenant_id = ${ctx.tenantId}
          AND c.document_type = 'SALES_RETURN'
          AND c.document_id = ${returnId}
+    `);
+
+    const origins = await db.execute<{
+      sale_line_id: string; source_type: string; qty: string; owned_lot_id: string | null;
+      vendor_lot_id: string | null; vendor_lot_remaining: string; inventory_unit_id: string | null;
+      unit_cost_used: string;
+      serial_previous_status: string | null; serial_sale_id: string | null;
+      serial_sale_line_id: string | null; serial_customer_party_id: string | null;
+      serial_sold_date: string | null; serial_customer_warranty_months: number | null;
+    }>(sql`
+      SELECT a.sale_line_id, a.source_type, r.qty::text, a.owned_lot_id, a.vendor_lot_id,
+             COALESCE(vl.qty_remaining, 0)::text AS vendor_lot_remaining,
+             a.inventory_unit_id, COALESCE(a.unit_cost_used, 0)::text AS unit_cost_used,
+             r.serial_previous_status, r.serial_sale_id, r.serial_sale_line_id,
+             r.serial_customer_party_id, r.serial_sold_date::text,
+             r.serial_customer_warranty_months
+        FROM sale_source_allocation_reversals r
+        JOIN sale_line_source_allocations a
+          ON a.tenant_id = r.tenant_id AND a.id = r.source_allocation_id
+        LEFT JOIN inventory_lots vl
+          ON vl.tenant_id = a.tenant_id AND vl.id = a.vendor_lot_id
+       WHERE r.tenant_id = ${ctx.tenantId}
+         AND r.source_document_type = 'SALES_RETURN'
+         AND r.source_document_id = ${returnId}
+       ORDER BY r.id
     `);
 
     const states = await db.execute<{
@@ -434,17 +510,34 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         partyId: line.party_id === null ? null : line.party_id.trim(),
       })),
       lines: lines.rows.map((line) => ({
+        saleLineId: line.sale_line_id.trim(),
         productId: line.product_id.trim(),
         locationId: line.location_id.trim(),
         qty: Number(line.qty),
         costMinor: Number(line.cost_minor),
         refills: refills.rows
-          .filter((refill) => refill.product_id.trim() === line.product_id.trim())
+          .filter((refill) => refill.sale_line_id.trim() === line.sale_line_id.trim())
           .map((refill) => ({
             lotId: refill.lot_id.trim(),
             qty: Number(refill.qty),
             lotRemaining: Number(refill.lot_remaining),
           })),
+      })),
+      sourceOrigins: origins.rows.map((origin) => ({
+        saleLineId: origin.sale_line_id.trim(),
+        sourceType: origin.source_type as 'OWNED' | 'VENDOR' | 'NEGATIVE',
+        qty: Number(origin.qty),
+        ownedLotId: origin.owned_lot_id?.trim() ?? null,
+        vendorLotId: origin.vendor_lot_id?.trim() ?? null,
+        vendorLotRemaining: Number(origin.vendor_lot_remaining),
+        inventoryUnitId: origin.inventory_unit_id?.trim() ?? null,
+        unitCostUsed: Number(origin.unit_cost_used),
+        serialPreviousStatus: origin.serial_previous_status,
+        serialSaleId: origin.serial_sale_id?.trim() ?? null,
+        serialSaleLineId: origin.serial_sale_line_id?.trim() ?? null,
+        serialCustomerPartyId: origin.serial_customer_party_id?.trim() ?? null,
+        serialSoldDate: origin.serial_sold_date,
+        serialCustomerWarrantyMonths: origin.serial_customer_warranty_months,
       })),
       costStates: states.rows.map((state) => ({
         id: state.id.trim(),
@@ -509,7 +602,7 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
       });
 
       for (const take of line.takeBack) {
-        await db
+        const taken = await db
           .update(inventoryLots)
           .set({
             qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${take.qty}`,
@@ -525,7 +618,72 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
               eq(inventoryLots.id, take.lotId),
               gte(inventoryLots.qtyRemaining, take.qty),
             ),
-          );
+          )
+          .returning({ id: inventoryLots.id });
+        if (taken.length !== 1) {
+          throw new Error('Returned owned stock moved before the return could be voided');
+        }
+      }
+    }
+
+    /*
+     * The vendor's goods leave the vendor's lot again. Nothing is posted for
+     * them: they were never the shop's stock and never entered its valuation —
+     * the return's own `VENDOR_PAYABLE` line is undone with the rest of the
+     * entry.
+     */
+    for (const take of reversal.vendorTakes) {
+      const taken = await db
+        .update(inventoryLots)
+        .set({
+          qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${take.qty}`,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryLots.version} + 1`,
+        })
+        .where(
+          and(
+            eq(inventoryLots.tenantId, ctx.tenantId),
+            eq(inventoryLots.id, take.lotId),
+            eq(inventoryLots.ownerType, 'VENDOR'),
+            gte(inventoryLots.qtyRemaining, take.qty),
+          ),
+        )
+        .returning({ id: inventoryLots.id });
+      if (taken.length !== 1) {
+        throw new Error('Returned vendor stock moved before the return could be voided');
+      }
+    }
+
+    /*
+     * A serial the return put back on the shelf goes back to the customer it
+     * was sold to, with the sale, the date and the warranty it carried — read
+     * from what was captured when the return took it back, never guessed.
+     */
+    for (const restore of reversal.serialRestores) {
+      const restored = await db
+        .update(inventoryUnits)
+        .set({
+          status: restore.status,
+          saleId: restore.saleId,
+          saleLineId: restore.saleLineId,
+          customerPartyId: restore.customerPartyId,
+          soldDate: restore.soldDate,
+          customerWarrantyMonths: restore.customerWarrantyMonths,
+          updatedAt: now,
+          updatedBy: ctx.userId,
+          version: sql`${inventoryUnits.version} + 1`,
+        })
+        .where(
+          and(
+            eq(inventoryUnits.tenantId, ctx.tenantId),
+            eq(inventoryUnits.id, restore.unitId),
+            eq(inventoryUnits.status, 'IN_STOCK'),
+          ),
+        )
+        .returning({ id: inventoryUnits.id });
+      if (restored.length !== 1) {
+        throw new Error('Returned serial moved before the return could be voided');
       }
     }
 
@@ -607,6 +765,14 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
     });
 
     for (const line of draft.lines) {
+      /*
+       * One movement for the whole quantity that came back, whoever owns it —
+       * the mirror of the sale's single OUT (§5.7). `stock_movements` is the
+       * trail of goods over the counter, not of ownership: a vendor's
+       * consignment came in on a receipt movement and left on the sale's, so it
+       * comes back on this one. What only the shop's own goods may touch is the
+       * valuation, and that moves through `costStates`.
+       */
       await db.insert(stockMovements).values({
         id: line.movementId,
         tenantId: ctx.tenantId,
@@ -621,8 +787,6 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         sourceDocumentType: 'SALES_RETURN',
         sourceDocumentId: draft.id,
         sourceNumber: draft.number,
-        // `stock_movements.unit_cost` is taka at scale 4, as `actualUnitCost` is:
-        // poisha per unit × 100, and the quantity is scale 3.
         unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
       });
 
@@ -675,6 +839,97 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         createdAt: now,
         createdBy: ctx.userId,
       });
+
+      for (const restoration of line.vendorRestorations) {
+        await db
+          .update(inventoryLots)
+          .set({
+            qtyRemaining: sql`${inventoryLots.qtyRemaining} + ${restoration.qty}`,
+            status: 'OPEN',
+            updatedAt: now,
+            updatedBy: ctx.userId,
+            version: sql`${inventoryLots.version} + 1`,
+          })
+          .where(
+            and(
+              eq(inventoryLots.tenantId, ctx.tenantId),
+              eq(inventoryLots.id, restoration.lotId),
+              eq(inventoryLots.ownerType, 'VENDOR'),
+            ),
+          );
+      }
+
+      for (const reversal of line.sourceReversals) {
+        const snapshots = await db
+          .select({
+            status: inventoryUnits.status,
+            saleId: inventoryUnits.saleId,
+            saleLineId: inventoryUnits.saleLineId,
+            customerPartyId: inventoryUnits.customerPartyId,
+            soldDate: inventoryUnits.soldDate,
+            customerWarrantyMonths: inventoryUnits.customerWarrantyMonths,
+          })
+          .from(saleLineSourceAllocations)
+          .leftJoin(
+            inventoryUnits,
+            and(
+              eq(inventoryUnits.tenantId, ctx.tenantId),
+              eq(inventoryUnits.id, saleLineSourceAllocations.inventoryUnitId),
+            ),
+          )
+          .where(
+            and(
+              eq(saleLineSourceAllocations.tenantId, ctx.tenantId),
+              eq(saleLineSourceAllocations.id, reversal.sourceAllocationId),
+            ),
+          )
+          .limit(1);
+        const snapshot = snapshots[0];
+        await db.insert(saleSourceAllocationReversals).values({
+          id: reversal.id,
+          tenantId: ctx.tenantId,
+          sourceAllocationId: reversal.sourceAllocationId,
+          sourceDocumentType: 'SALES_RETURN',
+          sourceDocumentId: draft.id,
+          qty: reversal.qty,
+          serialPreviousStatus: snapshot?.status ?? null,
+          serialSaleId: snapshot?.saleId ?? null,
+          serialSaleLineId: snapshot?.saleLineId ?? null,
+          serialCustomerPartyId: snapshot?.customerPartyId ?? null,
+          serialSoldDate: snapshot?.soldDate ?? null,
+          serialCustomerWarrantyMonths: snapshot?.customerWarrantyMonths ?? null,
+          createdAt: now,
+          createdBy: ctx.userId,
+        });
+      }
+
+      if (line.serialUnitIds.length > 0) {
+        const restored = await db
+          .update(inventoryUnits)
+          .set({
+            status: 'IN_STOCK',
+            saleId: null,
+            saleLineId: null,
+            customerPartyId: null,
+            soldDate: null,
+            customerWarrantyMonths: null,
+            updatedAt: now,
+            updatedBy: ctx.userId,
+            version: sql`${inventoryUnits.version} + 1`,
+          })
+          .where(
+            and(
+              eq(inventoryUnits.tenantId, ctx.tenantId),
+              inArray(inventoryUnits.id, [...line.serialUnitIds]),
+              eq(inventoryUnits.saleId, draft.saleId),
+              eq(inventoryUnits.status, 'SOLD'),
+            ),
+          )
+          .returning({ id: inventoryUnits.id });
+        if (restored.length !== line.serialUnitIds.length) {
+          throw new Error('One or more sale serials are no longer available for this return');
+        }
+      }
     }
 
     for (const state of draft.costStates) {

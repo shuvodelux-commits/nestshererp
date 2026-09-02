@@ -14,6 +14,7 @@ import type { Clock } from '@sher/shared-utils';
 
 import type { ProductRepository } from '../catalog/product-repository';
 import type { InventoryRepository } from '../inventory/inventory-repository';
+import type { SerialRepository } from '../inventory/serial-repository';
 import type { MoneyRepository } from '../money/money-repository';
 import { entryModeFor } from '../notes/create-note-service';
 import type { ManagePartiesService } from '../parties/manage-parties-service';
@@ -29,8 +30,13 @@ import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import { resolvePaymentAccount } from '../purchasing/payment-account';
 import { effectiveSettings, settingValuesOf } from '../settings/feature-dependencies';
 import type { SettingsRepository } from '../settings/settings-repository';
+import type {
+  VendorReceiptRow,
+  VendorStockRepository,
+} from '../vendors/vendor-stock-repository';
 import type { NewLotConsumption, NewSaleLine, SaleRepository } from './sale-repository';
 import { toSaleResponse } from './sale-view';
+import type { CancelSaleService } from './cancel-sale-service';
 
 /**
  * Selling at the counter (Phase 6, §5.7, §5.8, §5.11).
@@ -58,6 +64,12 @@ export interface SaleLineInput {
   readonly source: 'OWN_STOCK' | 'VENDOR_CONSIGNMENT';
   readonly vendorPartyId: string | null;
   readonly vendorUnitCostMinor: number | null;
+  readonly allocations: readonly {
+    readonly sourceType: 'OWNED' | 'VENDOR' | 'NEGATIVE';
+    readonly qty: number;
+    readonly vendorPartyId: string | null;
+    readonly serialUnitIds: readonly string[];
+  }[];
 }
 
 export interface SalePaymentInput {
@@ -82,6 +94,8 @@ export interface CreateSaleCommand {
   readonly overpaymentHandling: 'CHANGE' | 'ADVANCE';
   readonly allowNegativeStock: boolean;
   readonly notes: string | null;
+  readonly correctionOf?: string | null | undefined;
+  readonly correctionVersion?: number | null | undefined;
 }
 
 /** Domain refusal → the sentence a shopkeeper reads. The rule stays in the domain. */
@@ -108,6 +122,8 @@ export class CreateSaleService {
     private readonly partyService: ManagePartiesService,
     private readonly products: ProductRepository,
     private readonly inventory: InventoryRepository,
+    private readonly serials: SerialRepository,
+    private readonly vendorStock: VendorStockRepository,
     private readonly money: MoneyRepository,
     private readonly sales: SaleRepository,
     private readonly settings: SettingsRepository,
@@ -115,6 +131,7 @@ export class CreateSaleService {
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
+    private readonly cancellations?: CancelSaleService,
   ) {}
 
   async create(command: CreateSaleCommand): Promise<SaleResponse> {
@@ -141,6 +158,8 @@ export class CreateSaleService {
       command.discountMinor,
       command.payments,
       command.overpaymentHandling,
+      command.correctionOf ?? null,
+      command.correctionVersion ?? null,
     ]);
 
     return this.uow.run(command.ctx, async (tx) => {
@@ -159,6 +178,18 @@ export class CreateSaleService {
       }
       const posted = await this.sales.findSaleIdByOperationId(tx, ctx, command.operationId);
       if (posted !== null) return this.detail(tx, ctx, posted, []);
+
+      if (command.correctionOf !== undefined && command.correctionOf !== null) {
+        if (this.cancellations === undefined || command.correctionVersion === undefined || command.correctionVersion === null) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'The original invoice version is required for correction');
+        }
+        await this.cancellations.cancelWithin(tx, {
+          ctx,
+          saleId: command.correctionOf,
+          version: command.correctionVersion,
+          reason: 'Corrected at the counter',
+        });
+      }
 
       const today = this.clock.businessDate(ctx.timezone);
       const businessDate = command.businessDate ?? today;
@@ -236,6 +267,7 @@ export class CreateSaleService {
         { qtyOnHand: number; avgUnitCost: number; costStateId: string; exists: boolean }
       >();
       const layersByProduct = new Map<string, CostLayer[]>();
+      const vendorLots = new Map<string, Awaited<ReturnType<VendorStockRepository['listSellableLots']>>>();
       const saleLines: NewSaleLine[] = [];
       const vendorPayables = new Map<string, number>();
       const warnings: string[] = [];
@@ -264,26 +296,27 @@ export class CreateSaleService {
           };
         }
 
-        const line =
-          input.source === 'VENDOR_CONSIGNMENT'
-            ? this.consignmentLine(
-                { index, input, lineTotals, product, position, location, consignmentOn },
-                vendorPayables,
-              )
-            : await this.ownStockLine(tx, ctx, {
-                index,
-                input,
-                lineTotals,
-                product,
-                position,
-                location,
-                method,
-                layersByProduct,
-                negativePolicy,
-                expiredOn: expiredPolicy === 'BLOCK' ? businessDate : null,
-                allowNegativeStock: command.allowNegativeStock,
-                warnings,
-              });
+        const line = await this.mixedStockLine(
+          tx,
+          ctx,
+          {
+            index,
+            input,
+            lineTotals,
+            product,
+            position,
+            location,
+            method,
+            layersByProduct,
+            vendorLots,
+            negativePolicy,
+            expiredOn: expiredPolicy === 'BLOCK' ? businessDate : null,
+            allowNegativeStock: command.allowNegativeStock,
+            warnings,
+            consignmentOn,
+          },
+          vendorPayables,
+        );
 
         positions.set(product.id, {
           qtyOnHand: line.costState.qtyOnHand,
@@ -365,6 +398,25 @@ export class CreateSaleService {
         })).filter((payment) => payment.amountMinor > 0),
       });
 
+      for (const line of saleLines) {
+        if (line.serialUnitIds.length === 0) continue;
+        const serialsSold = await this.serials.markSold(tx, ctx, {
+          unitIds: line.serialUnitIds,
+          saleId,
+          saleLineId: line.id,
+          customerPartyId: customer.partyId,
+          soldDate: businessDate,
+          customerWarrantyMonths:
+            (await this.products.findById(tx, ctx, line.productId))?.warrantyMonths ?? null,
+        });
+        if (serialsSold !== line.serialUnitIds.length) {
+          throw new AppError(
+            ErrorCode.CONFLICT_STALE_VERSION,
+            'One of the selected serial units was sold by another checkout — review the allocation',
+          );
+        }
+      }
+
       await this.audit.append(tx, ctx, {
         entityType: 'sale',
         entityId: saleId,
@@ -421,13 +473,23 @@ export class CreateSaleService {
     if (command.partyId !== null) {
       const party = await this.parties.findById(tx, ctx, command.partyId);
       if (party === null) throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
-      if (!party.roles.includes('CUSTOMER')) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, `“${party.name}” is not a customer`);
+      if (!party.roles.includes('CUSTOMER') && !party.roles.includes('VENDOR')) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          `“${party.name}” is neither a customer nor a vendor`,
+        );
       }
       if (party.status === 'INACTIVE') {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
           `“${party.name}” is no longer in use — reactivate them first`,
+        );
+      }
+      if (party.roles.includes('VENDOR') && command.payments.length > 0) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'A vendor credit sale must post in full first — record their payment as a separate receipt afterward',
+          { reason: 'VENDOR_PAYMENT_MUST_BE_SEPARATE' },
         );
       }
       return {
@@ -492,25 +554,43 @@ export class CreateSaleService {
     return { partyId: created.id, name: created.name, phone: created.phone };
   }
 
-  /** A line sold from the shop's own shelf: lots are consumed and COGS is real. */
-  private async ownStockLine(
+  /**
+   * Resolve one requested cart quantity into immutable inventory origins.
+   *
+   * Non-serial goods always take every sellable owned unit first. Serial goods
+   * are different: the selected physical units are the quantity, so no source
+   * is invented merely because a stock-position number says it exists.
+   */
+  private async mixedStockLine(
     tx: Tx,
     ctx: TenantContext,
     args: {
       index: number;
       input: SaleLineInput;
       lineTotals: { qty: number; unitPriceMinor: number; lineDiscountMinor: number; lineTotalMinor: number; discountShareMinor: number; netAmountMinor: number };
-      product: { id: string; name: string; tracksExpiry: boolean; purchasePriceMinor: number };
+      product: {
+        id: string;
+        name: string;
+        tracksExpiry: boolean;
+        tracksSerial: boolean;
+        purchasePriceMinor: number;
+      };
       position: { qtyOnHand: number; avgUnitCost: number; costStateId: string; exists: boolean };
       location: { id: string };
       method: 'FIFO' | 'AVERAGE';
       layersByProduct: Map<string, CostLayer[]>;
+      vendorLots: Map<
+        string,
+        Awaited<ReturnType<VendorStockRepository['listSellableLots']>>
+      >;
       negativePolicy: string;
       /** The date expired batches stop counting, or null when they still do. */
       expiredOn: string | null;
       allowNegativeStock: boolean;
       warnings: string[];
+      consignmentOn: boolean;
     },
+    vendorPayables: Map<string, number>,
   ): Promise<NewSaleLine> {
     const { input, lineTotals, product, position, location } = args;
 
@@ -522,6 +602,15 @@ export class CreateSaleService {
       args.layersByProduct.set(product.id, layers);
     }
     const available: CostLayer[] = layers;
+    const sellableOwnedQty = available
+      .filter(
+        (layer) =>
+          layer.qtyRemaining > 0 &&
+          (args.expiredOn === null ||
+            layer.expiryDate === null ||
+            layer.expiryDate >= args.expiredOn),
+      )
+      .reduce((sum, layer) => sum + layer.qtyRemaining, 0);
 
     /*
      * The provisional cost of stock that is not there (D-19) is the product's
@@ -548,95 +637,330 @@ export class CreateSaleService {
      * guessed and no sale is blocked. Making expiry mandatory on a tracked
      * product is the real fix and belongs on the purchase screen, not here.
      */
-    const byExpiry =
-      product.tracksExpiry && available.every((layer) => layer.expiryDate !== null);
-    const issue = costIssue(
-      args.method,
-      available,
-      input.qty,
-      position.avgUnitCost,
-      provisional,
-      byExpiry,
-      args.expiredOn,
-    );
-
-
-    if (issue.shortageQty > 0) {
-      /*
-       * What the shopkeeper is told has to be what they can actually sell.
-       * With expired batches skipped, "only 5 in stock" would be a lie about
-       * two of them, so the figure counts sellable units and the sentence names
-       * the expired ones separately — the shop then knows to look at Inventory
-       * rather than at the shelf (owner decision 2026-08-26).
-       */
-      const sellableQty =
-        args.expiredOn === null
-          ? Math.max(position.qtyOnHand, 0)
-          : available
-              .filter(
-                (layer) => layer.expiryDate === null || layer.expiryDate >= (args.expiredOn ?? ''),
-              )
-              .reduce((sum, layer) => sum + Math.max(layer.qtyRemaining, 0), 0);
-      const expiredQty = Math.max(Math.max(position.qtyOnHand, 0) - sellableQty, 0);
-      const expiredNote =
-        expiredQty > 0 ? ` — ${formatForDisplay(expiredQty, QTY_SCALE)} expired and cannot be sold` : '';
-
-      // §5.7's negative-stock policy. `BLOCK` refuses; `WARN` needs the cashier
-      // to have seen and accepted it, which is what `allowNegativeStock` is;
-      // `ALLOW` posts and labels the cost provisional (D-19).
-      if (args.negativePolicy === 'BLOCK') {
+    type AllocationInput = SaleLineInput['allocations'][number];
+    let requestedAllocations: readonly AllocationInput[] = input.allocations;
+    if (requestedAllocations.length === 0) {
+      if (product.tracksSerial) {
         throw new AppError(
-          ErrorCode.INSUFFICIENT_STOCK,
-          sellableQty <= 0 && expiredQty > 0
-            ? `Product expired. This batch cannot be sold`
-            : `Only ${formatForDisplay(sellableQty, QTY_SCALE)} of “${product.name}” can be sold${expiredNote}`,
-          {
-            reason: 'NEGATIVE_STOCK_BLOCKED',
-            productId: product.id,
-            shortageQty: String(issue.shortageQty),
-            expiredQty: String(expiredQty),
-          },
+          ErrorCode.VALIDATION_FAILED,
+          `Select exactly ${formatForDisplay(input.qty, QTY_SCALE)} serial units for “${product.name}”`,
         );
+      }
+      const ownedQty = Math.min(input.qty, sellableOwnedQty);
+      const shortageQty = Qty(input.qty).subtract(Qty(ownedQty)).raw;
+      requestedAllocations = [
+        ...(ownedQty > 0
+          ? [{ sourceType: 'OWNED' as const, qty: ownedQty, vendorPartyId: null, serialUnitIds: [] }]
+          : []),
+        ...(shortageQty > 0 && input.source === 'VENDOR_CONSIGNMENT'
+          ? [{
+              sourceType: 'VENDOR' as const,
+              qty: shortageQty,
+              vendorPartyId: input.vendorPartyId,
+              serialUnitIds: [],
+            }]
+          : shortageQty > 0
+            ? [{ sourceType: 'NEGATIVE' as const, qty: shortageQty, vendorPartyId: null, serialUnitIds: [] }]
+            : []),
+      ];
+    }
+
+    for (const allocation of requestedAllocations) {
+      if (!Number.isSafeInteger(allocation.qty) || allocation.qty <= 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Every stock allocation needs a quantity greater than zero');
+      }
+    }
+    const allocatedQty = requestedAllocations.reduce((sum, allocation) => sum + allocation.qty, 0);
+    if (allocatedQty !== input.qty) {
+      throw new AppError(
+        ErrorCode.INSUFFICIENT_STOCK,
+        `Allocate all ${formatForDisplay(input.qty, QTY_SCALE)} units of “${product.name}” before checkout`,
+        {
+          reason: 'STOCK_ALLOCATION_INCOMPLETE',
+          requestedQty: String(input.qty),
+          allocatedQty: String(allocatedQty),
+          remainingQty: String(input.qty - allocatedQty),
+        },
+      );
+    }
+
+    const vendorIds = new Set(
+      requestedAllocations
+        .filter((allocation) => allocation.sourceType === 'VENDOR')
+        .map((allocation) => allocation.vendorPartyId)
+        .filter((id): id is string => id !== null),
+    );
+    if (vendorIds.size > 1) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'One vendor may supply one cart line');
+    }
+
+    const ownedRequested = requestedAllocations
+      .filter((allocation) => allocation.sourceType === 'OWNED')
+      .reduce((sum, allocation) => sum + allocation.qty, 0);
+    const vendorRequested = requestedAllocations
+      .filter((allocation) => allocation.sourceType === 'VENDOR')
+      .reduce((sum, allocation) => sum + allocation.qty, 0);
+    const negativeRequested = requestedAllocations
+      .filter((allocation) => allocation.sourceType === 'NEGATIVE')
+      .reduce((sum, allocation) => sum + allocation.qty, 0);
+
+    if (!product.tracksSerial && ownedRequested !== Math.min(input.qty, sellableOwnedQty)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        `Available own stock for “${product.name}” must be used first`,
+        { reason: 'OWN_STOCK_FIRST', ownedQty: String(Math.min(input.qty, sellableOwnedQty)) },
+      );
+    }
+    if (negativeRequested > 0) {
+      if (product.tracksSerial) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Negative stock is not available for serial-tracked products');
+      }
+      if (args.negativePolicy === 'BLOCK') {
+        throw new AppError(ErrorCode.INSUFFICIENT_STOCK, 'Negative stock is switched off for this shop', {
+          reason: 'NEGATIVE_STOCK_BLOCKED',
+          productId: product.id,
+          shortageQty: String(negativeRequested),
+        });
       }
       if (args.negativePolicy === 'WARN' && !args.allowNegativeStock) {
         throw new AppError(
           ErrorCode.INSUFFICIENT_STOCK,
-          `Only ${formatForDisplay(sellableQty, QTY_SCALE)} of “${product.name}” can be sold${expiredNote} — confirm to sell anyway`,
-          {
-            reason: 'NEGATIVE_STOCK_CONFIRM',
-            productId: product.id,
-            shortageQty: String(issue.shortageQty),
-            expiredQty: String(expiredQty),
-          },
+          `Confirm the ${formatForDisplay(negativeRequested, QTY_SCALE)} negative-stock units for “${product.name}”`,
+          { reason: 'NEGATIVE_STOCK_CONFIRM', productId: product.id, shortageQty: String(negativeRequested) },
         );
       }
       args.warnings.push(
-        `“${product.name}” was sold below the stock on hand — its cost is provisional until the goods are bought`,
+        `“${product.name}” includes ${formatForDisplay(negativeRequested, QTY_SCALE)} negative-stock units — their cost is provisional`,
       );
     }
+    if (vendorRequested > 0 && !args.consignmentOn) {
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'Vendor consignment stock is switched off for this shop');
+    }
 
-    // Lots are spent in this map so a second line for the same product sees
-    // what the first one took, before any of it reaches the database.
-    const consumptions: NewLotConsumption[] = issue.allocations.map((allocation) => {
-      const at = available.findIndex((candidate) => candidate.id === allocation.lotId);
-      const layer = at === -1 ? undefined : available[at];
-      const before = layer?.qtyRemaining ?? 0;
-      const after = Qty(before).subtract(Qty(allocation.qty)).raw;
-      if (layer !== undefined) available[at] = { ...layer, qtyRemaining: after };
-      return {
-        id: Ulid.generate(this.clock),
-        lotId: allocation.lotId,
-        qty: allocation.qty,
-        unitCostUsed: allocation.unitCost,
-        closesLot: after === 0,
-      };
-    });
+    const sourceAllocations: NewSaleLine['sourceAllocations'][number][] = [];
+    const consumptions: NewLotConsumption[] = [];
+    const serialIds: string[] = [];
+    let ownCostMinor = 0;
+    let vendorCostMinor = 0;
+    let ownProvisional = false;
+
+    if (product.tracksSerial) {
+      const allSelected = requestedAllocations.flatMap((allocation) => allocation.serialUnitIds);
+      const expectedCount = input.qty / QTY_SCALE;
+      if (!Number.isSafeInteger(expectedCount) || allSelected.length !== expectedCount) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          `Select exactly ${formatForDisplay(input.qty, QTY_SCALE)} serial units for “${product.name}”`,
+        );
+      }
+      if (new Set(allSelected).size !== allSelected.length) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'The same serial unit cannot be selected twice');
+      }
+      for (const allocation of requestedAllocations) {
+        if (allocation.qty !== allocation.serialUnitIds.length * QTY_SCALE) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'A serial allocation quantity must equal its exact selected serial units',
+          );
+        }
+      }
+      const selected = await this.serials.findAvailableByIds(tx, ctx, product.id, allSelected);
+      if (selected.length !== allSelected.length) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'One or more selected serial units are no longer available');
+      }
+      const byId = new Map(selected.map((unit) => [unit.id, unit] as const));
+
+      for (const allocation of requestedAllocations) {
+        for (const unitId of allocation.serialUnitIds) {
+          const unit = byId.get(unitId);
+          if (unit === undefined) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Selected serial unit was not found');
+          serialIds.push(unit.id);
+          if (allocation.sourceType === 'OWNED') {
+            if (unit.vendorPartyId !== null || unit.lotId === null) {
+              throw new AppError(ErrorCode.VALIDATION_FAILED, `Serial ${unit.serialNo} is not owned shop stock`);
+            }
+            const layerAt = available.findIndex((candidate) => candidate.id === unit.lotId);
+            const layer = layerAt < 0 ? undefined : available[layerAt];
+            if (layer === undefined || layer.qtyRemaining < QTY_SCALE) {
+              throw new AppError(ErrorCode.INSUFFICIENT_STOCK, `Serial ${unit.serialNo} has no sellable owned lot stock`);
+            }
+            const unitCost = args.method === 'AVERAGE' ? position.avgUnitCost : layer.unitCost;
+            const after = Qty(layer.qtyRemaining).subtract(Qty(QTY_SCALE)).raw;
+            available[layerAt] = { ...layer, qtyRemaining: after };
+            ownCostMinor += stockValueMinor(QTY_SCALE, unitCost);
+            consumptions.push({
+              id: Ulid.generate(this.clock),
+              lotId: layer.id,
+              qty: QTY_SCALE,
+              unitCostUsed: unitCost,
+              closesLot: after === 0,
+            });
+            sourceAllocations.push({
+              id: Ulid.generate(this.clock),
+              sourceType: 'OWNED',
+              qty: QTY_SCALE,
+              ownedLotId: layer.id,
+              vendorPartyId: null,
+              vendorStockReceiptId: null,
+              vendorLotId: null,
+              inventoryUnitId: unit.id,
+              unitCostUsed: unitCost,
+            });
+          } else if (allocation.sourceType === 'VENDOR') {
+            if (
+              allocation.vendorPartyId === null ||
+              unit.vendorPartyId !== allocation.vendorPartyId ||
+              unit.vendorStockReceiptId === null ||
+              unit.vendorLotId === null
+            ) {
+              throw new AppError(ErrorCode.VALIDATION_FAILED, `Serial ${unit.serialNo} does not belong to the selected vendor stock`);
+            }
+            const key = `${allocation.vendorPartyId}:${product.id}`;
+            let vendorLayers = args.vendorLots.get(key);
+            if (vendorLayers === undefined) {
+              vendorLayers = [...(await this.vendorStock.listSellableLots(tx, ctx, allocation.vendorPartyId, product.id))];
+              args.vendorLots.set(key, vendorLayers);
+            }
+            const at = vendorLayers.findIndex((candidate) => candidate.lotId === unit.vendorLotId);
+            const vendorLayer = at < 0 ? undefined : vendorLayers[at];
+            if (vendorLayer === undefined || vendorLayer.lotQtyRemaining < QTY_SCALE) {
+              throw new AppError(ErrorCode.INSUFFICIENT_STOCK, `Serial ${unit.serialNo} is no longer available from this vendor`);
+            }
+            const remaining = Qty(vendorLayer.lotQtyRemaining).subtract(Qty(QTY_SCALE)).raw;
+            vendorLayers = vendorLayers.map((candidate, index) =>
+              index === at ? { ...candidate, lotQtyRemaining: remaining } : candidate,
+            );
+            args.vendorLots.set(key, vendorLayers);
+            const value = stockValueMinor(QTY_SCALE, vendorLayer.vendorUnitCost);
+            vendorCostMinor += value;
+            sourceAllocations.push({
+              id: Ulid.generate(this.clock),
+              sourceType: 'VENDOR',
+              qty: QTY_SCALE,
+              ownedLotId: null,
+              vendorPartyId: allocation.vendorPartyId,
+              vendorStockReceiptId: unit.vendorStockReceiptId,
+              vendorLotId: unit.vendorLotId,
+              inventoryUnitId: unit.id,
+              unitCostUsed: vendorLayer.vendorUnitCost,
+            });
+          }
+        }
+      }
+    } else {
+      if (ownedRequested > 0) {
+        const byExpiry = product.tracksExpiry && available.every((layer) => layer.expiryDate !== null);
+        const issue = costIssue(
+          args.method,
+          available,
+          ownedRequested,
+          position.avgUnitCost,
+          provisional,
+          byExpiry,
+          args.expiredOn,
+        );
+        if (issue.shortageQty !== 0) {
+          throw new AppError(ErrorCode.INSUFFICIENT_STOCK, `Owned stock for “${product.name}” changed — review the allocation`);
+        }
+        ownCostMinor += issue.valueMinor;
+        for (const allocation of issue.allocations) {
+          const at = available.findIndex((candidate) => candidate.id === allocation.lotId);
+          const layer = at < 0 ? undefined : available[at];
+          if (layer === undefined) throw new AppError(ErrorCode.INTERNAL_ERROR, 'Owned stock lot was not found');
+          const after = Qty(layer.qtyRemaining).subtract(Qty(allocation.qty)).raw;
+          available[at] = { ...layer, qtyRemaining: after };
+          consumptions.push({
+            id: Ulid.generate(this.clock),
+            lotId: allocation.lotId,
+            qty: allocation.qty,
+            unitCostUsed: args.method === 'AVERAGE' ? position.avgUnitCost : allocation.unitCost,
+            closesLot: after === 0,
+          });
+          sourceAllocations.push({
+            id: Ulid.generate(this.clock),
+            sourceType: 'OWNED',
+            qty: allocation.qty,
+            ownedLotId: allocation.lotId,
+            vendorPartyId: null,
+            vendorStockReceiptId: null,
+            vendorLotId: null,
+            inventoryUnitId: null,
+            unitCostUsed: args.method === 'AVERAGE' ? position.avgUnitCost : allocation.unitCost,
+          });
+        }
+      }
+      if (negativeRequested > 0) {
+        const negativeCost = position.avgUnitCost > 0 ? position.avgUnitCost : provisional;
+        ownCostMinor += stockValueMinor(negativeRequested, negativeCost);
+        ownProvisional = true;
+        sourceAllocations.push({
+          id: Ulid.generate(this.clock),
+          sourceType: 'NEGATIVE',
+          qty: negativeRequested,
+          ownedLotId: null,
+          vendorPartyId: null,
+          vendorStockReceiptId: null,
+          vendorLotId: null,
+          inventoryUnitId: null,
+          unitCostUsed: negativeCost,
+        });
+      }
+      if (vendorRequested > 0) {
+        const vendorPartyId = [...vendorIds][0];
+        if (vendorPartyId === undefined) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, `Select a vendor for “${product.name}”`);
+        }
+        const key = `${vendorPartyId}:${product.id}`;
+        let vendorLayers: readonly VendorReceiptRow[] | undefined = args.vendorLots.get(key);
+        if (vendorLayers === undefined) {
+          vendorLayers = [...(await this.vendorStock.listSellableLots(tx, ctx, vendorPartyId, product.id))];
+        }
+        let remaining = vendorRequested;
+        for (let at = 0; at < vendorLayers.length && remaining > 0; at += 1) {
+          const vendorLayer: VendorReceiptRow | undefined = vendorLayers[at];
+          if (vendorLayer === undefined || vendorLayer.lotQtyRemaining <= 0) continue;
+          const qty = Math.min(remaining, vendorLayer.lotQtyRemaining);
+          const after: number = Qty(vendorLayer.lotQtyRemaining).subtract(Qty(qty)).raw;
+          vendorLayers = vendorLayers.map((candidate, index) =>
+            index === at ? { ...candidate, lotQtyRemaining: after } : candidate,
+          );
+          remaining = Qty(remaining).subtract(Qty(qty)).raw;
+          vendorCostMinor += stockValueMinor(qty, vendorLayer.vendorUnitCost);
+          sourceAllocations.push({
+            id: Ulid.generate(this.clock),
+            sourceType: 'VENDOR',
+            qty,
+            ownedLotId: null,
+            vendorPartyId,
+            vendorStockReceiptId: vendorLayer.id,
+            vendorLotId: vendorLayer.lotId,
+            inventoryUnitId: null,
+            unitCostUsed: vendorLayer.vendorUnitCost,
+          });
+        }
+        args.vendorLots.set(key, vendorLayers);
+        if (remaining > 0) {
+          throw new AppError(
+            ErrorCode.INSUFFICIENT_STOCK,
+            `Only ${formatForDisplay(vendorRequested - remaining, QTY_SCALE)} recorded vendor units of “${product.name}” are available`,
+            { reason: 'VENDOR_STOCK_INSUFFICIENT', availableQty: String(vendorRequested - remaining) },
+          );
+        }
+      }
+    }
+
+    if (vendorCostMinor > 0) {
+      const vendorPartyId = [...vendorIds][0];
+      if (vendorPartyId === undefined) throw new AppError(ErrorCode.INTERNAL_ERROR, 'Vendor allocation is missing its vendor');
+      vendorPayables.set(vendorPartyId, (vendorPayables.get(vendorPartyId) ?? 0) + vendorCostMinor);
+    }
 
     /*
      * The moving average does not change when stock leaves (DR13.5) — only the
      * quantity does. That is what makes AVERAGE stable across a day of selling.
      */
-    const qtyOnHand = Qty(position.qtyOnHand).subtract(Qty(input.qty)).raw;
+    const ownedPositionIssue = ownedRequested + negativeRequested;
+    const qtyOnHand = Qty(position.qtyOnHand).subtract(Qty(ownedPositionIssue)).raw;
 
     return {
       id: Ulid.generate(this.clock),
@@ -649,91 +973,21 @@ export class CreateSaleService {
       lineTotalMinor: lineTotals.lineTotalMinor,
       discountShareMinor: lineTotals.discountShareMinor,
       netAmountMinor: lineTotals.netAmountMinor,
-      costMinor: issue.valueMinor,
-      source: 'OWN_STOCK',
-      vendorPartyId: null,
+      costMinor: ownCostMinor + vendorCostMinor,
+      source: ownedPositionIssue > 0 ? 'OWN_STOCK' : 'VENDOR_CONSIGNMENT',
+      vendorPartyId: vendorIds.size === 1 ? ([...vendorIds][0] ?? null) : null,
       vendorUnitCost: null,
-      isProvisionalCost: issue.provisional,
+      isProvisionalCost: ownProvisional,
       movementId: Ulid.generate(this.clock),
       vendorLot: null,
       consumptions,
+      sourceAllocations,
+      serialUnitIds: serialIds,
       costState: {
         id: position.costStateId,
         exists: position.exists,
         avgUnitCost: position.avgUnitCost,
         qtyOnHand,
-      },
-    };
-  }
-
-  /**
-   * A line sourced from a vendor at the moment of sale (§5.7, DR13.10).
-   *
-   * The goods were never the shop's, so they were never in `INVENTORY` and
-   * never in the owned valuation (INV-04). The deemed purchase creates the lot
-   * and consumes it in the same breath — the lot exists so the sale has a
-   * costed origin the movement trail can point at — and the vendor becomes
-   * owed exactly what the shopkeeper said their goods cost.
-   */
-  private consignmentLine(
-    args: {
-      index: number;
-      input: SaleLineInput;
-      lineTotals: { qty: number; unitPriceMinor: number; lineDiscountMinor: number; lineTotalMinor: number; discountShareMinor: number; netAmountMinor: number };
-      product: { id: string; name: string };
-      position: { qtyOnHand: number; avgUnitCost: number; costStateId: string; exists: boolean };
-      location: { id: string };
-      consignmentOn: boolean;
-    },
-    vendorPayables: Map<string, number>,
-  ): NewSaleLine {
-    const { input, lineTotals, product, position, location } = args;
-    if (!args.consignmentOn) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'Vendor sourcing is switched off for this shop',
-      );
-    }
-    if (input.vendorPartyId === null || input.vendorUnitCostMinor === null) {
-      throw new AppError(
-        ErrorCode.VALIDATION_FAILED,
-        `Say which vendor “${product.name}” came from, and what they charge`,
-      );
-    }
-
-    const unitCost = unitCostFromMoneyMinor(input.vendorUnitCostMinor);
-    const costMinor = stockValueMinor(input.qty, unitCost);
-    vendorPayables.set(
-      input.vendorPartyId,
-      (vendorPayables.get(input.vendorPartyId) ?? 0) + costMinor,
-    );
-
-    return {
-      id: Ulid.generate(this.clock),
-      lineNo: args.index + 1,
-      productId: product.id,
-      locationId: location.id,
-      qty: lineTotals.qty,
-      unitPriceMinor: lineTotals.unitPriceMinor,
-      lineDiscountMinor: lineTotals.lineDiscountMinor,
-      lineTotalMinor: lineTotals.lineTotalMinor,
-      discountShareMinor: lineTotals.discountShareMinor,
-      netAmountMinor: lineTotals.netAmountMinor,
-      costMinor,
-      source: 'VENDOR_CONSIGNMENT',
-      vendorPartyId: input.vendorPartyId,
-      vendorUnitCost: unitCost,
-      isProvisionalCost: false,
-      movementId: Ulid.generate(this.clock),
-      vendorLot: { id: Ulid.generate(this.clock), unitCost },
-      consumptions: [],
-      // Consignment goods are not owned, so the shop's own position is
-      // untouched — the quantity that leaves was never counted as its stock.
-      costState: {
-        id: position.costStateId,
-        exists: position.exists,
-        avgUnitCost: position.avgUnitCost,
-        qtyOnHand: position.qtyOnHand,
       },
     };
   }

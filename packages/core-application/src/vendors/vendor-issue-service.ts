@@ -133,6 +133,7 @@ export class VendorIssueService {
           source: 'OWN_STOCK',
           vendorPartyId: null,
           vendorUnitCostMinor: null,
+          allocations: [],
         },
       ],
       discountMinor: 0,

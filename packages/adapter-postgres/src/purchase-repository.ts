@@ -29,6 +29,8 @@ import {
   productCostState,
   products,
   purchaseLines,
+  purchaseLandedCostAllocations,
+  purchaseLandedCosts,
   purchases,
   stockMovements,
   supplierPayments,
@@ -52,6 +54,10 @@ function allocatedMinor(purchaseId: SQL): SQL<number> {
     SELECT SUM(pa.amount_minor)
       FROM payment_allocations pa
      WHERE pa.purchase_id = ${purchaseId}
+  ), 0)::bigint + COALESCE((
+    SELECT SUM(vps.net_product_minor)
+      FROM vendor_product_settlements vps
+     WHERE vps.purchase_id = ${purchaseId}
   ), 0)::bigint`;
 }
 
@@ -191,6 +197,44 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         createdAt: now,
         createdBy: ctx.userId,
       });
+    }
+
+    for (const cost of purchase.landedCosts ?? []) {
+      await db.insert(purchaseLandedCosts).values({
+        id: cost.id,
+        tenantId: ctx.tenantId,
+        purchaseId: purchase.id,
+        lineNo: cost.lineNo,
+        category: cost.category,
+        method: cost.method,
+        amountMinor: cost.amountMinor,
+        inventoryShareMinor: cost.amountMinor,
+        cogsShareMinor: 0,
+        journalEntryId: null,
+        businessDate: purchase.businessDate,
+        operationId: null,
+        description: cost.description,
+        paidAccountCode: null,
+        sessionId: null,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+        version: 1,
+      });
+      if (cost.allocations.length > 0) {
+        await db.insert(purchaseLandedCostAllocations).values(
+          cost.allocations.map((allocation) => ({
+            id: allocation.id,
+            tenantId: ctx.tenantId,
+            landedCostId: cost.id,
+            purchaseLineId: allocation.purchaseLineId,
+            amountMinor: allocation.amountMinor,
+            createdAt: now,
+            createdBy: ctx.userId,
+          })),
+        );
+      }
     }
 
     /*

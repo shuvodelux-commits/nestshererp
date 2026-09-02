@@ -416,6 +416,7 @@ function afterExtra(): void {
         :purchase-id="addingCost ? purchase.id : null"
         :purchase-number="purchase.number"
         :accounts="accounts"
+        :purchase-lines="purchase.lines.map((line) => ({ id: line.id, productName: line.productName }))"
         @close="addingCost = false"
         @added="afterExtra"
       />

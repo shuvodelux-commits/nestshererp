@@ -200,6 +200,13 @@ export interface SalesReturnPostingSides {
    * advance they spend on the next sale — never a negative receivable.
    */
   readonly settledMinor: number;
+  /** Mixed-source return: only owned/negative goods re-enter owned inventory. */
+  readonly ownedReturnCostMinor?: number;
+  /** Vendor goods restore the payable to that exact vendor instead. */
+  readonly vendorReturns?: readonly {
+    readonly vendorPartyId: string;
+    readonly costMinor: number;
+  }[];
 }
 
 /**
@@ -229,6 +236,12 @@ export function salesReturnPosting(
     throw new RangeError('A return cannot settle more than the credit it creates');
   }
   const advanceMinor = totals.creditMinor - sides.settledMinor;
+  const vendorReturns = sides.vendorReturns ?? [];
+  const vendorCostMinor = vendorReturns.reduce((sum, row) => sum + row.costMinor, 0);
+  const ownedCostMinor = sides.ownedReturnCostMinor ?? totals.returnCostMinor;
+  if (ownedCostMinor < 0 || vendorCostMinor < 0 || ownedCostMinor + vendorCostMinor !== totals.returnCostMinor) {
+    throw new RangeError('Return source costs must equal the returned cost');
+  }
 
   const lines = [
     { account: fixedAccount('SALES'), amountMinor: totals.returnValueMinor, partyId: null },
@@ -247,12 +260,19 @@ export function salesReturnPosting(
             partyId: sides.partyId,
           },
         ]),
+    ...(ownedCostMinor === 0
+      ? []
+      : [{ account: fixedAccount('INVENTORY'), amountMinor: ownedCostMinor, partyId: null }]),
+    ...vendorReturns
+      .filter((row) => row.costMinor > 0)
+      .map((row) => ({
+        account: fixedAccount('VENDOR_PAYABLE'),
+        amountMinor: row.costMinor,
+        partyId: row.vendorPartyId,
+      })),
     ...(totals.returnCostMinor === 0
       ? []
-      : [
-          { account: fixedAccount('INVENTORY'), amountMinor: totals.returnCostMinor, partyId: null },
-          { account: fixedAccount('COGS'), amountMinor: -totals.returnCostMinor, partyId: null },
-        ]),
+      : [{ account: fixedAccount('COGS'), amountMinor: -totals.returnCostMinor, partyId: null }]),
   ];
 
   const journal: JournalEntryDraft = { lines };
