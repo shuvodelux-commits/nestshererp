@@ -96,6 +96,43 @@ export interface CreateSaleCommand {
   readonly notes: string | null;
   readonly correctionOf?: string | null | undefined;
   readonly correctionVersion?: number | null | undefined;
+  /**
+   * The number the machine already printed (Phase 12.4, §8).
+   *
+   * Set **only** by sync replay, for a sale typed while the shop was offline:
+   * the customer walked out with that number on paper, so the document must
+   * post under it and never under a fresh one. The number is taken out of that
+   * device's own counter as it is used, so the server can never hand it to a
+   * second sale.
+   *
+   * Absent for every online sale, which allocates in the ordinary way.
+   */
+  readonly saleNumber?: string | undefined;
+}
+
+/**
+ * `S-2026-A-000123` taken apart: the year, the machine, and that machine's own
+ * sequence (Phase 12.4, §8).
+ *
+ * Anything that is not exactly that shape is refused rather than guessed at —
+ * a number the server cannot read is a number it cannot promise never to issue
+ * again, and the promise is the point.
+ */
+function parseDeviceNumber(
+  value: string,
+): { readonly year: number; readonly deviceCode: string; readonly sequence: number } {
+  const match = /^[A-Z]+-(\d{4})-([A-Z0]{1,3})-(\d{6,})$/.exec(value);
+  if (match === null) {
+    throw new AppError(
+      ErrorCode.VALIDATION_FAILED,
+      `${value} is not a sale number this shop can accept`,
+    );
+  }
+  return {
+    year: Number(match[1]),
+    deviceCode: String(match[2]),
+    sequence: Number(match[3]),
+  };
 }
 
 /** Domain refusal → the sentence a shopkeeper reads. The rule stays in the domain. */
@@ -352,12 +389,20 @@ export class CreateSaleService {
       });
 
       const saleId = Ulid.generate(this.clock);
-      const number = await this.numbering.allocate(
-        tx,
-        ctx,
-        'SALE',
-        Number(businessDate.slice(0, 4)),
-      );
+      const year = Number(businessDate.slice(0, 4));
+      /*
+       * A sale made offline arrives carrying the number the counter printed.
+       * Reserving it moves that device's counter past it rather than issuing a
+       * new one, which is the whole of "synchronization never renumbers a sale".
+       */
+      const printed = command.saleNumber === undefined ? null : parseDeviceNumber(command.saleNumber);
+      let number: string;
+      if (printed === null) {
+        number = await this.numbering.allocate(tx, ctx, 'SALE', year);
+      } else {
+        await this.numbering.reserve(tx, ctx, 'SALE', printed.year, printed.deviceCode, printed.sequence);
+        number = command.saleNumber as string;
+      }
 
       await this.sales.insertSale(tx, ctx, {
         id: saleId,

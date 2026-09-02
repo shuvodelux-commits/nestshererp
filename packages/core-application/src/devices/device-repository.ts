@@ -46,6 +46,30 @@ export interface DeviceRow {
   readonly snapshotQuotaBytes: number | null;
   readonly snapshotElapsedMs: number | null;
   readonly snapshotReportedAt: Date | null;
+  /**
+   * The permanent short code this machine's documents carry (Phase 12.4, §8).
+   *
+   * Assigned once, at registration, and never reused: a sale numbered
+   * `S-2026-A-000123` is on paper the shop filed, so `A` must mean the same
+   * computer for as long as that paper exists. Null only for a device
+   * registered before this phase and not yet backfilled.
+   */
+  readonly deviceCode: string | null;
+  /** Where this machine's pull got to, so a reconnect resumes rather than restarts. */
+  readonly syncCursor: Date | null;
+  readonly lastPushAt: Date | null;
+  readonly lastPullAt: Date | null;
+}
+
+/** One person who may sign in on the offline machine, as the snapshot carries them. */
+export interface OfflineUserRow {
+  readonly id: string;
+  readonly displayName: string;
+  readonly username: string | null;
+  /** Argon2, exactly as stored. Verified locally by the same hasher. */
+  readonly pinHash: string;
+  readonly roleId: string;
+  readonly permissions: readonly string[];
 }
 
 export interface NewDevice {
@@ -53,6 +77,8 @@ export interface NewDevice {
   readonly name: string;
   readonly publicKey: string;
   readonly platform: string;
+  /** Assigned once, here, and never changed (Phase 12.4, §8). */
+  readonly deviceCode: string;
 }
 
 /** One state change, written with who did it and why (§5.23: every one audited). */
@@ -67,6 +93,50 @@ export interface DeviceStatusChange {
 
 export interface DeviceRepository {
   insert(tx: Tx, ctx: TenantContext, device: NewDevice): Promise<void>;
+  /**
+   * The next free short code for this shop — A, B, C … Z, AA, AB (Phase 12.4).
+   *
+   * Allocated inside the registering transaction and never reused, even after a
+   * device is revoked: an invoice numbered `S-2026-B-000044` is filed paper,
+   * and handing `B` to a different machine next year would make two documents
+   * claim the same origin. Letters only, because the shop's own central counter
+   * is `0`.
+   */
+  nextDeviceCode(tx: Tx, ctx: TenantContext): Promise<string>;
+
+  /**
+   * Who may open the counter on this machine while it cannot reach the server
+   * (Phase 12.4, §9).
+   *
+   * Deliberately separate from roles: a role says what a person may do, this
+   * says where they may do it unwatched, and the same cashier can reasonably
+   * have different answers for the shop's counter PC and for a phone left in a
+   * drawer. An empty list means nobody — the machine can still be used online
+   * by anyone who may sign in normally.
+   */
+  listDeviceUsers(
+    tx: Tx,
+    ctx: TenantContext,
+    deviceId: string,
+  ): Promise<readonly { readonly userId: string; readonly displayName: string }[]>;
+  setDeviceUsers(
+    tx: Tx,
+    ctx: TenantContext,
+    deviceId: string,
+    userIds: readonly string[],
+    ids: readonly string[],
+    at: Date,
+  ): Promise<void>;
+  /**
+   * What the snapshot needs to let those people in with a PIN and nothing else.
+   *
+   * Only the PIN hash travels — never the password hash (§9). A password opens
+   * far more than a till: it is the credential for the web, for another shop's
+   * machine, for anywhere the person has reused it, and there is no reason for
+   * a copy of it to sit on a counter PC. A user with no PIN set simply cannot
+   * work offline, and the screen says so rather than falling back.
+   */
+  offlineUsers(tx: Tx, ctx: TenantContext, deviceId: string): Promise<readonly OfflineUserRow[]>;
   findByPublicKey(tx: Tx, ctx: TenantContext, publicKey: string): Promise<DeviceRow | null>;
   findById(tx: Tx, ctx: TenantContext, deviceId: string): Promise<DeviceRow | null>;
   /** Every device this tenant has ever registered, newest first. */

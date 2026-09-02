@@ -834,6 +834,7 @@ export {
   renameDeviceRequestSchema,
   replaceWriterRequestSchema,
   reportGateRequestSchema,
+  setDeviceUsersRequestSchema,
   requestOfflineRwRequestSchema,
   revokeDeviceRequestSchema,
 } from './devices';
@@ -858,10 +859,55 @@ export type {
   RevokeDeviceRequest,
 } from './devices';
 export type {
+  DeviceUsersResponse,
+  SetDeviceUsersRequest,
+  OfflineSale,
   OfflineSnapshotResponse,
+  OfflineUser,
   ReportSnapshotRequest,
   SnapshotIncludes,
 } from './devices';
+
+export {
+  clientResultDigestSchema,
+  resolutionsFor,
+  resolveSyncConflictRequestSchema,
+  SYNC_OP_PAYLOAD_SCHEMAS,
+  SYNC_OP_TYPES,
+  SYNC_WIRE_VERSION,
+  syncCloseDayPayloadSchema,
+  syncConflictListQuerySchema,
+  syncConflictResponseSchema,
+  syncOperationSchema,
+  syncOpTypeSchema,
+  syncPullQuerySchema,
+  syncPullResponseSchema,
+  syncPushRequestSchema,
+  syncPushResponseSchema,
+  syncReasonCodeSchema,
+  syncResolutionSchema,
+  syncStatusResponseSchema,
+} from './sync';
+export type {
+  ClientResultDigest,
+  ResolveSyncConflictRequest,
+  SyncChange,
+  SyncCloseDayPayload,
+  SyncConflictListQuery,
+  SyncConflictResponse,
+  SyncOpContext,
+  SyncOperation,
+  SyncOperationResult,
+  SyncOpType,
+  SyncOutcome,
+  SyncPullQuery,
+  SyncPullResponse,
+  SyncPushRequest,
+  SyncPushResponse,
+  SyncReasonCode,
+  SyncResolution,
+  SyncStatusResponse,
+} from './sync';
 
 export { LICENSED_MODULES, licenceIncludes, moduleOwning } from './modules';
 export type { LicensedModule } from './modules';

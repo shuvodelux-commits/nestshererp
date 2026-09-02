@@ -8,6 +8,9 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedExpense } from '../offline/queued-documents';
+
 
 /** What the shop spends (§5.12). */
 export interface ExpenseQuery {
@@ -45,7 +48,35 @@ export function recordExpense(
   payload: RecordExpenseRequest,
   idempotencyKey: string,
 ): Promise<ExpenseResponse> {
-  return request('/api/v1/expenses', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<ExpenseResponse>('/api/v1/expenses', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'EXPENSE_RECORD',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+        document: {
+          partyId: payload.payeePartyId,
+          partyName: null,
+          totalMinor: payload.amountMinor,
+          paidMinor: payload.amountMinor,
+          dueMinor: 0,
+        },
+      });
+      return queuedExpense<ExpenseResponse>(
+        payload,
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+      );
+    },
+  );
 }
 
 export function addExpenseCategory(

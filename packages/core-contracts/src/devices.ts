@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
+/** The two shapes every module restates locally rather than sharing a barrel. */
+const ULID = z.string().length(26);
+const BUSINESS_DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 import { partyResponseSchema } from './parties';
+
 import { productResponseSchema } from './products';
 
 /**
@@ -66,6 +71,15 @@ export const deviceSchema = z
     lastSeenAt: z.string().nullable(),
     /** Whether anything this device sends from now on must be held for review. */
     quarantinesPushes: z.boolean(),
+    /**
+     * The permanent short code this machine's sales carry (Phase 12.4, §8).
+     *
+     * `S-2026-A-000123` — the `A` is this. Assigned once at registration and
+     * never changed or reused, because an invoice number is on filed paper.
+     * Null only for a machine registered before Phase 12.4 and not yet
+     * backfilled.
+     */
+    deviceCode: z.string().nullable().default(null),
 
     /**
      * What this machine's local copy actually cost it (Phase 12.3, O-6).
@@ -268,6 +282,10 @@ export const snapshotIncludesSchema = z
     vendors: z.boolean(),
     /** Whether cost prices are in it — `inventory.cost.view` at refresh time. */
     cost: z.boolean(),
+    /** Phase 12.4 — whether anybody can sign in on this machine offline. */
+    users: z.boolean().default(false),
+    /** Phase 12.4 — whether the sales history came down (`sale.view`). */
+    sales: z.boolean().default(false),
   })
   .strict();
 
@@ -284,6 +302,87 @@ export type SnapshotIncludes = z.infer<typeof snapshotIncludesSchema>;
  * There is deliberately nothing here that a document could be rebuilt from:
  * this slice reads, and `OFFLINE_READY` stays reserved.
  */
+/**
+ * One person the offline machine may let in (Phase 12.4, §9).
+ *
+ * The PIN hash travels; the password hash never does. A password opens far more
+ * than a till — the web app, another shop's machine, anywhere the person has
+ * reused it — and there is no reason for a copy of one to sit on a counter PC
+ * that may be stolen. A user without a PIN simply cannot work offline, and the
+ * sign-in screen says so instead of falling back to something weaker.
+ *
+ * Permissions travel with them because the offline screens have to hide what
+ * the person may not do (UI-09). They are what the shop's roles said at the
+ * moment the snapshot was taken: a permission granted or taken away during the
+ * outage reaches the machine at the next sync and not before, which is stated
+ * plainly rather than pretended away.
+ */
+/**
+ * Naming who may open the counter on a machine while it is disconnected
+ * (Phase 12.4, §9).
+ *
+ * The whole set at once, because it is one decision: ticking two people and
+ * clearing a third is a single thought about that machine, and applying it in
+ * three steps would leave a moment where it trusted nobody.
+ */
+export const setDeviceUsersRequestSchema = z
+  .object({ userIds: z.array(ULID).max(200) })
+  .strict();
+
+export type SetDeviceUsersRequest = z.infer<typeof setDeviceUsersRequestSchema>;
+
+export const deviceUsersResponseSchema = z
+  .object({
+    users: z.array(z.object({ userId: ULID, displayName: z.string() }).strict()),
+    /** Everyone in the shop who could be ticked, and whether they have a PIN. */
+    candidates: z.array(
+      z
+        .object({ userId: ULID, displayName: z.string(), hasPin: z.boolean() })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type DeviceUsersResponse = z.infer<typeof deviceUsersResponseSchema>;
+
+export const offlineUserSchema = z
+  .object({
+    id: ULID,
+    displayName: z.string(),
+    username: z.string().nullable(),
+    /** Argon2, verified locally by the same hasher the server uses. */
+    pinHash: z.string(),
+    permissions: z.array(z.string()),
+  })
+  .strict();
+
+export type OfflineUser = z.infer<typeof offlineUserSchema>;
+
+/**
+ * A sale the machine can find and read while the line is down (§13).
+ *
+ * Summaries, not full documents: enough to answer "what did this customer buy",
+ * "is this invoice paid" and "find the slip with this number" at the counter.
+ * The sale the offline machine made itself is held whole, locally, by the
+ * machine that made it.
+ */
+export const offlineSaleSchema = z
+  .object({
+    id: ULID,
+    number: z.string(),
+    businessDate: BUSINESS_DATE,
+    partyId: ULID,
+    customerName: z.string(),
+    customerPhone: z.string().nullable(),
+    grandTotalMinor: z.number().int(),
+    paidMinor: z.number().int(),
+    dueMinor: z.number().int(),
+    status: z.string(),
+  })
+  .strict();
+
+export type OfflineSale = z.infer<typeof offlineSaleSchema>;
+
 export const offlineSnapshotResponseSchema = z
   .object({
     /** When the server built it — what the offline bar shows as Last synced. */
@@ -301,6 +400,19 @@ export const offlineSnapshotResponseSchema = z
     customers: z.array(partyResponseSchema),
     suppliers: z.array(partyResponseSchema),
     vendors: z.array(partyResponseSchema),
+    /**
+     * Phase 12.4 — who may sign in, and what they may do, while the line is
+     * down. Empty until somebody names the people allowed on this machine.
+     */
+    users: z.array(offlineUserSchema).default([]),
+    /**
+     * Twelve months of closed sales plus every unpaid one, however old (§13).
+     * Balances never depend on this: they ride on the party rows above, which
+     * carry what the ledger says.
+     */
+    sales: z.array(offlineSaleSchema).default([]),
+    /** How far back the sales above reach, so the screen can say so. */
+    salesSince: BUSINESS_DATE.nullable().default(null),
   })
   .strict();
 

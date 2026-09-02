@@ -361,6 +361,15 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       { id: 'settings.offline', label: 'Offline', icon: 'pi-wifi', features: [
         feature('settings.offline.page', 'Offline & Devices', 'অফলাইন ও কম্পিউটার', 'Which computer may work without internet, and what it still needs', '/settings/offline', ['offline.device.register'], ['/settings/offline']),
       ] },
+      /*
+       * Phase 12.4 (§15). Sits with Offline because it is the same subject —
+       * what this machine did while it could not reach the shop — and it is
+       * hidden from anybody without `sync.status.view`, which is every role
+       * that never works an outage (UI-09).
+       */
+      { id: 'settings.sync', label: 'Sync', icon: 'pi-sync', features: [
+        feature('settings.sync.page', 'Sync', 'সিংক', 'What is still waiting to be sent, and anything the books would not accept', '/sync', ['sync.status.view'], ['/sync']),
+      ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),
       ] },

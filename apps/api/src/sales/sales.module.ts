@@ -264,6 +264,8 @@ import {
    * they owe — a sale and a customer receipt, posted by these very services
    * rather than by a vendor-shaped copy of them (§5.6 M07, A11, A14).
    */
-  exports: [CREATE_SALE_SERVICE, RECEIVE_CUSTOMER_PAYMENT_SERVICE],
+  // Phase 12.4 adds the query service: the offline snapshot reads its twelve
+  // months of sales through the same call the sales screen makes.
+  exports: [CREATE_SALE_SERVICE, RECEIVE_CUSTOMER_PAYMENT_SERVICE, SALE_QUERY_SERVICE],
 })
 export class SalesModule {}

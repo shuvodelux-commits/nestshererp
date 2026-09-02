@@ -56,6 +56,8 @@ export const DOCUMENT_REDATE_REPOSITORY = Symbol('DocumentRedateRepository');
 
 // Phase 12.1 (§5.23, D-01) — registered browser profiles and the offline writer.
 export const DEVICE_REPOSITORY = Symbol('DeviceRepository');
+/** Phase 12.4 — what a device sent, and what became of it (§5.23). */
+export const SYNC_REPOSITORY = Symbol('SyncRepository');
 
 // Phase 11 (§5.17) — reconciliation storage, and reading text out of a PDF.
 export const RECONCILIATION_REPOSITORY = Symbol('ReconciliationRepository');

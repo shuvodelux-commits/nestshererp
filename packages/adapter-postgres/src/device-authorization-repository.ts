@@ -1,4 +1,5 @@
 import type {
+  OfflineUserRow,
   DeviceRepository,
   DeviceRow,
   DeviceStatusChange,
@@ -45,6 +46,10 @@ interface DeviceRecord extends Record<string, unknown> {
   snapshot_quota_bytes: string | number | null;
   snapshot_elapsed_ms: number | null;
   snapshot_reported_at: Date | string | null;
+  device_code: string | null;
+  sync_cursor: Date | string | null;
+  last_push_at: Date | string | null;
+  last_pull_at: Date | string | null;
 }
 
 /**
@@ -101,6 +106,10 @@ function toRow(record: DeviceRecord): DeviceRow {
     snapshotQuotaBytes: bigish(record.snapshot_quota_bytes),
     snapshotElapsedMs: record.snapshot_elapsed_ms,
     snapshotReportedAt: instant(record.snapshot_reported_at),
+    deviceCode: record.device_code,
+    syncCursor: instant(record.sync_cursor),
+    lastPushAt: instant(record.last_push_at),
+    lastPullAt: instant(record.last_pull_at),
   };
 }
 
@@ -112,6 +121,7 @@ const SELECT = sql`
          d.gate_installed, d.gate_persisted, d.gate_available_bytes, d.gate_reported_at,
          d.snapshot_bytes, d.snapshot_usage_bytes, d.snapshot_quota_bytes,
          d.snapshot_elapsed_ms, d.snapshot_reported_at,
+         d.device_code, d.sync_cursor, d.last_push_at, d.last_pull_at,
          reg.display_name AS registered_by_name,
          app.display_name AS approved_by_name,
          rev.display_name AS revoked_by_name
@@ -121,14 +131,53 @@ const SELECT = sql`
     LEFT JOIN users rev ON rev.id = d.revoked_by
 `;
 
+/**
+ * A, B, … Z, AA, AB — the shop's device codes in the order they were handed out.
+ *
+ * A number rather than a letter would have been simpler and would have read
+ * badly on an invoice beside the year and the sequence, which are both numbers
+ * already. Three letters is 18,278 machines; a shop that reaches that has other
+ * problems.
+ */
+function codeFor(index: number): string {
+  let n = index;
+  let out = '';
+  do {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return out;
+}
+
 export class PostgresDeviceRepository implements DeviceRepository {
+  /**
+   * The next free code, chosen by walking upwards from the count of codes
+   * already issued and skipping anything taken.
+   *
+   * Counting rather than reading the maximum, because a code is never released
+   * when a device is revoked — the number issued only ever grows, and the walk
+   * is what keeps the answer right if a row was ever inserted out of order.
+   */
+  async nextDeviceCode(tx: Tx, ctx: TenantContext): Promise<string> {
+    const rows = await txOf(tx).execute<{ device_code: string }>(sql`
+      SELECT device_code FROM device_authorizations
+       WHERE tenant_id = ${ctx.tenantId} AND device_code IS NOT NULL
+    `);
+    const taken = new Set(rows.rows.map((row) => String(row.device_code)));
+    for (let index = 0; index < 18_278; index += 1) {
+      const code = codeFor(index);
+      if (!taken.has(code)) return code;
+    }
+    throw new Error('this shop has registered more computers than there are codes');
+  }
+
   async insert(tx: Tx, ctx: TenantContext, device: NewDevice): Promise<void> {
     await txOf(tx).execute(sql`
       INSERT INTO device_authorizations
-        (id, tenant_id, public_key, name, platform, capability, status,
+        (id, tenant_id, public_key, name, platform, capability, status, device_code,
          created_at, updated_at, created_by, updated_by, version)
       VALUES (${device.id}, ${ctx.tenantId}, ${device.publicKey}, ${device.name},
-              ${device.platform}, 'OFFLINE_RW', 'REGISTERED',
+              ${device.platform}, 'OFFLINE_RW', 'REGISTERED', ${device.deviceCode},
               now(), now(), ${ctx.userId}, ${ctx.userId}, 1)
     `);
   }
@@ -317,5 +366,93 @@ export class PostgresDeviceRepository implements DeviceRepository {
       journalLines: count('journal_lines'),
       lots: count('lots'),
     };
+  }
+
+  async listDeviceUsers(
+    tx: Tx,
+    ctx: TenantContext,
+    deviceId: string,
+  ): Promise<readonly { readonly userId: string; readonly displayName: string }[]> {
+    const rows = await txOf(tx).execute<{ user_id: string; display_name: string }>(sql`
+      SELECT a.user_id, u.display_name
+        FROM device_user_access a
+        JOIN users u ON u.id = a.user_id AND u.tenant_id = a.tenant_id
+       WHERE a.tenant_id = ${ctx.tenantId} AND a.device_id = ${deviceId}
+         AND u.deleted_at IS NULL
+       ORDER BY u.display_name
+    `);
+    return rows.rows.map((row) => ({
+      userId: String(row.user_id),
+      displayName: String(row.display_name),
+    }));
+  }
+
+  /**
+   * Replaces the list whole.
+   *
+   * A set of people is edited as a set — ticking two boxes and clearing a third
+   * is one decision, and applying it as three separate ones would leave a
+   * moment where a machine trusted nobody.
+   */
+  async setDeviceUsers(
+    tx: Tx,
+    ctx: TenantContext,
+    deviceId: string,
+    userIds: readonly string[],
+    ids: readonly string[],
+    at: Date,
+  ): Promise<void> {
+    const db = txOf(tx);
+    await db.execute(sql`
+      DELETE FROM device_user_access
+       WHERE tenant_id = ${ctx.tenantId} AND device_id = ${deviceId}
+    `);
+    for (const [index, userId] of userIds.entries()) {
+      await db.execute(sql`
+        INSERT INTO device_user_access
+          (id, tenant_id, device_id, user_id, created_at, updated_at, created_by, updated_by)
+        VALUES (${ids[index]}, ${ctx.tenantId}, ${deviceId}, ${userId},
+                ${at}, ${at}, ${ctx.userId}, ${ctx.userId})
+        ON CONFLICT ON CONSTRAINT device_user_access_unique DO NOTHING
+      `);
+    }
+  }
+
+  async offlineUsers(
+    tx: Tx,
+    ctx: TenantContext,
+    deviceId: string,
+  ): Promise<readonly OfflineUserRow[]> {
+    const rows = await txOf(tx).execute<{
+      id: string;
+      display_name: string;
+      username: string | null;
+      pin_hash: string | null;
+      role_id: string;
+      permissions: string[] | null;
+    }>(sql`
+      SELECT u.id, u.display_name, u.username, u.pin_hash, u.role_id,
+             array_remove(array_agg(rp.permission_code), NULL) AS permissions
+        FROM device_user_access a
+        JOIN users u ON u.id = a.user_id AND u.tenant_id = a.tenant_id
+        LEFT JOIN role_permissions rp
+          ON rp.role_id = u.role_id AND rp.tenant_id = u.tenant_id AND rp.deleted_at IS NULL
+       WHERE a.tenant_id = ${ctx.tenantId} AND a.device_id = ${deviceId}
+         AND u.deleted_at IS NULL
+         -- No PIN, no offline sign-in. There is deliberately no password
+         -- fallback: a password opens more than a till (§9).
+         AND u.pin_hash IS NOT NULL
+       GROUP BY u.id, u.display_name, u.username, u.pin_hash, u.role_id
+       ORDER BY u.display_name
+    `);
+
+    return rows.rows.map((row) => ({
+      id: String(row.id),
+      displayName: String(row.display_name),
+      username: row.username,
+      pinHash: String(row.pin_hash),
+      roleId: String(row.role_id),
+      permissions: (row.permissions ?? []).map(String),
+    }));
   }
 }

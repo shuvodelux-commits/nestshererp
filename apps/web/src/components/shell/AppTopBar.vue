@@ -12,6 +12,7 @@ import { useSession } from '../../auth/session';
 import { useTheme } from '../../design/theme';
 import DayStatusChip from '../money/DayStatusChip.vue';
 import OfflineStatusChip from '../offline/OfflineStatusChip.vue';
+import SyncStatusChip from '../offline/SyncStatusChip.vue';
 
 defineProps<{ collapsed: boolean }>();
 const emit = defineEmits<{ toggleSidebar: [] }>();
@@ -101,6 +102,7 @@ const accountItems = computed<MenuItem[]>(() => [
         fact about the machine, and a shop that finds it out during a power cut
         has found out too late.
       -->
+      <SyncStatusChip />
       <OfflineStatusChip />
 
       <div class="bizdate">

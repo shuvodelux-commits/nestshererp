@@ -63,6 +63,12 @@ const router = createRouter({
       name: 'settings-offline-storage-check',
       component: () => import('./pages/StorageCheckPage.vue'),
     },
+    /*
+     * Phase 12.4 (§15). Not under /settings: an outage that ends with three
+     * documents refused is floor work for a manager during a shift, not
+     * configuration, and burying it two levels down is how a queue stays full.
+     */
+    { path: '/sync', name: 'sync', component: () => import('./pages/SyncIssuesPage.vue') },
     { path: '/catalog', name: 'catalog', component: () => import('./pages/CatalogPage.vue') },
     { path: '/products', name: 'products', component: () => import('./pages/ProductsPage.vue') },
     // §5.10: per-product stock work lives on the Products row menu; what is

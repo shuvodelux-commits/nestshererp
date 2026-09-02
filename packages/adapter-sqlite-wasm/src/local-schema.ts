@@ -88,4 +88,134 @@ CREATE TABLE parties (
 CREATE INDEX parties_role_name ON parties (role, name);
 CREATE INDEX parties_search ON parties (role, search);
 CREATE INDEX parties_phone ON parties (phone);
+
+-- ----------------------------------------------------------------- outbox
+-- Phase 12.4. What the shop did while it could not reach its own books.
+--
+-- **A command, not a document.** Each row is the exact request body the online
+-- endpoint takes, plus the operation id the cashier's button press generated.
+-- Replay hands that body to the very service the online API calls, so there is
+-- one posting implementation in the application and not two — which is the
+-- whole architecture of this phase in one sentence.
+--
+-- The row is written and committed **before** the UI says the sale succeeded
+-- and before anything is printed (§2, §19). A slip in a customer's hand that
+-- this table never heard of is the one failure an offline till must not have.
+CREATE TABLE outbox (
+  -- The idempotency key, generated on this machine when the button was pressed.
+  -- It never changes through any number of retries, and it is what makes a
+  -- repeated push cost nothing.
+  operation_id TEXT PRIMARY KEY,
+  -- Strictly increasing, from local_state. Two operations can share a
+  -- millisecond; they cannot share a sequence number, which is why ordering
+  -- uses this and never a timestamp.
+  local_seq    INTEGER NOT NULL UNIQUE,
+  op_type      TEXT    NOT NULL,
+  payload      TEXT    NOT NULL,
+  context      TEXT    NOT NULL,
+  -- local_seq values this one may not go before: the product a sale names, the
+  -- day-opening a day-closing closes.
+  depends_on   TEXT    NOT NULL DEFAULT '[]',
+  -- What the customer was charged, as printed. Compared by the server and never
+  -- replaced by it (§5).
+  digest       TEXT,
+  -- The number on the paper, where the document carries one.
+  doc_number   TEXT,
+  -- PENDING → SENT → ACCEPTED | REFUSED | SETTLED.
+  -- REFUSED means the books would not take it and a person must decide;
+  -- SETTLED means the shop decided it will never be posted.
+  status       TEXT    NOT NULL DEFAULT 'PENDING',
+  reason_code  TEXT,
+  reason       TEXT,
+  server_id    TEXT,
+  server_number TEXT,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT    NOT NULL,
+  business_date TEXT   NOT NULL,
+  updated_at   TEXT    NOT NULL
+);
+
+CREATE INDEX outbox_pending ON outbox (status, local_seq);
+
+-- ---------------------------------------------------------------- documents
+-- What the counter shows for work this machine did while disconnected.
+--
+-- Deliberately display-only, and deliberately not a second ledger. It holds the
+-- money the slip showed and the words a list needs; it holds no cost, no lot,
+-- no journal line and no balance, because the server computes those and the one
+-- thing worse than no profit figure is a wrong one nobody knows is wrong (§4).
+CREATE TABLE documents (
+  operation_id TEXT PRIMARY KEY,
+  doc_type     TEXT NOT NULL,
+  doc_number   TEXT,
+  business_date TEXT NOT NULL,
+  party_id     TEXT,
+  party_name   TEXT,
+  total_minor  INTEGER NOT NULL DEFAULT 0,
+  paid_minor   INTEGER NOT NULL DEFAULT 0,
+  due_minor    INTEGER NOT NULL DEFAULT 0,
+  -- The full local view of the document, for reprinting the slip offline.
+  payload      TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+
+CREATE INDEX documents_by_type ON documents (doc_type, created_at DESC);
+CREATE INDEX documents_by_party ON documents (party_id, created_at DESC);
+
+-- ------------------------------------------------------------------- sales
+-- Twelve months of the shop's sales, plus every unpaid one however old (§13).
+-- Summaries: enough to find a slip, read a customer's history and see what is
+-- still owed while the line is down.
+CREATE TABLE sales (
+  id            TEXT PRIMARY KEY,
+  number        TEXT NOT NULL,
+  business_date TEXT NOT NULL,
+  party_id      TEXT NOT NULL,
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT,
+  grand_total_minor INTEGER NOT NULL,
+  paid_minor    INTEGER NOT NULL,
+  due_minor     INTEGER NOT NULL,
+  status        TEXT NOT NULL,
+  search        TEXT NOT NULL
+);
+
+CREATE INDEX sales_number ON sales (number);
+CREATE INDEX sales_search ON sales (search);
+CREATE INDEX sales_party ON sales (party_id, business_date DESC);
+
+-- ------------------------------------------------------------------- users
+-- Who may open this counter while it cannot reach the server (§9).
+--
+-- The PIN hash and nothing else. A password opens far more than a till, and
+-- there is no reason for a copy of one to sit on a machine that can be stolen.
+CREATE TABLE users (
+  id           TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  username     TEXT,
+  pin_hash     TEXT NOT NULL,
+  permissions  TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------- local_state
+-- The one row of counters and cursors this machine keeps for itself.
+CREATE TABLE local_state (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  -- The next local_seq to hand out, and the next sale sequence to print.
+  next_local_seq INTEGER NOT NULL DEFAULT 1,
+  next_sale_seq  INTEGER NOT NULL DEFAULT 1,
+  -- This machine's permanent short code, from its device row. A sale is
+  -- numbered S-2026-A-000123 with it, on paper, before the server has ever
+  -- seen the document.
+  device_code    TEXT,
+  device_id      TEXT,
+  -- Where the pull got to, so a reconnect resumes rather than re-downloads.
+  sync_cursor    TEXT,
+  last_push_at   TEXT,
+  last_pull_at   TEXT,
+  -- The cash day this machine opened offline, so the close can name it.
+  open_session_op TEXT
+);
+
+INSERT INTO local_state (id) VALUES (1);
 `;

@@ -179,5 +179,9 @@ import {
       inject: [UNIT_OF_WORK, ACCESS_CONTROL, SALES_RETURN_REPOSITORY, CLOCK],
     },
   ],
+  // Phase 12.4: a return queued during an outage replays through the same
+  // service the counter calls — the only thing that knows how to unwind a
+  // sale's COGS through the lots it consumed.
+  exports: [CREATE_SALES_RETURN_SERVICE, CREATE_PURCHASE_RETURN_SERVICE],
 })
 export class ReturnsModule {}

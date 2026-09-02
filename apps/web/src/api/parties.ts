@@ -17,6 +17,8 @@ import type {
 import { localParties } from '@sher/adapter-sqlite-wasm';
 
 import { request } from './client';
+import { offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedParty } from '../offline/queued-documents';
 import { offlineFallback } from './offline-fallback';
 
 /**
@@ -140,7 +142,25 @@ export function createParty(
   payload: SavePartyRequest,
   idempotencyKey: string,
 ): Promise<PartyResponse> {
-  return request('/api/v1/parties', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<PartyResponse>('/api/v1/parties', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      /*
+       * A new face buying on credit needs a party to owe the money, and the
+       * counter cannot wait for the line to create one. Two cashiers adding the
+       * same phone number is the one clash this produces, and §5.23 already
+       * quarantines it rather than merging two people into one.
+       */
+      await queueCommand({ type: 'PARTY_CREATE', payload, operationId: idempotencyKey });
+      return queuedParty<PartyResponse>(payload, idempotencyKey);
+    },
+  );
 }
 
 export function updateParty(

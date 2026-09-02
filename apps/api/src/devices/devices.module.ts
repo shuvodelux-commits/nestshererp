@@ -6,6 +6,7 @@ import type {
   ManagePartiesService,
   ManageProductsService,
   PasswordHasher,
+  SaleQueryService,
   UnitOfWork,
   UserRepository,
 } from '@sher/core-application';
@@ -24,6 +25,8 @@ import {
   USER_REPOSITORY,
 } from '../infrastructure/tokens';
 import { PartiesModule } from '../parties/parties.module';
+import { SalesModule } from '../sales/sales.module';
+import { SALE_QUERY_SERVICE } from '../sales/tokens';
 import { MANAGE_PARTIES_SERVICE } from '../parties/tokens';
 import { DevicesController } from './devices.controller';
 import { MANAGE_DEVICES_SERVICE, OFFLINE_STATUS_SERVICE, SNAPSHOT_SERVICE } from './tokens';
@@ -43,7 +46,9 @@ import { MANAGE_DEVICES_SERVICE, OFFLINE_STATUS_SERVICE, SNAPSHOT_SERVICE } from
  * repositories.
  */
 @Module({
-  imports: [CatalogModule, PartiesModule],
+  // Phase 12.4 adds SalesModule: the snapshot's twelve months of sales are read
+  // through the sales screen's own query service, never a second reader (A11).
+  imports: [CatalogModule, PartiesModule, SalesModule],
   controllers: [DevicesController],
   providers: [
     {
@@ -89,9 +94,10 @@ import { MANAGE_DEVICES_SERVICE, OFFLINE_STATUS_SERVICE, SNAPSHOT_SERVICE } from
         products: ManageProductsService,
         parties: ManagePartiesService,
         users: UserRepository,
+        sales: SaleQueryService,
         clock: Clock,
       ): SnapshotService =>
-        new SnapshotService(uow, accessControl, devices, products, parties, users, clock),
+        new SnapshotService(uow, accessControl, devices, products, parties, users, sales, clock),
       inject: [
         UNIT_OF_WORK,
         ACCESS_CONTROL,
@@ -99,6 +105,7 @@ import { MANAGE_DEVICES_SERVICE, OFFLINE_STATUS_SERVICE, SNAPSHOT_SERVICE } from
         MANAGE_PRODUCTS_SERVICE,
         MANAGE_PARTIES_SERVICE,
         USER_REPOSITORY,
+        SALE_QUERY_SERVICE,
         CLOCK,
       ],
     },

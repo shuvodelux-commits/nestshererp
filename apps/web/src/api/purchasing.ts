@@ -9,6 +9,8 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedDocument, queuedSupplierPayment } from '../offline/queued-documents';
 
 /**
  * Purchases and supplier payments (§5.9).
@@ -48,7 +50,39 @@ export function createPurchase(
   payload: CreatePurchaseRequest,
   idempotencyKey: string,
 ): Promise<PurchaseResponse> {
-  return request('/api/v1/purchases', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<PurchaseResponse>('/api/v1/purchases', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      /*
+       * Goods arriving during an outage. The quantity and the cost typed on the
+       * bill are queued so a later sale has stock to draw on, and the lots,
+       * the average and the payable are worked out by the server when the bill
+       * reaches it (§4).
+       */
+      const stockDelta: Record<string, number> = {};
+      for (const line of payload.lines) {
+        stockDelta[line.productId] = (stockDelta[line.productId] ?? 0) + line.qty;
+      }
+      await queueCommand({
+        type: 'PURCHASE_CREATE',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+        stockDelta,
+      });
+      return queuedDocument<PurchaseResponse>(
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+        0,
+      );
+    },
+  );
 }
 
 /**
@@ -74,10 +108,34 @@ export function paySupplier(
   payload: PaySupplierRequest,
   idempotencyKey: string,
 ): Promise<SupplierPaymentResponse> {
-  return request('/api/v1/suppliers/payments', {
-    method: 'POST',
-    token,
-    body: payload,
-    idempotencyKey,
-  });
+  return offlineWrite(
+    () =>
+      request<SupplierPaymentResponse>('/api/v1/suppliers/payments', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'SUPPLIER_PAYMENT_RECORD',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+        document: {
+          partyId: payload.supplierPartyId,
+          partyName: null,
+          totalMinor: payload.amountMinor,
+          paidMinor: payload.amountMinor,
+          dueMinor: 0,
+        },
+        balanceDelta: { partyId: payload.supplierPartyId, amountMinor: -payload.amountMinor },
+      });
+      return queuedSupplierPayment<SupplierPaymentResponse>(
+        payload,
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+      );
+    },
+  );
 }

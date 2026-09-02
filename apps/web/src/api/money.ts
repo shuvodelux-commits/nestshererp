@@ -19,7 +19,12 @@ import type {
   UpdateMoneyAccountRequest,
 } from '@sher/core-contracts';
 
+import { readLocalState } from '@sher/adapter-sqlite-wasm';
+
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedCashMovement, queuedCashSession } from '../offline/queued-documents';
+
 
 /**
  * Money accounts and the business day (§5.16, §5.17).
@@ -33,7 +38,29 @@ export function fetchDayStatus(token: string): Promise<DayStatusResponse> {
 }
 
 export function startDay(token: string, payload: StartDayRequest): Promise<CashSessionResponse> {
-  return request('/api/v1/money/day/start', { method: 'POST', token, body: payload });
+  return offlineWrite(
+    () => request<CashSessionResponse>('/api/v1/money/day/start', { method: 'POST', token, body: payload }),
+    async () => {
+      /*
+       * A morning outage must not stop the shop opening (owner decision
+       * 2026-09-02). The opening is a document like any other and replays in
+       * dependency order, before every sale that took cash into the drawer it
+       * opened.
+       */
+      await queueCommand({
+        type: 'CASH_DAY_OPEN',
+        payload,
+        operationId: payload.operationId,
+        businessDate: payload.businessDate,
+      });
+      return queuedCashSession<CashSessionResponse>(
+        payload,
+        payload.operationId,
+        payload.businessDate,
+        false,
+      );
+    },
+  );
 }
 
 export function closeDay(
@@ -41,11 +68,39 @@ export function closeDay(
   sessionId: string,
   payload: CloseDayRequest,
 ): Promise<CashSessionResponse> {
-  return request(`/api/v1/money/day/${sessionId}/close`, {
-    method: 'POST',
-    token,
-    body: payload,
-  });
+  return offlineWrite(
+    () =>
+      request<CashSessionResponse>(`/api/v1/money/day/${sessionId}/close`, {
+        method: 'POST',
+        token,
+        body: payload,
+      }),
+    async () => {
+      /*
+       * The drawer is counted and the day is closed offline (owner decision
+       * 2026-09-02). The session it closes may itself only exist in this
+       * machine's queue, so the id travels in the body and replay rewrites it
+       * into the real one once the opening has posted (§3).
+       *
+       * The count the cashier typed is what is queued, and it is never
+       * overwritten: the server works out what the drawer should have held from
+       * its own postings, and a difference is surfaced rather than silently
+       * applied (§12).
+       */
+      const state = await readLocalState();
+      await queueCommand({
+        type: 'CASH_DAY_CLOSE',
+        payload: { ...payload, sessionId: state?.openSessionOp ?? sessionId },
+        operationId: payload.operationId,
+      });
+      return queuedCashSession<CashSessionResponse>(
+        payload,
+        payload.operationId,
+        localBusinessDate(),
+        true,
+      );
+    },
+  );
 }
 
 /** `ভুল করে বন্ধ করেছি` — undoing today's close (§5.16.4). */
@@ -65,7 +120,34 @@ export function recordMovement(
   token: string,
   payload: RecordCashMovementRequest,
 ): Promise<CashMovementResponse> {
-  return request('/api/v1/money/movements', { method: 'POST', token, body: payload });
+  return offlineWrite(
+    () =>
+      request<CashMovementResponse>('/api/v1/money/movements', {
+        method: 'POST',
+        token,
+        body: payload,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'CASH_MOVEMENT_RECORD',
+        payload,
+        operationId: payload.operationId,
+        businessDate: payload.businessDate,
+        document: {
+          partyId: null,
+          partyName: null,
+          totalMinor: payload.amountMinor,
+          paidMinor: payload.amountMinor,
+          dueMinor: 0,
+        },
+      });
+      return queuedCashMovement<CashMovementResponse>(
+        payload,
+        payload.operationId,
+        payload.businessDate,
+      );
+    },
+  );
 }
 
 export function fetchDailyCash(

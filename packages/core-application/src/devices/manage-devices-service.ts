@@ -1,7 +1,12 @@
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
-import type { DeviceListResponse, DeviceResponse } from '@sher/core-contracts';
+import type {
+  DeviceListResponse,
+  DeviceResponse,
+  DeviceUsersResponse,
+} from '@sher/core-contracts';
 import { nextStatus, occupiesWriterSlot, replacementRoute } from '@sher/core-domain';
 import type { DeviceTransition } from '@sher/core-domain';
+import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { UserRepository } from '../auth/registration-repository';
@@ -89,6 +94,73 @@ export class ManageDevicesService {
         await this.load(tx, ctx, device.id),
         command.callerPublicKey,
       );
+    });
+  }
+
+  /**
+   * Who may sign in on this machine while it cannot reach the server (§9).
+   *
+   * Behind `offline.device.approve`, the same permission that decides which
+   * machine is the offline computer at all — the two questions are one decision
+   * about how the shop trades in an outage, and splitting them would let a
+   * manager choose the machine and not the people on it.
+   */
+  async offlineUsers(ctx: TenantContext, deviceId: string): Promise<DeviceUsersResponse> {
+    return this.uow.run(ctx, async (tx) => {
+      await this.access.require(tx, ctx, Permission.DEVICE_APPROVE);
+      await this.load(tx, ctx, deviceId);
+      return {
+        users: [...(await this.devices.listDeviceUsers(tx, ctx, deviceId))],
+        candidates: (await this.users.list(tx, ctx))
+          .filter((user) => !user.disabled)
+          .map((user) => ({
+            userId: user.id,
+            displayName: user.displayName,
+            hasPin: user.hasPin,
+          })),
+      };
+    });
+  }
+
+  async setOfflineUsers(command: {
+    readonly ctx: TenantContext;
+    readonly deviceId: string;
+    readonly userIds: readonly string[];
+  }): Promise<DeviceUsersResponse> {
+    const { ctx } = command;
+    return this.uow.run(ctx, async (tx) => {
+      await this.access.require(tx, ctx, Permission.DEVICE_APPROVE);
+      const device = await this.load(tx, ctx, command.deviceId);
+      const before = await this.devices.listDeviceUsers(tx, ctx, device.id);
+
+      await this.devices.setDeviceUsers(
+        tx,
+        ctx,
+        device.id,
+        command.userIds,
+        command.userIds.map(() => Ulid.generate(this.clock)),
+        this.clock.now(),
+      );
+
+      await this.audit.append(tx, ctx, {
+        entityType: 'device_authorization',
+        entityId: device.id,
+        action: 'SET_OFFLINE_USERS',
+        before: { users: before.map((row) => row.displayName).join(', ') },
+        after: { count: command.userIds.length },
+        source: 'API',
+      });
+
+      return {
+        users: [...(await this.devices.listDeviceUsers(tx, ctx, device.id))],
+        candidates: (await this.users.list(tx, ctx))
+          .filter((user) => !user.disabled)
+          .map((user) => ({
+            userId: user.id,
+            displayName: user.displayName,
+            hasPin: user.hasPin,
+          })),
+      };
     });
   }
 

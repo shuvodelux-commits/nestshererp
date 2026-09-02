@@ -21,6 +21,7 @@ import {
   PostgresExpenseRepository,
   PostgresPeriodRepository,
   PostgresDeviceRepository,
+  PostgresSyncRepository,
   PostgresStockCountRepository,
   PostgresPurchasePlanRepository,
   PostgresLandedCostRepository,
@@ -106,6 +107,7 @@ import {
   VENDOR_WORKSPACE_REPOSITORY,
   PERIOD_REPOSITORY,
   DEVICE_REPOSITORY,
+  SYNC_REPOSITORY,
   REPORT_REPOSITORY,
   DAYBOOK_REPOSITORY,
   RECONCILIATION_REPOSITORY,
@@ -413,6 +415,12 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       inject: [],
     },
     {
+      /* Phase 12.4 — what a device sent, and what became of it (§5.23). */
+      provide: SYNC_REPOSITORY,
+      useFactory: (clock: Clock): PostgresSyncRepository => new PostgresSyncRepository(clock),
+      inject: [CLOCK],
+    },
+    {
       /* Phase 12.1 — registered browser profiles (§5.23, D-01). */
       provide: DEVICE_REPOSITORY,
       useFactory: (): PostgresDeviceRepository => new PostgresDeviceRepository(),
@@ -525,6 +533,7 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     VENDOR_WORKSPACE_REPOSITORY,
     PERIOD_REPOSITORY,
     DEVICE_REPOSITORY,
+    SYNC_REPOSITORY,
     REPORT_REPOSITORY,
     DAYBOOK_REPOSITORY,
     DOCUMENT_REDATE_REPOSITORY,

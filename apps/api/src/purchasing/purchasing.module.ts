@@ -292,6 +292,9 @@ import {
       ],
     },
   ],
-  exports: [CREATE_PURCHASE_SERVICE, ADD_LANDED_COST_SERVICE],
+  // Phase 12.4: sync replays a queued purchase and a queued supplier payment
+  // through these very services, so there is one purchase writer and one
+  // payment writer in the application (A11, A14, R-D).
+  exports: [CREATE_PURCHASE_SERVICE, ADD_LANDED_COST_SERVICE, PAY_SUPPLIER_SERVICE],
 })
 export class PurchasingModule {}

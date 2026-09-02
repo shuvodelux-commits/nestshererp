@@ -48,6 +48,8 @@ interface Backfilled {
   readonly permissions: number;
   readonly units: number;
   readonly walkIns: number;
+  /** Phase 12.4 — short codes given to machines registered before that phase. */
+  readonly deviceCodes: number;
 }
 
 async function main(): Promise<void> {
@@ -57,7 +59,8 @@ async function main(): Promise<void> {
     process.stdout.write(
       `Backfilled ${String(result.roles)} role(s), ${String(result.permissions)} ` +
         `permission(s), ${String(result.units)} unit(s) and ` +
-        `${String(result.walkIns)} walk-in customer(s) across ` +
+        `${String(result.walkIns)} walk-in customer(s) and ` +
+        `${String(result.deviceCodes)} device code(s) across ` +
         `${String(result.tenants)} tenant(s).\n`,
     );
   } finally {
@@ -71,6 +74,7 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
   let permissions = 0;
   let units = 0;
   let walkIns = 0;
+  let deviceCodes = 0;
   let tenants = 0;
 
   try {
@@ -152,6 +156,12 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
         walkIns += 1;
         touched = true;
       }
+      const coded = await ensureDeviceCodes(client, tenantId);
+      if (coded > 0) {
+        deviceCodes += coded;
+        touched = true;
+      }
+      if (await ensureSalePrefix(client, tenantId)) touched = true;
       if (touched) tenants += 1;
     }
 
@@ -163,7 +173,7 @@ async function backfill(pool: ReturnType<typeof createPool>): Promise<Backfilled
     client.release();
   }
 
-  return { tenants, roles, permissions, units, walkIns };
+  return { tenants, roles, permissions, units, walkIns, deviceCodes };
 }
 
 /**
@@ -336,4 +346,76 @@ async function ensureWalkInParty(
     [Ulid.generate(clock), tenantId, id, now, actorId],
   );
   return true;
+}
+
+
+/**
+ * A permanent short code for every machine registered before Phase 12.4.
+ *
+ * The codes are handed out in registration order — A, B, C … — so the shop's
+ * oldest counter PC keeps the lowest letter, which is what a shopkeeper would
+ * expect if they ever thought about it. Once assigned, a code is never changed
+ * or reused, even after the device is revoked: a sale numbered
+ * `S-2026-B-000044` is filed paper, and giving `B` to another machine would
+ * make two documents claim the same origin.
+ */
+async function ensureDeviceCodes(client: { query: QueryFn }, tenantId: string): Promise<number> {
+  const { rows } = await client.query<{ id: string; device_code: string | null }>(
+    `SELECT id, device_code FROM device_authorizations
+      WHERE tenant_id = $1 ORDER BY created_at, id`,
+    [tenantId],
+  );
+  const taken = new Set(
+    rows.filter((row) => row.device_code !== null).map((row) => String(row.device_code)),
+  );
+
+  let assigned = 0;
+  let next = 0;
+  for (const row of rows) {
+    if (row.device_code !== null) continue;
+    let code = codeFor(next);
+    while (taken.has(code)) {
+      next += 1;
+      code = codeFor(next);
+    }
+    await client.query('UPDATE device_authorizations SET device_code = $1 WHERE id = $2', [
+      code,
+      row.id,
+    ]);
+    taken.add(code);
+    assigned += 1;
+    next += 1;
+  }
+  return assigned;
+}
+
+/** A, B … Z, AA, AB — the same walk the repository does when registering. */
+function codeFor(index: number): string {
+  let n = index;
+  let out = '';
+  do {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return out;
+}
+
+/**
+ * Sales are numbered `S-…` from Phase 12.4 (owner decision 2026-09-02).
+ *
+ * The counter row carries its own prefix, so an existing tenant would otherwise
+ * keep issuing `INV-` forever while the new device segment appeared in the
+ * middle of it. Moving the prefix here rather than in a migration makes it a
+ * deliberate, reversible step the shop takes when it deploys — and every number
+ * already printed is untouched, because a document keeps the number it was
+ * written with (§8).
+ */
+async function ensureSalePrefix(client: { query: QueryFn }, tenantId: string): Promise<boolean> {
+  const { rows } = await client.query<{ id: string }>(
+    `UPDATE numbering_counters SET prefix = 'S'
+      WHERE tenant_id = $1 AND doc_type = 'SALE' AND prefix <> 'S'
+      RETURNING id`,
+    [tenantId],
+  );
+  return rows.length > 0;
 }

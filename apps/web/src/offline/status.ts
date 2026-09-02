@@ -5,10 +5,14 @@ import type { ComputedRef, Ref } from 'vue';
 
 import { fetchOfflineStatus, reportGate } from '../api/devices';
 import { useSession } from '../auth/session';
+import { rememberDevice } from '@sher/adapter-sqlite-wasm';
+
 import { deviceKey } from './identity';
 import { judgeGate, measureGate } from './gate';
 import { startConnectivityWatch } from './connectivity';
 import { discardLocalCopy, maintainSnapshot, rememberTenant } from './snapshot';
+import { pendingSummary } from './local-writer';
+import { syncNow } from './sync';
 import type { GateMeasurement } from './gate';
 
 /**
@@ -124,15 +128,34 @@ async function run(): Promise<void> {
 
     if (holdsAuthority) {
       await maintainSnapshot({ isOfflineDevice: true, online: true });
+      /*
+       * Phase 12.4 — the machine learns its own short code, and can start
+       * numbering. Until this runs the local copy knows nothing about which
+       * machine it is, and `peekSaleNumber` correctly refuses to invent one.
+       */
+      if (fresh.device !== null && fresh.device.deviceCode !== null) {
+        await rememberDevice(fresh.device.id, fresh.device.deviceCode).catch(() => undefined);
+      }
     } else {
       /*
        * Revoked, force revoked, or the slot handed to another machine (owner
-       * decision 2026-08-31): the shop's data leaves with the authority, and
-       * it leaves as soon as this machine learns. In this slice there is
-       * nothing unsent to lose; when offline writing exists the drain and the
-       * quarantine come first and this stays the last step.
+       * decision 2026-08-31): the shop's data leaves with the authority.
+       *
+       * **Phase 12.4 puts one thing ahead of that erase.** A machine may hold
+       * work the books have never seen, and §5.23 is explicit that a revoked
+       * device's outbox is imported into quarantine rather than lost — so the
+       * queue is pushed first, and if anything is still queued afterwards the
+       * copy stays where it is with a plain warning. Erasing a day's takings
+       * to tidy up a revoked laptop is the one clean-up nobody can undo.
        */
-      await discardLocalCopy();
+      const held = await pendingSummary();
+      if (held.pending > 0) {
+        await syncNow();
+      }
+      const stillHeld = await pendingSummary();
+      if (stillHeld.pending === 0) {
+        await discardLocalCopy();
+      }
     }
 
     // Tell the server what we measured, so the owner's device list shows the

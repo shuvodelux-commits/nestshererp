@@ -112,6 +112,14 @@ export interface UserSummary {
   readonly disabled: boolean;
   /** Whether they can sign in yet — a newly created user has no password. */
   readonly hasPassword: boolean;
+  /**
+   * Whether they have a counter PIN (Phase 12.4, §9).
+   *
+   * The only credential that travels to an offline machine, so this is what
+   * decides whether a person can be named as someone who may work on one. Like
+   * `hasPassword`, it says whether one exists and never what it is.
+   */
+  readonly hasPin: boolean;
 }
 
 export interface UserEdit {

@@ -1,4 +1,10 @@
-import type { OfflineSnapshotResponse, PartyResponse, ProductResponse } from '@sher/core-contracts';
+import type {
+  OfflineSale,
+  OfflineSnapshotResponse,
+  OfflineUser,
+  PartyResponse,
+  ProductResponse,
+} from '@sher/core-contracts';
 
 import {
   LIVE_FILE,
@@ -87,6 +93,11 @@ export async function storeSnapshot(
     writeParties(db, 'CUSTOMER', snapshot.customers);
     writeParties(db, 'SUPPLIER', snapshot.suppliers);
     writeParties(db, 'VENDOR', snapshot.vendors);
+    // Phase 12.4: who may open this counter without the line, and the sales
+    // they can look up while it is down.
+    writeUsers(db, snapshot.users);
+    writeSales(db, snapshot.sales);
+    await carryOverLocalWork(db);
   } finally {
     db.close();
   }
@@ -96,6 +107,85 @@ export async function storeSnapshot(
 }
 
 type Db = Awaited<ReturnType<typeof openLocalDb>>;
+
+/**
+ * Carries this machine's own work across a snapshot refresh (Phase 12.4).
+ *
+ * A refresh replaces the live database whole — that is what makes a failed
+ * download cost the shop nothing — and the outbox lives in that same database.
+ * Without this, pressing Refresh with six sales still queued would throw the
+ * day away, silently, at the moment the shopkeeper was trying to be careful.
+ *
+ * So the queue, the documents behind it and the machine's own counters are read
+ * out of the live copy and written into the staged one before the swap. The
+ * snapshot brings new master data; the machine keeps everything it made.
+ *
+ * Missing or unreadable live copy is not a failure: it means this is the first
+ * download on this machine, and there is nothing to carry.
+ */
+async function carryOverLocalWork(staging: Db): Promise<void> {
+  let live: Db;
+  try {
+    live = await openLocalDb(LIVE_FILE);
+  } catch {
+    return;
+  }
+
+  try {
+    const outbox = readAll(live, 'outbox');
+    const documents = readAll(live, 'documents');
+    const state = live.selectObject('SELECT * FROM local_state WHERE id = 1');
+
+    staging.exec('BEGIN');
+    try {
+      for (const row of outbox) insertRow(staging, 'outbox', row);
+      for (const row of documents) insertRow(staging, 'documents', row);
+      if (state !== undefined) {
+        staging.exec({
+          sql: `UPDATE local_state
+                   SET next_local_seq = ?, next_sale_seq = ?, device_code = ?, device_id = ?,
+                       sync_cursor = ?, last_push_at = ?, last_pull_at = ?, open_session_op = ?
+                 WHERE id = 1`,
+          bind: [
+            Number(state['next_local_seq'] ?? 1),
+            Number(state['next_sale_seq'] ?? 1),
+            (state['device_code'] ?? null) as string | null,
+            (state['device_id'] ?? null) as string | null,
+            (state['sync_cursor'] ?? null) as string | null,
+            (state['last_push_at'] ?? null) as string | null,
+            (state['last_pull_at'] ?? null) as string | null,
+            (state['open_session_op'] ?? null) as string | null,
+          ],
+        });
+      }
+      staging.exec('COMMIT');
+    } catch (cause) {
+      staging.exec('ROLLBACK');
+      throw cause;
+    }
+  } catch {
+    /*
+     * A live copy written by an older build has no outbox to read. That is the
+     * upgrade path, not an error — there was nothing queued, because the build
+     * that wrote it could not queue anything.
+     */
+  } finally {
+    live.close();
+  }
+}
+
+function readAll(db: Db, table: string): readonly Record<string, unknown>[] {
+  return db.selectObjects(`SELECT * FROM ${table}`);
+}
+
+function insertRow(db: Db, table: string, row: Record<string, unknown>): void {
+  const columns = Object.keys(row);
+  db.exec({
+    sql: `INSERT INTO ${table} (${columns.join(', ')})
+          VALUES (${columns.map(() => '?').join(', ')})`,
+    bind: columns.map((column) => row[column] as never),
+  });
+}
 
 function writeProducts(db: Db, rows: readonly ProductResponse[]): void {
   inBatches(db, rows, (product) => {
@@ -143,6 +233,48 @@ function writeParties(db: Db, role: string, rows: readonly PartyResponse[]): voi
         party.balance.netMinor,
         party.creditLimitMinor,
         JSON.stringify(party),
+      ],
+    });
+  });
+}
+
+function writeUsers(db: Db, rows: readonly OfflineUser[]): void {
+  inBatches(db, rows, (user) => {
+    db.exec({
+      sql: `INSERT INTO users (id, display_name, username, pin_hash, permissions)
+            VALUES (?, ?, ?, ?, ?)`,
+      bind: [
+        user.id,
+        user.displayName,
+        user.username,
+        user.pinHash,
+        JSON.stringify(user.permissions),
+      ],
+    });
+  });
+}
+
+function writeSales(db: Db, rows: readonly OfflineSale[]): void {
+  inBatches(db, rows, (sale) => {
+    db.exec({
+      sql: `INSERT INTO sales
+              (id, number, business_date, party_id, customer_name, customer_phone,
+               grand_total_minor, paid_minor, due_minor, status, search)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      bind: [
+        sale.id,
+        sale.number,
+        sale.businessDate,
+        sale.partyId,
+        sale.customerName,
+        sale.customerPhone,
+        sale.grandTotalMinor,
+        sale.paidMinor,
+        sale.dueMinor,
+        sale.status,
+        // The counter's one search box takes an invoice number or a phone, so
+        // both go in — the same rule the online lookup follows.
+        searchable(sale.number, sale.customerName, sale.customerPhone),
       ],
     });
   });

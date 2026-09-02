@@ -100,11 +100,19 @@ export class OfflineStatusService {
       }
 
       const id = Ulid.generate(this.clock);
+      /*
+       * The permanent short code (Phase 12.4, §8). Given at registration rather
+       * than at approval, because a machine that never becomes the offline
+       * writer still numbers the sales typed on it, and a code handed out later
+       * would leave a gap in the middle of that machine's own run.
+       */
+      const deviceCode = await this.devices.nextDeviceCode(tx, ctx);
       await this.devices.insert(tx, ctx, {
         id,
         name: command.name,
         publicKey: command.publicKey,
         platform: command.platform,
+        deviceCode,
       });
 
       await this.audit.append(tx, ctx, {
@@ -114,7 +122,12 @@ export class OfflineStatusService {
         before: null,
         // The key itself is never audited. It is an identity, and an identity
         // copied into a trail anybody may read is one that has been shared.
-        after: { name: command.name, platform: command.platform, status: 'REGISTERED' },
+        after: {
+          name: command.name,
+          platform: command.platform,
+          status: 'REGISTERED',
+          deviceCode,
+        },
         source: 'API',
       });
 

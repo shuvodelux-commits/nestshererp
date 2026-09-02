@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OfflineBackupCard from '../components/offline/OfflineBackupCard.vue';
 import type { DeviceResponse } from '@sher/core-contracts';
 import Tag from 'primevue/tag';
 import { computed, onMounted, ref } from 'vue';
@@ -646,6 +647,7 @@ onMounted(async () => {
       @close="replacing = null"
       @submit="handOver"
     />
+      <OfflineBackupCard />
   </AppShell>
 </template>
 

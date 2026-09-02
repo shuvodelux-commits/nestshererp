@@ -17,7 +17,15 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
   PRODUCT_BARCODE: 'P',
   PURCHASE: 'PUR',
   SUPPLIER_PAYMENT: 'SPY',
-  SALE: 'INV',
+  /*
+   * Phase 12.4, owner decision 2026-09-02: every new sale is numbered
+   * `S-{YEAR}-{DEVICE}-{SEQUENCE}`, online and offline alike. The prefix moved
+   * from INV to S with it. Numbers already printed keep exactly the form they
+   * were printed in — the counter row carries its own prefix, and existing
+   * tenants' rows are moved to S by the backfill so the change is deliberate
+   * rather than a surprise on the first sale of the day.
+   */
+  SALE: 'S',
   CUSTOMER_RECEIPT: 'RCV',
   QUOTATION: 'QTN',
   SALES_ORDER: 'SO',
@@ -66,8 +74,16 @@ const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
  * no duplicates, and no gaps from concurrency. Gaps from VOIDED documents are
  * normal and auditable — a number is never reused.
  *
- * `device_prefix` is reserved and empty in V1; an offline device will produce
- * `NOTE-D2-2026-000123` with no schema change.
+ * **Sales carry the machine that made them** (Phase 12.4, §8). The counter is
+ * per (tenant, doc type, year, **device code**), so the shop's central counter
+ * and each registered device each run their own sequence and can never issue
+ * the same number. `0` is the central code — the browser that never registered
+ * itself, a background job, a replay whose device row has gone — and device
+ * codes are always letters, so the two sets cannot collide.
+ *
+ * Every other document type still numbers centrally, exactly as before. A sale
+ * is the one document a customer walks out holding, and the one that therefore
+ * cannot be renumbered when it reaches the books a day later.
  */
 export class PostgresNumberingService implements NumberingService {
   constructor(private readonly clock: Clock) {}
@@ -76,14 +92,20 @@ export class PostgresNumberingService implements NumberingService {
     const db = txOf(tx);
     const now = this.clock.now();
     const prefix = DEFAULT_PREFIXES[docType] ?? docType;
+    /*
+     * Only a sale is numbered per device. Everything else keeps the central
+     * counter it has always had, so no number already printed on a purchase, a
+     * receipt or an expense changes shape.
+     */
+    const deviceCode = docType === 'SALE' ? (ctx.deviceCode ?? CENTRAL_DEVICE_CODE) : CENTRAL_DEVICE_CODE;
 
     // Create the counter if this is the tenant's first document of the year.
     // ON CONFLICT DO NOTHING keeps two concurrent first-writers from colliding.
     await db.execute(sql`
       INSERT INTO numbering_counters
-        (id, tenant_id, doc_type, year, next_value, prefix, created_at, updated_at, created_by, updated_by)
+        (id, tenant_id, doc_type, year, device_code, next_value, prefix, created_at, updated_at, created_by, updated_by)
       VALUES
-        (${Ulid.generate(this.clock)}, ${ctx.tenantId}, ${docType}, ${year}, 1, ${prefix},
+        (${Ulid.generate(this.clock)}, ${ctx.tenantId}, ${docType}, ${year}, ${deviceCode}, 1, ${prefix},
          ${now}, ${now}, ${ctx.userId}, ${ctx.userId})
       ON CONFLICT ON CONSTRAINT numbering_counters_unique DO NOTHING
     `);
@@ -93,6 +115,7 @@ export class PostgresNumberingService implements NumberingService {
       SELECT next_value, prefix
         FROM numbering_counters
        WHERE tenant_id = ${ctx.tenantId} AND doc_type = ${docType} AND year = ${year}
+         AND device_code = ${deviceCode}
          FOR UPDATE
     `);
 
@@ -105,9 +128,54 @@ export class PostgresNumberingService implements NumberingService {
       UPDATE numbering_counters
          SET next_value = next_value + 1, updated_at = ${now}, updated_by = ${ctx.userId}
        WHERE tenant_id = ${ctx.tenantId} AND doc_type = ${docType} AND year = ${year}
+         AND device_code = ${deviceCode}
     `);
 
     const sequence = String(row.next_value).padStart(SEQUENCE_WIDTH, '0');
-    return `${row.prefix}-${String(year)}-${sequence}`;
+    return docType === 'SALE'
+      ? `${row.prefix}-${String(year)}-${deviceCode}-${sequence}`
+      : `${row.prefix}-${String(year)}-${sequence}`;
+  }
+
+  /**
+   * Move a device's counter past a number it has already printed.
+   *
+   * Idempotent by construction: `GREATEST` means reserving a number already
+   * behind the counter changes nothing, which is what a repeated push must
+   * cost. Deliberately never lowers the counter — a device that lies about its
+   * sequence cannot make the server re-issue a number it has already given out.
+   */
+  async reserve(
+    tx: Tx,
+    ctx: TenantContext,
+    docType: string,
+    year: number,
+    deviceCode: string,
+    sequence: number,
+  ): Promise<void> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+    const prefix = DEFAULT_PREFIXES[docType] ?? docType;
+
+    await db.execute(sql`
+      INSERT INTO numbering_counters
+        (id, tenant_id, doc_type, year, device_code, next_value, prefix, created_at, updated_at, created_by, updated_by)
+      VALUES
+        (${Ulid.generate(this.clock)}, ${ctx.tenantId}, ${docType}, ${year}, ${deviceCode},
+         ${sequence + 1}, ${prefix}, ${now}, ${now}, ${ctx.userId}, ${ctx.userId})
+      ON CONFLICT ON CONSTRAINT numbering_counters_unique DO UPDATE
+        SET next_value = GREATEST(numbering_counters.next_value, ${sequence + 1}),
+            updated_at = ${now},
+            updated_by = ${ctx.userId}
+    `);
   }
 }
+
+/**
+ * The shop's own counter, for work no registered device did.
+ *
+ * A digit, where every assigned device code is letters, so a number issued
+ * centrally can never collide with one a machine issued — and a shopkeeper can
+ * tell at a glance which is which.
+ */
+const CENTRAL_DEVICE_CODE = '0';

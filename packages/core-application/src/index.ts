@@ -639,7 +639,32 @@ export type {
   DeviceRow,
   DeviceStatusChange,
   NewDevice,
+  OfflineUserRow,
 } from './devices/device-repository';
 
 /* Phase 12.3 — the snapshot the offline device reads from (§5.23). */
 export { SnapshotService, SNAPSHOT_SCHEMA_VERSION } from './devices/snapshot-service';
+
+/* Phase 12.4 — the shop trades offline and comes back (§5.23, §6, §15). */
+export {
+  label as syncOperationLabel,
+  OP_DOCUMENT_TABLE,
+  replayOperation,
+  ReplayService,
+  ResolveConflictService,
+  SyncReadService,
+  toConflictResponse,
+} from './sync';
+export type {
+  NewSyncConflict,
+  NewSyncOperation,
+  ReplayResult,
+  SyncChangeRow,
+  SyncConflictRow,
+  SyncCounts,
+  SyncOperationOutcome,
+  SyncOperationRow,
+  SyncOperationStatus,
+  SyncRepository,
+  SyncServices,
+} from './sync';

@@ -6,6 +6,8 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedDocument } from '../offline/queued-documents';
 
 /**
  * Customer returns (§5.11).
@@ -26,7 +28,28 @@ export function createSalesReturn(
   payload: CreateSalesReturnRequest,
   idempotencyKey: string,
 ): Promise<SalesReturnResponse> {
-  return request('/api/v1/sales-returns', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<SalesReturnResponse>('/api/v1/sales-returns', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'SALES_RETURN_CREATE',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+      });
+      return queuedDocument<SalesReturnResponse>(
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+        payload.refundMinor,
+      );
+    },
+  );
 }
 
 export interface SalesReturnQuery {

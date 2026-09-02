@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Inject, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Inject, Param, Post, Put, UseGuards } from '@nestjs/common';
 import type {
   ManageDevicesService,
   OfflineStatusService,
@@ -8,6 +8,7 @@ import type {
 import type {
   DeviceListResponse,
   DeviceResponse,
+  DeviceUsersResponse,
   OfflineSnapshotResponse,
   OfflineStatusResponse,
 } from '@sher/core-contracts';
@@ -22,6 +23,7 @@ import {
   reportGateRequestSchema,
   reportSnapshotRequestSchema,
   revokeDeviceRequestSchema,
+  setDeviceUsersRequestSchema,
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
@@ -243,6 +245,38 @@ export class DevicesController {
       }),
     };
   }
+
+  /**
+   * Who may sign in on this machine while it is disconnected (Phase 12.4, §9).
+   *
+   * The list and the people who could be on it come back together, because the
+   * screen that shows one always needs the other and two round trips would let
+   * them disagree for a moment.
+   */
+  @Get(':id/offline-users')
+  async offlineUsers(
+    @Param('id') id: string,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: DeviceUsersResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'That computer is not here');
+    return { data: await this.devices.offlineUsers(ctx, id) };
+  }
+
+  @Put(':id/offline-users')
+  async setOfflineUsers(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: DeviceUsersResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'That computer is not here');
+    const parsed = setDeviceUsersRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'That is not a list of people');
+    }
+    return {
+      data: await this.devices.setOfflineUsers({ ctx, deviceId: id, userIds: parsed.data.userIds }),
+    };
+  }
 }
 
 function key(header: string | undefined): string | null {
@@ -260,4 +294,5 @@ function required(header: string | undefined): string {
 
 function invalid(message: string): AppError {
   return new AppError(ErrorCode.VALIDATION_FAILED, message);
+
 }

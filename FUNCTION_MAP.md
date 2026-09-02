@@ -163,6 +163,21 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
 `components/ConfirmDialog.vue` — the last look before money posts, showing the amount in Bangla words.
 `state/data-freshness.ts` — `markDataChanged()` is raised by `request` after every non-GET, and `onDataChanged(fn)` re-reads any screen showing a journal-derived figure.
 
+### Phase 8.2 inventory origins and vendor settlement
+
+| Intent | Authoritative implementation | Reuse / extension point |
+|---|---|---|
+| Post a normal, vendor-credit or mixed-source sale | `core-application/src/sales/create-sale-service.ts` — `CreateSaleService.create`, private `mixedStockLine` | Always call this sale writer. Non-serial owned lots are forced first; exact serial selection overrides quantity; one vendor and permitted negative remainder may complete the line. Vendor role alone is accepted, but payment on that sale is refused so the receipt remains separate. |
+| Persist/read/reverse exact sale origins | `core-application/src/sales/sale-repository.ts`; `adapter-postgres/src/sale-repository.ts` | `sale_line_source_allocations` is immutable. `reverseSale` restores owned/vendor lots, negative owned position and exact serials, then appends `SALE_CANCELLATION` reversal rows. `listOpenInvoices` includes vendor-product settlement allocations in its derived outstanding. |
+| Correct a sale | `CreateSaleService.create({ correctionOf, correctionVersion })` + `CancelSaleService.cancelWithin` | One transaction reverses the old authoritative allocations and creates the replacement sale/allocation rows. POS passes the old source split and serial labels; never cancel first from the UI. |
+| Return or void-return a mixed sale | `returns/create-sales-return-service.ts`; `adapter-postgres/src/sales-return-repository.ts` | `sourceAllocations` apportions a partial return across unreversed origins. Return restores the same owned lot/vendor receipt lot/serial and appends reversal rows; void reads those rows and restores the captured serial lifecycle, refusing when exact goods moved again. |
+| Allocate landed cost | `core-domain/src/purchasing/landed-cost.ts` — `rejectLandedCost`, `allocateLandedCost`; `core-application/src/purchasing/landed-cost-service.ts` — `add` / `addWithin` | Purchase Value, Quantity and Manual use one allocator. Manual requires one exact share per purchase line. `AddLandedCostService.addWithin` is the composable Class-T writer used by vendor settlement. |
+| Create purchase inside a larger transaction | `core-application/src/purchasing/create-purchase-service.ts` — `createWithin` | Normal purchase, lot receipt, inventory valuation, AP and serial purchase linkage. `vendorSettlement: true` accepts Vendor role without adding Supplier role; normal purchase permissions remain authoritative. |
+| Receive vendor-owned stock/serials from POS | `VendorStockService.receive`; `VendorStockRepository.listSellableLots`; `SerialService.available` | Inline vendor creation creates no inventory. Post stock through the existing vendor receipt endpoint, then refresh. Vendor serial rows retain vendor + receipt + lot linkage. |
+| Receive products against vendor receivable | `vendors/vendor-product-settlement-service.ts` — `VendorProductSettlementService.create`; `vendor-workspace-repository.ts` | One UOW composes `CreatePurchaseService.createWithin`, exact purchase serial insertion, `AddLandedCostService.addWithin`, AP/AR offset and oldest-first sale allocations. Net product value is capped by receivable; landed costs are separately funded and excluded from the cap. API: `POST /api/v1/vendor-workspace/product-settlements`. UI: `VendorProductSettlementDrawer.vue`. |
+
+**Schema:** `0045_phase_8_2_inventory_origins.sql` adds manual landed-cost shares, source allocations/reversals, vendor serial provenance and vendor-product settlement allocations. `0046_phase_8_2_origin_hardening.sql` makes serial history reusable after return and tightens new origin rows.
+
 ### Corrections and adjustments (Phase 7, §5.11 · §5.12 · §5.13 · §5.19)
 
 **Domain.** `sales/sales-return.ts` — `salesReturnTotals` (apportions a sold line by quantity, last returnable unit carrying the remainder), `salesReturnPosting`, `refillLots` (newest consumption first). `purchasing/purchase-return.ts` — `purchaseReturnTotals` and `purchaseReturnPosting`, where the gap between the lot's `actual_unit_cost` and what the supplier billed lands in `STOCK_ADJUSTMENT`. `inventory/stock-count.ts` — `countTotals`. All three are called **from the browser too**, which is what keeps a modal's figures and the server's identical.
@@ -213,7 +228,7 @@ adjustments, cost-adjustments, lots, openings, valuation), `/api/v1/imports` + `
   never `apps/api` alone, or the server runs against a stale `core-contracts/dist`.
 - `pnpm db:migrate` after a new migration; `pnpm db:backfill` after adding a permission code or
   anything else `provisionTenant` seeds.
-- Gates: `pnpm lint`, `pnpm typecheck`, `pnpm test:boundaries`, `pnpm test`.
+- Gates: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries`. Run `pnpm test` only when the owner explicitly asks in the current conversation.
 
 ---
 
@@ -595,3 +610,56 @@ The API refuses to boot when its schema version and the database's disagree, in 
 It needs the PostgreSQL client tools (`pg_dump`, `pg_restore`) on the machine — as does Reset
 Business Data, which refuses rather than clearing anything if they are missing. New environment
 variables: `BACKUP_DIR`, `BACKUP_KEY_PATH`, `RECOVERY_DUMP_DIR`, `BACKUP_HOUR`.
+
+---
+
+## 15. Offline trading and sync — Phase 12.4 (§5.23 · D-01 · R-C10)
+
+**One posting implementation, reached two ways.** Nothing under `core-application/src/sync/` posts,
+numbers, computes a total or opens a transaction around a document. Replay parses the queued payload
+with the online endpoint's own schema and calls the online endpoint's own service with the device's
+`operationId`. If a replayed sale could differ from a counter sale, it would only be because the
+service differed from itself.
+
+| Intent | Authoritative implementation | Reuse / extension point |
+|---|---|---|
+| Turn a queued command into a posted document | `core-application/src/sync/operation-registry.ts` — `replayOperation` | The single map from the 13 `SyncOpType`s to their owning services. **A new offline-capable operation is added here and nowhere else**: give it the endpoint's schema and the endpoint's service. Never write a document from sync. |
+| Take in a device's outbox | `sync/replay-service.ts` — `ReplayService.push` | Wire version first (a mismatch refuses the whole batch, nothing written), then dependency order, then one service call per operation. Records `IN_FLIGHT` → `APPLIED`/`DUPLICATE`/`QUARANTINED`/`BLOCKED` in short transactions **around** the service's own, never wrapping it. |
+| Decide about a refused operation | `sync/resolve-conflict-service.ts` — `ResolveConflictService.resolve` | `RETRY` · `MERGE` · `KEEP_BOTH_EDIT` · `DISCARD_WITH_REASON`. The three that post go back through `replayOperation` against live state; there is no direct-write path and adding one would break the module's only safety argument. |
+| Read the queue, serve a pull | `sync/sync-read-service.ts` — `status` · `conflicts` · `pull` | Pull is served from the master tables' own `updated_at` against the device's `sync_cursor`, composing `ManageProductsService.list` / `ManagePartiesService.list` as 12.3's snapshot does, so permissions are inherited rather than re-implemented. |
+| Persist what was sent and what became of it | `sync/sync-repository.ts`; `adapter-postgres/src/sync-repository.ts` | `sync_operations` (kept forever, `UNIQUE (tenant_id, operation_id)` and `UNIQUE (tenant_id, device_id, local_seq)`) and `sync_conflicts` (one open row per operation). `OP_DOCUMENT_TABLE` maps an op type to the document table whose own `operation_id` index is the permanent idempotency guarantee. |
+| Number a sale made on a device | `adapter-postgres/src/numbering-service.ts` | `S-{YEAR}-{DEVICE}-{SEQUENCE}`, counter keyed per (tenant, doc type, year, device code). `0` is central and device codes are letters, so the sets cannot collide. **Only `SALE` is per device**; every other doc type keeps its central counter. |
+| Assign a device its permanent code | `apps/api/src/sync/device-code.ts`; `apps/api/src/backfill-seed-roles.ts` | Assigned once at registration, `^[A-Z]{1,3}$`, unique per tenant, never reused — it is printed on paper the shop files. ULIDs and per-tenant sequences come from application code (R-C1), which is why the backfill and not the migration assigns them. |
+| Say who may work a machine while it is disconnected | `devices/manage-devices-service.ts` — `offlineUsers` · `setOfflineUsers`; `device_user_access` | Kept apart from roles deliberately: a role says what a person may do, this says where they may do it unwatched. The snapshot carries those users with their PIN hash and permissions. |
+| Write at the counter with no line | `apps/web/src/offline/local-writer.ts` | The fallback lives in the **API layer**, where 12.3 put the read fallback — screens hold one write path. Only `NETWORK_UNREACHABLE` queues, only the `OFFLINE_RW` holder queues, and the local commit completes before the call returns. |
+| Show work that is queued but not posted | `apps/web/src/offline/queued-documents.ts` — `QUEUED_NOTICE` | Shaped like the online responses so no form learns a second rendering path; server-filled fields are genuinely absent rather than faked. Queued is not failure and is never styled as one. |
+| Send and catch up | `apps/web/src/offline/sync.ts` — `useSync` | Automatic the moment the line is steady, in typed order, 50 per batch, 30 s retry. **A network failure retries; a refusal does not** — retrying a refusal would hide the one thing Sync Issues exists to show. |
+| Take the machine's day off the machine | `packages/adapter-sqlite-wasm/src/local-backup.ts`; `components/offline/OfflineBackupCard.vue` | `.sherbak` — the whole live database plus an authenticated manifest, AES-256-GCM, PBKDF2 310,000 rounds. Restoring returns the queue, operation ids, printed numbers and device sequence, and does **not** make the machine the offline writer. |
+
+**API.** `apps/api/src/sync/sync.controller.ts` — `POST /api/v1/sync/push`, `GET /sync/pull`,
+`GET /sync/status`, `GET /sync/conflicts`, `POST /sync/conflicts/:id/resolve`. Push carries the
+**device key** in its body and pull takes it from an `x-device-key` header — a machine that is not
+registered has nothing the shop can accept, whoever is signed in on it.
+
+**Permissions (3), split by what the act costs when it is wrong:** `sync.status.view` (seeing the
+queue costs nothing) · `sync.conflict.resolve` (hands the document back to a server that re-checks
+every rule, so it can never post what the counter could not have posted online — a manager)
+· `sync.conflict.discard` (**Owner alone**: the only action that leaves the books without a record
+of something that happened; a CHECK constraint requires the reason).
+
+**Web.** `pages/SyncIssuesPage.vue` at **`/sync`** — not under Settings, because an outage ending
+with three refused documents is floor work during a shift. Tiles read *Waiting to send* ·
+*Need review* · *Gone into the books*. `components/offline/SyncStatusChip.vue` keeps the count in
+the top bar until the list is empty.
+
+**Origin trail.** `origin_mode` · `origin_device_id` · `device_created_at` · `synced_at` ·
+`device_seq` on thirteen document tables, never cleared, informational only. A synced offline
+document is an ordinary posted document: same journal, Phase 9.2's correction paths, counted in
+every report without qualification. `origin_device_id` alone could not carry the fact — an online
+sale from the counter PC also names a device.
+
+**Schema:** `0047_offline_sync.sql` (`sync_operations`, `sync_conflicts`, `device_user_access`,
+device code + pull cursor, per-device numbering, origin trail on twelve tables) ·
+`0048_offline_origin_cash_movements.sql` (the thirteenth) · `0049_sync_in_flight.sql` (the
+`IN_FLIGHT` status that makes an interrupted replay detectable) · `0050_return_operation_uniqueness.sql`
+(the two `operation_id` indexes both return tables were missing).

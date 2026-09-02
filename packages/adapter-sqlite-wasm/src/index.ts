@@ -7,19 +7,49 @@
  * earns the name: it stores a downloaded snapshot and reads it back in the
  * shape the screens already render.
  *
- * **It writes nothing of the shop's own making.** No sale, no document, no
- * journal line, no outbox. `OFFLINE_READY` stays reserved for the build where
- * those exist and genuinely work — a package that could quietly grow a write
- * path is exactly how a shopkeeper ends up trusting a till that cannot bill.
+ * **Phase 12.4 is the build where it writes.** The outbox, the local documents
+ * and the encrypted archive live here now, and `OFFLINE_READY` is earned rather
+ * than reserved. What it still does not do is post: a row in `outbox` is the
+ * command the online endpoint would have received, waiting to be replayed by
+ * the server through the very service the counter calls. No journal line, no
+ * lot, no cost — those belong to the books, and the books are on the server.
  */
 export {
   LIVE_FILE,
   localDbBytes,
   localDbExists,
   localStorageWorks,
+  sahPool,
   STAGING_FILE,
 } from './local-database';
 export type { LocalDb } from './local-database';
 export { localParties, localProducts } from './local-reads';
+export {
+  exportBackup,
+  importBackup,
+  readManifest,
+} from './local-backup';
+export type { BackupManifest, LocalBackup } from './local-backup';
+export {
+  applyChange,
+  localUsers,
+  markSent,
+  outboxCounts,
+  peekSaleNumber,
+  pendingOperations,
+  queueOperation,
+  readLocalState,
+  recordCursor,
+  rememberDevice,
+  settleOperation,
+} from './local-write';
+export type {
+  LocalState,
+  LocalUser,
+  OutboxCounts,
+  OutboxRow,
+  QueuedOperation,
+  QueuedResult,
+} from './local-write';
 export { eraseLocalCopy, readStoredSnapshot, storeSnapshot } from './snapshot-store';
 export type { StoredSnapshot } from './snapshot-store';

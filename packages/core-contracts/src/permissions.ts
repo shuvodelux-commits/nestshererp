@@ -391,6 +391,18 @@ export const Permission = {
   DEVICE_RENAME: 'offline.device.rename',
   DEVICE_REVOKE: 'offline.device.revoke',
   DEVICE_FORCE_REVOKE: 'offline.device.force_revoke',
+  /*
+   * Phase 12.4. Three codes rather than one `sync.manage`, split by what the
+   * act costs when it is wrong. Seeing that six sales are still waiting costs
+   * nothing. Retrying, merging and keeping-both hands a refused document back
+   * to the server, which re-checks every rule anyway, so it can never post what
+   * the counter could not have posted online — a manager's work. Deciding a
+   * real sale will never be posted is the only one that leaves the shop's books
+   * without a record of something that happened, and it is the Owner's alone.
+   */
+  SYNC_STATUS_VIEW: 'sync.status.view',
+  SYNC_CONFLICT_RESOLVE: 'sync.conflict.resolve',
+  SYNC_CONFLICT_DISCARD: 'sync.conflict.discard',
   LICENSE_VIEW: 'license.term.view',
   BACKUP_EXPORT: 'backup.export',
   BACKUP_RESTORE: 'backup.restore',
@@ -1133,6 +1145,27 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
       'For a machine that is lost, stolen or dead: cut its permission at once, without waiting for it to send anything up. Anything it sends afterwards is held aside for review instead of going into the books. Asks for the password again and demands a reason.',
   },
   {
+    code: Permission.SYNC_STATUS_VIEW,
+    group: 'Offline',
+    label: 'See what is waiting to be sent',
+    detail:
+      'Open the Sync screen: how many documents the offline computer is still holding, when it last got through, and anything the shop’s books would not accept.',
+  },
+  {
+    code: Permission.SYNC_CONFLICT_RESOLVE,
+    group: 'Offline',
+    label: 'Sort out documents the books would not accept',
+    detail:
+      'Try a refused document again, merge it with what the shop already has, or keep both and edit. The server checks every rule again, so this cannot post anything the counter could not have posted online.',
+  },
+  {
+    code: Permission.SYNC_CONFLICT_DISCARD,
+    group: 'Offline',
+    label: 'Decide a refused document will never be posted',
+    detail:
+      'Set a refused document aside so it never goes into the books, with a written reason. Nothing is erased — the original stays readable forever — but the shop’s record of that day will not contain it.',
+  },
+  {
     code: Permission.LICENSE_VIEW,
     group: 'Licence & backup',
     label: 'See the licence',
@@ -1372,6 +1405,14 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.DEVICE_APPROVE,
       Permission.DEVICE_RENAME,
       Permission.DEVICE_REVOKE,
+      /*
+       * Phase 12.4. An outage ends with a queue to clear, and the manager is
+       * who clears it — retry, merge, keep both. Not `discard`: deciding that
+       * a sale the shop actually made will never enter the books is the one
+       * sync act that loses a fact, and it stays the owner's.
+       */
+      Permission.SYNC_STATUS_VIEW,
+      Permission.SYNC_CONFLICT_RESOLVE,
     ],
   },
   {
@@ -1598,6 +1639,13 @@ export const SEED_ROLES: readonly SeedRole[] = [
       Permission.CASH_MOVEMENT_VOID,
       /* Phase 12.1. Registering asks; it never grants (see the code's note). */
       Permission.DEVICE_REGISTER,
+      /*
+       * Phase 12.4. Reading only. A day's takings that have not reached the
+       * books yet is exactly the kind of gap an accountant is asked to explain,
+       * so they can see the queue and the refusals — and resolve none of them,
+       * because a refused document is put right at the counter it came from.
+       */
+      Permission.SYNC_STATUS_VIEW,
     ],
   },
   {

@@ -82,5 +82,6 @@ import { MANAGE_EXPENSES_SERVICE } from './tokens';
       ],
     },
   ],
+  exports: [MANAGE_EXPENSES_SERVICE],
 })
 export class ExpensesModule {}

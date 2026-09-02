@@ -79,6 +79,17 @@ function currentTenant(): string | null {
 }
 
 /**
+ * Which shop this machine's copy belongs to (Phase 12.4).
+ *
+ * Read by the backup card, which must stamp the archive with it and refuse to
+ * restore a file belonging to another business — the one check that stops a
+ * shop opening somebody else's day by mistake.
+ */
+export function storedTenantId(): string | null {
+  return currentTenant();
+}
+
+/**
  * The shop's own calendar day, as this machine sees it.
  *
  * The machine's timezone rather than the tenant's, deliberately: this decides

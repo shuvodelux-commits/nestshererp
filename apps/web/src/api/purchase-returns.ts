@@ -6,6 +6,8 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedDocument } from '../offline/queued-documents';
 
 /**
  * Supplier returns (§5.11) — the mirror of `returns.ts`.
@@ -25,12 +27,28 @@ export function createPurchaseReturn(
   payload: CreatePurchaseReturnRequest,
   idempotencyKey: string,
 ): Promise<PurchaseReturnResponse> {
-  return request('/api/v1/purchase-returns', {
-    method: 'POST',
-    token,
-    body: payload,
-    idempotencyKey,
-  });
+  return offlineWrite(
+    () =>
+      request<PurchaseReturnResponse>('/api/v1/purchase-returns', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'PURCHASE_RETURN_CREATE',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+      });
+      return queuedDocument<PurchaseReturnResponse>(
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+        payload.receivedMinor,
+      );
+    },
+  );
 }
 
 export interface PurchaseReturnQuery {

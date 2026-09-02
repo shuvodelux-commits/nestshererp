@@ -1,5 +1,6 @@
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type {
+  OfflineSale,
   OfflineSnapshotResponse,
   PartyResponse,
   ProductResponse,
@@ -11,6 +12,7 @@ import type { Clock } from '@sher/shared-utils';
 import type { UserRepository } from '../auth/registration-repository';
 import type { ManageProductsService } from '../catalog/manage-products-service';
 import type { ManagePartiesService } from '../parties/manage-parties-service';
+import type { SaleQueryService } from '../sales/sale-query-service';
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
@@ -55,7 +57,23 @@ import type { DeviceRepository } from './device-repository';
  * misreadable — a device that finds a version it does not know throws its copy
  * away and downloads again.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 1;
+/*
+ * Bumped to 2 by Phase 12.4: the copy now carries the people who may sign in
+ * offline and the sales they may look up, so a copy written by a 12.3 build is
+ * discarded and downloaded again rather than read as if it had them.
+ */
+export const SNAPSHOT_SCHEMA_VERSION = 2;
+
+/**
+ * How far back the sales history reaches (§13, owner decision 2026-09-02:
+ * twelve months).
+ *
+ * Balances never depend on it — those ride on the party rows, which carry what
+ * the ledger says — so pruning history can never change a figure. Unpaid sales
+ * come regardless of age, because an invoice somebody still owes on is open
+ * work whenever it was written.
+ */
+const SALES_HISTORY_MONTHS = 12;
 
 /**
  * Rows per page while packing. Large enough that a 20,000-product wholesaler is
@@ -84,11 +102,12 @@ export class SnapshotService {
     private readonly products: ManageProductsService,
     private readonly parties: ManagePartiesService,
     private readonly users: UserRepository,
+    private readonly sales: SaleQueryService,
     private readonly clock: Clock,
   ) {}
 
   async build(ctx: TenantContext, publicKey: string): Promise<OfflineSnapshotResponse> {
-    const { held, takenByName } = await this.uow.run(ctx, async (tx) => {
+    const { held, takenByName, offlineUsers } = await this.uow.run(ctx, async (tx) => {
       const device = await this.devices.findByPublicKey(tx, ctx, publicKey);
       if (device === null) {
         throw new AppError(
@@ -114,8 +133,17 @@ export class SnapshotService {
       return {
         held: await this.access.permissionsOf(tx, ctx),
         takenByName: user?.displayName ?? 'Someone',
+        /*
+         * Who may open this counter while it is disconnected (§9). Read here,
+         * inside the same transaction that proved this machine holds the
+         * writer slot, because the answer is about this machine and no other.
+         */
+        offlineUsers: await this.devices.offlineUsers(tx, ctx, device.id),
       };
     });
+
+    const today = this.clock.businessDate(ctx.timezone);
+    const salesSince = monthsBefore(today, SALES_HISTORY_MONTHS);
 
     const includes: SnapshotIncludes = {
       products: held.includes(Permission.PRODUCT_VIEW),
@@ -123,6 +151,8 @@ export class SnapshotService {
       suppliers: held.includes(Permission.SUPPLIER_VIEW),
       vendors: held.includes(Permission.VENDOR_VIEW),
       cost: held.includes(Permission.COST_VIEW),
+      users: offlineUsers.length > 0,
+      sales: held.includes(Permission.SALE_VIEW),
     };
 
     if (!includes.products && !includes.customers && !includes.suppliers && !includes.vendors) {
@@ -147,7 +177,59 @@ export class SnapshotService {
        * still says the permission was held.
        */
       vendors: includes.vendors ? await this.allPartiesIfEnabled(ctx, 'VENDOR') : [],
+      users: offlineUsers.map((user) => ({
+        id: user.id,
+        displayName: user.displayName,
+        username: user.username,
+        pinHash: user.pinHash,
+        permissions: [...user.permissions],
+      })),
+      sales: includes.sales ? await this.recentSales(ctx, salesSince) : [],
+      salesSince: includes.sales ? salesSince : null,
     };
+  }
+
+  /**
+   * Twelve months of sales, plus every unpaid one however old.
+   *
+   * Read through `SaleQueryService.list` — the very call the sales screen makes
+   * — so permissions are inherited rather than re-implemented and the offline
+   * list cannot hold a sale the online list would refuse to show. Two passes,
+   * because "recent" and "still owed" are different questions and a shop with a
+   * two-year-old unpaid invoice needs the answer to both.
+   */
+  private async recentSales(ctx: TenantContext, since: string): Promise<OfflineSale[]> {
+    const byId = new Map<string, OfflineSale>();
+
+    for (const query of [{ fromDate: since }, { unpaidOnly: true }]) {
+      let cursor: string | undefined;
+      for (;;) {
+        const page = await this.sales.list(ctx, {
+          ...query,
+          limit: PAGE_SIZE,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        for (const sale of page.items) {
+          byId.set(sale.id, {
+            id: sale.id,
+            number: sale.number,
+            businessDate: sale.businessDate,
+            partyId: sale.partyId,
+            customerName: sale.customerName,
+            customerPhone: sale.customerPhone,
+            grandTotalMinor: sale.grandTotalMinor,
+            paidMinor: sale.paidMinor,
+            dueMinor: sale.dueMinor,
+            status: sale.status,
+          });
+        }
+        if (page.nextCursor === null || page.items.length === 0) break;
+        if (byId.size >= MAX_ROWS_PER_KIND) throw tooMany('sales');
+        cursor = page.nextCursor;
+      }
+    }
+
+    return [...byId.values()];
   }
 
   private async allProducts(ctx: TenantContext): Promise<ProductResponse[]> {
@@ -212,6 +294,23 @@ export class SnapshotService {
       throw cause;
     }
   }
+}
+
+/**
+ * The same day of the month, N months earlier, as a business date.
+ *
+ * Deliberately not `new Date()` arithmetic on an instant: business dates are
+ * tenant-local days (§3.5), and subtracting milliseconds from an instant lands
+ * a day out whenever a shop's timezone and the server's disagree.
+ */
+function monthsBefore(businessDate: string, months: number): string {
+  const year = Number(businessDate.slice(0, 4));
+  const month = Number(businessDate.slice(5, 7));
+  const day = businessDate.slice(8, 10);
+  const total = year * 12 + (month - 1) - months;
+  const newYear = Math.floor(total / 12);
+  const newMonth = (total % 12) + 1;
+  return `${String(newYear).padStart(4, '0')}-${String(newMonth).padStart(2, '0')}-${day}`;
 }
 
 function tooMany(kind: string): AppError {

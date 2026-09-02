@@ -10,6 +10,8 @@ import type {
 import { localProducts } from '@sher/adapter-sqlite-wasm';
 
 import { request } from './client';
+import { offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedProduct } from '../offline/queued-documents';
 import { offlineFallback } from './offline-fallback';
 
 /**
@@ -55,7 +57,21 @@ export function createProduct(
   payload: SaveProductRequest,
   idempotencyKey: string,
 ): Promise<ProductResponse> {
-  return request('/api/v1/products', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<ProductResponse>('/api/v1/products', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      // Creating a product never creates stock, offline or on (§10, §5.5):
+      // goods enter through a purchase, an opening or an adjustment.
+      await queueCommand({ type: 'PRODUCT_CREATE', payload, operationId: idempotencyKey });
+      return queuedProduct<ProductResponse>(payload, idempotencyKey);
+    },
+  );
 }
 
 export function updateProduct(

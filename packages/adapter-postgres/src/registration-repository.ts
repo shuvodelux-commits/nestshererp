@@ -277,6 +277,7 @@ const USER_SUMMARY = {
   roleName: roles.name,
   deletedAt: users.deletedAt,
   passwordHash: users.passwordHash,
+  pinHash: users.pinHash,
 };
 
 interface UserSummaryRow {
@@ -290,6 +291,7 @@ interface UserSummaryRow {
   roleName: string;
   deletedAt: Date | null;
   passwordHash: string | null;
+  pinHash: string | null;
 }
 
 /** Never leaks the hash itself — only whether one exists (§5.26, R-E8). */
@@ -305,6 +307,7 @@ function toSummary(row: UserSummaryRow): UserSummary {
     roleName: row.roleName,
     disabled: row.deletedAt !== null,
     hasPassword: row.passwordHash !== null,
+    hasPin: row.pinHash !== null,
   };
 }
 

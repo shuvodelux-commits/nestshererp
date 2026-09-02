@@ -249,6 +249,6 @@ import {
       inject: [UNIT_OF_WORK, ACCESS_CONTROL, MONEY_REPOSITORY],
     },
   ],
-  exports: [CASH_SESSION_SERVICE],
+  exports: [CASH_SESSION_SERVICE, CASH_MOVEMENT_SERVICE],
 })
 export class MoneyModule {}

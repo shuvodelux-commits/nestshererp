@@ -5,6 +5,8 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localBusinessDate, offlineWrite, queueCommand } from '../offline/local-writer';
+import { queuedStockAdjustment } from '../offline/queued-documents';
 
 export function recordOpeningStock(token: string, payload: RecordOpeningStockRequest, idempotencyKey: string): Promise<OpeningStockResponse> {
   return request('/api/v1/inventory/openings', { method: 'POST', token, body: payload, idempotencyKey });
@@ -20,7 +22,31 @@ export function fetchOpeningStock(token: string, id: string): Promise<OpeningSto
  * `operation_id`, so a double-tap cannot write the damage off twice.
  */
 export function adjustStock(token: string, payload: AdjustStockRequest, idempotencyKey: string): Promise<StockAdjustmentResponse> {
-  return request('/api/v1/inventory/adjustments', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () =>
+      request<StockAdjustmentResponse>('/api/v1/inventory/adjustments', {
+        method: 'POST',
+        token,
+        body: payload,
+        idempotencyKey,
+      }),
+    async () => {
+      await queueCommand({
+        type: 'STOCK_ADJUST',
+        payload,
+        operationId: idempotencyKey,
+        ...(payload.businessDate === undefined ? {} : { businessDate: payload.businessDate }),
+        // The shelf moves at once so the counter is not shown goods it has
+        // already written off (§11). What it cost is the server's to work out.
+        stockDelta: { [payload.productId]: payload.qtyDelta },
+      });
+      return queuedStockAdjustment<StockAdjustmentResponse>(
+        payload,
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+      );
+    },
+  );
 }
 
 function reportParams(query: Partial<InventoryReportQuery>): string {

@@ -28,6 +28,7 @@ export function toDeviceResponse(row: DeviceRow, callerPublicKey: string | null)
     revokeReason: row.revokeReason,
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     quarantinesPushes: pushesAreQuarantined(row.status),
+    deviceCode: row.deviceCode,
     storedSnapshotBytes: row.snapshotBytes,
     snapshotUsageBytes: row.snapshotUsageBytes,
     snapshotQuotaBytes: row.snapshotQuotaBytes,

@@ -17,6 +17,9 @@ import type {
 } from '@sher/core-contracts';
 
 import { request } from './client';
+import { localSaleResponse } from '../offline/local-sale';
+import { queuedReceipt } from '../offline/queued-documents';
+import { localBusinessDate, offlineWrite, queueCommand, queueSale } from '../offline/local-writer';
 
 /**
  * Selling (§5.7, §5.8).
@@ -67,12 +70,37 @@ export function fetchSale(token: string, id: string): Promise<SaleResponse> {
   return request(`/api/v1/sales/${id}`, { token });
 }
 
+/**
+ * Sell (§5.7), and keep selling when the line is down (Phase 12.4).
+ *
+ * The offline branch is here rather than in the POS for the reason the read
+ * fallback gives in `offline-fallback.ts`: one rule in one place, instead of a
+ * second write path inside the longest screen in the app — the one branch
+ * nobody exercises until the day it matters.
+ *
+ * It queues the **same command** the server would have received and answers in
+ * the **same shape**, so the till prints, the change is right and the cart
+ * clears exactly as they do online. What differs is one honest warning on the
+ * invoice and the absence of a profit figure, which the books have not worked
+ * out yet.
+ */
 export function createSale(
   token: string,
   payload: CreateSaleRequest,
   idempotencyKey: string,
 ): Promise<SaleResponse> {
-  return request('/api/v1/sales', { method: 'POST', token, body: payload, idempotencyKey });
+  return offlineWrite(
+    () => request<SaleResponse>('/api/v1/sales', { method: 'POST', token, body: payload, idempotencyKey }),
+    async (device) => {
+      const queued = await queueSale(payload, idempotencyKey, device);
+      return localSaleResponse(
+        payload,
+        queued.number,
+        idempotencyKey,
+        payload.businessDate ?? localBusinessDate(),
+      );
+    },
+  );
 }
 
 /** Display-only overrides (§5.8). Never an accounting fact. */
@@ -110,12 +138,36 @@ export function receiveCustomerPayment(
   payload: ReceiveCustomerPaymentRequest,
   idempotencyKey: string,
 ): Promise<CustomerReceiptResponse> {
-  return request('/api/v1/customer-payments', {
+  return offlineWrite(
+    () => request<CustomerReceiptResponse>('/api/v1/customer-payments', {
     method: 'POST',
     token,
     body: payload,
     idempotencyKey,
-  });
+  }),
+    async () => {
+      /*
+       * Money in from a customer while the line is down. Queued as the command
+       * the receipts endpoint takes, so the server allocates it oldest-first
+       * through the one service that owns receipts — the device never decides
+       * which invoices it settles (§4, §6).
+       */
+      await queueCommand({
+        type: 'CUSTOMER_RECEIPT_RECORD',
+        payload,
+        operationId: idempotencyKey,
+        document: {
+          partyId: payload.customerPartyId,
+          partyName: null,
+          totalMinor: payload.amountMinor,
+          paidMinor: payload.amountMinor,
+          dueMinor: 0,
+        },
+        balanceDelta: { partyId: payload.customerPartyId, amountMinor: -payload.amountMinor },
+      });
+      return queuedReceipt<CustomerReceiptResponse>(payload, idempotencyKey, localBusinessDate());
+    },
+  );
 }
 
 export function fetchInvoiceSettings(token: string): Promise<InvoiceSettings> {
