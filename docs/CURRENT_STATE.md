@@ -2,14 +2,14 @@
 
 **Date:** 2026-09-03
 **Branch:** `feat/products-stock-hub`
-**Last commit:** `c9713ac` — *feat(offline): the shop that keeps selling with the line down, and the queue that catches up*
-**Working tree:** **not clean** — 123 changed paths, all deliberate work (Phase 17 added most of them). Nothing has been committed for you.
+**Last commit:** `6ebe3e5` — *feat(web,api): the screens a shopkeeper opens first, and the suite that keeps them honest*
+**Working tree:** **clean.** The branch is pushed and in sync with `origin/feat/products-stock-hub` — 23 commits went up on 2026-09-03, only the newest of which was new work. `PR-4` is done: a fresh clone builds without a file from this machine.
 
 ---
 
 ## Where a new chat should pick up
 
-**Phase 17 (vendor control plane) is CODE COMPLETE and verified, uncommitted.**
+**Phase 17 (vendor control plane) is CODE COMPLETE and verified, and is now committed.**
 
 **Phase 18 is IN PROGRESS.** The owner said `START` on 2026-09-03. All fourteen
 decisions are in `docs/DECISIONS.md` under *"Phase 18 — Daily-first workflow UI
@@ -36,7 +36,7 @@ database, so it can run while the development stack is up on 3000/5173 and
 neither can see the other's data.
 
 Everything passes `pnpm build`, `pnpm typecheck`, `pnpm lint`,
-`pnpm test:boundaries` and `pnpm test:inventory`. Nothing is committed.
+`pnpm test:boundaries`, `pnpm test:inventory` and `pnpm test:e2e`, and the tree is committed and pushed (`6ebe3e5`).
 **The owner's UI walkthrough is the one thing outstanding** — it is the
 acceptance gate for the module, and no row may reach `DONE` without it.
 
@@ -67,10 +67,15 @@ because only the owner sets `DONE` and he has not yet driven Phase 12.4 or the
 licence-install screen in the UI. That walkthrough — not a green test run — is
 the project's acceptance gate (`AGENTS.md` R-0 step 5).
 
-Three things stand between this and an install in a real shop, and all three are
-listed in `docs/NEXT_TASKS.md`: **no deployment artefacts exist** (PR-1), **no
-production licence keypair has been issued** (PR-2), and **the working tree is
-uncommitted** (PR-4).
+Three things stand between this and an install in a real shop. Two are still
+open and listed in `docs/NEXT_TASKS.md`: **no deployment artefacts exist**
+(PR-1) and **no production licence keypair has been issued** (PR-2). The third,
+**PR-4 — commit the working tree**, is **done**: the branch was committed and
+pushed on 2026-09-03.
+
+A fourth was found after that list was written and is now the smallest of the
+blockers: **a brand-new shop cannot record an expense**, because
+`provisionTenant` does not seed the §5.12 expense categories. See Known bugs.
 
 ---
 

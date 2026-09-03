@@ -10,16 +10,39 @@ owner sets `DONE`**, after driving the workflow himself.
 
 ---
 
-## NEXT UP — specified, agreed, not started
+## NEXT UP
 
-### Phase 18 · Daily-first workflow UI and E2E coverage
+### Seed the expense categories a new shop needs — RELEASE BLOCKER
 
-**Status: specified and waiting for `START`.** The questioning round (R-0 step
-3) was completed on 2026-09-03 and all fourteen owner decisions are recorded in
-`docs/DECISIONS.md` under *"Phase 18 — Daily-first workflow UI and E2E
-coverage"*. **A new or cleared chat should read that section rather than
-re-asking** — the module is fully specified, and re-opening settled questions
-would cost the owner the same twenty minutes twice.
+**Status: found 2026-09-03 by the Phase 18 E2E suite, reported, not started.**
+
+`provisionTenant` (`packages/core-application/src/auth/tenant-provisioning.ts`)
+seeds a new tenant's roles, D-10 units and the D-02 walk-in party, but not the
+§5.12 expense categories — which only `apps/api/src/backfill-seed-roles.ts`
+creates. A shop registering today opens `Record expense` to "No available
+options" and cannot record rent, salary or electricity at all.
+
+**Priority.** P0, and the smallest of the blockers: one loop mirroring the
+`SEED_UNITS` loop directly above it, plus the same in `provisionTenant`'s test
+of record. Phase 18 was forbidden from making it — the file is under
+`packages/core-application`, and that module's boundary was explicit.
+
+**Acceptance.** A tenant registered through the API, with no backfill run
+afterwards, can record an expense from the Counter and from Expenses.
+
+---
+
+### Phase 18 · Daily-first workflow UI and E2E coverage — CODE COMPLETE
+
+**Status: all five slices delivered and committed (`6ebe3e5`, 2026-09-03).
+Awaiting the owner's click-by-click acceptance pass**, which is the gate that
+lets any row move to `DONE`. The walkthrough was handed over as an artifact on
+the same day.
+
+19 of 19 Playwright specs pass. Full detail — slice by slice, plus the three
+defects the suite found — is in `docs/CURRENT_STATE.md`. The fourteen owner
+decisions remain in `docs/DECISIONS.md`; **a new or cleared chat should read
+those rather than re-asking.**
 
 **Goal.** Make the daily-user workflow faster and less cluttered, then protect
 it with focused Playwright coverage. **No accounting, stock, permission or
@@ -111,18 +134,16 @@ network, sells, signs in cold with a PIN, reconnects, watches the queue drain,
 resolves a quarantined operation, and confirms the figures. Then he sets `DONE`
 on rows 12.4 and 10.x.
 
-### PR-4 · Commit the working tree — RELEASE BLOCKER
+### PR-4 · Commit the working tree — **DONE 2026-09-03**
 
-**Goal.** Sixteen source files that tracked code imports are **untracked**, so
-the branch as committed does not build for anybody else, and `pnpm-lock.yaml`
-names a `tools/licence` importer that is not in git.
+Was: source files that tracked code imported were untracked, so the branch as
+committed did not build for anybody else.
 
-**Priority.** P0.
-
-**Files.** See the git-safety list in `docs/CURRENT_STATE.md`.
-
-**Dependencies.** The owner's decision — a commit was deliberately not made for
-him.
+Committed as `6ebe3e5` and pushed to `origin/feat/products-stock-hub` — 333
+files, and 23 commits in total went up, only the newest of which was new work.
+The tree is clean and every gate passes on it. Kept here rather than deleted
+because the acceptance criterion below is the one worth re-running before a
+release, on whatever the tip is then.
 
 **Acceptance.** A fresh clone of the branch runs `pnpm install --frozen-lockfile`
 and all four gates without a file from this machine.
