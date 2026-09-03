@@ -4,7 +4,7 @@ import type {
 } from '@sher/core-contracts';
 import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { ApiError } from '../api/client';
@@ -216,25 +216,52 @@ function done(): void {
 
 onMounted(load);
 onDataChanged(load);
+
+/*
+ * Phase 18.5, found by the E2E suite (2026-09-03).
+ *
+ * `load()` decides *what* to fetch from the permissions this session holds, and
+ * on a cold open it can run before `/api/v1/me` has answered. When it does, the
+ * customer list, the supplier list and the expense categories are all skipped —
+ * and nothing ever asks for them again, because the only other trigger is a
+ * write. The screen then looks completely normal: the six action tiles are
+ * there, the drawer figure is there, and `Receive Money` opens a picker that
+ * says "No available options", so a cashier with a customer standing in front
+ * of them simply cannot take the money until they leave the page and come back.
+ *
+ * Re-running when the permissions arrive is the whole fix. It is not a retry
+ * loop and it cannot run twice for the same set: `before.length === 0` is only
+ * true for the one transition from "not yet known" to "known".
+ */
+watch(held, (codes, before) => {
+  if (before.length === 0 && codes.length > 0) void load();
+});
 </script>
 
 <template>
-  <AppShell title="Counter" help-bn="কাউন্টার — হাতে হাতে টাকার কাজ">
-    <div class="ctr">
-      <header class="ctr__head">
-        <div>
-          <h1>Counter</h1>
-          <p class="ctr__bn">কাউন্টার — হাতে হাতে টাকার কাজ</p>
-        </div>
-        <div class="ctr__day">
-          <template v-if="openToday !== null">
-            <span class="ctr__chip is-open">Day open · {{ today }}</span>
-            <strong v-if="drawerMinor !== null">In the drawer now: {{ taka(drawerMinor) }}</strong>
-          </template>
-          <span v-else class="ctr__chip is-shut">Day not started · {{ today }}</span>
-        </div>
-      </header>
+  <AppShell
+    title="Counter"
+    :breadcrumb="['Daily', 'Counter']"
+    help-bn="কাউন্টার — হাতে হাতে টাকার কাজ"
+  >
+    <!--
+      Phase 18.2: the title and the Bangla helper line were drawn twice — once
+      by `AppShell`, once again by this page's own header underneath it. The
+      page's copy is gone and the only thing that header actually carried, the
+      day chip and the drawer figure, has moved into the actions slot every
+      other screen puts its own furniture in.
+    -->
+    <template #actions>
+      <div class="ctr__day">
+        <template v-if="openToday !== null">
+          <span class="ctr__chip is-open">Day open · {{ today }}</span>
+          <strong v-if="drawerMinor !== null">In the drawer now: {{ taka(drawerMinor) }}</strong>
+        </template>
+        <span v-else class="ctr__chip is-shut">Day not started · {{ today }}</span>
+      </div>
+    </template>
 
+    <div class="ctr">
       <ErrorNotice v-if="failure !== null" :code="failure.code" :message="failure.message" />
 
       <div class="ctr__grid">
@@ -264,11 +291,24 @@ onDataChanged(load);
         <p class="ctr__hint">
           Check here before you enter something again — আগে দেখে নিন, একই টাকা যেন দুইবার না ওঠে
         </p>
+        <!--
+          UI-29 and the Phase 18.2 pattern: an empty state gets one sentence and
+          one button. It had neither — a bare heading, which tells a cashier
+          nothing about whether that is normal at half past nine.
+        -->
         <EmptyState
           v-if="!loading && recent.length === 0"
           icon="pi-inbox"
           title="Nothing entered yet today"
-        />
+        >
+          Money taken, money paid and what the shop spent will appear here as you record them.
+          Sales rung up at the POS are not counter work and show in Daybook instead.
+          <template #action>
+            <button type="button" class="btn btn-ghost" @click="router.push('/daybook')">
+              See the whole day
+            </button>
+          </template>
+        </EmptyState>
         <ul v-else class="ctr__list">
           <li v-for="row in recent" :key="row.id">
             <span class="ctr__time">{{ row.createdAt.slice(11, 16) }}</span>
@@ -375,24 +415,7 @@ onDataChanged(load);
   gap: var(--sher-space-4);
 }
 
-.ctr__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sher-space-3);
-}
-
-.ctr__head h1 {
-  margin: 0;
-  font-size: var(--sher-text-xl);
-}
-
-.ctr__bn {
-  margin: 2px 0 0;
-  color: var(--sher-text-muted);
-  font-size: 11px;
-}
+/* The page's second copy of the shell header is gone; only its chip remains. */
 
 .ctr__day {
   display: grid;

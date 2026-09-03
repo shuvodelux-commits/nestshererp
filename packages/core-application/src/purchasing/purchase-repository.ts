@@ -136,6 +136,17 @@ export interface PurchaseRow {
 
 export interface PurchaseDetail extends PurchaseRow {
   readonly lines: readonly PurchaseLineRow[];
+  readonly landedCosts: readonly {
+    readonly id: string;
+    readonly category: 'TRANSPORT' | 'LABOUR' | 'LOADING' | 'DELIVERY' | 'CUSTOMS' | 'OTHER';
+    readonly method: 'BY_VALUE' | 'BY_QTY' | 'MANUAL';
+    readonly amountMinor: number;
+    readonly inventoryShareMinor: number;
+    readonly cogsShareMinor: number;
+    readonly businessDate: string;
+    readonly description: string | null;
+    readonly allocations: readonly { readonly purchaseLineId: string; readonly amountMinor: number }[];
+  }[];
   readonly payments: readonly PurchasePaymentRow[];
   /** D-32: sent back on a cancel or a correction, so two writers cannot race. */
   readonly version: number;

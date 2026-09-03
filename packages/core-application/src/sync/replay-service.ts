@@ -111,11 +111,42 @@ export class ReplayService {
      */
     const authorityGone = !occupiesWriterSlot(device.status);
 
+    /*
+     * Who this machine was allowed to be.
+     *
+     * Every operation names the person who did the work, and the books take
+     * that name as the actor — it is the whole point of replaying under the
+     * cashier rather than under whoever was signed in when the line came back
+     * (§5.22, §5.23). But the name arrives from a machine that has been sitting
+     * unattended in a shop, and offline sign-in leaves the session on that
+     * machine's own disk. So the name is a claim, and a claim is checked.
+     *
+     * The set it is checked against is the same one the snapshot went down
+     * with: the people the owner ticked for this device. An operation naming
+     * anybody else is quarantined rather than posted, because the alternative
+     * is a day's takings filed under a colleague who never touched the till —
+     * and, since permissions are resolved from the named user's role, work
+     * posted with authority its author never had.
+     *
+     * **An empty list checks nothing**, deliberately. Ticking people is a
+     * separate decision from approving the machine, and a shop that approved a
+     * counter PC without making it has said nothing about who may work on it.
+     * Quarantining a whole day's takings on the strength of a decision the
+     * owner was never asked to make would cost far more than it protects, so
+     * the old behaviour stands until the list exists. Ticking even one person
+     * turns the check on.
+     */
+    const permittedUserIds = new Set(
+      (await this.uow.run(ctx, async (tx) => this.devices.listDeviceUsers(tx, ctx, device.id))).map(
+        (user) => user.userId,
+      ),
+    );
+
     const results: SyncOperationResult[] = [];
     const outcomeBySeq = new Map<number, SyncOperationResult>();
 
     for (const op of order(request.operations)) {
-      const result = await this.one(ctx, device, op, outcomeBySeq, authorityGone);
+      const result = await this.one(ctx, device, op, outcomeBySeq, authorityGone, permittedUserIds);
       outcomeBySeq.set(op.localSeq, result);
       results.push(result);
     }
@@ -123,6 +154,38 @@ export class ReplayService {
     await this.uow.run(ctx, async (tx) => {
       await this.devices.recordSeen(tx, ctx, device.id, now);
       await this.sync.recordPush(tx, ctx, device.id, now);
+
+      /*
+       * A machine being handed over has now finished speaking.
+       *
+       * `DRAINING` occupies the shop's single writer slot on purpose (D-01):
+       * a machine on its way out has not finished sending up what it holds, and
+       * a second writer alongside it is the one thing that rule exists to
+       * prevent. But something has to end it, or a revoked counter PC keeps the
+       * slot forever and the shop can never approve its replacement without the
+       * owner re-entering their password to force the old one off.
+       *
+       * The device's own word is the only honest signal — the server sees what
+       * has arrived, never what has not — and it is safe to trust: a machine
+       * that says this too early ends its own authority, and anything it had
+       * not sent is refused afterwards rather than posted.
+       */
+      if (device.status === 'DRAINING' && request.queueEmpty && !anythingRefused(results)) {
+        await this.devices.changeStatus(tx, ctx, device.id, {
+          status: 'REVOKED',
+          at: now,
+          revoked: true,
+          reason: 'Finished sending everything it was holding',
+        });
+        await this.audit.append(tx, ctx, {
+          entityType: 'device_authorization',
+          entityId: device.id,
+          action: 'DRAINED',
+          before: { status: 'DRAINING' },
+          after: { status: 'REVOKED', operations: results.length },
+          source: 'SYNC',
+        });
+      }
     });
 
     return {
@@ -145,6 +208,7 @@ export class ReplayService {
     op: SyncOperation,
     earlier: ReadonlyMap<number, SyncOperationResult>,
     authorityGone: boolean,
+    permittedUserIds: ReadonlySet<string>,
   ): Promise<SyncOperationResult> {
     const now = this.clock.now();
 
@@ -164,6 +228,23 @@ export class ReplayService {
         message:
           'This computer’s permission to work offline was taken away before it sent this up. Nothing it holds goes into the books until somebody decides about it.',
         outcome: 'AUTHORITY_REVOKED',
+      });
+    }
+
+    /*
+     * A name this machine was never allowed to work under.
+     *
+     * Checked before anything is looked up or posted, and quarantined rather
+     * than refused outright: the work itself may be perfectly good — a real
+     * sale, a real customer, real money in the drawer — and throwing it away
+     * because the name on it is wrong would cost the shop the day. A person
+     * decides, with the operation in front of them.
+     */
+    if (permittedUserIds.size > 0 && !permittedUserIds.has(op.context.userId)) {
+      return this.quarantine(ctx, device, op, seen, {
+        reason: 'PERMISSION_REVOKED',
+        message:
+          'This computer sent up work under somebody who is not on its list of people. Nothing goes into the books until somebody says who actually did it.',
       });
     }
 
@@ -317,6 +398,42 @@ export class ReplayService {
       };
     } catch (cause) {
       const { reason, message } = classify(cause, op.type);
+
+      /*
+       * The document's own `(tenant_id, operation_id)` unique index refused the
+       * insert. That is not a failure — it is R-C10's permanent guarantee doing
+       * exactly its job: the document is already in the books under this
+       * operation id, written by an earlier attempt whose answer never reached
+       * the device, or by a concurrent push of the same batch.
+       *
+       * Found by SY-03: a push killed mid-batch leaves the server still working
+       * through it, and the device's resume arrives while the first copy is
+       * still being posted. Both replays check "not posted yet", both insert,
+       * and one of them meets the index. Quarantining that would put a sale in
+       * front of a manager to decide about when it is already sold.
+       */
+      if (reason === 'ALREADY_POSTED') {
+        const posted = await this.uow.run(ctx, async (tx) => {
+          await this.sync.recordOutcome(tx, ctx, record.id, {
+            status: 'DUPLICATE',
+            at: this.clock.now(),
+          });
+          return this.sync.findOperationByOperationId(tx, ctx, op.operationId);
+        });
+        return {
+          operationId: op.operationId,
+          localSeq: op.localSeq,
+          outcome: 'DUPLICATE',
+          serverSeq: posted?.serverSeq ?? null,
+          documentId: posted?.resultDocumentId ?? null,
+          documentNumber: posted?.resultDocumentNumber ?? op.documentNumber ?? null,
+          reasonCode: null,
+          message: null,
+          conflictId: null,
+          divergence: null,
+        };
+      }
+
       if (reason === 'IDEMPOTENCY') {
         return {
           operationId: op.operationId,
@@ -673,7 +790,16 @@ function rewriteIds(value: unknown, mapping: ReadonlyMap<string, string>): unkno
 function classify(
   cause: unknown,
   type: SyncOpType,
-): { readonly reason: SyncReasonCode | 'IDEMPOTENCY'; readonly message: string } {
+): { readonly reason: SyncReasonCode | 'IDEMPOTENCY' | 'ALREADY_POSTED'; readonly message: string } {
+  /*
+   * The document table's own operation-id index, met head on. Recognised by the
+   * constraint name because that is the only thing the driver gives us, and
+   * every document table names its index the same way (`..._operation_unique`).
+   */
+  if (cause instanceof Error && /_operation_unique/.test(cause.message)) {
+    return { reason: 'ALREADY_POSTED', message: 'Already in the books under this operation id' };
+  }
+
   if (cause instanceof AppError) {
     switch (cause.code) {
       case ErrorCode.PERIOD_LOCKED:
@@ -691,7 +817,21 @@ function classify(
             'This computer sent two different documents under the same operation id. Neither is posted; the queue needs looking at.',
         };
       case ErrorCode.VALIDATION_FAILED:
-        return { reason: 'VALIDATION_FAILED', message: cause.message };
+        /*
+         * The application layer refuses a great many different things with
+         * VALIDATION_FAILED, and they are not the same kind of problem to a
+         * manager clearing a queue. Where the refusal carried a machine-
+         * readable reason (§5.26's envelope), it decides which Sync Issue this
+         * is — and therefore which actions the screen offers.
+         */
+        switch (cause.details?.['reason']) {
+          case 'DUPLICATE_CUSTOMER_PHONE':
+            return { reason: 'UNIQUE_COLLISION', message: cause.message };
+          case 'PRODUCT_INACTIVE':
+            return { reason: 'ENTITY_INACTIVE', message: cause.message };
+          default:
+            return { reason: 'VALIDATION_FAILED', message: cause.message };
+        }
       default:
         return { reason: 'BUSINESS_RULE', message: cause.message };
     }
@@ -707,6 +847,11 @@ function classify(
     reason: 'UNKNOWN',
     message: `The shop’s books could not take this ${label(type)}. Show this to support: ${detail}`,
   };
+}
+
+/** Whether this batch left anything a person still has to decide about. */
+function anythingRefused(results: readonly SyncOperationResult[]): boolean {
+  return results.some((r) => r.outcome !== 'APPLIED' && r.outcome !== 'DUPLICATE');
 }
 
 function missing(op: SyncOperation): SyncOperationResult {

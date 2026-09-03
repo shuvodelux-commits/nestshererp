@@ -140,7 +140,15 @@ export class SerialService {
       const { ctx } = input;
       await this.access.require(tx, ctx, Permission.PRODUCT_VIEW);
       const today = this.clock.businessDate(ctx.timezone);
-      const units = await this.serials.listAvailable(tx, ctx, input.productId, input.limit);
+      const values = effectiveSettings(settingValuesOf(await this.settings.listStored(tx, ctx)));
+      const blockExpired = values.get(SettingKey.EXPIRED_STOCK_SALE_POLICY) === 'BLOCK';
+      const units = await this.serials.listAvailable(
+        tx,
+        ctx,
+        input.productId,
+        input.limit,
+        blockExpired ? today : null,
+      );
       return { data: units.map((unit) => toUnitResponse(unit, today)) };
     });
   }

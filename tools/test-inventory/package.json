@@ -1,0 +1,17 @@
+{
+  "name": "@sher/test-inventory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "scan": "tsc -p tsconfig.build.json && node dist/cli.js",
+    "test": "echo \"no suite\" && exit 0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "typescript": "5.7.3"
+  }
+}

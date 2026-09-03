@@ -13,12 +13,36 @@
  * touches INV-01…INV-05.
  */
 
-export type SerialUnitStatus = 'IN_STOCK' | 'SOLD' | 'WITH_SUPPLIER' | 'WRITTEN_OFF';
+/**
+ * Where a unit is, as far as the shop is concerned.
+ *
+ * `RETURNED_TO_VENDOR` is a consignment unit handed back to the vendor it came
+ * from (§5.6 M07, migration 0051): the receipt and lot provenance stay on the
+ * row, but the goods are no longer in the shop. It was added to the database
+ * and to the contracts and missed here, which is the kind of drift that lets a
+ * status the server writes be a status the domain says cannot exist.
+ *
+ * `WARRANTY_REPLACEMENT` is a unit handed to a customer to settle a claim
+ * (§5.19). It is deliberately **not** `SOLD`: there is no sale, no invoice and
+ * no revenue — the posting is `DR WARRANTY_EXPENSE / CR INVENTORY`, and §5.19
+ * is explicit that no warranty receivable is ever created — so calling it sold
+ * would both misstate the ledger and break `inventory_units_sold_has_sale`,
+ * which insists a sold unit names the sale that took it and the day it went.
+ */
+export type SerialUnitStatus =
+  | 'IN_STOCK'
+  | 'SOLD'
+  | 'WITH_SUPPLIER'
+  | 'WRITTEN_OFF'
+  | 'RETURNED_TO_VENDOR'
+  | 'WARRANTY_REPLACEMENT';
 
 /**
  * The statuses that hold a serial number against reuse (D-18: *active*
- * serials). A sold or written-off unit releases its number, because a
- * manufacturer reusing a number years later is not the shop making a mistake.
+ * serials). A sold, written-off, returned-to-vendor or warranty-replacement
+ * unit releases its number, because in every one of those cases the item has
+ * left the shop — and a manufacturer reusing a number years later is not the
+ * shop making a mistake.
  */
 export const ACTIVE_SERIAL_STATUSES: readonly SerialUnitStatus[] = [
   'IN_STOCK',

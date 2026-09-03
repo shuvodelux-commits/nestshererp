@@ -821,6 +821,26 @@ export type {
   LicenseStatusResponse,
 } from './licensing';
 
+/* The licence key itself — the format the CLI signs and the server verifies. */
+export {
+  ANY_BUSINESS,
+  canonicalLicensePayload,
+  LICENSABLE_MODULE_CODES,
+  LICENSE_PREFIX,
+  LICENSE_SCHEMA_VERSION,
+  licenseInstallRequestSchema,
+  licenseInstallResponseSchema,
+  licensePayloadSchema,
+  licenseRejectionSchema,
+} from './license-key';
+export type {
+  LicensableModuleCode,
+  LicenseInstallRequest,
+  LicenseInstallResponse,
+  LicensePayload,
+  LicenseRejection,
+} from './license-key';
+
 /* Phase 12.1 — offline devices and the D-24 gate (§5.23, D-01). */
 export {
   approveDeviceRequestSchema,
@@ -911,3 +931,22 @@ export type {
 
 export { LICENSED_MODULES, licenceIncludes, moduleOwning } from './modules';
 export type { LicensedModule } from './modules';
+
+// Phase 17 — the local management agent's request shapes (§6, §17, §19).
+export * from './management';
+
+// Phase 18.1 — Global Search: one box over products, parties and documents.
+export {
+  globalSearchGroupSchema,
+  globalSearchHitSchema,
+  globalSearchKindSchema,
+  globalSearchQuerySchema,
+  globalSearchResponseSchema,
+} from './search';
+export type {
+  GlobalSearchGroup,
+  GlobalSearchHit,
+  GlobalSearchKind,
+  GlobalSearchQuery,
+  GlobalSearchResponse,
+} from './search';

@@ -319,6 +319,12 @@ export class CreateSaleService {
           throw new AppError(
             ErrorCode.VALIDATION_FAILED,
             `“${product.name}” is no longer sold — remove it from the cart`,
+            // §5.26's envelope carries the machine-readable half beside the
+            // sentence. Phase 12.4 reads it: a sale refused because the shop
+            // stopped selling something is a different Sync Issue, with
+            // different things a manager can do about it, than a sale whose
+            // figures were typed wrong.
+            { reason: 'PRODUCT_INACTIVE', productId: product.id },
           );
         }
 
@@ -374,9 +380,47 @@ export class CreateSaleService {
         }
       }
 
+      /*
+       * What the shop actually took, after change was handed back.
+       *
+       * Change never entered the drawer, so it must not reach the ledger: a
+       * customer handing over 300 for a 240 bill and taking 60 back leaves 240
+       * in the till, and `DR CASH 300` would put the drawer permanently 60
+       * ahead of the money in it.
+       *
+       * Computed once and used for both the posting and the sale's own payment
+       * rows (owner request 2026-09-03). They were derived separately before,
+       * and drifted: the document netted the change and the journal did not, so
+       * a legal `overpaymentHandling: 'CHANGE'` request reached
+       * `salePosting` with more paid than the bill and died on its
+       * "Money taken beyond the bill must be held as an advance" guard — a
+       * 500 on a request the contract allows. An advance is never netted; it is
+       * money the shop genuinely kept and `CR CUSTOMER_ADVANCE` is where it
+       * goes.
+       *
+       * Taken off the last rows first, and carried back through them until it
+       * is used up. The change comes out of the note handed over last, which is
+       * the final row — but it is not always big enough to cover it: paying a
+       * 240 bill with 300 in cash and 10 by card leaves 70 of change and only
+       * 10 on the card row, and stopping at that row would leave 60 of the
+       * customer's change posted as money the shop kept.
+       */
+      const changeGivenMinor = overpaidMinor - advanceMinor;
+      let changeLeftMinor = changeGivenMinor;
+      const settledPayments = resolvedPayments
+        .slice()
+        .reverse()
+        .map((payment) => {
+          const taken = Math.min(changeLeftMinor, payment.amountMinor);
+          changeLeftMinor -= taken;
+          return { ...payment, amountMinor: payment.amountMinor - taken };
+        })
+        .reverse()
+        .filter((payment) => payment.amountMinor > 0);
+
       const posting = salePosting(totals, {
         partyId: customer.partyId,
-        payments: resolvedPayments.map((payment) => ({
+        payments: settledPayments.map((payment) => ({
           account: payment.account.code,
           amountMinor: payment.amountMinor,
         })),
@@ -420,7 +464,7 @@ export class CreateSaleService {
         grandTotalMinor: totals.grandTotalMinor,
         cogsMinor,
         // What the shop actually kept: change handed back never belonged to it.
-        paidMinor: paidMinor - (overpaidMinor - advanceMinor),
+        paidMinor: paidMinor - changeGivenMinor,
         sessionId: resolvedPayments.find((payment) => payment.account.sessionId !== null)?.account
           .sessionId ?? null,
         notes: command.notes,
@@ -429,18 +473,15 @@ export class CreateSaleService {
         journalEntryId: Ulid.generate(this.clock),
         journalLines: posting.lines.map((line) => ({ id: Ulid.generate(this.clock), ...line })),
         lines: saleLines,
-        payments: resolvedPayments.map((payment, index) => ({
+        // The same netted list the journal was posted from, so the document and
+        // the ledger can never again disagree about what the drawer took.
+        payments: settledPayments.map((payment, index) => ({
           id: Ulid.generate(this.clock),
           lineNo: index + 1,
           accountCode: payment.account.code,
-          // The change handed back comes out of the row that overpaid, so the
-          // drawer holds what it physically holds. An advance is kept in full.
-          amountMinor:
-            index === resolvedPayments.length - 1
-              ? payment.amountMinor - (overpaidMinor - advanceMinor)
-              : payment.amountMinor,
+          amountMinor: payment.amountMinor,
           sessionId: payment.account.sessionId,
-        })).filter((payment) => payment.amountMinor > 0),
+        })),
       });
 
       for (const line of saleLines) {
@@ -819,6 +860,16 @@ export class CreateSaleService {
         for (const unitId of allocation.serialUnitIds) {
           const unit = byId.get(unitId);
           if (unit === undefined) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Selected serial unit was not found');
+          if (
+            args.expiredOn !== null &&
+            unit.expiryDate !== null &&
+            unit.expiryDate < args.expiredOn
+          ) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              `Serial ${unit.serialNo} belongs to expired stock and cannot be sold`,
+            );
+          }
           serialIds.push(unit.id);
           if (allocation.sourceType === 'OWNED') {
             if (unit.vendorPartyId !== null || unit.lotId === null) {
@@ -1033,6 +1084,7 @@ export class CreateSaleService {
         exists: position.exists,
         avgUnitCost: position.avgUnitCost,
         qtyOnHand,
+        qtyChange: ownedPositionIssue,
       },
     };
   }

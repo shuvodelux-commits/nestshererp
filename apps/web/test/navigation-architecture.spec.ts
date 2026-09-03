@@ -51,7 +51,10 @@ describe('navigation architecture', () => {
     // its own, exactly as stock adjustment is on Products).
     expect(customerOnly.find((category) => category.id === 'parties')?.subcategories[0]?.featureIds).toEqual(['parties.customers', 'parties.customer_ledger']);
     expect(customerOnly.find((category) => category.id === 'administration')).toBeUndefined();
-    expect(customerOnly.find((category) => category.id === 'overview')).toBeDefined();
+    // Phase 18.1: `overview` is gone as a category — Dashboard moved inside
+    // `daily`, which has no permission on it, so it is what every signed-in
+    // person still resolves however little else they may read.
+    expect(customerOnly.find((category) => category.id === 'daily')?.subcategories[0]?.id).toBe('daily.dashboard');
   });
 
   it('requires both vendor permission and the vendor feature flag', () => {
@@ -73,12 +76,19 @@ describe('navigation architecture', () => {
     // off. `/purchase-plans`, `/warranty` and `/vendor-stock` are Phase 8's
     // three. The six `/finance/*` routes are Phase 12.2's.
     //
-    // **`/settings/accounts` is the one route ever removed from this list**
-    // (owner decision 2026-08-31): Money Accounts moved to `/finance/accounts`
-    // and the old path is now a redirect, not a menu entry. A redirect keeps
-    // every bookmark working, which is the thing this assertion protects — a
-    // route silently *lost* still fails here, because it would be reachable
-    // from nowhere at all.
+    // **Two routes have ever been removed from this list, both deliberately.**
+    //
+    // `/settings/accounts` (owner decision 2026-08-31): Money Accounts moved to
+    // `/finance/accounts` and the old path is now a redirect, not a menu entry.
+    //
+    // `/sync` (Phase 18.3, owner decision 2026-09-03): Sync folded into the
+    // Offline page, which now claims `/sync` as one of its `activePrefixes` —
+    // so the sidebar still lights up on it and the route is still reachable,
+    // from a card on that page rather than from a menu entry of its own.
+    //
+    // Both keep every bookmark working, which is the thing this assertion
+    // protects — a route silently *lost* still fails here, because it would be
+    // reachable from nowhere at all.
     expect(routes).toEqual(new Set(['/dashboard', '/products', '/catalog', '/import', '/inventory-report', '/purchases', '/purchases/new', '/purchase-plans', '/warranty', '/vendor-stock', '/vendors/workspace', '/parties', '/daily-cash', '/counter', '/daybook', '/reports/sales', '/reports/purchases', '/reports/money', '/pos', '/sales', '/sales-returns', '/purchase-returns', '/expenses', '/stock-count', '/users', '/roles', '/audit', '/settings', '/finance', '/finance/accounts', '/finance/transfers', '/finance/capital-loans', '/finance/ledger', '/finance/reconciliation', '/settings/invoice-design', '/settings/periods', '/settings/backup', '/settings/license', '/settings/offline', '/settings/security']));
     expect(allFeatures().some((feature) => feature.label === 'LIFO')).toBe(false);
     expect(allFeatures().some((feature) => feature.label === 'Tax')).toBe(false);

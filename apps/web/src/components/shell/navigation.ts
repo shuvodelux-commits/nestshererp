@@ -70,52 +70,21 @@ const feature = (
  */
 export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
   {
-    id: 'overview', label: 'Overview', icon: 'pi-home', subcategories: [
-      { id: 'overview.business', label: 'Overview', icon: 'pi-chart-bar', features: [
-        feature('overview.dashboard', 'Dashboard', 'ব্যবসার সারসংক্ষেপ', 'Business summary and daily attention', '/dashboard'),
-      ] },
-    ],
-  },
-  {
-    id: 'inventory', label: 'Inventory', icon: 'pi-warehouse', subcategories: [
-      // §5.5: Products is the product working hub — stock adjustment, lots and
-      // the opening figure are row actions on it, not separate destinations
-      // (UI-56: a feature label does not imply a separate route).
-      { id: 'inventory.products', label: 'Products', icon: 'pi-box', features: [
-        feature('inventory.products.page', 'Products', 'পণ্য ও স্টক', 'Products with stock, adjustment and lots', '/products', ['catalog.product.view'], ['/products']),
-        feature('inventory.stock.adjust', 'Stock Adjustment', 'স্টক ঠিক করুন', 'Correct stock for damage, recount or loss', '/products', ['catalog.product.edit'], ['/products'], false),
-        feature('inventory.lots', 'Lots/Batch', 'কোন চালানের পণ্য', 'Trace stock by source batch', '/products', ['inventory.lot.view'], ['/products'], false),
-        feature('inventory.import', 'Import Data', 'ফাইল থেকে তুলুন', 'Bring products, parties and opening stock in from a CSV file', '/import', ['catalog.product.create'], ['/import']),
-        feature('inventory.catalog', 'Catalog Setup', 'ইউনিট, ব্র্যান্ড ও ক্যাটাগরি', 'Manage units, brands and categories', '/catalog', ['catalog.product.view'], ['/catalog']),
-      ] },
-      { id: 'inventory.reporting', label: 'Reports', icon: 'pi-chart-bar', features: [
-        feature('inventory.report.page', 'Inventory Report', 'স্টকের হিসাব', 'Stock, low stock, movements, write-offs and valuation', '/inventory-report', ['catalog.product.view'], ['/inventory-report']),
-        /*
-         * The count sheet is a page of its own, not a dialog on the product:
-         * one product at a time is Stock Adjustment, and the whole shelf is
-         * this (§5.13, Phase 7).
-         */
-        feature('inventory.count', 'Stock Count', 'মাল গণনা', 'Count the shelf against the system and post the difference', '/stock-count', ['stock.count.post'], ['/stock-count']),
-        feature('inventory.valuation', 'Stock Valuation', 'স্টকের হিসাব করা মূল্য', 'Reconcile stock value to the journal', '/inventory-report', ['inventory.cost.view'], ['/inventory-report'], false),
-      ] },
-      /*
-       * §5.19. Warranty lives under Inventory because a claim is about a
-       * physical unit the shop is holding — the serial that identifies it comes
-       * from stock, and the replacement goes back out of stock. It is behind
-       * its own §5.21 toggle, so a shop that sells nothing with a warranty
-       * never sees it.
-       */
-      { id: 'inventory.warranty', label: 'Warranty', icon: 'pi-verified', features: [
-        { ...feature('inventory.warranty.page', 'Warranty', 'ওয়ারেন্টি', 'Take faulty goods in, send them to the supplier and settle the claim', '/warranty', ['warranty.claim.view'], ['/warranty']), featureFlag: SettingKey.WARRANTY_ENABLED },
-      ] },
-    ],
-  },
-  {
-    // UI-67: `Daily` is the first operational category. It resolves POS,
-    // Counter, Daybook and Daily Cash as each one ships — only Daily Cash does
-    // today, and an entry for the others would be the speculative placeholder
-    // UI-09 refuses.
+    /*
+     * UI-67 always called `Daily` the first operational category; from Phase
+     * 18.1 (owner decision 2026-09-03) it is the **first category outright and
+     * the post-login landing route**, and `Overview` has stopped existing as a
+     * category of its own — Dashboard moved in here as Daily's first entry.
+     *
+     * The reason is that at nine in the morning "what is my business doing" and
+     * "what am I doing today" are the same question, and answering them from
+     * two different top-level menus made the shopkeeper choose between them
+     * before he had read either.
+     */
     id: 'daily', label: 'Daily', icon: 'pi-calendar', subcategories: [
+      { id: 'daily.dashboard', label: 'Dashboard', icon: 'pi-chart-bar', features: [
+        feature('daily.dashboard.page', 'Dashboard', 'ব্যবসার সারসংক্ষেপ', 'Business summary and daily attention', '/dashboard'),
+      ] },
       /*
        * Phase 9. UI-67 always reserved a place for Daybook here, and it is
        * filled now: the day's whole activity in one list, which is the screen
@@ -154,6 +123,93 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
          * who just counted the drawer (Phase 7, §5.12).
          */
         feature('daily.expenses', 'Expenses', 'খরচ', 'Rent, salary, electricity — everything that is not stock', '/expenses', ['expense.view'], ['/expenses']),
+      ] },
+    ],
+  },
+  {
+    // §5.7, §5.8: Sales is one business module — the counter, the invoices it
+    // produced, how those invoices are printed, and what came back. `Sales
+    // Return` is a **history** entry: a return is always taken from the invoice
+    // it comes off (owner decision 2026-08-26), so this route reads and prints
+    // them rather than offering a second way to create one.
+    id: 'sales', label: 'Sales (POS)', icon: 'pi-shopping-bag', subcategories: [
+      { id: 'sales.counter', label: 'Sales', icon: 'pi-receipt', features: [
+        feature('sales.pos', 'POS — New Sale', 'নতুন বিক্রি', 'Sell at the counter and print the invoice', '/pos', ['sale.invoice.create'], ['/pos']),
+        feature('sales.list', 'Sales Invoice', 'বিক্রির তালিকা', 'Every invoice, what is paid and what is owed', '/sales', ['sale.invoice.view'], ['/sales']),
+        feature('sales.receive', 'Receive Payment', 'কাস্টমারের টাকা নিন', 'Take money against what a customer owes', '/sales', ['sale.payment.record'], ['/sales'], false),
+        feature('sales.returns', 'Sales Return', 'বিক্রি ফেরত', 'What customers brought back, and where the money went', '/sales-returns', ['sales.return.view'], ['/sales-returns']),
+      ] },
+    ],
+  },
+  {
+    // §5.9: Purchase is one business module with its own feature navigation.
+    // `Purchase Return` is a **history** entry, like its sales twin: a return
+    // is always sent from the bill the goods arrived on (owner decision
+    // 2026-08-26), so this route reads and prints them.
+    id: 'purchases', label: 'Purchases', icon: 'pi-shopping-cart', subcategories: [
+      { id: 'purchases.bills', label: 'Purchases', icon: 'pi-receipt', features: [
+        feature('purchases.list', 'Purchase Invoice', 'কেনার তালিকা', 'Every supplier bill, what is paid and what is owed', '/purchases', ['purchase.bill.view'], ['/purchases']),
+        feature('purchases.new', 'New Purchase', 'নতুন মাল কেনা', 'Record goods received from a supplier', '/purchases/new', ['purchase.bill.create'], ['/purchases/new']),
+        feature('purchases.plan', 'Purchase Plan', 'কেনার পরিকল্পনা', 'Work out what to buy, how much, and send the supplier an order', '/purchase-plans', ['purchase.plan.view'], ['/purchase-plans', '/supplier-orders']),
+        feature('purchases.returns', 'Purchase Return', 'কেনা ফেরত', 'What went back to suppliers, and what they credited', '/purchase-returns', ['purchase.return.view'], ['/purchase-returns']),
+        feature('purchases.pay', 'Pay Supplier', 'সরবরাহকারীকে টাকা দিন', 'Settle a supplier from cash or bank', '/purchases', ['purchase.payment.record'], ['/purchases'], false),
+      ] },
+    ],
+  },
+  {
+    id: 'inventory', label: 'Inventory', icon: 'pi-warehouse', subcategories: [
+      // §5.5: Products is the product working hub — stock adjustment, lots and
+      // the opening figure are row actions on it, not separate destinations
+      // (UI-56: a feature label does not imply a separate route).
+      { id: 'inventory.products', label: 'Products', icon: 'pi-box', features: [
+        feature('inventory.products.page', 'Products', 'পণ্য ও স্টক', 'Products with stock, adjustment and lots', '/products', ['catalog.product.view'], ['/products']),
+        feature('inventory.stock.adjust', 'Stock Adjustment', 'স্টক ঠিক করুন', 'Correct stock for damage, recount or loss', '/products', ['catalog.product.edit'], ['/products'], false),
+        feature('inventory.lots', 'Lots/Batch', 'কোন চালানের পণ্য', 'Trace stock by source batch', '/products', ['inventory.lot.view'], ['/products'], false),
+        feature('inventory.import', 'Import Data', 'ফাইল থেকে তুলুন', 'Bring products, parties and opening stock in from a CSV file', '/import', ['catalog.product.create'], ['/import']),
+        feature('inventory.catalog', 'Catalog Setup', 'ইউনিট, ব্র্যান্ড ও ক্যাটাগরি', 'Manage units, brands and categories', '/catalog', ['catalog.product.view'], ['/catalog']),
+      ] },
+      { id: 'inventory.reporting', label: 'Reports', icon: 'pi-chart-bar', features: [
+        feature('inventory.report.page', 'Inventory Report', 'স্টকের হিসাব', 'Stock, low stock, movements, write-offs and valuation', '/inventory-report', ['catalog.product.view'], ['/inventory-report']),
+        /*
+         * The count sheet is a page of its own, not a dialog on the product:
+         * one product at a time is Stock Adjustment, and the whole shelf is
+         * this (§5.13, Phase 7).
+         */
+        feature('inventory.count', 'Stock Count', 'মাল গণনা', 'Count the shelf against the system and post the difference', '/stock-count', ['stock.count.post'], ['/stock-count']),
+        feature('inventory.valuation', 'Stock Valuation', 'স্টকের হিসাব করা মূল্য', 'Reconcile stock value to the journal', '/inventory-report', ['inventory.cost.view'], ['/inventory-report'], false),
+      ] },
+      /*
+       * §5.19. Warranty lives under Inventory because a claim is about a
+       * physical unit the shop is holding — the serial that identifies it comes
+       * from stock, and the replacement goes back out of stock. It is behind
+       * its own §5.21 toggle, so a shop that sells nothing with a warranty
+       * never sees it.
+       */
+      { id: 'inventory.warranty', label: 'Warranty', icon: 'pi-verified', features: [
+        { ...feature('inventory.warranty.page', 'Warranty', 'ওয়ারেন্টি', 'Take faulty goods in, send them to the supplier and settle the claim', '/warranty', ['warranty.claim.view'], ['/warranty']), featureFlag: SettingKey.WARRANTY_ENABLED },
+      ] },
+    ],
+  },
+  {
+    id: 'parties', label: 'Parties', icon: 'pi-users', alwaysGroup: true, subcategories: [
+      { id: 'customers.management', label: 'Customers', icon: 'pi-user', features: [
+        feature('parties.customers', 'Customers', 'কাস্টমারের তালিকা', 'Manage customers', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties']),
+        { ...feature('parties.customer_groups', 'Customer Groups', 'কাস্টমারের গ্রুপ', 'Manage customer groups', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false), featureFlag: SettingKey.CUSTOMER_GROUPS_ENABLED },
+        // §5.6: a party's ledger is not a destination of its own. It opens from
+        // the party and lives on that party's hub, so it is a contextual leaf
+        // like stock adjustment on Products (UI-56) — named here because the
+        // capability now ships, with no route of its own.
+        feature('parties.customer_ledger', 'Customer Ledger', 'কাস্টমারের খতিয়ান', 'Review customer transactions and balance', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false),
+      ] },
+      { id: 'parties.suppliers', label: 'Suppliers', icon: 'pi-truck', features: [
+        feature('parties.suppliers', 'Suppliers', 'সরবরাহকারীর তালিকা', 'Manage suppliers', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties']),
+        feature('parties.supplier_ledger', 'Supplier Ledger', 'সরবরাহকারীর খতিয়ান', 'Review supplier transactions and balance', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties'], false),
+      ] },
+      { id: 'parties.vendors', label: 'Vendors', icon: 'pi-briefcase', features: [
+        { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
+        { ...feature('parties.vendor_workspace', 'Vendor Workspace', 'ভেন্ডর অপারেশন', 'One vendor at a time: their stock, their money, and what is still open', '/vendors/workspace', ['party.vendor.view'], ['/vendors/workspace']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
+        { ...feature('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Vendor-owned stock: what they left, what sold, what goes back', '/vendor-stock', ['vendor.stock.manage'], ['/vendor-stock']), featureFlag: SettingKey.VENDOR_CONSIGNMENT_ENABLED },
+        { ...feature('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties'], false), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
       ] },
     ],
   },
@@ -227,59 +283,6 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
       ] },
       { id: 'finance.reconciliation', label: 'Reconciliation', icon: 'pi-check-square', features: [
         { ...feature('finance.reconciliation.page', 'Reconciliation', MONEY_BN.reconciliation, 'Check an account against the statement the bank produced', '/finance/reconciliation', ['bank.reconciliation.view'], ['/finance/reconciliation']), featureFlag: SettingKey.BANK_ACCOUNTS_ENABLED },
-      ] },
-    ],
-  },
-  {
-    // §5.7, §5.8: Sales is one business module — the counter, the invoices it
-    // produced, how those invoices are printed, and what came back. `Sales
-    // Return` is a **history** entry: a return is always taken from the invoice
-    // it comes off (owner decision 2026-08-26), so this route reads and prints
-    // them rather than offering a second way to create one.
-    id: 'sales', label: 'Sales (POS)', icon: 'pi-shopping-bag', subcategories: [
-      { id: 'sales.counter', label: 'Sales', icon: 'pi-receipt', features: [
-        feature('sales.pos', 'POS — New Sale', 'নতুন বিক্রি', 'Sell at the counter and print the invoice', '/pos', ['sale.invoice.create'], ['/pos']),
-        feature('sales.list', 'Sales Invoice', 'বিক্রির তালিকা', 'Every invoice, what is paid and what is owed', '/sales', ['sale.invoice.view'], ['/sales']),
-        feature('sales.receive', 'Receive Payment', 'কাস্টমারের টাকা নিন', 'Take money against what a customer owes', '/sales', ['sale.payment.record'], ['/sales'], false),
-        feature('sales.returns', 'Sales Return', 'বিক্রি ফেরত', 'What customers brought back, and where the money went', '/sales-returns', ['sales.return.view'], ['/sales-returns']),
-      ] },
-    ],
-  },
-  {
-    // §5.9: Purchase is one business module with its own feature navigation.
-    // `Purchase Return` is a **history** entry, like its sales twin: a return
-    // is always sent from the bill the goods arrived on (owner decision
-    // 2026-08-26), so this route reads and prints them.
-    id: 'purchases', label: 'Purchases', icon: 'pi-shopping-cart', subcategories: [
-      { id: 'purchases.bills', label: 'Purchases', icon: 'pi-receipt', features: [
-        feature('purchases.list', 'Purchase Invoice', 'কেনার তালিকা', 'Every supplier bill, what is paid and what is owed', '/purchases', ['purchase.bill.view'], ['/purchases']),
-        feature('purchases.new', 'New Purchase', 'নতুন মাল কেনা', 'Record goods received from a supplier', '/purchases/new', ['purchase.bill.create'], ['/purchases/new']),
-        feature('purchases.plan', 'Purchase Plan', 'কেনার পরিকল্পনা', 'Work out what to buy, how much, and send the supplier an order', '/purchase-plans', ['purchase.plan.view'], ['/purchase-plans', '/supplier-orders']),
-        feature('purchases.returns', 'Purchase Return', 'কেনা ফেরত', 'What went back to suppliers, and what they credited', '/purchase-returns', ['purchase.return.view'], ['/purchase-returns']),
-        feature('purchases.pay', 'Pay Supplier', 'সরবরাহকারীকে টাকা দিন', 'Settle a supplier from cash or bank', '/purchases', ['purchase.payment.record'], ['/purchases'], false),
-      ] },
-    ],
-  },
-  {
-    id: 'parties', label: 'Parties', icon: 'pi-users', alwaysGroup: true, subcategories: [
-      { id: 'customers.management', label: 'Customers', icon: 'pi-user', features: [
-        feature('parties.customers', 'Customers', 'কাস্টমারের তালিকা', 'Manage customers', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties']),
-        { ...feature('parties.customer_groups', 'Customer Groups', 'কাস্টমারের গ্রুপ', 'Manage customer groups', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false), featureFlag: SettingKey.CUSTOMER_GROUPS_ENABLED },
-        // §5.6: a party's ledger is not a destination of its own. It opens from
-        // the party and lives on that party's hub, so it is a contextual leaf
-        // like stock adjustment on Products (UI-56) — named here because the
-        // capability now ships, with no route of its own.
-        feature('parties.customer_ledger', 'Customer Ledger', 'কাস্টমারের খতিয়ান', 'Review customer transactions and balance', '/parties?role=CUSTOMER', ['party.customer.view'], ['/parties'], false),
-      ] },
-      { id: 'parties.suppliers', label: 'Suppliers', icon: 'pi-truck', features: [
-        feature('parties.suppliers', 'Suppliers', 'সরবরাহকারীর তালিকা', 'Manage suppliers', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties']),
-        feature('parties.supplier_ledger', 'Supplier Ledger', 'সরবরাহকারীর খতিয়ান', 'Review supplier transactions and balance', '/parties?role=SUPPLIER', ['party.supplier.view'], ['/parties'], false),
-      ] },
-      { id: 'parties.vendors', label: 'Vendors', icon: 'pi-briefcase', features: [
-        { ...feature('parties.vendors', 'Vendors', 'ভেন্ডরের তালিকা', 'Manage enabled consignment vendors', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
-        { ...feature('parties.vendor_workspace', 'Vendor Workspace', 'ভেন্ডর অপারেশন', 'One vendor at a time: their stock, their money, and what is still open', '/vendors/workspace', ['party.vendor.view'], ['/vendors/workspace']), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
-        { ...feature('parties.consignment', 'Consignment', 'ভেন্ডরের স্টক', 'Vendor-owned stock: what they left, what sold, what goes back', '/vendor-stock', ['vendor.stock.manage'], ['/vendor-stock']), featureFlag: SettingKey.VENDOR_CONSIGNMENT_ENABLED },
-        { ...feature('parties.vendor_ledger', 'Vendor Ledger', 'ভেন্ডরের খতিয়ান', 'Review vendor transactions and payable', '/parties?role=VENDOR', ['party.vendor.view'], ['/parties'], false), featureFlag: SettingKey.VENDOR_MANAGEMENT_ENABLED },
       ] },
     ],
   },
@@ -359,17 +362,22 @@ export const SHER_NAVIGATION_ARCHITECTURE: readonly SherNavigationCategory[] = [
        * this page, not a place anybody navigates to.
        */
       { id: 'settings.offline', label: 'Offline', icon: 'pi-wifi', features: [
-        feature('settings.offline.page', 'Offline & Devices', 'অফলাইন ও কম্পিউটার', 'Which computer may work without internet, and what it still needs', '/settings/offline', ['offline.device.register'], ['/settings/offline']),
+        feature('settings.offline.page', 'Offline & Devices', 'অফলাইন ও কম্পিউটার', 'Which computer may work without internet, what it still needs, and what is still waiting to be sent', '/settings/offline', ['offline.device.register'], ['/settings/offline', '/sync']),
       ] },
       /*
-       * Phase 12.4 (§15). Sits with Offline because it is the same subject —
-       * what this machine did while it could not reach the shop — and it is
-       * hidden from anybody without `sync.status.view`, which is every role
-       * that never works an outage (UI-09).
+       * Phase 12.4 gave Sync its own entry beside Offline, "because it is the
+       * same subject". Phase 18.3 (owner decision 2026-09-03) took that
+       * reasoning one step further: if it is the same subject it is the same
+       * door, and Settings was carrying three of them — Offline, Sync and the
+       * storage check — onto one question about one machine.
+       *
+       * Sync is now a card on the Offline page. **`/sync` is still a real
+       * route**, named in the same activePrefixes as Offline so the sidebar
+       * keeps that entry lit while somebody is on it — a route reachable from
+       * a page is not a hidden screen (the "Advanced toggle" this decision
+       * deliberately refused), and a support call that says "open /sync" still
+       * works.
        */
-      { id: 'settings.sync', label: 'Sync', icon: 'pi-sync', features: [
-        feature('settings.sync.page', 'Sync', 'সিংক', 'What is still waiting to be sent, and anything the books would not accept', '/sync', ['sync.status.view'], ['/sync']),
-      ] },
       { id: 'settings.security', label: 'Security', icon: 'pi-lock', features: [
         feature('settings.security.page', 'Password & PIN', 'পাসওয়ার্ড ও পিন', 'Manage password and PIN security', '/settings/security', [], ['/settings/security']),
       ] },

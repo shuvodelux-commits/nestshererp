@@ -28,6 +28,7 @@ export const receiveVendorStockRequestSchema = z
     qty: z.number().int().positive(),
     /** What the vendor is owed per unit when one sells, in poisha. */
     vendorUnitCostMinor: z.number().int().nonnegative(),
+    expiryDate: BUSINESS_DATE.nullable().default(null),
     serials: z.array(z.string().trim().min(1).max(120)).max(200).default([]),
     note: z.string().trim().max(300).nullable().default(null),
     businessDate: BUSINESS_DATE.optional(),
@@ -39,6 +40,7 @@ export const returnVendorStockRequestSchema = z
   .object({
     receiptId: ULID,
     qty: z.number().int().positive(),
+    serialUnitIds: z.array(ULID).max(200).default([]),
     note: z.string().trim().max(300).nullable().default(null),
     businessDate: BUSINESS_DATE.optional(),
   })
@@ -55,6 +57,7 @@ export const vendorStockReceiptResponseSchema = z
     displayName: z.string(),
     unitName: z.string(),
     businessDate: BUSINESS_DATE,
+    expiryDate: BUSINESS_DATE.nullable(),
     note: z.string().nullable(),
     /** The four quantities the settlement summary is built from. */
     receivedQty: z.number().int(),

@@ -93,6 +93,7 @@ export class VendorWorkspaceService {
           displayName: receipt.displayName,
           unitName: receipt.unitName,
           businessDate: receipt.businessDate,
+          expiryDate: receipt.expiryDate,
           note: receipt.note,
           receivedQty: receipt.qty,
           soldQty: receipt.qty - receipt.returnedQty - receipt.lotQtyRemaining,

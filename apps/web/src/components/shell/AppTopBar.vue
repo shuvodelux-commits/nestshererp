@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { MenuItem } from 'primevue/menuitem';
 import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { logout } from '../../api/auth';
@@ -13,6 +12,7 @@ import { useTheme } from '../../design/theme';
 import DayStatusChip from '../money/DayStatusChip.vue';
 import OfflineStatusChip from '../offline/OfflineStatusChip.vue';
 import SyncStatusChip from '../offline/SyncStatusChip.vue';
+import GlobalSearchDialog from './GlobalSearchDialog.vue';
 
 defineProps<{ collapsed: boolean }>();
 const emit = defineEmits<{ toggleSidebar: [] }>();
@@ -29,6 +29,27 @@ async function signOut(): Promise<void> {
   if (token !== null) await logout(token).catch(() => undefined);
   await router.push('/login');
 }
+
+/*
+ * Global Search (Phase 18.1). The box has carried a `Ctrl K` hint and done
+ * nothing since Phase 1; this is that hint honoured.
+ *
+ * The shortcut is bound on `window` rather than on the box, because the whole
+ * point of a shortcut is reaching search from a screen where the box is not
+ * focused — and on a phone, where the box is hidden entirely, the icon button
+ * beside the day chip is the way in.
+ */
+const searchOpen = ref(false);
+
+function searchHotkey(event: KeyboardEvent): void {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return;
+  // The browser gives Ctrl+K to its address bar; a shop typing it means this box.
+  event.preventDefault();
+  searchOpen.value = true;
+}
+
+onMounted(() => window.addEventListener('keydown', searchHotkey));
+onBeforeUnmount(() => window.removeEventListener('keydown', searchHotkey));
 
 const initials = computed(() => {
   const words = (username.value ?? businessName.value ?? '').trim().split(/\s+/).filter(Boolean);
@@ -76,18 +97,30 @@ const accountItems = computed<MenuItem[]>(() => [
       @click="emit('toggleSidebar')"
     />
 
-    <label class="search" title="Search arrives with products and parties">
+    <!--
+      A button, not an input: the typing happens in the palette, and two boxes
+      that both look typeable — one here, one in the dialog it opens — is the
+      confusion this avoids. It still reads as a search field, because that is
+      what a shopkeeper is looking for at the top of a screen.
+    -->
+    <button type="button" class="search" aria-label="Search products, parties and documents" @click="searchOpen = true">
       <i class="pi pi-search" aria-hidden="true" />
-      <InputText
-        type="search"
-        placeholder="Search products, parties, documents"
-        disabled
-        aria-label="Global search"
-      />
+      <span class="search-text">Search products, parties, documents</span>
       <kbd>Ctrl K</kbd>
-    </label>
+    </button>
 
     <div class="topbar-right">
+      <!-- Below 768px the box above is hidden, so search keeps its own door. -->
+      <Button
+        v-tooltip.bottom="'Search'"
+        class="search-compact"
+        icon="pi pi-search"
+        text
+        rounded
+        aria-label="Search products, parties and documents"
+        @click="searchOpen = true"
+      />
+
       <!--
         The day chip (owner decision 2026-08-24). On every screen because
         whether the day is open is what a cashier most often needs to know and
@@ -139,6 +172,8 @@ const accountItems = computed<MenuItem[]>(() => [
       </Button>
       <Menu ref="accountMenu" :model="accountItems" popup />
     </div>
+
+    <GlobalSearchDialog :open="searchOpen" @close="searchOpen = false" />
   </header>
 </template>
 
@@ -167,20 +202,33 @@ const accountItems = computed<MenuItem[]>(() => [
   border: 1px solid var(--sher-line-strong);
   border-radius: var(--sher-radius);
   background: var(--sher-sunken);
+  cursor: pointer;
+  font: inherit;
+  color: var(--sher-text-muted);
+  text-align: left;
+}
+
+.search:hover {
+  border-color: var(--sher-line-strong);
+  background: var(--sher-raised);
 }
 
 .search > .pi {
   color: var(--sher-text-faint);
 }
 
-.search :deep(.p-inputtext) {
+.search-text {
   flex: 1;
   min-width: 0;
-  height: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--sher-text-sm);
+}
+
+/* The phone's way in, hidden while the full box is on screen. */
+.search-compact {
+  display: none;
 }
 
 .search kbd {
@@ -288,6 +336,10 @@ const accountItems = computed<MenuItem[]>(() => [
   .search,
   .bizdate {
     display: none;
+  }
+
+  .search-compact {
+    display: inline-flex;
   }
 }
 </style>

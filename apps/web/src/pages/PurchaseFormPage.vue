@@ -372,16 +372,16 @@ async function loadForCorrection(token: string, purchaseId: string): Promise<voi
     // going to; re-linking it to the plan would count the goods twice.
     planLineId: null,
   }));
-  landedCosts.value =
-    (bill.extraCostMinor ?? 0) > 0
-      ? [{
-          category: 'TRANSPORT',
-          method: 'BY_VALUE',
-          amount: (bill.extraCostMinor ?? 0) / 100,
-          description: '',
-          manual: lines.value.map(() => 0),
-        }]
-      : [];
+  landedCosts.value = (bill.landedCosts ?? []).map((cost) => ({
+    category: cost.category,
+    method: cost.method,
+    amount: cost.amountMinor / 100,
+    description: cost.description ?? '',
+    manual: bill.lines.map((line) =>
+      (cost.allocations.find((allocation) => allocation.purchaseLineId === line.id)?.amountMinor ?? 0) /
+      100,
+    ),
+  }));
 }
 
 /**

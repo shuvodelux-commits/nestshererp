@@ -52,3 +52,4 @@ export { PostgresDocumentReversalRepository } from './document-reversal-reposito
 export { PostgresDocumentRedateRepository } from './document-redate-repository';
 export { PostgresReconciliationRepository } from './reconciliation-repository';
 export { PostgresBackupRepository } from './backup-repository';
+export { PostgresManagementProfileRepository } from './management-profile-repository';

@@ -74,3 +74,7 @@ export const BACKUP_SERVICE = Symbol('BackupService');
 export const RESTORE_SERVICE = Symbol('RestoreService');
 export const RESET_BUSINESS_SERVICE = Symbol('ResetBusinessService');
 export const LICENSE_STATUS_SERVICE = Symbol('LicenseStatusService');
+export const LICENSE_INSTALL_SERVICE = Symbol('LicenseInstallService');
+export const LICENSE_VERIFIER = Symbol('LicenseVerifier');
+export const LICENSE_KEY_STORE = Symbol('LicenseKeyStore');
+export const LICENSE_MACHINE_STATE = Symbol('MachineLicenseState');

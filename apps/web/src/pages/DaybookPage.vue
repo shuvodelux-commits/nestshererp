@@ -329,21 +329,43 @@ onMounted(() => {
     help-bn="দিনের হিসাব — আজ দোকানে যা যা হয়েছে, এক জায়গায়"
   >
     <div class="dbk">
-      <div class="dbk__filters no-print">
-        <Button icon="pi pi-chevron-left" text size="small" aria-label="Previous day" @click="shiftDay(-1)" />
-        <DateOnlyPicker v-model="from" input-id="daybook-from" placeholder="From" @update:model-value="() => load()" />
-        <span class="dbk__dash">→</span>
-        <DateOnlyPicker v-model="to" input-id="daybook-to" placeholder="To" @update:model-value="() => load()" />
-        <Button icon="pi pi-chevron-right" text size="small" aria-label="Next day" @click="shiftDay(1)" />
+      <!--
+        Phase 18.2: the shared `.filters` row, so Daybook's furniture sits at
+        the same height and carries the same labels as every other list. The two
+        day-step arrows stay — a shopkeeper reviewing yesterday steps a day at a
+        time far more often than he picks a date — but they are now beside a
+        labelled field instead of standing in for one.
+      -->
+      <div class="filters no-print">
+        <div class="field">
+          <label for="daybook-from">From</label>
+          <div class="dbk__day">
+            <Button icon="pi pi-chevron-left" text size="small" aria-label="Previous day" @click="shiftDay(-1)" />
+            <DateOnlyPicker v-model="from" input-id="daybook-from" placeholder="From" @update:model-value="() => load()" />
+          </div>
+        </div>
 
-        <Select
-          v-model="kind"
-          :options="kindOptions"
-          option-label="label"
-          option-value="value"
-          class="dbk__kind"
-          @change="() => load()"
-        />
+        <div class="field">
+          <label for="daybook-to">To</label>
+          <div class="dbk__day">
+            <DateOnlyPicker v-model="to" input-id="daybook-to" placeholder="To" @update:model-value="() => load()" />
+            <Button icon="pi pi-chevron-right" text size="small" aria-label="Next day" @click="shiftDay(1)" />
+          </div>
+        </div>
+
+        <div class="field dbk__kind">
+          <label for="daybook-kind">What kind</label>
+          <Select
+            v-model="kind"
+            input-id="daybook-kind"
+            :options="kindOptions"
+            option-label="label"
+            option-value="value"
+            append-to="self"
+            fluid
+            @change="() => load()"
+          />
+        </div>
 
         <Button
           v-if="canEntryDate"
@@ -414,11 +436,77 @@ onMounted(() => {
 
       <!-- --------------------------------------------- everything that happened -->
       <AppCard>
+        <!--
+          UI-29 and the Phase 18.2 pattern: one sentence and one button. The
+          button goes back to today rather than offering to create something —
+          an empty day is almost always the wrong day, not an idle shop.
+        -->
         <EmptyState v-if="!loading && rows.length === 0" icon="pi-book" title="Nothing happened on this day">
-          No sale, purchase, payment or stock change was recorded. Pick another date above.
+          No sale, purchase, payment or stock change was recorded on
+          {{ from === to ? from : `${from} – ${to}` }}.
+          <template #action>
+            <button
+              v-if="from !== today || to !== today"
+              type="button"
+              class="btn btn-ghost"
+              @click="from = today; to = today; load()"
+            >
+              Go to today
+            </button>
+          </template>
         </EmptyState>
 
-        <DataTable v-else :value="[...rows]" :loading="loading" data-key="id" striped-rows>
+        <template v-else>
+        <!--
+          Phase 18.4 — the day as cards below 640px (owner decision 2026-09-03).
+          Six columns will not fit a phone, and the one that fell off the right
+          was Amount, which is the column somebody reviewing a day is reading.
+          The ⋯ menu carries the same actions the table row does, because a
+          correction is exactly what an owner reaches for on this screen.
+        -->
+        <ul class="list-cards">
+          <li v-for="row in rows" :key="`card-${row.id}`" class="list-card">
+            <span class="list-card-title" :class="row.status === 'VOIDED' ? 'dbk__void' : ''">
+              {{ row.description }}
+            </span>
+
+            <span
+              class="list-card-amount"
+              :class="row.cashEffectMinor < 0 ? 'dbk__out' : row.cashEffectMinor > 0 ? 'dbk__in' : ''"
+            >
+              {{ taka(row.amountMinor) }}
+            </span>
+
+            <p class="list-card-sub">
+              {{ row.createdAt.slice(11, 16) }} · {{ row.sourceNumber }}
+              <template v-if="row.partyName"> · {{ row.partyName }}</template>
+              <template v-if="row.accountLabel"> · {{ row.accountLabel }}</template>
+              <template v-if="row.backdated"> · late entry</template>
+              <template v-if="row.locked"> · month closed 🔒</template>
+            </p>
+
+            <div class="list-card-foot">
+              <span class="dbk__sub">{{ row.createdByName }}</span>
+              <Button
+                class="dbk__card-menu no-print"
+                icon="pi pi-ellipsis-v"
+                text
+                rounded
+                size="small"
+                aria-label="Actions"
+                @click="(event) => openMenu(event, row)"
+              />
+            </div>
+          </li>
+        </ul>
+
+        <DataTable
+          :value="[...rows]"
+          :loading="loading"
+          data-key="id"
+          striped-rows
+          :class="rows.length > 0 ? 'phone-hidden' : ''"
+        >
           <Column header="Time" style="width: 6rem">
             <template #body="{ data }">
               {{ data.createdAt.slice(11, 16) }}
@@ -461,6 +549,7 @@ onMounted(() => {
             </template>
           </Column>
         </DataTable>
+        </template>
       </AppCard>
 
       <Menu ref="rowMenu" :model="menuItems" popup />
@@ -537,8 +626,8 @@ onMounted(() => {
 
 <style scoped>
 .dbk { display: grid; gap: 1rem; }
-.dbk__filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.dbk__dash { color: var(--sher-text-muted, #94a3b8); }
+.dbk__day { display: flex; align-items: center; gap: 0.25rem; }
+
 .dbk__kind { min-width: 15rem; }
 .dbk__output { margin-left: auto; display: flex; gap: 0.25rem; }
 .dbk__daybar { display: flex; align-items: center; gap: 0.75rem; }
@@ -560,4 +649,8 @@ onMounted(() => {
 .dbk__in { color: var(--sher-ok, #15803d); }
 .dbk__out { color: var(--sher-bad, #b91c1c); }
 .dbk__sheet { position: absolute; left: -10000px; top: 0; }
+
+/* Phase 18.4 — the phone card list. Its shape is `design/components.css`'s. */
+.list-card-foot .dbk__sub { display: inline; margin-right: auto; }
+.dbk__card-menu { min-width: 44px; min-height: 44px; }
 </style>

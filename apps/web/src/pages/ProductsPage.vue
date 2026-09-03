@@ -603,6 +603,66 @@ function stockPill(product: ProductResponse): string {
       </EmptyState>
 
       <template v-else>
+        <!--
+          Phase 18.4 — the same rows as cards below 640px (owner decision
+          2026-09-03). On a phone the table below slid sideways and took the
+          selling price and the stock figure off the right-hand edge, which are
+          the two things somebody standing in front of the shelf opened this
+          screen for. Same data, same actions, one shape at a time; the desktop
+          table is untouched.
+        -->
+        <ul class="list-cards">
+          <li
+            v-for="product in visibleProducts"
+            :key="`card-${product.id}`"
+            class="list-card"
+            :class="{ 'is-inactive': product.status === 'INACTIVE' }"
+          >
+            <span class="list-card-title">
+              <button type="button" class="linkish name" @click="openForm(product)">
+                {{ product.displayName }}
+              </button>
+              <span v-if="product.offerLive" class="pill pill-info">Offer on</span>
+            </span>
+
+            <span class="list-card-amount">{{ money(product.sellingPriceMinor) }}</span>
+
+            <p class="list-card-sub">
+              {{ product.categoryName ?? 'No category' }} · {{ product.baseUnitName }}
+            </p>
+
+            <div class="list-card-foot">
+              <span class="stock-line">
+                Stock {{ qtyText(product.stockQty) }}
+                <span
+                  v-if="product.stockStatus !== 'IN_STOCK'"
+                  class="pill"
+                  :class="stockPill(product)"
+                >
+                  {{ product.stockStatus === 'LOW_STOCK' ? 'Low' : product.stockStatus === 'ZERO_STOCK' ? 'Out' : 'Negative' }}
+                </span>
+                <span v-if="isOffline && storedAt !== null" class="as-of">
+                  {{ asOfText(storedAt) }}
+                </span>
+              </span>
+
+              <span v-if="product.status !== 'ACTIVE'" class="pill pill-bad">Inactive</span>
+
+              <button
+                type="button"
+                class="row-menu-trigger card-menu"
+                :aria-label="`Actions for ${product.displayName}`"
+                aria-haspopup="true"
+                :disabled="isOffline"
+                :title="isOffline ? NEEDS_INTERNET : ''"
+                @click="openMenu($event, product)"
+              >
+                <i class="pi pi-ellipsis-h" aria-hidden="true" />
+              </button>
+            </div>
+          </li>
+        </ul>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -657,12 +717,15 @@ function stockPill(product: ProductResponse): string {
                     <span class="sher-bn header-bn">স্টক</span>
                   </span>
                 </th>
-                <th v-if="canSeeCost" class="num">
-                  <span class="th-label">
-                    Stock value
-                    <span class="sher-bn header-bn">স্টকের মূল্য</span>
-                  </span>
-                </th>
+                <!--
+                  Phase 18.3 (owner decision 2026-09-03) — column trimming.
+                  `Stock value` used to sit here. Nobody acts on one product's
+                  valuation from the product list: it is the Inventory Report's
+                  whole subject, where it is totalled, reconciled to the journal
+                  and provable (INV-05). Here it was a per-row number that
+                  narrowed every column beside it and answered nothing.
+                -->
+
                 <SortableHeader
                   column="status"
                   label="Status"
@@ -716,7 +779,6 @@ function stockPill(product: ProductResponse): string {
                     {{ asOfText(storedAt) }}
                   </span>
                 </td>
-                <td v-if="canSeeCost" class="num">{{ money(product.stockValueMinor) }}</td>
                 <td>
                   <span v-if="product.status === 'ACTIVE'" class="pill pill-ok">Active</span>
                   <span v-else class="pill pill-bad">Inactive</span>
@@ -962,6 +1024,23 @@ td.actions {
   gap: var(--sher-space-3);
   margin-top: var(--sher-space-4);
   font-size: var(--sher-text-sm);
+}
+
+/* Phase 18.4 — the phone card list. The shape is `design/components.css`'s. */
+.list-card.is-inactive {
+  opacity: 0.65;
+}
+
+.stock-line {
+  margin-right: auto;
+  font-size: var(--sher-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 44px, so the ⋯ is a thumb target rather than a mouse target (UI-42). */
+.card-menu {
+  min-width: 44px;
+  min-height: 44px;
 }
 </style>
 

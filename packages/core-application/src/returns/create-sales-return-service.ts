@@ -5,7 +5,7 @@ import {
 import type { AccountCode, LotRefill, ReturnableLine, SalesReturnRejection } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 import type { SalesReturnResponse } from '@sher/core-contracts';
-import { Qty, Ulid } from '@sher/shared-utils';
+import { Qty, QTY_SCALE, Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { InventoryRepository } from '../inventory/inventory-repository';
@@ -53,6 +53,7 @@ import { toSalesReturnResponse } from './sales-return-view';
 export interface SalesReturnLineInput {
   readonly saleLineId: string;
   readonly qty: number;
+  readonly serialUnitIds: readonly string[];
 }
 
 export interface CreateSalesReturnCommand {
@@ -366,6 +367,10 @@ export class CreateSalesReturnService {
       const posted = await this.returns.findReturnIdByOperationId(tx, ctx, command.operationId);
       if (posted !== null) return this.detail(tx, ctx, posted);
 
+      if (!(await this.returns.lockSale(tx, ctx, command.saleId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Invoice not found');
+      }
+
       const invoice = await this.returns.findReturnableInvoice(tx, ctx, command.saleId);
       if (invoice === null) throw new AppError(ErrorCode.NOT_FOUND, 'Invoice not found');
       if (invoice.status === 'VOIDED') {
@@ -464,7 +469,37 @@ export class CreateSalesReturnService {
           throw new AppError(ErrorCode.VALIDATION_FAILED, 'That item is not on this invoice');
         }
 
-        const durable = sourceOrigins.filter((origin) => origin.saleLineId === line.saleLineId);
+        let durable = sourceOrigins.filter((origin) => origin.saleLineId === line.saleLineId);
+        const serialOrigins = durable.filter((origin) => origin.inventoryUnitId !== null);
+        const requestedLine = command.lines.find((item) => item.saleLineId === line.saleLineId);
+        const selectedSerialIds = requestedLine?.serialUnitIds ?? [];
+        if (serialOrigins.length > 0) {
+          if (
+            line.qty % QTY_SCALE !== 0 ||
+            selectedSerialIds.length !== line.qty / QTY_SCALE ||
+            new Set(selectedSerialIds).size !== selectedSerialIds.length
+          ) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'Select the exact serial number for every serialized unit being returned',
+            );
+          }
+          const selected = new Set(selectedSerialIds);
+          durable = serialOrigins.filter(
+            (origin) =>
+              origin.inventoryUnitId !== null &&
+              selected.has(origin.inventoryUnitId) &&
+              origin.reversedQty < origin.qty,
+          );
+          if (durable.length !== selected.size) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'One or more selected serials do not belong to this invoice line or were already returned',
+            );
+          }
+        } else if (selectedSerialIds.length > 0) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'This sale line does not use serial numbers');
+        }
         let left = line.qty;
         let ownedPositionQty = 0;
         let ownedCostMinor = 0;

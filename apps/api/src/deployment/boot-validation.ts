@@ -1,6 +1,7 @@
 import { accessSync, constants } from 'node:fs';
 
 import type { ApiConfig } from '../config';
+import { trustedLicenseKeys } from './license-keys';
 
 /**
  * Boot-time validation (§4.4, D-33…D-36).
@@ -33,6 +34,17 @@ export class BootValidationError extends Error {
   }
 }
 
+/**
+ * Said once at boot, to the console the installer is watching.
+ *
+ * A warning rather than a refusal, and deliberately: everything reported this
+ * way is already visible in the running app as READ_ONLY, so stopping the boot
+ * would only remove the screen that explains it.
+ */
+function warn(message: string): void {
+  process.stderr.write(`[licence] ${message}\n`);
+}
+
 /** The development transport echoes the OTP back; it is never a production one. */
 function isProduction(): boolean {
   return process.env['NODE_ENV'] === 'production';
@@ -55,25 +67,36 @@ export function validateBootConfig(config: ApiConfig): void {
     );
   }
 
+  /*
+   * §4.4 listed "ENTITLEMENT_SOURCE=license with no readable license" as a boot
+   * refusal. The owner's decision of 2026-09-02 supersedes that: licence mode
+   * is now the default, and a **fresh install has no licence yet** — it has to
+   * start, let the Owner sign in, and let them paste a key into Settings →
+   * Licence. Refusing to boot would leave no screen on which to fix it.
+   *
+   * Nothing is lost by starting. A missing or unreadable licence is READ_ONLY
+   * (D-35), which is visible on every screen and says what to do about it.
+   *
+   * What is still worth saying out loud is a deployment that could never
+   * validate *any* licence, because no key was embedded at package time and
+   * none configured. That is a packaging mistake rather than a licence that
+   * lapsed, and it is reported here where whoever installed it will see it.
+   */
   if (config.entitlementSource === 'license') {
-    if (config.licenseKeyPath === '') {
-      throw new BootValidationError(
-        'ENTITLEMENT_SOURCE=license requires LICENSE_KEY_PATH (D-35).',
+    if (trustedLicenseKeys(config).length === 0) {
+      warn(
+        'No licence signing key is embedded in this build or set in LICENSE_TRUSTED_KEYS (D-35). ' +
+          'No licence can be verified, so SherERP will run READ_ONLY until one is configured.',
       );
-    }
-    try {
-      accessSync(config.licenseKeyPath, constants.R_OK);
-    } catch {
-      throw new BootValidationError(
-        `ENTITLEMENT_SOURCE=license but the licence at ${config.licenseKeyPath} cannot be read (D-35). ` +
-          'A licence that lapses later drops to READ_ONLY; one that was never readable is a broken install.',
-      );
-    }
-    if (config.licensePublicKey === '') {
-      throw new BootValidationError(
-        'ENTITLEMENT_SOURCE=license but no licence public key is embedded or configured (D-35). ' +
-          'Without it every licence would fail verification and the install would run READ_ONLY.',
-      );
+    } else {
+      try {
+        accessSync(config.licenseKeyPath, constants.R_OK);
+      } catch {
+        warn(
+          `No licence is installed at ${config.licenseKeyPath}. ` +
+            'SherERP starts READ_ONLY: sign in, open Settings → Licence and paste the licence key.',
+        );
+      }
     }
   }
 

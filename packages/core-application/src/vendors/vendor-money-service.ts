@@ -263,7 +263,7 @@ export class VendorMoneyService {
   private async settleReceivable(
     command: ReceiveFromVendorCommand,
   ): Promise<VendorMoneyDocumentResponse> {
-    const receipt = await this.customerPayments.receive({
+    const receipt = await this.customerPayments.receiveVendor({
       ctx: command.ctx,
       operationId: command.operationId,
       customerPartyId: command.vendorPartyId,

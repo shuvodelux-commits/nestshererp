@@ -16,6 +16,7 @@ import ErrorNotice from '../components/ErrorNotice.vue';
 import EndDayDialog from '../components/money/EndDayDialog.vue';
 import ReopenDayDialog from '../components/money/ReopenDayDialog.vue';
 import StartDayDialog from '../components/money/StartDayDialog.vue';
+import AppShell from '../components/shell/AppShell.vue';
 import { MONEY_BN, taka } from '../components/money/money-text';
 
 /**
@@ -117,36 +118,40 @@ onDataChanged(load);
 </script>
 
 <template>
-  <section class="page">
-    <header class="page-head">
-      <div>
-        <h1>Daily Cash</h1>
-        <p class="sher-bn">দিনের নগদ হিসাব — কত থাকার কথা, কত পাওয়া গেল</p>
-      </div>
-
-      <div class="head-actions">
-        <Button
-          v-if="canStart"
-          icon="pi pi-play"
-          :label="MONEY_BN.startDay"
-          @click="showStart = true"
-        />
-        <Button
-          v-if="dayToClose && session.can('cash.session.close')"
-          icon="pi pi-check"
-          :label="MONEY_BN.endDay"
-          @click="showEnd = true"
-        />
-        <Button
-          v-if="closedToday && status?.canReopenToday"
-          icon="pi pi-replay"
-          severity="secondary"
-          outlined
-          :label="MONEY_BN.reopenDay"
-          @click="showReopen = true"
-        />
-      </div>
-    </header>
+  <!--
+    Phase 18.2. This screen drew its own `page` / `page-head` and was the one
+    daily list that did — so its title sat at a different height from every
+    other, its Bangla helper line was styled differently, and it had no
+    breadcrumb and no module strip. `AppShell` owns all of that for everybody
+    (and owns page spacing, which is why nothing here sets a margin).
+  -->
+  <AppShell
+    title="Daily Cash"
+    :breadcrumb="['Daily', 'Daily Cash']"
+    help-bn="দিনের নগদ হিসাব — কত থাকার কথা, কত পাওয়া গেল"
+  >
+    <template #actions>
+      <Button
+        v-if="canStart"
+        icon="pi pi-play"
+        :label="MONEY_BN.startDay"
+        @click="showStart = true"
+      />
+      <Button
+        v-if="dayToClose && session.can('cash.session.close')"
+        icon="pi pi-check"
+        :label="MONEY_BN.endDay"
+        @click="showEnd = true"
+      />
+      <Button
+        v-if="closedToday && status?.canReopenToday"
+        icon="pi pi-replay"
+        severity="secondary"
+        outlined
+        :label="MONEY_BN.reopenDay"
+        @click="showReopen = true"
+      />
+    </template>
 
     <ErrorNotice v-if="failure" :code="failure.code" :message="failure.message" />
 
@@ -165,7 +170,43 @@ onDataChanged(load);
       />
     </p>
 
-    <AppCard>
+    <!--
+      Phase 18.4 — the same days as cards below 640px (owner decision
+      2026-09-03). Nine money columns cannot be read on a phone at all; what an
+      owner checking last week actually wants from each row is the date, what
+      was counted, and whether it matched. The rest stays on the desktop table.
+    -->
+    <ul v-if="rows.length > 0" class="list-cards">
+      <li v-for="row in rows" :key="`card-${row.sessionId}`" class="list-card">
+        <span class="list-card-title">
+          {{ row.businessDate }}
+          <Tag v-if="row.wasReopened" class="reopened" severity="secondary" value="Reopened" />
+        </span>
+
+        <span class="list-card-amount">
+          {{ row.countedClosingMinor === null ? '—' : taka(row.countedClosingMinor) }}
+        </span>
+
+        <p class="list-card-sub">
+          Opened on {{ taka(row.openingAmountMinor) }} · in {{ taka(row.cashInMinor) }} · out
+          {{ taka(row.cashOutMinor) }} · expected
+          {{ row.expectedClosingMinor === null ? '—' : taka(row.expectedClosingMinor) }}
+        </p>
+
+        <div class="list-card-foot">
+          <span
+            v-if="row.differenceMinor !== null && row.differenceMinor !== 0"
+            :class="row.differenceMinor < 0 ? 'short' : 'over'"
+          >
+            {{ taka(row.differenceMinor) }}
+          </span>
+          <Tag :severity="severity(row)" :value="statusLabel(row)" />
+          <span v-if="row.differenceReason" class="reason">{{ row.differenceReason }}</span>
+        </div>
+      </li>
+    </ul>
+
+    <AppCard :class="rows.length > 0 ? 'phone-hidden' : ''">
       <DataTable
         :value="[...rows]"
         :loading="loading"
@@ -174,8 +215,15 @@ onDataChanged(load);
         striped-rows
       >
         <template #empty>
+          <!-- UI-29 and the Phase 18.2 pattern: one sentence, one button. -->
           <EmptyState icon="pi-wallet" title="No days recorded yet">
-            Start the day to begin tracking the drawer.
+            Start the day and this list fills itself: what the drawer opened on, what came in and
+            went out, and what was counted at close.
+            <template #action>
+              <button v-if="canStart" type="button" class="btn btn-primary" @click="showStart = true">
+                {{ MONEY_BN.startDay }}
+              </button>
+            </template>
           </EmptyState>
         </template>
 
@@ -260,39 +308,16 @@ onDataChanged(load);
       @reopened="done"
       @close="showReopen = false"
     />
-  </section>
+  </AppShell>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sher-space-4);
-}
-
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sher-space-4);
-}
-
-.page-head h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.page-head p {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: var(--sher-text-muted);
-}
-
-.head-actions {
-  display: flex;
-  gap: 8px;
-}
+/*
+ * The page frame, the header and the action row used to be redrawn here — a
+ * second copy of `AppShell`'s, one font size out on the title and one margin
+ * out under it. They are gone; `AppShell` draws them, for this screen and for
+ * every other.
+ */
 
 .blocked {
   display: flex;

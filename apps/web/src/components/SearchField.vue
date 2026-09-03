@@ -61,9 +61,23 @@ function clear(): void {
 <template>
   <div class="search-field">
     <i class="pi pi-search" aria-hidden="true" />
+    <!--
+      Phase 18.4. `inputmode` and `enterkeyhint` are what a phone reads to
+      decide which keyboard to draw and what to write on its big blue key. With
+      neither, every list in the application opened the ordinary keyboard with
+      a `return` key on it, and a shopkeeper searching for a customer had to
+      guess that pressing it would search. The POS scan bar already said this;
+      it says it here now for the other seven screens too.
+    -->
     <input
       :id="fieldId"
       type="search"
+      inputmode="search"
+      enterkeyhint="search"
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
       :value="modelValue"
       :aria-label="label"
       :placeholder="placeholder"

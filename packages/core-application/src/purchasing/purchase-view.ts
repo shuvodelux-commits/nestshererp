@@ -58,6 +58,11 @@ export function toPurchaseResponse(
     itemsTotalMinor: detail.itemsTotalMinor,
     discountMinor: detail.discountMinor,
     extraCostMinor: detail.extraCostMinor,
+    landedCosts: detail.landedCosts.map((cost) => ({
+      ...cost,
+      addedLater: false,
+      allocations: cost.allocations.map((allocation) => ({ ...allocation })),
+    })),
     grandTotalMinor: detail.grandTotalMinor,
     paidMinor: detail.paidMinor,
     dueMinor: detail.dueMinor,

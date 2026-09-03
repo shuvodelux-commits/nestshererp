@@ -16,6 +16,7 @@ export interface NewVendorReceipt {
   readonly movementId: string;
   readonly note: string | null;
   readonly businessDate: string;
+  readonly expiryDate: string | null;
   readonly operationId: string;
 }
 
@@ -43,6 +44,7 @@ export interface VendorReceiptRow {
   readonly displayName: string;
   readonly unitName: string;
   readonly businessDate: string;
+  readonly expiryDate: string | null;
   readonly note: string | null;
   readonly qty: number;
   readonly vendorUnitCost: number;
@@ -60,7 +62,7 @@ export interface VendorStockRepository {
   insertReturn(
     tx: Tx,
     ctx: TenantContext,
-    input: { readonly record: NewVendorReturn; readonly lotQtyRemaining: number },
+    record: NewVendorReturn,
   ): Promise<void>;
 
   findReceipt(tx: Tx, ctx: TenantContext, receiptId: string): Promise<VendorReceiptRow | null>;

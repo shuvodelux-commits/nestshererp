@@ -179,3 +179,37 @@ pnpm --filter @sher/web dev
 ```powershell
 powershell -ExecutionPolicy Bypass -File \\wsl.localhost\Debian\home\shoaib\projects\shererp\tools\lan-dev.ps1
 ```
+
+---
+
+## ৭. লাইসেন্স (২০২৬-০৯-০২ থেকে বাধ্যতামূলক)
+
+এখন থেকে ডিফল্ট `ENTITLEMENT_SOURCE=license` — অর্থাৎ **লাইসেন্স ছাড়া অ্যাপ READ_ONLY**: সব কিছু
+পড়া যাবে, লগইন করা যাবে, ব্যাকআপ নেওয়া যাবে, কিন্তু নতুন কিছু সেভ হবে না। ডেভ মেশিনে যাতে
+স্বাভাবিকভাবে কাজ করা যায়, সেজন্য `apps/api/.env`-এ দুইটা লাইন আছে:
+
+```
+LICENSE_KEY_PATH=/home/shoaib/projects/shererp/apps/api/licence/sher.licence
+LICENSE_TRUSTED_KEYS=dev-1|<dev public key>|dev
+```
+
+**সাইনিং কী দুইটা, এবং কখনো এক নয়।** প্রোডাকশন কী দিয়ে কাস্টমারের লাইসেন্স সই হয়; ডেভ কী শুধু
+এই মেশিনের জন্য। দুইটাই `~/.sher/licence-keys/` -এ থাকে (রিপোর মধ্যে নয়, ডেটাবেজে নয়,
+`.sherdb`-তে নয়)। প্রাইভেট কী হারালে কোনো কাস্টমারকে আর রিনিউ দেওয়া যাবে না — **এনক্রিপ্ট করে
+অফলাইনে ব্যাকআপ রাখো।**
+
+```bash
+pnpm licence:keygen                      # ডেভ কী (একবারই)
+pnpm licence:keygen --kind prod          # প্রোডাকশন কী (একবারই, তারপর ব্যাকআপ)
+
+# একটা লাইসেন্স বানানো (Business ID পাওয়া যায় Settings → Licence পেজে)
+pnpm licence:issue --business <BUSINESS_ID> --days 365
+pnpm licence:issue --business <BUSINESS_ID> --days 14        # ট্রায়াল = ছোট মেয়াদের লাইসেন্স
+pnpm licence:issue --kind dev --business '*' --days 365      # এই ডেভ মেশিনের জন্য
+```
+
+লাইসেন্স ফাইল আর মেশিনের নিজস্ব হিসাব (`*.state.json`) `apps/api/licence/` -এ থাকে, এবং
+`.gitignore` করা — দুইটাই এই কম্পিউটারের জিনিস, প্রোডাক্টের নয়।
+
+শপ-এর দিক থেকে রিনিউ করতে টার্মিনাল লাগে না: **Settings → Licence** পেজে কী পেস্ট করলেই সঙ্গে
+সঙ্গে চালু হয়, সার্ভার রিস্টার্ট ছাড়াই।

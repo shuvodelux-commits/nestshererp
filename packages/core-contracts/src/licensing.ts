@@ -42,6 +42,29 @@ export type LicensedModuleStatus = z.infer<typeof licensedModuleStatusSchema>;
 export const licenseStatusResponseSchema = z.object({
   state: licenseStateSchema,
   businessName: z.string(),
+  /**
+   * The id this installation's licence must name — what the shop reads out, or
+   * copies, when asking for a licence or a renewal. It is the business's own
+   * identifier and nothing else: it grants nothing and unlocks nothing.
+   */
+  businessId: z.string(),
+  /** The installed licence's own id, for the support call. Null when none is readable. */
+  licenceId: z.string().nullable(),
+  /**
+   * True when a licence *was* read but was issued for a different business.
+   *
+   * Kept apart from "unreadable" because it sends the shop somewhere else
+   * entirely: the key file on this machine belongs to somebody else's shop, and
+   * no amount of renewing will help until the right one is pasted in.
+   */
+  foreignBusiness: z.boolean(),
+  /**
+   * Set when this machine's clock reads earlier than a time SherERP has already
+   * seen. A quiet diagnostic, never an enforcement: the licence is judged at the
+   * later of the two, and nothing about business dates, periods or accounting
+   * is touched by it.
+   */
+  clockWarning: z.string().nullable(),
   /** Null when no licence could be read at all — the READ_ONLY floor. */
   validUntil: z.string().nullable(),
   /** Negative once the term has ended; the GRACE countdown reads it. */

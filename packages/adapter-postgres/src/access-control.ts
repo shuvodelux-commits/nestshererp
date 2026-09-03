@@ -4,10 +4,10 @@ import type {
   TenantContext,
   Tx,
 } from '@sher/core-application';
+import { entitlementFor, entitlesModule } from '@sher/core-application';
 import {
   AppError,
   ErrorCode,
-  licenceIncludes,
   LICENSED_MODULES,
   moduleOwning,
   PERMISSION_CATALOGUE,
@@ -18,6 +18,57 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { rolePermissions, users } from './schema';
 import { txOf } from './unit-of-work';
+
+/**
+ * The prefix a vendor support principal's `userId` carries (Phase 17, §12).
+ *
+ * A support session is not a user. It has no row in `users`, no password, no
+ * PIN and nothing to leave behind, so the role join below would find nothing
+ * and refuse everything — which is why the principal has to be recognised here
+ * rather than pretended into the users table. The prefix is set in exactly one
+ * place, `apps/api/src/management/support-grant.ts`, and can only get onto a
+ * request through a grant this installation has verified against the vendor's
+ * pinned public key.
+ */
+const SUPPORT_PRINCIPAL_PREFIX = 'support:';
+
+function isSupportPrincipal(ctx: TenantContext): boolean {
+  return ctx.userId.startsWith(SUPPORT_PRINCIPAL_PREFIX);
+}
+
+/**
+ * What a support session may never do, whatever else it may (§13 ceiling,
+ * owner decision 2026-09-03).
+ *
+ * The owner deliberately chose **full operational and accounting reach** for
+ * vendor support — every correction, reversal, adjustment, setting and
+ * document — so this list is short. It is not empty, and the two things on it
+ * are the two an audit trail cannot repair:
+ *
+ *  - **Identity.** Changing a password or PIN, or creating a user, would leave
+ *    the vendor able to come back as the shop after the session is over. That
+ *    is the permanent backdoor §12 forbids, reached by a different door.
+ *  - **Erasure.** Reset Business Data, a restore over live data, and replacing
+ *    the backup secret each destroy the evidence of what the session did. A
+ *    capability that can erase its own audit trail is not audited.
+ *
+ * It is the same list as `SUPPORT_FORBIDDEN_ROUTE_PREFIXES` in the API,
+ * expressed as permissions. Both exist because a route that forgot to declare
+ * a permission would otherwise inherit the ceiling by omission, and a
+ * permission checked by a service that has no route would be missed by the edge.
+ */
+const SUPPORT_FORBIDDEN_PERMISSIONS: readonly string[] = [
+  'users.create',
+  'users.update',
+  'users.delete',
+  'users.credentials.change',
+  'roles.create',
+  'roles.update',
+  'roles.delete',
+  'settings.reset_business_data',
+  'backup.restore',
+  'backup.secret.replace',
+];
 
 /**
  * Resolves the acting user's role and asks whether it holds the code (§5.26).
@@ -50,6 +101,34 @@ export class PostgresAccessControl implements AccessControl {
 
   async require(tx: Tx, ctx: TenantContext, permissionCode: string): Promise<void> {
     await this.requireEntitlement(tx, ctx, permissionCode);
+
+    /*
+     * Phase 17: the vendor, in a support session (§13).
+     *
+     * **The licence step above still ran, and still refused.** That order is
+     * deliberate: a vendor support session does not entitle a shop to a module
+     * it never bought, and pretending otherwise would let support quietly
+     * create records the shop cannot afterwards read. Support is about fixing
+     * what the shop already has, not about widening what it owns.
+     *
+     * Below that, the principal holds everything except the identity and
+     * erasure codes. Note what this does *not* do: it does not bypass the
+     * period guard, the domain rules, the posting engine or the audit writer.
+     * The request still goes controller → application service → domain →
+     * database exactly as a click at the counter does (§14), and `AuditWriter`
+     * stamps `support:<operator>` on every row it writes, so a vendor
+     * correction is distinguishable from the owner's own for ever.
+     */
+    if (isSupportPrincipal(ctx)) {
+      if (SUPPORT_FORBIDDEN_PERMISSIONS.includes(permissionCode)) {
+        throw new AppError(
+          ErrorCode.PERMISSION_DENIED,
+          'A support session may not change sign-in details or users, or erase or restore data.',
+          { permission: permissionCode },
+        );
+      }
+      return;
+    }
 
     const rows = await txOf(tx)
       .select({ code: rolePermissions.permissionCode })
@@ -98,8 +177,25 @@ export class PostgresAccessControl implements AccessControl {
     const module = moduleOwning(permissionCode);
     if (module === null) return;
 
-    const entitlement = this.entitlements.current(this.clock.now());
-    if (licenceIncludes(entitlement.modules, module.code)) return;
+    /*
+     * Judged against *this* business. A licence file belonging to another shop
+     * verifies perfectly well and entitles this one to nothing (owner decision
+     * 2026-09-02) — the binding is re-checked here rather than trusted from the
+     * install screen, because a key file can be copied onto a machine by hand.
+     */
+    const entitlement = entitlementFor(this.entitlements.current(this.clock.now()), ctx.tenantId);
+    if (entitlesModule(entitlement, module.code)) return;
+
+    const holdsData = await this.hasData(tx, ctx, module);
+
+    /*
+     * Finishing something the shop is already holding — handing back a vendor's
+     * goods, closing a claim taken in over the counter. A lapsed licence stops
+     * new business; it must not strand somebody else's property on the shelf
+     * (owner decision 2026-09-02). Checked before the write refusal, because
+     * these codes are write codes.
+     */
+    if (holdsData && module.unwindPermissions.includes(permissionCode)) return;
 
     if (module.writePermissions.includes(permissionCode)) {
       throw new AppError(
@@ -111,7 +207,7 @@ export class PostgresAccessControl implements AccessControl {
     }
 
     // A read. Allowed only while the shop has records here to read.
-    if (await this.hasData(tx, ctx, module)) return;
+    if (holdsData) return;
     throw new AppError(
       ErrorCode.PERMISSION_DENIED,
       `Your licence does not include ${module.label}.`,
@@ -131,6 +227,24 @@ export class PostgresAccessControl implements AccessControl {
   }
 
   async permissionsOf(tx: Tx, ctx: TenantContext): Promise<readonly string[]> {
+    /*
+     * A support session's own permission list, so the screens the operator sees
+     * render their controls (UI-09: never draw a control that will fail).
+     *
+     * Built from the same catalogue and filtered by the same two rules as
+     * `require` — the forbidden list, and then the licence withholding below —
+     * so what the screen offers and what the server allows cannot drift apart.
+     */
+    if (isSupportPrincipal(ctx)) {
+      return this.withheldFiltered(
+        tx,
+        ctx,
+        PERMISSION_CATALOGUE.map((entry) => entry.code).filter(
+          (code) => !SUPPORT_FORBIDDEN_PERMISSIONS.includes(code),
+        ),
+      );
+    }
+
     const rows = await txOf(tx)
       .select({ code: rolePermissions.permissionCode })
       .from(users)
@@ -146,8 +260,21 @@ export class PostgresAccessControl implements AccessControl {
         and(eq(users.tenantId, ctx.tenantId), eq(users.id, ctx.userId), isNull(users.deletedAt)),
       );
 
-    const held = rows.map((row) => row.code);
+    return this.withheldFiltered(tx, ctx, rows.map((row) => row.code));
+  }
 
+  /**
+   * Removes the codes this shop's licence withholds from a list of held codes.
+   *
+   * Split out so the ordinary user path and the support path apply exactly the
+   * same licence rule — a second copy of it would be a second thing to get
+   * wrong, and the one that drifted would be the one nobody was watching.
+   */
+  private async withheldFiltered(
+    tx: Tx,
+    ctx: TenantContext,
+    held: readonly string[],
+  ): Promise<readonly string[]> {
     /*
      * Withheld here as well as refused above, so the sidebar and every screen
      * stop drawing controls the licence would refuse (UI-09: never render a
@@ -155,12 +282,19 @@ export class PostgresAccessControl implements AccessControl {
      * an authorisation decision — `require` runs the same rule regardless of
      * what a client believes it holds.
      */
-    const entitlement = this.entitlements.current(this.clock.now());
+    const entitlement = entitlementFor(this.entitlements.current(this.clock.now()), ctx.tenantId);
     const withheld = new Set<string>();
     for (const module of LICENSED_MODULES) {
-      if (licenceIncludes(entitlement.modules, module.code)) continue;
+      if (entitlesModule(entitlement, module.code)) continue;
       for (const code of module.writePermissions) withheld.add(code);
-      if (await this.hasData(tx, ctx, module)) continue;
+      const holdsData = await this.hasData(tx, ctx, module);
+      // The unwind path stays offered while there is something to unwind, or
+      // the screen would hide the only button that can hand a vendor's goods
+      // back — and `require` would have allowed it.
+      if (holdsData) {
+        for (const code of module.unwindPermissions) withheld.delete(code);
+        continue;
+      }
       for (const code of module.readPermissions) withheld.add(code);
     }
 

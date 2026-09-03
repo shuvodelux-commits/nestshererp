@@ -376,6 +376,48 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
       )
       .orderBy(supplierPayments.businessDate, supplierPayments.id);
 
+    const landedCostRows = await db
+      .select({
+        id: purchaseLandedCosts.id,
+        category: purchaseLandedCosts.category,
+        method: purchaseLandedCosts.method,
+        amountMinor: purchaseLandedCosts.amountMinor,
+        inventoryShareMinor: purchaseLandedCosts.inventoryShareMinor,
+        cogsShareMinor: purchaseLandedCosts.cogsShareMinor,
+        businessDate: purchaseLandedCosts.businessDate,
+        description: purchaseLandedCosts.description,
+      })
+      .from(purchaseLandedCosts)
+      .where(
+        and(
+          eq(purchaseLandedCosts.tenantId, ctx.tenantId),
+          eq(purchaseLandedCosts.purchaseId, row.id),
+          isNull(purchaseLandedCosts.operationId),
+        ),
+      )
+      .orderBy(purchaseLandedCosts.lineNo, purchaseLandedCosts.id);
+    const landedCostAllocationRows = await db
+      .select({
+        landedCostId: purchaseLandedCostAllocations.landedCostId,
+        purchaseLineId: purchaseLandedCostAllocations.purchaseLineId,
+        amountMinor: purchaseLandedCostAllocations.amountMinor,
+      })
+      .from(purchaseLandedCostAllocations)
+      .innerJoin(
+        purchaseLandedCosts,
+        and(
+          eq(purchaseLandedCosts.tenantId, purchaseLandedCostAllocations.tenantId),
+          eq(purchaseLandedCosts.id, purchaseLandedCostAllocations.landedCostId),
+        ),
+      )
+      .where(
+        and(
+          eq(purchaseLandedCostAllocations.tenantId, ctx.tenantId),
+          eq(purchaseLandedCosts.purchaseId, row.id),
+          isNull(purchaseLandedCosts.operationId),
+        ),
+      );
+
     const names = await this.accountNames(
       tx,
       ctx,
@@ -419,6 +461,22 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         actualUnitCost: Number(line.actualUnitCost),
         expiryDate: line.expiryDate,
         lotId: line.lotId.trim(),
+      })),
+      landedCosts: landedCostRows.map((cost) => ({
+        id: cost.id.trim(),
+        category: cost.category as PurchaseDetail['landedCosts'][number]['category'],
+        method: cost.method as PurchaseDetail['landedCosts'][number]['method'],
+        amountMinor: Number(cost.amountMinor),
+        inventoryShareMinor: Number(cost.inventoryShareMinor),
+        cogsShareMinor: Number(cost.cogsShareMinor),
+        businessDate: cost.businessDate,
+        description: cost.description,
+        allocations: landedCostAllocationRows
+          .filter((allocation) => allocation.landedCostId === cost.id)
+          .map((allocation) => ({
+            purchaseLineId: allocation.purchaseLineId.trim(),
+            amountMinor: Number(allocation.amountMinor),
+          })),
       })),
       payments: paymentRows.map((payment) => ({
         id: payment.id.trim(),

@@ -43,8 +43,16 @@ export default defineConfig({
    * 5173 has to cross the WSL boundary instead of two.
    */
   server: {
-    port: 5173,
+    port: Number(process.env['VITE_PORT'] ?? 5173),
     host: true,
-    proxy: { '/api': { target: 'http://127.0.0.1:3000' } },
+    /*
+     * Phase 18.5. The target is an environment variable with the same default
+     * it has always had, so an ordinary `pnpm --filter @sher/web dev` is byte
+     * for byte what it was. What it buys is that the Playwright run starts its
+     * own API on its own port against `sher_e2e` and its own Vite in front of
+     * it — so a suite can run while the owner is driving the development stack
+     * on 3000/5173, and neither can see the other's data.
+     */
+    proxy: { '/api': { target: process.env['VITE_API_TARGET'] ?? 'http://127.0.0.1:3000' } },
   },
 });

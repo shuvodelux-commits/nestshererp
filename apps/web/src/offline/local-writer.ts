@@ -93,10 +93,18 @@ export function localBusinessDate(): string {
  * the browser is holding. Reading a claim is not trusting one: the server
  * verifies the signature on every call and would refuse an operation whose
  * actor does not exist, whatever this said.
+ *
+ * A machine opened cold during an outage has no token at all, and the person
+ * standing at it proved who they were against the PIN hash in the snapshot
+ * instead. That id is the actor, and it is the same id the server knows — it
+ * came *from* the server, in the snapshot. Without this the whole outage would
+ * replay with an empty actor, and the shop's audit would say nobody sold
+ * anything all day.
  */
 export function currentUserId(): string {
-  const token = useSession().accessToken.value;
-  if (token === null) return '';
+  const session = useSession();
+  const token = session.accessToken.value;
+  if (token === null) return session.offlineUser.value?.id ?? '';
   try {
     const payload = token.split('.')[1];
     if (payload === undefined) return '';

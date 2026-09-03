@@ -645,3 +645,127 @@ select option {
     background-position: -200% 0;
   }
 }
+
+/* -------------------------------------------------- phone-first (Phase 18.4) */
+
+/*
+ * A list as cards below 640px, defined once (owner decision 2026-09-03).
+ *
+ * Parties had this shape and nothing else did, so on a phone the other daily
+ * lists became a table sliding sideways — which puts the one column the list
+ * was opened for, the money, off the right-hand edge. Cards and table are the
+ * same rows from the same data; only one of them is in the document at a time.
+ *
+ * **Desktop density is untouched.** Everything here lives inside the media
+ * query, and a counter PC with a keyboard sees exactly the table it saw before
+ * — that is the half of this decision that is easiest to break by accident.
+ */
+.list-cards {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sher-space-2) var(--sher-space-3);
+  align-items: start;
+  padding: var(--sher-space-3);
+  border: 1px solid var(--sher-line);
+  border-radius: var(--sher-radius-md);
+  background: var(--sher-raised);
+}
+
+.list-card + .list-card {
+  margin-top: var(--sher-space-2);
+}
+
+/* The line a person identifies the row by — a name, a number, a date. */
+.list-card-title {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Everything that qualifies it, small and under the title. */
+.list-card-sub {
+  grid-column: 1;
+  margin: 0;
+  font-size: var(--sher-text-2xs);
+  color: var(--sher-text-muted);
+}
+
+/* The figure the list exists for, right-hand side, never off-screen. */
+.list-card-amount {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.list-card-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sher-space-2);
+}
+
+@media (max-width: 640px) {
+  .list-cards {
+    display: block;
+  }
+
+  /* The table half of a card/table pair — hidden while the cards are drawn. */
+  .list-cards + .table-wrap,
+  .phone-hidden {
+    display: none;
+  }
+
+  /*
+   * A dialog fills the phone (owner decision 2026-09-03). PrimeVue sizes every
+   * dialog from an inline `style` width written for a desktop — `38rem` for the
+   * house form dialog — which on a 360px screen is a box wider than the screen
+   * with its buttons past the right edge. `!important` is the only lever that
+   * reaches an inline width, and this is the one place in the design system
+   * that needs it.
+   */
+  .p-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .p-dialog .p-dialog-content {
+    /* Header and footer are roughly 120px between them; the rest scrolls. */
+    max-height: calc(100dvh - 120px);
+  }
+
+  /*
+   * A filter row on a phone is one field per line. Side by side they are each
+   * too narrow to read their own label, which is how a shopkeeper ends up
+   * filtering by the wrong thing.
+   */
+  .filters .field,
+  .filters .field.grow {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  /*
+   * The page's primary action, full width and under the thumb rather than
+   * shrunk into the top-right corner beside the title.
+   */
+  .page-actions .btn,
+  .page-actions .p-button {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+}

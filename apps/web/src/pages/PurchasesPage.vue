@@ -99,6 +99,27 @@ async function loadMore(): Promise<void> {
   await load(false);
 }
 
+/*
+ * Phase 18.2 — the shared list pattern.
+ *
+ * Products and Parties have always drawn a `Clear` beside their filters and
+ * told an empty result apart from an empty shop. This screen did neither, so a
+ * shopkeeper who had set a date range and found nothing was shown "No purchases
+ * yet" — which is a lie about his business, and the reason he would go looking
+ * for the bill in a drawer.
+ */
+const filtersActive = computed(
+  () => search.value !== '' || fromDate.value !== '' || toDate.value !== '' || settlement.value !== 'ALL',
+);
+
+function clearFilters(): void {
+  search.value = '';
+  fromDate.value = '';
+  toDate.value = '';
+  settlement.value = 'ALL';
+  void load();
+}
+
 function open(row: PurchaseListRow): void {
   void router.push(`/purchases/${row.id}`);
 }
@@ -150,30 +171,50 @@ onDataChanged(() => load());
       />
     </div>
 
-    <AppCard>
-      <div class="filters">
+    <!--
+      UI-25, and the Phase 18.2 shared list pattern: the filter row sits at page
+      level above the card, labelled, with the search box growing into whatever
+      width is left — the same furniture at the same height as Products and
+      Parties, because a shopkeeper should not have to relearn a screen he has
+      already learnt twice.
+    -->
+    <form class="filters" @submit.prevent="load()">
+      <div class="field grow">
         <SearchField
           v-model="search"
           field-id="purchase-search"
           label="Search purchases"
-          placeholder="Supplier or bill number"
+          placeholder="Supplier name, bill number or the supplier's own reference"
           @search="load()"
         />
+      </div>
+
+      <div class="field">
+        <label for="purchase-settlement">Which bills</label>
         <Select
           v-model="settlement"
+          input-id="purchase-settlement"
           :options="settlementOptions"
           option-label="label"
           option-value="value"
-          aria-label="Which bills"
-          append-to="body"
+          append-to="self"
+          fluid
           @change="load()"
         />
+      </div>
+
+      <div class="field">
+        <label for="purchase-from">From</label>
         <DateOnlyPicker
           v-model="fromDate"
           input-id="purchase-from"
           placeholder="From"
           @update:model-value="load()"
         />
+      </div>
+
+      <div class="field">
+        <label for="purchase-to">To</label>
         <DateOnlyPicker
           v-model="toDate"
           input-id="purchase-to"
@@ -182,6 +223,52 @@ onDataChanged(() => load());
         />
       </div>
 
+      <button v-if="filtersActive" type="button" class="btn btn-ghost" @click="clearFilters">
+        Clear
+      </button>
+    </form>
+
+    <!--
+      Phase 18.4 — the same bills as cards below 640px (owner decision
+      2026-09-03). On a phone the table slid sideways and took Total, Paid and
+      Due off the right-hand edge; on a screen whose whole purpose is "how much
+      do I owe, and is it late", that is the screen failing. Desktop is
+      untouched — the table below is the same one it always drew.
+    -->
+    <ul v-if="rows.length > 0" class="list-cards">
+      <li
+        v-for="row in rows"
+        :key="`card-${row.id}`"
+        class="list-card"
+        :class="row.overdue ? 'is-overdue' : (row.dueMinor ?? 0) > 0 ? 'is-unpaid' : ''"
+      >
+        <span class="list-card-title">
+          <button type="button" class="linkish" @click="open(row)">{{ row.supplierName }}</button>
+        </span>
+
+        <span v-if="showCost" class="list-card-amount">{{ taka(row.grandTotalMinor ?? 0) }}</span>
+
+        <p class="list-card-sub">
+          {{ row.businessDate }} · {{ row.number }}
+          <template v-if="row.supplierBillRef"> · {{ row.supplierBillRef }}</template>
+        </p>
+
+        <div class="list-card-foot">
+          <span v-if="showCost && (row.dueMinor ?? 0) > 0" class="due-line">
+            Due <strong>{{ taka(row.dueMinor ?? 0) }}</strong>
+          </span>
+          <Tag v-if="row.overdue" severity="danger" value="Overdue" />
+          <Tag
+            v-else-if="(row.dueMinor ?? 0) > 0"
+            severity="warn"
+            :value="row.dueDate === null ? 'Unpaid' : `Due ${row.dueDate}`"
+          />
+          <Tag v-else severity="success" value="Paid" />
+        </div>
+      </li>
+    </ul>
+
+    <AppCard :class="rows.length > 0 ? 'phone-hidden' : ''">
       <DataTable
         :value="[...rows]"
         :loading="loading"
@@ -193,9 +280,28 @@ onDataChanged(() => load());
         @row-click="open($event.data as PurchaseListRow)"
       >
         <template #empty>
-          <EmptyState icon="pi-shopping-cart" title="No purchases yet">
+          <EmptyState v-if="filtersActive" icon="pi-search" title="Nothing matched">
+            No bill matches these filters.
+            <template #action>
+              <button type="button" class="btn btn-ghost" @click="clearFilters">
+                Clear the filters
+              </button>
+            </template>
+          </EmptyState>
+
+          <EmptyState v-else icon="pi-shopping-cart" title="No purchases yet">
             Record what a supplier delivered and the stock, the cost and their bill are all
             written in one step.
+            <template #action>
+              <button
+                v-if="canCreate"
+                type="button"
+                class="btn btn-primary"
+                @click="router.push('/purchases/new')"
+              >
+                Record the first purchase
+              </button>
+            </template>
           </EmptyState>
         </template>
 
@@ -211,9 +317,13 @@ onDataChanged(() => load());
             </div>
           </template>
         </Column>
-        <Column header="Items" class="num">
-          <template #body="{ data }">{{ data.lineCount }}</template>
-        </Column>
+        <!--
+          Phase 18.3 — column trimming. `Items` held a line count. Nothing is
+          decided by it: a bill with four lines and one with forty are chased,
+          paid and returned the same way, and the moment anybody cares how many
+          there are they are opening the bill to look at them. It narrowed the
+          three money columns beside it, which are what this screen is for.
+        -->
         <Column v-if="showCost" header="Total" class="num">
           <template #body="{ data }">{{ taka(data.grandTotalMinor ?? 0) }}</template>
         </Column>
@@ -253,12 +363,12 @@ onDataChanged(() => load());
   margin-bottom: var(--sher-space-4, 16px);
 }
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: var(--sher-space-3, 12px);
-}
+/*
+ * `.filters` used to be redefined here with its own gap and its own bottom
+ * margin, so this screen's filter row sat at a different height from every
+ * other list in the application. It is `design/components.css`'s, once, for
+ * everybody — that file says so, and this page was the counter-example.
+ */
 
 .supplier-cell {
   display: flex;
@@ -287,5 +397,23 @@ onDataChanged(() => load());
 
 :deep(tr.is-unpaid td:first-child) {
   box-shadow: inset 3px 0 0 var(--sher-warn, #d97706);
+}
+
+/*
+ * Phase 18.4 — the phone card list. The same left edge marks the same two
+ * states as on the table rows, so "late" looks identical on both shapes.
+ */
+.list-card.is-overdue {
+  border-left: 3px solid var(--sher-danger, #dc2626);
+}
+
+.list-card.is-unpaid {
+  border-left: 3px solid var(--sher-warn, #d97706);
+}
+
+.due-line {
+  margin-right: auto;
+  font-size: var(--sher-text-sm);
+  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -78,6 +78,8 @@ export interface NewSaleLine {
     readonly exists: boolean;
     readonly avgUnitCost: number;
     readonly qtyOnHand: number;
+    /** Owned plus negative quantity issued; vendor-owned quantity is excluded. */
+    readonly qtyChange: number;
   };
 }
 
@@ -204,6 +206,11 @@ export interface SaleRow {
   readonly paidMinor: number;
   readonly dueMinor: number;
   readonly createdAt: Date;
+  /** Phase 12.4 (§18) — where it was typed, and by which machine. */
+  readonly originMode: 'ONLINE' | 'OFFLINE';
+  readonly originDeviceName: string | null;
+  readonly originDeviceCode: string | null;
+  readonly deviceCreatedAt: Date | null;
 }
 
 export interface SaleDetail extends SaleRow {
@@ -237,6 +244,8 @@ export interface SaleFilter {
   readonly fromDate: string | null;
   readonly toDate: string | null;
   readonly unpaidOnly: boolean;
+  /** Phase 12.4 (§18). Absent means every invoice, whatever the line was doing. */
+  readonly origin?: 'ALL' | 'ONLINE' | 'OFFLINE' | undefined;
   readonly cursor: string | null;
   readonly limit: number;
 }
@@ -537,9 +546,17 @@ export interface RepostCustomerReceipt {
 }
 
 export interface SaleRepository {
+  lockSale(tx: Tx, ctx: TenantContext, saleId: string): Promise<boolean>;
+  /** Serializes receivable allocation for one party inside the caller's transaction. */
+  lockReceivableParty(tx: Tx, ctx: TenantContext, partyId: string): Promise<boolean>;
   findSaleIdByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<string | null>;
   insertSale(tx: Tx, ctx: TenantContext, sale: NewSale): Promise<void>;
   findSaleById(tx: Tx, ctx: TenantContext, id: string): Promise<SaleDetail | null>;
+  cancellationBlocker(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<'POSTED_RETURN' | 'VENDOR_SETTLEMENT' | null>;
   listSales(tx: Tx, ctx: TenantContext, filter: SaleFilter): Promise<readonly SaleRow[]>;
   totals(tx: Tx, ctx: TenantContext, filter: SaleFilter): Promise<SaleTotalsRow>;
   /** Marks a sale voided; the reversal entry is written by the caller. */

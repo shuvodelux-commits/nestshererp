@@ -5,7 +5,7 @@ import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 import { ApiError } from '../../api/client';
 import { giveProductsToVendor } from '../../api/vendors';
@@ -13,7 +13,6 @@ import { useSession } from '../../auth/session';
 import AmountInput from '../fields/AmountInput.vue';
 import DateOnlyPicker from '../DateOnlyPicker.vue';
 import ErrorNotice from '../ErrorNotice.vue';
-import { parseTaka, taka } from '../money/money-text';
 
 /**
  * The shop's own goods going out to a vendor (§5.6 M07, owner decision
@@ -32,7 +31,11 @@ const props = defineProps<{
   products: readonly ProductResponse[];
 }>();
 
-const emit = defineEmits<{ (event: 'given'): void; (event: 'close'): void }>();
+const emit = defineEmits<{
+  (event: 'given'): void;
+  (event: 'sell'): void;
+  (event: 'close'): void;
+}>();
 
 const session = useSession();
 const clock = new SystemClock();
@@ -40,7 +43,6 @@ const clock = new SystemClock();
 const mode = ref<VendorIssueMode>('CHARGED');
 const productId = ref<string | null>(null);
 const qty = ref(0);
-const unitValue = ref('');
 const note = ref('');
 const businessDate = ref(clock.businessDate(Intl.DateTimeFormat().resolvedOptions().timeZone));
 const busy = ref(false);
@@ -61,23 +63,17 @@ const selected = computed(() =>
 const unitName = computed(() => selected.value?.baseUnitName ?? '');
 
 const charging = computed(() => mode.value === 'CHARGED');
-const unitValueMinor = computed(() => parseTaka(unitValue.value) ?? 0);
-/** Instant recalculation: the line total moves with every keystroke. */
-const totalMinor = computed(() => Math.round(unitValueMinor.value * qty.value));
 
 const ready = computed(
   () =>
-    productId.value !== null &&
-    qty.value > 0 &&
-    (!charging.value || unitValueMinor.value > 0),
+    charging.value || (productId.value !== null && qty.value > 0),
 );
 
-/* A price belongs only to a sale — a temporary issue has nothing to charge. */
-watch(mode, (next) => {
-  if (next === 'TEMPORARY') unitValue.value = '';
-});
-
 async function save(): Promise<void> {
+  if (charging.value) {
+    emit('sell');
+    return;
+  }
   const token = session.accessToken.value;
   if (token === null || productId.value === null || !ready.value) return;
 
@@ -91,7 +87,7 @@ async function save(): Promise<void> {
         mode: mode.value,
         productId: productId.value,
         qty: Math.round(qty.value * 1000),
-        unitValueMinor: charging.value ? unitValueMinor.value : 0,
+        unitValueMinor: 0,
         note: note.value.trim() === '' ? null : note.value.trim(),
         businessDate: businessDate.value,
       },
@@ -120,7 +116,7 @@ async function save(): Promise<void> {
     <ErrorNotice v-if="failure" :code="failure.code" :message="failure.message" />
 
     <div class="two-column">
-      <div class="field">
+      <div v-if="!charging" class="field">
         <label for="give-mode">This handover is <span class="label-bn">কী হিসেবে</span></label>
         <Select
           input-id="give-mode"
@@ -133,7 +129,7 @@ async function save(): Promise<void> {
         />
       </div>
 
-      <div class="field">
+      <div v-if="!charging" class="field">
         <label for="give-product">Product <span class="label-bn">পণ্য</span></label>
         <Select
           input-id="give-product"
@@ -156,25 +152,21 @@ async function save(): Promise<void> {
         <AmountInput input-id="give-qty" v-model="qty" :decimals="2" />
       </div>
 
-      <div v-if="charging" class="field">
-        <label for="give-value">Unit price <span class="label-bn">দর</span></label>
-        <InputText id="give-value" v-model="unitValue" inputmode="decimal" fluid />
-      </div>
-
-      <div class="field">
+      <div v-if="!charging" class="field">
         <label for="give-date">Date <span class="label-bn">তারিখ</span></label>
         <DateOnlyPicker v-model="businessDate" input-id="give-date" />
       </div>
 
-      <div class="field">
+      <div v-if="!charging" class="field">
         <label for="give-note">Note <span class="label-bn">মন্তব্য</span></label>
         <InputText id="give-note" v-model="note" maxlength="300" fluid />
       </div>
     </div>
 
     <p v-if="charging" class="notice is-ok">
-      Raises an invoice for <strong>{{ taka(totalMinor) }}</strong> and puts it on their account.
-      <span class="label-bn">বিক্রি হিসেবে বিল হবে</span>
+      Continue in POS with this vendor selected. The POS will handle products, exact serials,
+      mixed stock sources, and shortages before putting the full invoice on their account.
+      <span class="label-bn">POS-এ সম্পূর্ণ বিক্রি করুন</span>
     </p>
     <p v-else class="notice is-ok">
       The goods stay yours and stay in your stock value — only their location changes. No money
@@ -185,7 +177,7 @@ async function save(): Promise<void> {
       <Button label="Cancel" text @click="emit('close')" />
       <Button
         icon="pi pi-check"
-        :label="charging ? 'Charge to vendor' : 'Issue temporarily'"
+        :label="charging ? 'Continue in POS' : 'Issue temporarily'"
         :disabled="!ready"
         :loading="busy"
         @click="save"

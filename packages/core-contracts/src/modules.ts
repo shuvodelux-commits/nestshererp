@@ -1,3 +1,4 @@
+import type { LicensableModuleCode } from './license-key';
 import { Permission } from './permissions';
 
 /**
@@ -25,8 +26,15 @@ import { Permission } from './permissions';
  * issued from being silently withheld.
  */
 export interface LicensedModule {
-  /** The string a licence's `modules[]` carries. */
-  readonly code: string;
+  /**
+   * The string a licence's `modules[]` carries.
+   *
+   * Typed against the list the licence format declares, so this registry and
+   * what the issuing CLI can tick cannot drift apart without the build saying
+   * so — the alternative is a licence sold with a module code the server has
+   * never heard of, which fails silently as "not included".
+   */
+  readonly code: LicensableModuleCode;
   readonly label: string;
   readonly labelBn: string;
   /**
@@ -42,6 +50,24 @@ export interface LicensedModule {
    */
   readonly writePermissions: readonly string[];
   /**
+   * Writes that **finish** something rather than start it — returning goods that
+   * belong to somebody else, closing a claim already taken in.
+   *
+   * Permitted while the licence excludes the module **and the business holds
+   * records in it**, and refused outright otherwise. A lapsed licence must not
+   * strand a real obligation: a vendor's stock sitting on the shelf has to be
+   * returnable, and a customer's phone taken in under warranty has to be
+   * givable back. Money owed to or from a vendor is not listed here because
+   * paying and being paid were never licensable — they are core.
+   *
+   * **Known limit, and it is deliberate.** Some modules still have one `manage`
+   * code covering both the new receipt and the return, so listing it here lets
+   * a shop that already holds vendor stock keep receiving more of it. Freezing
+   * the unwind was the worse of the two: it holds another business's goods
+   * hostage over a renewal. Splitting those codes belongs to those modules.
+   */
+  readonly unwindPermissions: readonly string[];
+  /**
    * The tables whose rows mean "this business has used this module".
    *
    * Table names in a contract package look out of place until you ask the
@@ -54,15 +80,16 @@ export interface LicensedModule {
 
 export const LICENSED_MODULES: readonly LicensedModule[] = [
   {
-    code: 'RECONCILIATION',
+    code: 'BANK_RECONCILIATION',
     label: 'Bank reconciliation',
     labelBn: 'ব্যাংক মেলানো',
     readPermissions: [Permission.RECONCILIATION_VIEW],
     writePermissions: [Permission.RECONCILIATION_PERFORM, Permission.RECONCILIATION_REOPEN],
+    unwindPermissions: [],
     dataTables: ['account_reconciliations', 'bank_statement_files', 'statement_lines'],
   },
   {
-    code: 'REPORTING',
+    code: 'ADVANCED_REPORTS',
     label: 'Reports',
     labelBn: 'রিপোর্ট',
     /*
@@ -83,6 +110,7 @@ export const LICENSED_MODULES: readonly LicensedModule[] = [
      * target is the one thing a shop can have *put into* reporting, so it is
      * the only honest answer to "have they used this".
      */
+    unwindPermissions: [],
     dataTables: ['profit_targets'],
   },
   {
@@ -91,14 +119,17 @@ export const LICENSED_MODULES: readonly LicensedModule[] = [
     labelBn: 'কেনার পরিকল্পনা',
     readPermissions: [Permission.PURCHASE_PLAN_VIEW],
     writePermissions: [Permission.PURCHASE_PLAN_MANAGE],
+    unwindPermissions: [],
     dataTables: ['purchase_plans', 'supplier_purchase_orders'],
   },
   {
-    code: 'WARRANTY',
+    code: 'WARRANTY_SERIAL',
     label: 'Warranty & serials',
     labelBn: 'ওয়ারেন্টি ও সিরিয়াল',
     readPermissions: [Permission.WARRANTY_CLAIM_VIEW],
     writePermissions: [Permission.WARRANTY_CLAIM_MANAGE],
+    // Handing back a phone taken in under warranty is finishing, not starting.
+    unwindPermissions: [Permission.WARRANTY_CLAIM_MANAGE],
     dataTables: ['warranty_claims', 'inventory_units'],
   },
   {
@@ -111,6 +142,8 @@ export const LICENSED_MODULES: readonly LicensedModule[] = [
      */
     readPermissions: [],
     writePermissions: [Permission.VENDOR_STOCK_MANAGE],
+    // Returning goods that belong to the vendor, so they are never stranded here.
+    unwindPermissions: [Permission.VENDOR_STOCK_MANAGE],
     dataTables: ['vendor_stock_receipts', 'vendor_stock_returns'],
   },
 ];
@@ -121,7 +154,8 @@ export function moduleOwning(permissionCode: string): LicensedModule | null {
     LICENSED_MODULES.find(
       (module) =>
         module.readPermissions.includes(permissionCode) ||
-        module.writePermissions.includes(permissionCode),
+        module.writePermissions.includes(permissionCode) ||
+        module.unwindPermissions.includes(permissionCode),
     ) ?? null
   );
 }

@@ -3,7 +3,10 @@
 // Re-exported so apps/api reaches the domain through this layer rather than
 // importing core-domain directly (§2.1: api → application → domain).
 export {
+  advancedHighWater,
   catalogNameKey,
+  clockBehindMs,
+  effectiveLicenseNow,
   isValidCatalogName,
   licenseAllowsWrites,
   licenseStateAt,
@@ -26,6 +29,10 @@ export type { GoogleIdentity, GoogleVerifier } from './ports/google-verifier';
 export type { IdentityVerifier, OtpDelivery } from './ports/identity-verifier';
 export type { OtpCodeGenerator } from './ports/otp-code-generator';
 export type { TokenIssuer } from './ports/token-issuer';
+export type {
+  InstallationProfile,
+  ManagementProfileRepository,
+} from './ports/management-profile';
 export type { EntryMode, Note, NoteRepository } from './notes/note-repository';
 export { CreateNoteService, entryModeFor } from './notes/create-note-service';
 export type { CreateNoteCommand } from './notes/create-note-service';
@@ -606,6 +613,18 @@ export type { InspectArchiveCommand, RestoreCommand } from './backup/restore-ser
 export { ResetBusinessService } from './backup/reset-business-service';
 export type { ResetBusinessCommand } from './backup/reset-business-service';
 export { LicenseStatusService } from './licensing/license-status-service';
+export { LicenseInstallService } from './licensing/license-install-service';
+export {
+  entitlementFor,
+  entitlesModule,
+  licenseAppliesTo,
+} from './licensing/entitlement-binding';
+export type {
+  LicenseKeyStore,
+  LicenseVerification,
+  LicenseVerifier,
+  VerifiedLicense,
+} from './licensing/license-ports';
 export { ArchiveOpenError } from './backup/backup-ports';
 export type {
   ArchiveBody,
@@ -668,3 +687,7 @@ export type {
   SyncRepository,
   SyncServices,
 } from './sync';
+
+/* --------------------------------------------------- Phase 18.1: Global Search */
+export { GlobalSearchService } from './search/global-search-service';
+export type { GlobalSearchCommand } from './search/global-search-service';

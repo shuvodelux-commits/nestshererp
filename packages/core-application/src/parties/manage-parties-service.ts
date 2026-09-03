@@ -882,6 +882,13 @@ export class ManagePartiesService {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
           `Another customer already uses the phone number ${normalizePhone(phone)}`,
+          /*
+           * The id of the customer the shop already has, beside the sentence.
+           * Phase 12.4's Sync Issues screen needs exactly that to offer "use
+           * the one the shop already has" — a merge with nothing to merge onto
+           * is a button that can only fail.
+           */
+          { reason: 'DUPLICATE_CUSTOMER_PHONE', partyId: owner },
         );
       }
     }

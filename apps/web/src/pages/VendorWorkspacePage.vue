@@ -474,6 +474,7 @@ onMounted(async () => {
           :vendor-name="summary.vendorName"
           :products="products"
           @given="onChanged"
+          @sell="() => { giving = false; void router.push({ name: 'pos', query: { customer: summary?.vendorPartyId } }); }"
           @close="giving = false"
         />
 

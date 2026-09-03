@@ -8,7 +8,9 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@primeuix/themes": "1.0.3",
@@ -24,9 +26,12 @@
     "vue-router": "4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/pg": "8.11.10",
     "@vitejs/plugin-vue": "5.2.1",
     "@vue/test-utils": "2.4.6",
     "jsdom": "25.0.1",
+    "pg": "8.13.1",
     "typescript": "5.7.3",
     "vite": "5.4.21",
     "vitest": "2.1.8",

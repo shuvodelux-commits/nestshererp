@@ -8,11 +8,13 @@ import express from 'express';
 import { AppModule } from './app.module';
 import { AppErrorFilter } from './common/app-error.filter';
 import { corsOptions } from './common/cors';
+import { securityHeaders } from './common/security-headers';
 import { loadConfig } from './config';
 import { validateBootConfig } from './deployment/boot-validation';
 import { assertSchemaMatchesBuild } from './deployment/schema-version-gate';
 import { MIGRATIONS_DIRECTORY, newestMigration } from './infrastructure/build-info';
 import { createPool } from '@sher/adapter-postgres';
+import { SystemClock } from '@sher/shared-utils';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
@@ -53,7 +55,12 @@ async function bootstrap(): Promise<void> {
    * one that refuses it loudly.
    */
   app.useBodyParser('json', { limit: '12mb' });
-  app.useGlobalFilters(new AppErrorFilter());
+  // Before every route, including the ones mounted above it: a header that
+  // only some responses carry is a header a reader cannot rely on.
+  app.use(securityHeaders);
+  // The clock is handed in: the filter records a Phase 17 diagnostic for every
+  // failure, and R-C8 allows no ambient clock even in a hand-built object.
+  app.useGlobalFilters(new AppErrorFilter(new SystemClock()));
   // The Vue app is served from its own origin (the Vite dev server locally,
   // nginx in §6.5), so the browser preflights every mutating call. The allowed
   // header list lives in one place — see `corsOptions`.

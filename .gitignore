@@ -21,3 +21,38 @@ Old/
 # build. Same reason as design-system/: binary shots belong beside the repo,
 # not permanently in its history.
 Screenshot/
+
+# The licence installed on this machine, and the machine's own licence
+# bookkeeping (the monotonic clock mark). Both describe this computer rather
+# than the product, and neither may travel in the repository or a backup.
+apps/api/licence/
+
+# A third-party frontend-design skill bundle the owner keeps beside the work.
+# It carries its own .git/, so one `git add .` would otherwise swallow the whole
+# repository into this one.
+codex-skills/
+
+# Key material, structurally. The licence *private* key never comes near a
+# customer machine and never near this repository (`tools/licence` writes it to
+# ~/.sher/licence-keys/), and a backup key file is the one thing that must not
+# travel with the backups it opens. Ignoring the extensions makes "no keys in
+# git" a property of the repository rather than a habit.
+*.pem
+*.key
+*.p8
+
+# Every environment file except the template. `.env` and `.env.local` are named
+# above; this catches `.env.production`, `.env.shop-2` and whatever the next one
+# is called, while keeping the one file that holds names and no values.
+.env.*
+!.env.example
+!**/.env.example
+
+# Phase 18.5 — Playwright's own output. The specs are tracked; what a run
+# leaves behind is not: traces and screenshots are failure evidence for the
+# person looking at that run, and `.baseline.json` is the ids `global-setup`
+# seeded into a database that is dropped and rebuilt on the next one.
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+apps/web/e2e/.baseline.json

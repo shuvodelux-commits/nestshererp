@@ -1,3 +1,15 @@
+/*
+ * Coverage claims, read by `pnpm test:inventory` (owner request 2026-09-03).
+ *
+ * These are what this file is answerable for in the test matrix. A claim naming
+ * something the inventory no longer contains fails the scan, so a screen renamed
+ * out from under a test cannot leave the coverage report quietly overstating itself.
+ *
+ * @covers endpoint:GET /api/v1/backup/status
+ * @covers endpoint:POST /api/v1/backup/export
+ * @covers endpoint:POST /api/v1/backup/inspect
+ * @covers endpoint:POST /api/v1/backup/restore
+ */
 import 'reflect-metadata';
 
 import { mkdtempSync, writeFileSync } from 'node:fs';

@@ -807,7 +807,16 @@ export const sales = pgTable('sales', {
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
-
+  /*
+   * Phase 12.4 (§18) — the origin trail, permanent and informational. Migration
+   * 0047 puts the same five columns on every operational document table; only
+   * the ones a screen actually reads are declared here.
+   */
+  originMode: text('origin_mode').notNull().default('ONLINE'),
+  originDeviceId: char('origin_device_id', { length: 26 }),
+  deviceCreatedAt: timestamp('device_created_at', { withTimezone: true }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }),
+  deviceSeq: bigint('device_seq', { mode: 'number' }),
 });
 
 export const saleLines = pgTable('sale_lines', {

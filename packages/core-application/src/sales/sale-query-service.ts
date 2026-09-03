@@ -91,6 +91,9 @@ export class SaleQueryService {
         fromDate: query.fromDate ?? null,
         toDate: query.toDate ?? null,
         unpaidOnly: query.unpaidOnly ?? false,
+        // Phase 12.4 (§18): the list can be narrowed to what was typed during
+        // an outage. Absent means every invoice, whatever the line was doing.
+        ...(query.origin === undefined || query.origin === 'ALL' ? {} : { origin: query.origin }),
         cursor: query.cursor ?? null,
         // One more than asked for, so "is there another page" is answered by
         // the same query rather than a second count (§3.9 keyset paging).

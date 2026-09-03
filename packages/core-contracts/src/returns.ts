@@ -29,6 +29,7 @@ export const returnLineRequestSchema = z
     sourceLineId: ULID,
     /** Scale 3, as every quantity is. Zero lines are simply left out. */
     qty: z.number().int().positive(),
+    serialUnitIds: z.array(ULID).max(200).default([]),
   })
   .strict();
 
@@ -91,6 +92,19 @@ export const returnableLineSchema = z
      * modal shows the line but cannot take it back (INV-04).
      */
     returnable: z.boolean(),
+    tracksSerial: z.boolean().default(false),
+    serials: z
+      .array(
+        z
+          .object({
+            id: ULID,
+            serialNo: z.string(),
+            sourceType: z.enum(['OWNED', 'VENDOR']),
+            vendorPartyId: ULID.nullable(),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 

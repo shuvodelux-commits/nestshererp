@@ -1,4 +1,6 @@
 import { fetchMyAccess } from '../api/auth';
+import { ApiError } from '../api/client';
+import { rememberFeatures } from '../offline/offline-session';
 import { useSession } from './session';
 
 /**
@@ -17,20 +19,46 @@ import { useSession } from './session';
  */
 let loaded = false;
 
-export async function loadMyAccess(force = false): Promise<void> {
+/**
+ * What the shell needs to know about how this went (Phase 12.4).
+ *
+ * `UNREACHABLE` is separated from every other failure because the two call for
+ * opposite answers: a refusal means this user may do nothing, and an unreachable
+ * server means nothing is known at all. Only the shell can act on it — it owns
+ * the router — so it is reported rather than handled here.
+ */
+export type AccessLoad = 'LOADED' | 'SKIPPED' | 'REFUSED' | 'UNREACHABLE';
+
+export async function loadMyAccess(force = false): Promise<AccessLoad> {
   const session = useSession();
-  if (loaded && !force) return;
-  if (session.accessToken.value === null) return;
+  if (loaded && !force) return 'SKIPPED';
+  if (session.accessToken.value === null) return 'SKIPPED';
 
   try {
     const me = await fetchMyAccess(session.accessToken.value);
     session.setPermissions(me.permissions);
     session.setFeatures(me.features);
+    // Phase 12.4: the last list the server gave us, kept so a machine opened
+    // cold during an outage draws the same tabs it drew yesterday.
+    rememberFeatures(me.features);
     if (me.businessName !== '') session.setBusinessName(me.businessName);
     loaded = true;
-  } catch {
+    return 'LOADED';
+  } catch (cause) {
+    /*
+     * Phase 12.4: a dead line is not a refusal, and must not be treated as one.
+     *
+     * Blanking is right when the server answered — the safe direction for a role
+     * that was taken away. When the server never answered, it erases what is
+     * already known: an offline session carries its own permissions, read from
+     * the snapshot, and wiping them here leaves a cashier standing at a shell
+     * with every screen hidden in the middle of the outage they were told they
+     * could trade through.
+     */
+    if (cause instanceof ApiError && cause.code === 'NETWORK_UNREACHABLE') return 'UNREACHABLE';
     session.setPermissions([]);
     session.setFeatures([]);
+    return 'REFUSED';
   }
 }
 

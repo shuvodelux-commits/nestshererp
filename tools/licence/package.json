@@ -1,0 +1,21 @@
+{
+  "name": "@sher/licence-tools",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "keygen": "tsc -p tsconfig.build.json && node dist/keygen.js",
+    "issue": "tsc -p tsconfig.build.json && node dist/issue.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@sher/core-contracts": "workspace:*",
+    "@sher/shared-utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

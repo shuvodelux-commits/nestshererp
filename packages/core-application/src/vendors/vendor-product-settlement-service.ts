@@ -59,6 +59,10 @@ export class VendorProductSettlementService {
       );
       if (replay !== null) return toResponse(replay);
 
+      if (!(await this.sales.lockReceivableParty(tx, ctx, command.vendorPartyId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Vendor not found');
+      }
+
       const grossProductMinor = command.lines.reduce(
         (sum, line) => sum + Money(line.unitPriceMinor).multiply(Qty(line.qty)).minor,
         0,

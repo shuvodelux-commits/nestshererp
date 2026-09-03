@@ -28,11 +28,25 @@ export function fetchSerialProgress(
   return request(`/api/v1/serials/progress/${purchaseId}`, { token, envelope: true });
 }
 
+/**
+ * In-stock units of one product.
+ *
+ * The page size matters to a caller that filters the answer again in the
+ * browser — the vendor return dialog keeps only the units from one receipt. The
+ * server pages at 100 by default, so a product with more units than that could
+ * return a page holding none of the receipt's own, and the dialog would then
+ * insist on a serial the shopkeeper had no way to pick. Filtering by receipt on
+ * the server would be better, but `GET /serials/available/:productId` takes
+ * only a limit, so the caller asks for a page big enough to contain what it is
+ * looking for. 500 is the endpoint's ceiling.
+ */
 export function fetchAvailableSerials(
   token: string,
   productId: string,
+  limit?: number,
 ): Promise<{ data: readonly SerialUnitResponse[] }> {
-  return request(`/api/v1/serials/available/${productId}`, { token, envelope: true });
+  const suffix = limit === undefined ? '' : `?limit=${String(limit)}`;
+  return request(`/api/v1/serials/available/${productId}${suffix}`, { token, envelope: true });
 }
 
 /** Serial first, then phone or invoice for goods that carry no serial. */

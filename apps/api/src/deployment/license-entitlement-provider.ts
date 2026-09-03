@@ -1,109 +1,69 @@
-import { createPublicKey, verify as verifySignature } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-
-import type { Entitlement, EntitlementProvider, LicenseTerm } from '@sher/core-application';
+import type { Entitlement, EntitlementProvider, LicenseKeyStore } from '@sher/core-application';
 import { licenseStateAt } from '@sher/core-application';
-import { parseInstant } from '@sher/shared-utils';
+
+import type { MachineLicenseState } from './license-machine-state';
 
 /**
- * D-35's on-premise entitlement source: a signed licence key, validated
- * **offline** against an embedded public key. No phone-home, ever — an
- * on-premise shop may have no internet at all, and a licence check that needed
- * one would stop a business trading over a broken ADSL line.
+ * D-35's on-premise entitlement source: what the installed licence entitles
+ * this machine to, right now.
  *
- * **Licence format.** `base64url(payloadJson).base64url(ed25519Signature)`. The
- * signature covers the payload bytes exactly as they appear before the dot, so
- * there is no canonicalisation question and no way to re-order JSON keys into a
- * different meaning. Ed25519 rather than RSA: a shorter key to embed, and no
- * padding-mode choice to get wrong.
+ * The parsing, the signature and the file all moved out — into
+ * `Ed25519LicenseVerifier` and `FileLicenseKeyStore` — and what is left is the
+ * one question this port exists to answer. Three things shape the answer:
  *
- * **Nothing here throws.** D-35: "Missing/invalid license → READ_ONLY, never a
- * crash, never data loss." A deleted, truncated, forged or expired licence all
- * resolve to the same safe answer, and the shop can still read its ledgers and
- * export a backup (D-36). The file is read on every call rather than cached at
- * boot, so dropping a renewed licence in place takes effect without a restart —
- * which matters when the alternative is telling a shopkeeper to restart their
- * server.
+ *   **No licence is READ_ONLY, never a crash** (D-35). A deleted, truncated,
+ *   forged or foreign key file all resolve here to the same safe floor, and the
+ *   shop can still read its ledgers, sign in and export a backup (D-36).
+ *
+ *   **The clock is monotonic** (owner decision 2026-09-02). The state is judged
+ *   at the later of the system clock and the latest instant this machine has
+ *   seen, so winding the date back cannot buy a day of licence.
+ *
+ *   **The business binding is not checked here**, because this provider does
+ *   not know which business is asking. It reports the licence's `businessId`
+ *   and `entitlementFor` applies it where a request's tenant is known — the
+ *   read-only guard and the access-control step.
  */
-interface LicensePayload {
-  readonly tenant?: string;
-  readonly issuedAt?: string;
-  readonly validUntil?: string;
-  readonly renewedFrom?: string;
-  readonly modules?: readonly string[];
-}
-
-/** What a deployment with no usable licence is entitled to. */
-const NO_LICENCE: Entitlement = { state: 'READ_ONLY', modules: [], validUntil: null };
-
 export class LicenseKeyEntitlementProvider implements EntitlementProvider {
   constructor(
-    private readonly licensePath: string,
-    private readonly publicKeyBase64: string,
+    private readonly keys: LicenseKeyStore,
+    private readonly state: MachineLicenseState,
   ) {}
 
   current(now: Date): Entitlement {
-    const payload = this.readVerifiedPayload();
-    if (payload === null) return NO_LICENCE;
+    const { effectiveNow, behindMs } = this.state.observe(now);
+    const licence = this.keys.current();
 
-    const term = toTerm(payload);
-    if (term === null) return NO_LICENCE;
+    if (licence === null) {
+      return {
+        state: 'READ_ONLY',
+        licensed: false,
+        modules: [],
+        validUntil: null,
+        evaluatedAt: effectiveNow,
+        businessId: null,
+        licenceId: null,
+        clockBehindMs: behindMs,
+      };
+    }
 
+    const renewedFrom = this.state.renewalFrom();
     return {
-      state: licenseStateAt(term, now),
-      modules: payload.modules ?? [],
-      validUntil: term.validUntil,
+      state: licenseStateAt(
+        {
+          validUntil: licence.validUntil,
+          issuedAt: licence.issuedAt,
+          ...(renewedFrom === null ? {} : { renewedFrom }),
+        },
+        effectiveNow,
+      ),
+      licensed: true,
+      modules: licence.modules,
+      validUntil: licence.validUntil,
+      evaluatedAt: effectiveNow,
+      businessId: licence.businessId,
+      licenceId: licence.licenceId,
+      clockBehindMs: behindMs,
     };
   }
-
-  /** The payload, or null for anything that is not a licence this build trusts. */
-  private readVerifiedPayload(): LicensePayload | null {
-    if (this.publicKeyBase64 === '') return null;
-
-    let raw: string;
-    try {
-      raw = readFileSync(this.licensePath, 'utf8').trim();
-    } catch {
-      return null;
-    }
-
-    const separator = raw.indexOf('.');
-    if (separator <= 0) return null;
-
-    const encodedPayload = raw.slice(0, separator);
-    const encodedSignature = raw.slice(separator + 1);
-
-    try {
-      const key = createPublicKey({
-        key: Buffer.from(this.publicKeyBase64, 'base64'),
-        format: 'der',
-        type: 'spki',
-      });
-
-      // Ed25519 verification takes a null algorithm — the curve fixes the hash.
-      const signed = verifySignature(
-        null,
-        Buffer.from(encodedPayload, 'utf8'),
-        key,
-        Buffer.from(encodedSignature, 'base64url'),
-      );
-      if (!signed) return null;
-
-      return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as LicensePayload;
-    } catch {
-      // A malformed key, a truncated signature, payload that is not JSON — all
-      // of them mean the same thing to a shopkeeper, and none of them may take
-      // the server down.
-      return null;
-    }
-  }
-}
-
-function toTerm(payload: LicensePayload): LicenseTerm | null {
-  const validUntil = parseInstant(payload.validUntil);
-  const issuedAt = parseInstant(payload.issuedAt);
-  if (validUntil === null || issuedAt === null) return null;
-
-  const renewedFrom = parseInstant(payload.renewedFrom);
-  return renewedFrom === null ? { validUntil, issuedAt } : { validUntil, issuedAt, renewedFrom };
 }

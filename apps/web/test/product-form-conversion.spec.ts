@@ -1,3 +1,12 @@
+/*
+ * Coverage claims, read by `pnpm test:inventory` (owner request 2026-09-03).
+ *
+ * These are what this file is answerable for in the test matrix. A claim naming
+ * something the inventory no longer contains fails the scan, so a screen renamed
+ * out from under a test cannot leave the coverage report quietly overstating itself.
+ *
+ * @covers dialog:product-form
+ */
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

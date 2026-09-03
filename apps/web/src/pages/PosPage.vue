@@ -321,15 +321,14 @@ async function onVendorStockReceived(): Promise<void> {
 }
 
 async function loadAvailableSerials(productId: string): Promise<void> {
-  const token = session.accessToken.value;
-  if (token === null) return;
+  const token = tokenNow();
   try {
     availableSerials.value = {
       ...availableSerials.value,
       [productId]: (await fetchAvailableSerials(token, productId)).data,
     };
   } catch (cause) {
-    failure.value = describe(cause, 'Could not load available serial numbers');
+    report(cause, 'Could not load available serial numbers');
   }
 }
 
@@ -343,18 +342,34 @@ const brandChips = computed(() => [
 ]);
 
 /* ------------------------------------------------------------- loading */
+/**
+ * Phase 12.4: the token is sent as it stands, empty string and all.
+ *
+ * A counter opened cold during an outage holds no access token — the person at
+ * it proved who they were against the snapshot — and refusing to call at all
+ * would skip the offline fallbacks the API layer already has, which is the whole
+ * reason they are down there. So the call is made, fails as unreachable, and the
+ * local copy answers where it can. The same pattern the Products screen uses.
+ */
+function tokenNow(): string {
+  return session.accessToken.value ?? '';
+}
+
 async function loadSetup(): Promise<void> {
-  const token = session.accessToken.value;
-  if (token === null) return;
+  const token = tokenNow();
   try {
     const [accountPage, catalogResponse, customerPage, vendorPage] = await Promise.all([
-      fetchAccounts(token),
-      fetchCatalog(token),
-      fetchParties(token, { role: 'CUSTOMER', status: 'ACTIVE', limit: 200 }),
+      orEmpty(fetchAccounts(token), { accounts: [] as readonly MoneyAccountResponse[] }),
+      orEmpty(fetchCatalog(token), EMPTY_CATALOG),
+      orEmpty(fetchParties(token, { role: 'CUSTOMER', status: 'ACTIVE', limit: 200 }), {
+        data: [] as readonly PartyResponse[],
+      }),
       // Vendors are only asked for when a line is short, but fetching them with
       // everything else keeps that moment instant at the counter.
       session.featureEnabled('vendor_management_enabled') && session.can('party.vendor.view')
-        ? fetchParties(token, { role: 'VENDOR', status: 'ACTIVE', limit: 200 })
+        ? orEmpty(fetchParties(token, { role: 'VENDOR', status: 'ACTIVE', limit: 200 }), {
+            data: [] as readonly PartyResponse[],
+          })
         : Promise.resolve({ data: [] as readonly PartyResponse[] }),
     ]);
     accounts.value = accountPage.accounts.filter((account) => account.status === 'ACTIVE');
@@ -366,15 +381,14 @@ async function loadSetup(): Promise<void> {
       payments.value = [{ accountId: drawer?.id ?? accounts.value[0]?.id ?? '', amount: 0 }];
     }
   } catch (cause) {
-    failure.value = describe(cause, 'Could not load the counter');
+    report(cause, 'Could not load the counter');
   }
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function loadProducts(): Promise<void> {
-  const token = session.accessToken.value;
-  if (token === null) return;
+  const token = tokenNow();
   loadingProducts.value = true;
   try {
     const page = await fetchPosProducts(token, {
@@ -387,7 +401,7 @@ async function loadProducts(): Promise<void> {
     products.value = page.items;
     negativeStockPolicy.value = page.negativeStockPolicy;
   } catch (cause) {
-    failure.value = describe(cause, 'Could not load products');
+    report(cause, 'Could not load products');
   } finally {
     loadingProducts.value = false;
   }
@@ -609,8 +623,8 @@ function accountCodeOf(accountId: string): string | null {
 /* ------------------------------------------------------------------ save */
 async function completeSale(force = false): Promise<void> {
   const allowNegativeStock = force || lines.value.some((line) => line.allowNegative);
-  const token = session.accessToken.value;
-  if (token === null || !readyToSell.value) return;
+  const token = tokenNow();
+  if (!readyToSell.value) return;
 
   saving.value = true;
   failure.value = null;
@@ -687,7 +701,12 @@ async function completeSale(force = false): Promise<void> {
     );
     posted.value = sale;
     if (resumedDraftId.value !== null) {
-      await deleteSaleDraft(token, resumedDraftId.value);
+      /*
+       * The sale itself is done by here. Drafts have no offline path, and a
+       * queued sale must never be reported as a failed one because the parked
+       * cart it came from could not be tidied away.
+       */
+      await orEmpty(deleteSaleDraft(token, resumedDraftId.value), undefined);
       resumedDraftId.value = null;
       await loadDrafts();
     }
@@ -744,8 +763,7 @@ async function parkDraft(): Promise<void> {
 }
 
 async function loadDrafts(): Promise<void> {
-  const token = session.accessToken.value;
-  if (token === null) return;
+  const token = tokenNow();
   try {
     drafts.value = await fetchSaleDrafts(token);
   } catch {
@@ -811,13 +829,12 @@ async function onConfirmNegative(): Promise<void> {
 }
 
 async function offerStartDay(): Promise<void> {
-  const token = session.accessToken.value;
-  if (token === null) return;
+  const token = tokenNow();
   try {
     dayStatus.value = await fetchDayStatus(token);
     startingDay.value = true;
   } catch (cause) {
-    failure.value = describe(cause, 'Could not open the day');
+    report(cause, 'Could not open the day');
   }
 }
 
@@ -921,6 +938,38 @@ function stockLabel(product: PosProduct): string {
 function describe(cause: unknown, fallback: string): { code: string; message: string } {
   if (cause instanceof ApiError) return { code: cause.code, message: cause.message };
   return { code: 'UNKNOWN', message: fallback };
+}
+
+/**
+ * A failed read, reported only when the shopkeeper can do something about it.
+ *
+ * Phase 12.4: under an offline session every call the counter makes fails as
+ * unreachable, and most of these reads have no local answer yet — the serial
+ * numbers, the parked drafts, the day's status. The till still sells, so a red
+ * banner over it about a line that is already known to be down is noise on the
+ * one screen that must stay usable. Anything the server actually answered is
+ * still shown, exactly as before.
+ */
+function report(cause: unknown, fallback: string): void {
+  if (cause instanceof ApiError && cause.code === 'NETWORK_UNREACHABLE') return;
+  failure.value = describe(cause, fallback);
+}
+
+/**
+ * A read the counter can open without.
+ *
+ * Used where several are fetched together: `Promise.all` would throw away the
+ * ones that *did* answer — the customer list comes off this machine's own copy
+ * while the line is down — because a sibling with no local answer rejected
+ * first. A refusal is still a refusal and still travels.
+ */
+async function orEmpty<T, F>(work: Promise<T>, empty: F): Promise<T | F> {
+  try {
+    return await work;
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.code === 'NETWORK_UNREACHABLE') return empty;
+    throw cause;
+  }
 }
 
 /**
@@ -1183,9 +1232,33 @@ onBeforeUnmount(() => {
           </div>
 
           <p v-if="loadingProducts && shown.length === 0" class="muted">Loading…</p>
+
+          <!--
+            Phase 18.2. One state used to serve two very different situations,
+            and it said «Nothing matched ""» to a shop that had simply not
+            entered its products yet — which reads as a broken screen on the
+            first morning. Compact rather than the full dashed `EmptyState`
+            box: this panel is half a selling screen, and the counter needs the
+            grid back the moment the search is cleared.
+          -->
+          <p v-else-if="shown.length === 0 && search === '' && categoryId === ''" class="empty">
+            No products to sell yet.
+            <button
+              v-if="session.can('catalog.product.create')"
+              type="button"
+              class="btn btn-ghost"
+              @click="openAddProduct"
+            >
+              Add the first product
+            </button>
+          </p>
           <p v-else-if="shown.length === 0" class="empty">
-            Nothing matched “{{ search }}”. Try another name, or add the product with
-            <strong>+</strong> above.
+            Nothing matched
+            <template v-if="search !== ''">“{{ search }}”</template>
+            <template v-else>this category</template>.
+            <button type="button" class="btn btn-ghost" @click="clearSearch(); categoryId = ''; void focusSearch()">
+              Show everything
+            </button>
           </p>
 
           <div v-else :class="view === 'GRID' ? 'grid' : 'list'">
@@ -1340,6 +1413,7 @@ onBeforeUnmount(() => {
                       type="button"
                       class="icon-btn cart__eye"
                       title="Show purchase price"
+                      aria-label="Show purchase price"
                       @click="reveal(line.productId)"
                     >
                       <i class="pi pi-eye" />
@@ -1348,6 +1422,7 @@ onBeforeUnmount(() => {
                       type="button"
                       class="icon-btn icon-btn--danger"
                       title="Remove"
+                      :aria-label="`Remove ${line.productName}`"
                       @click="removeLine(index)"
                     >
                       <i class="pi pi-times" />
@@ -1426,6 +1501,7 @@ onBeforeUnmount(() => {
                       type="button"
                       class="icon-btn"
                       title="Add a vendor"
+                      aria-label="Add a vendor"
                       @click="openAddVendor(index)"
                     >
                       <i class="pi pi-plus" />
@@ -1544,7 +1620,13 @@ onBeforeUnmount(() => {
                 placeholder="Blank = full due"
                 class="pay__amount"
               />
-              <button type="button" class="icon-btn" title="Exact amount" @click="payExact(index)">
+              <button
+                type="button"
+                class="icon-btn"
+                title="Exact amount"
+                aria-label="Exact amount"
+                @click="payExact(index)"
+              >
                 <i class="pi pi-equals" />
               </button>
               <button
@@ -1552,6 +1634,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="icon-btn icon-btn--danger"
                 title="Remove this payment"
+                aria-label="Remove this payment"
                 @click="removePaymentRow(index)"
               >
                 <i class="pi pi-trash" />
@@ -2663,5 +2746,11 @@ onBeforeUnmount(() => {
 .empty {
   padding: 18px 0;
   text-align: center;
+}
+
+/* One sentence, one button, on one line — the Phase 18.2 rule at POS density. */
+.empty .btn {
+  display: block;
+  margin: 8px auto 0;
 }
 </style>

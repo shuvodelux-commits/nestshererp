@@ -1,3 +1,5 @@
+import type { SerialUnitStatus } from '@sher/core-domain';
+
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx } from '../ports/unit-of-work';
 
@@ -42,6 +44,7 @@ export interface SerialUnitRow {
   readonly displayName: string;
   readonly status: string;
   readonly receivedDate: string;
+  readonly expiryDate: string | null;
   readonly soldDate: string | null;
   readonly supplierPartyId: string | null;
   readonly supplierName: string | null;
@@ -91,12 +94,20 @@ export interface SerialRepository {
     input: { readonly phone?: string | undefined; readonly invoiceNumber?: string | undefined },
   ): Promise<readonly SerialUnitRow[]>;
 
-  /** In-stock units of one product, for choosing what to sell or hand over. */
+  /**
+   * In-stock units of one product, for choosing what to sell or hand over.
+   *
+   * `expiredOn` is the business date an **owned** batch must still be good on
+   * (§5.13, BLOCK); null switches the cut-off off entirely. Consignment units
+   * are never cut off by it — an expired vendor lot is sellable, and it is
+   * precisely what a shop hands back to its vendor (§5.6 M07).
+   */
   listAvailable(
     tx: Tx,
     ctx: TenantContext,
     productId: string,
     limit: number,
+    expiredOn: string | null,
   ): Promise<readonly SerialUnitRow[]>;
 
   findAvailableByIds(
@@ -128,10 +139,30 @@ export interface SerialRepository {
     },
   ): Promise<number>;
 
+  markReturnedToVendor(
+    tx: Tx,
+    ctx: TenantContext,
+    input: {
+      readonly unitIds: readonly string[];
+      readonly vendorStockReceiptId: string;
+      readonly vendorLotId: string;
+    },
+  ): Promise<number>;
+
+  /**
+   * Move a unit to a status that carries no extra facts of its own.
+   *
+   * This writes `status` and nothing else, so `SOLD` is only legal here for a
+   * unit that **already** names the sale that took it and the day it went —
+   * restoring one that came back from the supplier, say. A unit that has never
+   * been sold cannot be made `SOLD` this way without breaking
+   * `inventory_units_sold_has_sale` (migration 0033); giving one away to settle
+   * a warranty claim is `WARRANTY_REPLACEMENT`, and selling one is `markSold`.
+   */
   setStatus(
     tx: Tx,
     ctx: TenantContext,
     unitId: string,
-    status: 'IN_STOCK' | 'SOLD' | 'WITH_SUPPLIER' | 'WRITTEN_OFF',
+    status: SerialUnitStatus,
   ): Promise<void>;
 }

@@ -200,7 +200,22 @@ export const syncPushRequestSchema = z
     wireVersion: z.number().int(),
     /** The device's public key — the identity D-01 binds authority to. */
     deviceKey: z.string().min(1).max(512),
-    operations: z.array(syncOperationSchema).min(1).max(200),
+    /**
+     * Empty is allowed, and means something: "I have nothing left to send".
+     * That is how a machine being handed over finishes draining, and how one
+     * that has caught up says so without inventing work to say it with.
+     */
+    operations: z.array(syncOperationSchema).max(200),
+    /**
+     * The machine's own statement that its queue is empty after this batch.
+     *
+     * Only the device knows what it is still holding — the server sees what has
+     * arrived, never what has not — so a drain can only finish on the device's
+     * word. It is a statement, not a permission: a machine that lies here ends
+     * its own authority early and loses nothing, because anything it had not
+     * sent is still in its outbox and still refused once the slot has moved.
+     */
+    queueEmpty: z.boolean().default(false),
   })
   .strict();
 

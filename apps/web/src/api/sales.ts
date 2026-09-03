@@ -98,6 +98,7 @@ export function createSale(
         queued.number,
         idempotencyKey,
         payload.businessDate ?? localBusinessDate(),
+        device.deviceCode,
       );
     },
   );

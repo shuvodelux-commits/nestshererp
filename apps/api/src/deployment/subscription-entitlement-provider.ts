@@ -16,9 +16,22 @@ import type { Entitlement, EntitlementProvider } from '@sher/core-application';
  * list that would silently exclude every module built after it was written.
  */
 export class SubscriptionEntitlementProvider implements EntitlementProvider {
-  // No parameter: there is no subscription to read yet, so the instant is not
-  // consulted. Phase 10 gives this a body that needs it.
-  current(): Entitlement {
-    return { state: 'ACTIVE', modules: [], validUntil: null };
+  /**
+   * There is no subscription to read yet, so `now` is passed straight back as
+   * the instant this was judged at. There is no licence either, which is why
+   * `businessId` is null: the binding rule has nothing to bind to, and a SaaS
+   * tenant is entitled by its subscription rather than by a key on a disk.
+   */
+  current(now: Date): Entitlement {
+    return {
+      state: 'ACTIVE',
+      licensed: true,
+      modules: [],
+      validUntil: null,
+      evaluatedAt: now,
+      businessId: null,
+      licenceId: null,
+      clockBehindMs: 0,
+    };
   }
 }

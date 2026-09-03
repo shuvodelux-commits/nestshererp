@@ -11,6 +11,19 @@ export const CORE_DOMAIN = 'packages/core-domain';
 export const CORE_APPLICATION = 'packages/core-application';
 export const ADAPTER_POSTGRES = 'packages/adapter-postgres';
 
+/**
+ * Phase 17 — the vendor's own processes.
+ *
+ * The control plane, the sidecar and the operator console are the *management*
+ * plane. SRS §22 and §27 draw a hard line between them and the ERP's data
+ * plane, and a line that is only a convention gets crossed the first time
+ * somebody wants one type from the other side. These prefixes are what make the
+ * ban checkable.
+ */
+export const CONTROL_PLANE = 'apps/control-plane';
+export const AGENT = 'apps/agent';
+export const ADMIN_CONSOLE = 'apps/admin';
+
 /** The single file allowed to read the wall clock (implemented in slice 0.2). */
 export const CLOCK_FILE = 'packages/shared-utils/src/clock.ts';
 
@@ -53,6 +66,25 @@ function isSqlDriver(specifier: string): boolean {
   );
 }
 
+/**
+ * The ERP packages that carry a shop's business logic and its data.
+ *
+ * `core-contracts` is deliberately **not** on this list. It holds shapes and
+ * canonical byte formats, and the licence format in particular has to be
+ * identical on both sides — a second hand-written copy of
+ * `canonicalLicensePayload` is exactly how the vendor ends up signing bytes
+ * that customer installations do not verify. See
+ * `apps/control-plane/src/licences/licence-payload.ts`.
+ */
+function isErpDataPlane(specifier: string): boolean {
+  return (
+    specifier.includes('core-domain') ||
+    specifier.includes('core-application') ||
+    specifier.includes('adapter-postgres') ||
+    specifier.includes('adapter-sqlite-wasm')
+  );
+}
+
 export const IMPORT_RULES: readonly ImportRule[] = [
   {
     id: 'domain-no-infrastructure',
@@ -72,6 +104,13 @@ export const IMPORT_RULES: readonly ImportRule[] = [
     isBanned: isNodeBuiltin,
     message:
       'core-domain and core-application are bundled for the browser in Phase 12 and must not import Node built-ins',
+  },
+  {
+    id: 'control-plane-no-erp-data-plane',
+    scopes: [CONTROL_PLANE, AGENT, ADMIN_CONSOLE],
+    isBanned: isErpDataPlane,
+    message:
+      'the vendor control plane, sidecar and console must not import the ERP\'s domain, application services or database adapters — they manage installations, they do not read a shop\'s books (§22, §27)',
   },
   {
     id: 'no-adapter-import',

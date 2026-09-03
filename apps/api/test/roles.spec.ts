@@ -1,3 +1,18 @@
+/*
+ * Coverage claims, read by `pnpm test:inventory` (owner request 2026-09-03).
+ *
+ * These are what this file is answerable for in the test matrix. A claim naming
+ * something the inventory no longer contains fails the scan, so a screen renamed
+ * out from under a test cannot leave the coverage report quietly overstating itself.
+ *
+ * @covers endpoint:DELETE /api/v1/roles/:id
+ * @covers endpoint:GET /api/v1/roles
+ * @covers endpoint:PATCH /api/v1/roles/:id
+ * @covers endpoint:POST /api/v1/auth/registration
+ * @covers endpoint:POST /api/v1/auth/registration/otp
+ * @covers endpoint:POST /api/v1/roles
+ * @covers endpoint:POST /api/v1/users
+ */
 import 'reflect-metadata';
 
 import type { INestApplication } from '@nestjs/common';

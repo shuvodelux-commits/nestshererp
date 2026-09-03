@@ -100,6 +100,16 @@ export function toSaleResponse(
       amountMinor: receipt.amountMinor,
     })),
     warnings: [...warnings],
+    /*
+     * Phase 12.4 (§18). Carried through unchanged, and read by nothing that
+     * decides anything: the invoice screen draws a quiet "Made offline" tag
+     * from it, and the sales list filters on it. A synced offline invoice is an
+     * ordinary posted invoice in every other respect.
+     */
+    originMode: detail.originMode,
+    originDeviceName: detail.originDeviceName,
+    originDeviceCode: detail.originDeviceCode,
+    deviceCreatedAt: detail.deviceCreatedAt?.toISOString() ?? null,
   };
 
   if (!showCost) return base;
@@ -113,6 +123,7 @@ export function toSaleResponse(
 
 export function toSaleListItem(row: SaleRow, asOf: string): SaleListItem {
   return {
+    originMode: row.originMode,
     id: row.id,
     number: row.number,
     partyId: row.partyId,

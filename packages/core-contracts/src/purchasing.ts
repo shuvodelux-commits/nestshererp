@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { landedCostLineRequestSchema } from './purchase-plans';
+import { landedCostLineRequestSchema, landedCostResponseSchema } from './purchase-plans';
 
 /**
  * Buying goods (Phase 5, §5.9, §5.11).
@@ -116,6 +116,7 @@ export const purchaseResponseSchema = z
     itemsTotalMinor: z.number().int().optional(),
     discountMinor: z.number().int().optional(),
     extraCostMinor: z.number().int().optional(),
+    landedCosts: z.array(landedCostResponseSchema).optional(),
     grandTotalMinor: z.number().int().optional(),
     /** Paid on the bill itself plus everything allocated to it since. */
     paidMinor: z.number().int().optional(),

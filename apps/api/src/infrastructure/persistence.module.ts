@@ -51,6 +51,8 @@ import type {
   EntitlementProvider,
   GoogleVerifier,
   IdentityVerifier,
+  LicenseKeyStore,
+  LicenseVerifier,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { SystemClock } from '@sher/shared-utils';
@@ -64,7 +66,11 @@ import { FileBackupSecretStore } from './backup-secret-store';
 import { PgDumpTool } from './database-dump-tool';
 import { loadBuildInfo, MIGRATIONS_DIRECTORY, PACKAGE_JSON_PATH } from './build-info';
 import { NoOpIdentityVerifier } from '../auth/noop-identity-verifier';
+import { Ed25519LicenseVerifier } from '../deployment/license-codec';
 import { LicenseKeyEntitlementProvider } from '../deployment/license-entitlement-provider';
+import { FileLicenseKeyStore } from '../deployment/license-key-store';
+import { trustedLicenseKeys } from '../deployment/license-keys';
+import { MachineLicenseState } from '../deployment/license-machine-state';
 import { SubscriptionEntitlementProvider } from '../deployment/subscription-entitlement-provider';
 import { GoogleIdTokenVerifier, UnconfiguredGoogleVerifier } from '../auth/google-verifier';
 import { CryptoOtpCodeGenerator } from '../auth/otp-code-generator';
@@ -77,6 +83,9 @@ import {
   API_CONFIG,
   AUDIT_QUERY_REPOSITORY,
   ENTITLEMENT_PROVIDER,
+  LICENSE_KEY_STORE,
+  LICENSE_MACHINE_STATE,
+  LICENSE_VERIFIER,
   AUDIT_WRITER,
   BUSINESS_PROFILE_REPOSITORY,
   CATALOG_REPOSITORY,
@@ -165,9 +174,13 @@ function selectIdentityVerifier(config: ApiConfig): IdentityVerifier {
  * On-premise does **not** skip entitlement checks — it answers them from the
  * licence. That is why this is a provider choice and not an `if (isOnPrem)`.
  */
-function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
+function selectEntitlementProvider(
+  config: ApiConfig,
+  keys: LicenseKeyStore,
+  state: MachineLicenseState,
+): EntitlementProvider {
   return config.entitlementSource === 'license'
-    ? new LicenseKeyEntitlementProvider(config.licenseKeyPath, config.licensePublicKey)
+    ? new LicenseKeyEntitlementProvider(keys, state)
     : new SubscriptionEntitlementProvider();
 }
 
@@ -232,10 +245,40 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
       useFactory: (): CryptoOtpCodeGenerator => new CryptoOtpCodeGenerator(),
     },
     { provide: IDENTITY_VERIFIER, useFactory: selectIdentityVerifier, inject: [API_CONFIG] },
+    /*
+     * The licence, as three collaborators rather than one class (owner
+     * decisions 2026-09-02): what this machine remembers, what verifies a key,
+     * and where the key lives. The install use case needs the last two by
+     * themselves, and the entitlement provider is then a small thing that only
+     * decides which state the ladder is in.
+     */
+    {
+      provide: LICENSE_MACHINE_STATE,
+      useFactory: (config: ApiConfig): MachineLicenseState =>
+        new MachineLicenseState(config.licenseStatePath),
+      inject: [API_CONFIG],
+    },
+    {
+      provide: LICENSE_VERIFIER,
+      useFactory: (config: ApiConfig): Ed25519LicenseVerifier =>
+        new Ed25519LicenseVerifier(trustedLicenseKeys(config)),
+      inject: [API_CONFIG],
+    },
+    {
+      provide: LICENSE_KEY_STORE,
+      useFactory: (
+        config: ApiConfig,
+        verifier: LicenseVerifier,
+        state: MachineLicenseState,
+        clock: Clock,
+      ): FileLicenseKeyStore =>
+        new FileLicenseKeyStore(config.licenseKeyPath, verifier, state, clock),
+      inject: [API_CONFIG, LICENSE_VERIFIER, LICENSE_MACHINE_STATE, CLOCK],
+    },
     {
       provide: ENTITLEMENT_PROVIDER,
       useFactory: selectEntitlementProvider,
-      inject: [API_CONFIG],
+      inject: [API_CONFIG, LICENSE_KEY_STORE, LICENSE_MACHINE_STATE],
     },
     {
       provide: TOKEN_ISSUER,
@@ -513,6 +556,9 @@ function selectEntitlementProvider(config: ApiConfig): EntitlementProvider {
     BUSINESS_PROFILE_REPOSITORY,
     AUDIT_QUERY_REPOSITORY,
     ENTITLEMENT_PROVIDER,
+    LICENSE_VERIFIER,
+    LICENSE_KEY_STORE,
+    LICENSE_MACHINE_STATE,
     CATALOG_REPOSITORY,
     PRODUCT_REPOSITORY,
     PARTY_REPOSITORY,

@@ -24,7 +24,7 @@ import type {
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { searchTokens } from '@sher/core-domain';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import {
@@ -46,6 +46,7 @@ import {
   quotationLines,
   quotations,
   receiptAllocations,
+  salesReturns,
   saleDrafts,
   saleLineSourceAllocations,
   saleSourceAllocationReversals,
@@ -56,6 +57,7 @@ import {
   salesOrders,
   stockMovements,
   units,
+  vendorReceivableSettlementAllocations,
 } from './schema';
 import { txOf } from './unit-of-work';
 
@@ -88,6 +90,59 @@ const DUE_MINOR = sql<number>`(${sales.grandTotalMinor} - ${sales.paidMinor} - $
 
 export class PostgresSaleRepository implements SaleRepository {
   constructor(private readonly clock: Clock) {}
+
+  async lockSale(tx: Tx, ctx: TenantContext, saleId: string): Promise<boolean> {
+    const rows = await txOf(tx)
+      .select({ id: sales.id })
+      .from(sales)
+      .where(and(eq(sales.tenantId, ctx.tenantId), eq(sales.id, saleId)))
+      .for('update')
+      .limit(1);
+    return rows.length === 1;
+  }
+
+  async lockReceivableParty(tx: Tx, ctx: TenantContext, partyId: string): Promise<boolean> {
+    const rows = await txOf(tx)
+      .select({ id: parties.id })
+      .from(parties)
+      .where(and(eq(parties.tenantId, ctx.tenantId), eq(parties.id, partyId)))
+      .for('update')
+      .limit(1);
+    return rows.length === 1;
+  }
+
+  async cancellationBlocker(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+  ): Promise<'POSTED_RETURN' | 'VENDOR_SETTLEMENT' | null> {
+    const db = txOf(tx);
+    const postedReturn = await db
+      .select({ id: salesReturns.id })
+      .from(salesReturns)
+      .where(
+        and(
+          eq(salesReturns.tenantId, ctx.tenantId),
+          eq(salesReturns.saleId, id),
+          eq(salesReturns.status, 'POSTED'),
+          isNull(salesReturns.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (postedReturn.length > 0) return 'POSTED_RETURN';
+
+    const settlement = await db
+      .select({ id: vendorReceivableSettlementAllocations.id })
+      .from(vendorReceivableSettlementAllocations)
+      .where(
+        and(
+          eq(vendorReceivableSettlementAllocations.tenantId, ctx.tenantId),
+          eq(vendorReceivableSettlementAllocations.saleId, id),
+        ),
+      )
+      .limit(1);
+    return settlement.length > 0 ? 'VENDOR_SETTLEMENT' : null;
+  }
 
   async findSaleIdByOperationId(
     tx: Tx,
@@ -209,7 +264,7 @@ export class PostgresSaleRepository implements SaleRepository {
           supersededBy: null,
         });
 
-        await db
+        const consumed = await db
           .update(inventoryLots)
           .set({
             qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${consumption.qty}`,
@@ -220,16 +275,23 @@ export class PostgresSaleRepository implements SaleRepository {
             version: sql`${inventoryLots.version} + 1`,
           })
           .where(
-            and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, consumption.lotId)),
-          );
+            and(
+              eq(inventoryLots.tenantId, ctx.tenantId),
+              eq(inventoryLots.id, consumption.lotId),
+              gte(inventoryLots.qtyRemaining, consumption.qty),
+            ),
+          )
+          .returning({ id: inventoryLots.id });
+        if (consumed.length === 0) {
+          throw new Error('Owned stock changed while this sale was being posted');
+        }
       }
 
       if (line.costState.exists) {
         await db
           .update(productCostState)
           .set({
-            avgUnitCost: line.costState.avgUnitCost,
-            qtyOnHand: line.costState.qtyOnHand,
+            qtyOnHand: sql`${productCostState.qtyOnHand} - ${line.costState.qtyChange}`,
             lastRecomputedAt: now,
             updatedAt: now,
             updatedBy: ctx.userId,
@@ -389,6 +451,16 @@ export class PostgresSaleRepository implements SaleRepository {
         paidMinor: PAID_MINOR,
         dueMinor: DUE_MINOR,
         createdAt: sales.createdAt,
+        /*
+         * Phase 12.4 (§18). The machine's name comes from a subquery rather
+         * than a join: `device_authorizations` is read by raw SQL everywhere
+         * else, and adding a table definition and a LEFT JOIN to every sale
+         * read would cost more than the one label it buys.
+         */
+        originMode: sales.originMode,
+        originDeviceCode: sql<string | null>`(SELECT d.device_code FROM device_authorizations d WHERE d.id = ${sales.originDeviceId})`,
+        originDeviceName: sql<string | null>`(SELECT d.name FROM device_authorizations d WHERE d.id = ${sales.originDeviceId})`,
+        deviceCreatedAt: sales.deviceCreatedAt,
         version: sales.version,
       })
       .from(sales)
@@ -587,6 +659,10 @@ export class PostgresSaleRepository implements SaleRepository {
       paidMinor: Number(row.paidMinor),
       dueMinor: Number(row.dueMinor),
       createdAt: row.createdAt,
+      originMode: row.originMode === 'OFFLINE' ? ('OFFLINE' as const) : ('ONLINE' as const),
+      originDeviceCode: row.originDeviceCode,
+      originDeviceName: row.originDeviceName,
+      deviceCreatedAt: row.deviceCreatedAt,
       version: row.version,
       lines: lineRows.map((line) => ({
         id: line.id.trim(),
@@ -672,6 +748,16 @@ export class PostgresSaleRepository implements SaleRepository {
         paidMinor: PAID_MINOR,
         dueMinor: DUE_MINOR,
         createdAt: sales.createdAt,
+        /*
+         * Phase 12.4 (§18). The machine's name comes from a subquery rather
+         * than a join: `device_authorizations` is read by raw SQL everywhere
+         * else, and adding a table definition and a LEFT JOIN to every sale
+         * read would cost more than the one label it buys.
+         */
+        originMode: sales.originMode,
+        originDeviceCode: sql<string | null>`(SELECT d.device_code FROM device_authorizations d WHERE d.id = ${sales.originDeviceId})`,
+        originDeviceName: sql<string | null>`(SELECT d.name FROM device_authorizations d WHERE d.id = ${sales.originDeviceId})`,
+        deviceCreatedAt: sales.deviceCreatedAt,
       })
       .from(sales)
       .innerJoin(parties, and(eq(parties.tenantId, ctx.tenantId), eq(parties.id, sales.partyId)))
@@ -699,6 +785,10 @@ export class PostgresSaleRepository implements SaleRepository {
       paidMinor: Number(row.paidMinor),
       dueMinor: Number(row.dueMinor),
       createdAt: row.createdAt,
+      originMode: row.originMode === 'OFFLINE' ? ('OFFLINE' as const) : ('ONLINE' as const),
+      originDeviceCode: row.originDeviceCode,
+      originDeviceName: row.originDeviceName,
+      deviceCreatedAt: row.deviceCreatedAt,
     }));
   }
 
@@ -1817,6 +1907,12 @@ export class PostgresSaleRepository implements SaleRepository {
     if (filter.fromDate !== null) conditions.push(sql`${sales.businessDate} >= ${filter.fromDate}`);
     if (filter.toDate !== null) conditions.push(sql`${sales.businessDate} <= ${filter.toDate}`);
     if (filter.unpaidOnly) conditions.push(sql`${DUE_MINOR} > 0`);
+    // Phase 12.4 (§18). Reads the indexed column the origin trail writes, so
+    // "show me what came in from the outage" is a partial-index lookup rather
+    // than a scan of every invoice the shop has ever issued.
+    if (filter.origin !== undefined && filter.origin !== 'ALL') {
+      conditions.push(eq(sales.originMode, filter.origin));
+    }
     if (filter.cursor !== null) conditions.push(sql`${sales.id} < ${filter.cursor}`);
     if (search !== '') {
       // One box, two questions (owner decision 2026-08-25): an invoice number

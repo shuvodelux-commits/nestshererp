@@ -91,6 +91,16 @@ const INVOICE_DUE_MINOR = sql<number>`(
 export class PostgresSalesReturnRepository implements SalesReturnRepository {
   constructor(private readonly clock: Clock) {}
 
+  async lockSale(tx: Tx, ctx: TenantContext, saleId: string): Promise<boolean> {
+    const rows = await txOf(tx)
+      .select({ id: sales.id })
+      .from(sales)
+      .where(and(eq(sales.tenantId, ctx.tenantId), eq(sales.id, saleId)))
+      .for('update')
+      .limit(1);
+    return rows.length === 1;
+  }
+
   async findReturnableInvoice(
     tx: Tx,
     ctx: TenantContext,
@@ -222,6 +232,7 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         vendorPartyId: saleLineSourceAllocations.vendorPartyId,
         vendorLotId: saleLineSourceAllocations.vendorLotId,
         inventoryUnitId: saleLineSourceAllocations.inventoryUnitId,
+        serialNo: inventoryUnits.serialNo,
         unitCostUsed: saleLineSourceAllocations.unitCostUsed,
         reversedQty: sql<number>`COALESCE((
           SELECT SUM(sar.qty)
@@ -235,6 +246,13 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         ), 0)::bigint`,
       })
       .from(saleLineSourceAllocations)
+      .leftJoin(
+        inventoryUnits,
+        and(
+          eq(inventoryUnits.tenantId, saleLineSourceAllocations.tenantId),
+          eq(inventoryUnits.id, saleLineSourceAllocations.inventoryUnitId),
+        ),
+      )
       .where(
         and(
           eq(saleLineSourceAllocations.tenantId, ctx.tenantId),
@@ -253,6 +271,7 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
       vendorPartyId: row.vendorPartyId?.trim() ?? null,
       vendorLotId: row.vendorLotId?.trim() ?? null,
       inventoryUnitId: row.inventoryUnitId?.trim() ?? null,
+      serialNo: row.serialNo,
       unitCostUsed: Number(row.unitCostUsed ?? 0),
     }));
   }

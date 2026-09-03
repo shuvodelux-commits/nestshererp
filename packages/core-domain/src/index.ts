@@ -14,6 +14,14 @@ export type { OtpPurpose, OtpRejection, OtpState } from './auth/otp';
 export { licenseAllowsWrites, licenseStateAt } from './licensing/license-state';
 export type { LicenseState, LicenseTerm } from './licensing/license-state';
 export {
+  advancedHighWater,
+  clockBehindMs,
+  clockLooksWrong,
+  effectiveLicenseNow,
+} from './licensing/license-clock';
+export { licenseRegression } from './licensing/license-regression';
+export type { LicenseRegression, LicenseTerms } from './licensing/license-regression';
+export {
   CATALOG_NAME_MAX_LENGTH,
   catalogNameKey,
   isValidCatalogName,

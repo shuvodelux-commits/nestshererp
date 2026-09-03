@@ -171,6 +171,9 @@ async function submit(): Promise<void> {
         lines: draftLines.value.map((line) => ({
           sourceLineId: line.purchaseLineId,
           qty: line.qty,
+          // Serial selection belongs to sales returns (§5.14); goods going back to
+          // a supplier leave by lot, so the shared return line carries none.
+          serialUnitIds: [],
         })),
         reason: reason.value,
         note: note.value.trim() === '' ? null : note.value.trim(),

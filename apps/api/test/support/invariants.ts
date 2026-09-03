@@ -4,8 +4,14 @@ import type pg from 'pg';
 import { asTenant } from './database';
 
 /**
- * The five golden invariants of §3.11 that money and stock rest on, asserted
+ * The golden invariants of §3.11 that money and stock rest on, asserted
  * against what is actually in the database.
+ *
+ * INV-01 to INV-05 cover the stock and costing side; INV-06 to INV-09 were added
+ * on 2026-09-03 at the owner's request and cover the party, cash-session and
+ * reversal side — a receivable belonging to nobody, a day that signed off on
+ * arithmetic it did not do, a drawer that disagrees with what was counted, and a
+ * voided document still moving money or goods.
  *
  * This exists because a costing bug does not announce itself. Every individual
  * test asserts the numbers it happens to care about; none of them notices that
@@ -123,6 +129,195 @@ export async function assertGoldenInvariants(pool: pg.Pool, tenantId: string): P
       found.push(
         `INV-05: ${method} valuation is ${valuation} but the INVENTORY account holds ${balance} ` +
         `(off by ${valuation - balance})`,
+      );
+    }
+
+    // INV-06 — a line on a party account names its party.
+    //
+    // §3.11 states INV-06 as "party ledger balance = Σ journal lines for that
+    // party", and the thing that can actually break it is a receivable
+    // belonging to nobody: a line that no party statement will ever include, so
+    // the ledger and the account permanently disagree by that amount.
+    // `rejectEntry` refuses one at the domain boundary, and this is the same
+    // rule asserted against what reached the table — because a posting path that
+    // writes journal lines without going through `rejectEntry` is exactly the
+    // bug worth catching, and it would pass every domain test.
+    const orphaned = await db.query<{ id: string; account_code: string; amount_minor: number }>(
+      `SELECT id, account_code, amount_minor::bigint
+         FROM journal_lines
+        WHERE party_id IS NULL
+          AND (account_code IN ('AR', 'AP', 'CUSTOMER_ADVANCE', 'SUPPLIER_ADVANCE',
+                                'VENDOR_ADVANCE', 'VENDOR_PAYABLE'))`,
+    );
+    for (const row of orphaned.rows) {
+      found.push(
+        `INV-06: journal line ${row.id} puts ${row.amount_minor} on ${row.account_code} with no party`,
+      );
+    }
+
+    // INV-07(a) — a day's expected closing is its opening plus what came in
+    // less what went out. Checked against the five figures the close stored
+    // rather than recomputed from movements: §5.16.4 is explicit that they are
+    // stored once and never recomputed on read, so if the stored arithmetic is
+    // wrong every screen that shows the day is wrong in the same way and no
+    // amount of re-deriving it downstream would reveal that.
+    const closes = await db.query<{
+      id: string; opening: number; cash_in: number; cash_out: number; expected: number;
+      counted: number; difference: number;
+    }>(
+      `SELECT id, opening_amount_minor::bigint AS opening, cash_in_minor::bigint AS cash_in,
+              cash_out_minor::bigint AS cash_out, expected_closing_minor::bigint AS expected,
+              counted_closing_minor::bigint AS counted, difference_minor::bigint AS difference
+         FROM cash_session_closes
+        WHERE superseded_at IS NULL`,
+    );
+    for (const row of closes.rows) {
+      const expected = Number(row.opening) + Number(row.cash_in) - Number(row.cash_out);
+      if (Number(row.expected) !== expected) {
+        found.push(
+          `INV-07(a): close ${row.id} expects ${row.expected} but opening + in − out is ${expected}`,
+        );
+      }
+      // The difference is the same statement from the other side, and a close
+      // whose stored difference disagrees with its own two figures is how a
+      // short drawer gets signed off as balanced.
+      const difference = Number(row.counted) - Number(row.expected);
+      if (Number(row.difference) !== difference) {
+        found.push(
+          `INV-07(a): close ${row.id} records a difference of ${row.difference} but counted − expected is ${difference}`,
+        );
+      }
+    }
+
+    // INV-07(b) — a closed day's drawer account holds what was counted.
+    //
+    // §5.16.4 posts the short/over to `CASH_SHORT_OVER`, so once a day is
+    // closed the ledger has been made to agree with the physical drawer. The
+    // balance is taken as at that business date, which is well defined here:
+    // `cash_sessions_date_unique` allows one session per date, so "the ledger
+    // up to and including this day" is exactly this session's closing position.
+    const closedDays = await db.query<{
+      session_id: string; business_date: string; account_id: string; counted: number; balance: number;
+    }>(
+      `SELECT s.id AS session_id, s.business_date, s.account_id,
+              c.counted_closing_minor::bigint AS counted,
+              COALESCE((SELECT SUM(jl.amount_minor)
+                          FROM journal_lines jl
+                          JOIN journal_entries je ON je.id = jl.journal_entry_id
+                         WHERE jl.account_code = 'CASH:' || s.account_id
+                           AND je.business_date <= s.business_date), 0)::bigint AS balance
+         FROM cash_sessions s
+         JOIN cash_session_closes c ON c.session_id = s.id AND c.superseded_at IS NULL
+        WHERE s.status = 'CLOSED' AND s.deleted_at IS NULL`,
+    );
+    for (const row of closedDays.rows) {
+      if (Number(row.counted) !== Number(row.balance)) {
+        found.push(
+          `INV-07(b): day ${row.business_date} was counted at ${row.counted} but its drawer ledger ` +
+          `holds ${row.balance} (off by ${Number(row.counted) - Number(row.balance)})`,
+        );
+      }
+    }
+
+    // INV-07(c) — no day starts from a figure the day before did not end on.
+    //
+    // `previous_closing_minor` is frozen at Start Day so a session can explain
+    // its own opening difference years later without re-deriving it (§5.16.2).
+    // Frozen data is data that can go stale, and a session claiming the previous
+    // day closed at a figure that day did not close at is how an unexplained
+    // delta becomes permanent and invisible: the difference gets posted against
+    // a number nobody can trace, and every reconciliation after it inherits the
+    // error. Sessions are one per business date, so "the day before" is
+    // unambiguous.
+    const continuity = await db.query<{
+      business_date: string; claimed: number; actual: number;
+    }>(
+      `SELECT s.business_date,
+              s.previous_closing_minor::bigint AS claimed,
+              prev.counted::bigint             AS actual
+         FROM cash_sessions s
+         JOIN LATERAL (
+           SELECT c.counted_closing_minor AS counted
+             FROM cash_sessions earlier
+             JOIN cash_session_closes c
+               ON c.session_id = earlier.id AND c.superseded_at IS NULL
+            WHERE earlier.deleted_at IS NULL
+              AND earlier.business_date < s.business_date
+            ORDER BY earlier.business_date DESC
+            LIMIT 1
+         ) prev ON TRUE
+        WHERE s.deleted_at IS NULL
+          AND s.previous_closing_minor IS NOT NULL
+          AND s.previous_closing_minor <> prev.counted`,
+    );
+    for (const row of continuity.rows) {
+      found.push(
+        `INV-07(c): the day of ${row.business_date} opened saying the day before closed at ` +
+        `${row.claimed}, but it closed at ${row.actual}`,
+      );
+    }
+
+    // INV-08 — a voided document has no net effect left, on money or on stock.
+    //
+    // Written against the reversal rather than against each document table on
+    // purpose. A void posts a second entry — `EXPENSE_REVERSAL`,
+    // `CUSTOMER_RECEIPT_REVERSAL` and so on — carrying the same
+    // `source_document_id`, so "everything ever posted for this document sums
+    // to zero" is the whole rule in one statement and it keeps holding when a
+    // new reversible document type is added, which an enumeration of tables
+    // would not.
+    const reversed = await db.query<{ source_document_id: string; total: number }>(
+      `SELECT source_document_id, SUM(total)::bigint AS total
+         FROM (SELECT je.source_document_id,
+                      SUM(jl.amount_minor) AS total
+                 FROM journal_entries je
+                 JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                WHERE je.source_document_id IN (SELECT source_document_id
+                                                  FROM journal_entries
+                                                 WHERE source_document_type LIKE '%\\_REVERSAL')
+                GROUP BY je.source_document_id, je.id) per_entry
+        GROUP BY source_document_id
+       HAVING SUM(total) <> 0`,
+    );
+    for (const row of reversed.rows) {
+      found.push(
+        `INV-08: reversed document ${row.source_document_id} still moves ${row.total} through the ledger`,
+      );
+    }
+
+    const reversedStock = await db.query<{ source_document_id: string; net: number }>(
+      `SELECT source_document_id,
+              SUM(CASE direction WHEN 'IN' THEN qty ELSE -qty END)::bigint AS net
+         FROM stock_movements
+        WHERE source_document_id IN (SELECT source_document_id
+                                       FROM journal_entries
+                                      WHERE source_document_type LIKE '%\\_REVERSAL')
+        GROUP BY source_document_id
+       HAVING SUM(CASE direction WHEN 'IN' THEN qty ELSE -qty END) <> 0`,
+    );
+    for (const row of reversedStock.rows) {
+      found.push(
+        `INV-08: reversed document ${row.source_document_id} still moves ${row.net} of stock`,
+      );
+    }
+
+    // INV-09 — every posted document has at least one journal entry.
+    //
+    // Asserted the other way round, which is the direction this schema can
+    // actually answer: an entry with no lines is a document that posted nothing
+    // and is the same defect — a bill that reached the books without moving any
+    // money. The forward direction (a document row with no entry) is checked
+    // per module by the specs that create those documents, because only they
+    // know which tables are documents.
+    const empty = await db.query<{ id: string; source_document_type: string; source_number: string }>(
+      `SELECT je.id, je.source_document_type, je.source_number
+         FROM journal_entries je
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        WHERE jl.id IS NULL`,
+    );
+    for (const row of empty.rows) {
+      found.push(
+        `INV-09: ${row.source_document_type} ${row.source_number} posted an entry with no lines`,
       );
     }
 

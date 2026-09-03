@@ -17,6 +17,15 @@ import { computed } from 'vue';
  * It is a component rather than six copies of `@input` because the rule applies
  * to every amount, quantity and discount in the application: POS, purchase,
  * payment dialogs, and every transaction screen after them.
+ *
+ * **Phase 18.4 — the phone keypad.** PrimeVue decides `inputmode` for itself:
+ * `numeric` unless `minFractionDigits` is set, and `numeric` is the keypad with
+ * **no decimal point on it**. Every amount and quantity in SherERP goes through
+ * this control, so a cashier on a phone could not type `৳120.50` or half a
+ * kilo anywhere in the application. `minFractionDigits` would have fixed it by
+ * forcing trailing zeros into every box on every screen, which is a display
+ * change to buy a keyboard change; the pass-through sets the one attribute that
+ * was actually wrong (owner decision 2026-09-03: assert `type`/`inputmode`).
  */
 const props = defineProps<{
   modelValue: number;
@@ -60,6 +69,7 @@ function onInput(event: InputNumberInputEvent): void {
     :show-buttons="showButtons === true"
     :input-id="inputId"
     :input-class="alignRight ? 'amount-input__field' : undefined"
+    :pt="{ pcInputText: { root: { inputmode: 'decimal' } } }"
 :button-layout="buttonLayout ?? 'stacked'"
     class="amount-input"
     @input="onInput"

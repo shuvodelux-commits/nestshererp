@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["node"],
+    "paths": {
+      "@sher/shared-utils": ["../../packages/shared-utils/src/index.ts"],
+      "@sher/control-contracts": ["../../packages/control-contracts/src/index.ts"],
+      "@sher/core-contracts": ["../../packages/core-contracts/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

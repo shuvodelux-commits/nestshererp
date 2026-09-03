@@ -29,6 +29,18 @@ export default defineConfig({
       DATABASE_URL:
         process.env['TEST_DATABASE_URL'] ?? 'postgres://sher_app:sher_app_test@localhost:5432/sher_test',
       JWT_SECRET: 'test-secret-not-used-in-production',
+      /*
+       * Entitlement comes from a subscription here, said explicitly.
+       *
+       * Licence mode became the default on 2026-09-02, and it is the right
+       * default for a shipped installation: no licence means READ_ONLY. These
+       * specs are about business rules rather than entitlement, and under that
+       * default every write in every file would be refused 423 by a deployment
+       * that simply has no licence key — which says nothing about the rule
+       * being tested. The licence's own behaviour is exercised against a real
+       * signed key, not here.
+       */
+      ENTITLEMENT_SOURCE: 'subscription',
     },
   },
 });

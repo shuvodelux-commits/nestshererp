@@ -21,10 +21,12 @@ import { DevicesModule } from './devices/devices.module';
 import { SyncModule } from './sync/sync.module';
 import { ReturnsModule } from './returns/returns.module';
 import { SalesModule } from './sales/sales.module';
+import { SearchModule } from './search/search.module';
 import { DenialAuditInterceptor } from './common/denial-audit.interceptor';
 import { ReadOnlyLicenseGuard } from './deployment/read-only.guard';
 import { TraceIdMiddleware } from './common/trace-id.middleware';
 import { HealthController } from './health/health.controller';
+import { ManagementModule } from './management/management.module';
 import { PersistenceModule } from './infrastructure/persistence.module';
 import { NotesModule } from './notes/notes.module';
 import { RegistrationModule } from './registration/registration.module';
@@ -60,9 +62,12 @@ import { UsersModule } from './users/users.module';
     /* Phase 12.1 — offline devices and the D-24 gate (§5.23). */
     DevicesModule,
     SyncModule,
+    ManagementModule,
     ReportsModule,
     DaybookModule,
     CorrectionsModule,
+    /* Phase 18.1 — one box over products, parties and documents. */
+    SearchModule,
   ],
   controllers: [HealthController],
   providers: [

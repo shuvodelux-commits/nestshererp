@@ -1,0 +1,160 @@
+/*
+ * The vendor console's own look (owner decision 2026-09-03).
+ *
+ * **Deliberately not the shop's colours.** This console embeds a live customer
+ * ERP in an iframe during a support session, so at some point every operator
+ * will be looking at two SherERPs at once — theirs and somebody's shop. If the
+ * two looked alike, the mistake waiting to happen is acting on the wrong one at
+ * two in the morning. So the console is slate and amber where the ERP is white
+ * and blue, and the difference is meant to be visible from across a room rather
+ * than tasteful.
+ *
+ * The persistent tenant banner in `AppShell.vue` is the second half of the same
+ * safeguard: whenever a customer's context is open, their name is on screen.
+ */
+:root {
+  --ctl-bg: #0f172a;
+  --ctl-surface: #1e293b;
+  --ctl-surface-2: #263449;
+  --ctl-border: #334155;
+  --ctl-text: #e2e8f0;
+  --ctl-muted: #94a3b8;
+  --ctl-accent: #f59e0b;
+  --ctl-accent-ink: #1f1300;
+  --ctl-ok: #34d399;
+  --ctl-warn: #fbbf24;
+  --ctl-bad: #f87171;
+  --ctl-radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ctl-bg);
+  color: var(--ctl-text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a { color: var(--ctl-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.ctl-shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+
+.ctl-nav {
+  background: var(--ctl-surface);
+  border-right: 1px solid var(--ctl-border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctl-nav h1 { font-size: 15px; margin: 0 0 4px 8px; letter-spacing: 0.02em; }
+.ctl-nav .brand-sub { font-size: 11px; color: var(--ctl-muted); margin: 0 0 16px 8px; }
+.ctl-nav a {
+  display: block; padding: 7px 10px; border-radius: 6px;
+  color: var(--ctl-text); font-size: 13px;
+}
+.ctl-nav a:hover { background: var(--ctl-surface-2); text-decoration: none; }
+.ctl-nav a.active { background: var(--ctl-accent); color: var(--ctl-accent-ink); font-weight: 600; }
+.ctl-nav .spacer { flex: 1; }
+.ctl-nav .who { font-size: 11px; color: var(--ctl-muted); padding: 8px 10px; line-height: 1.4; }
+
+.ctl-main { padding: 20px 24px 48px; max-width: 1400px; }
+
+/*
+ * The tenant banner. Sticky, amber, and impossible to scroll away from — the
+ * single most likely operator error in this whole system is acting on the wrong
+ * shop, and this is the cheapest thing that prevents it.
+ */
+.ctl-tenant-banner {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--ctl-accent); color: var(--ctl-accent-ink);
+  padding: 7px 24px; font-weight: 600; font-size: 13px;
+  display: flex; align-items: center; gap: 10px;
+  margin: -20px -24px 18px;
+}
+.ctl-tenant-banner .id { font-weight: 400; opacity: 0.75; font-size: 12px; }
+
+h2 { font-size: 19px; margin: 0 0 4px; }
+h3 { font-size: 14px; margin: 22px 0 8px; color: var(--ctl-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+p.lede { color: var(--ctl-muted); margin: 0 0 18px; }
+
+.ctl-card {
+  background: var(--ctl-surface); border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius); padding: 14px 16px; margin-bottom: 14px;
+}
+
+.ctl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ctl-tile { background: var(--ctl-surface); border: 1px solid var(--ctl-border); border-radius: var(--ctl-radius); padding: 12px 14px; }
+.ctl-tile .n { font-size: 26px; font-weight: 650; line-height: 1.1; }
+.ctl-tile .l { font-size: 12px; color: var(--ctl-muted); margin-top: 2px; }
+
+table.ctl { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ctl th {
+  text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--ctl-muted); padding: 6px 10px;
+  border-bottom: 1px solid var(--ctl-border);
+}
+table.ctl td { padding: 8px 10px; border-bottom: 1px solid var(--ctl-border); vertical-align: top; }
+table.ctl tr:hover td { background: var(--ctl-surface-2); }
+
+/*
+ * States are colour *and* text, never colour alone. An operator scanning a
+ * fleet list at speed reads the colour; anyone who cannot distinguish them
+ * reads the word, and §26 asks for states that are never vague.
+ */
+.pill {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  border: 1px solid currentColor;
+}
+.pill.ok { color: var(--ctl-ok); }
+.pill.warn { color: var(--ctl-warn); }
+.pill.bad { color: var(--ctl-bad); }
+.pill.mute { color: var(--ctl-muted); }
+
+button.ctl {
+  background: var(--ctl-surface-2); color: var(--ctl-text);
+  border: 1px solid var(--ctl-border); border-radius: 6px;
+  padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+button.ctl:hover { border-color: var(--ctl-accent); }
+button.ctl.primary { background: var(--ctl-accent); color: var(--ctl-accent-ink); border-color: var(--ctl-accent); font-weight: 600; }
+button.ctl.danger { color: var(--ctl-bad); border-color: var(--ctl-bad); }
+button.ctl:disabled { opacity: 0.45; cursor: not-allowed; }
+
+input.ctl, select.ctl, textarea.ctl {
+  background: var(--ctl-bg); color: var(--ctl-text);
+  border: 1px solid var(--ctl-border); border-radius: 6px;
+  padding: 7px 10px; font-size: 13px; width: 100%; font-family: inherit;
+}
+label.ctl { display: block; font-size: 12px; color: var(--ctl-muted); margin: 10px 0 4px; }
+
+/*
+ * The one-modal-per-action rule the ERP follows, kept here so the console feels
+ * like the same product to the one person who uses both.
+ */
+.ctl-backdrop {
+  position: fixed; inset: 0; background: rgba(2, 6, 23, 0.72);
+  display: grid; place-items: center; z-index: 50; padding: 20px;
+}
+.ctl-modal {
+  background: var(--ctl-surface); border: 1px solid var(--ctl-border);
+  border-radius: 10px; width: 38rem; max-width: 100%; max-height: 90vh;
+  overflow: auto; padding: 18px 20px;
+}
+.ctl-modal h3 { margin-top: 0; color: var(--ctl-text); font-size: 16px; text-transform: none; letter-spacing: 0; }
+.ctl-modal .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.ctl-modal footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.ctl-error { color: var(--ctl-bad); font-size: 13px; margin: 8px 0; }
+.ctl-note { color: var(--ctl-muted); font-size: 12px; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+
+/* The embedded customer ERP. Full height, its own scroll, clearly framed. */
+.ctl-frame {
+  width: 100%; height: calc(100vh - 210px); min-height: 420px;
+  border: 2px solid var(--ctl-accent); border-radius: var(--ctl-radius);
+  background: #fff;
+}

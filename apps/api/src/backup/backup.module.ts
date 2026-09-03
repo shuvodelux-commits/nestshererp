@@ -9,12 +9,15 @@ import type {
   BuildInfo,
   DatabaseDumpTool,
   EntitlementProvider,
+  LicenseKeyStore,
+  LicenseVerifier,
   PasswordHasher,
   UnitOfWork,
   UserRepository,
 } from '@sher/core-application';
 import {
   BackupService,
+  LicenseInstallService,
   LicenseStatusService,
   ResetBusinessService,
   RestoreService,
@@ -33,7 +36,10 @@ import {
   CLOCK,
   DATABASE_DUMP_TOOL,
   ENTITLEMENT_PROVIDER,
+  LICENSE_INSTALL_SERVICE,
+  LICENSE_KEY_STORE,
   LICENSE_STATUS_SERVICE,
+  LICENSE_VERIFIER,
   PASSWORD_HASHER,
   RESET_BUSINESS_SERVICE,
   RESTORE_SERVICE,
@@ -160,6 +166,37 @@ import { LicenseController } from './license.controller';
         new LicenseStatusService(uow, access, entitlements, backups, clock),
       inject: [UNIT_OF_WORK, ACCESS_CONTROL, ENTITLEMENT_PROVIDER, BACKUP_REPOSITORY, CLOCK],
     },
+    {
+      provide: LICENSE_INSTALL_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        access: AccessControl,
+        verifier: LicenseVerifier,
+        keys: LicenseKeyStore,
+        entitlements: EntitlementProvider,
+        audit: AuditWriter,
+        clock: Clock,
+      ): LicenseInstallService =>
+        new LicenseInstallService(uow, access, verifier, keys, entitlements, audit, clock),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        LICENSE_VERIFIER,
+        LICENSE_KEY_STORE,
+        ENTITLEMENT_PROVIDER,
+        AUDIT_WRITER,
+        CLOCK,
+      ],
+    },
   ],
+  /*
+   * Phase 17: the management agent installs a vendor-delivered licence and takes
+   * a pre-update backup, and it does both through **these** services — the same
+   * ones the paste box and the nightly job use. Exporting them is what lets
+   * `ManagementModule` reuse the existing code path instead of growing a second
+   * one, which is the whole of §4's "do not replace signed licence verification"
+   * and §28's "reuse existing services rather than creating parallel logic".
+   */
+  exports: [LICENSE_INSTALL_SERVICE, LICENSE_STATUS_SERVICE, BACKUP_SERVICE],
 })
 export class BackupModule {}

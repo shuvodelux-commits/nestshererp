@@ -18,6 +18,7 @@ import { markDataChanged } from '../state/data-freshness';
 import { useConnectivity } from './connectivity';
 import { deviceKey } from './identity';
 import { pendingSummary } from './local-writer';
+import { useOfflineStatus } from './status';
 
 /**
  * Sending up what the shop did, and catching up on what it missed (§14, §5.23).
@@ -87,10 +88,43 @@ export async function syncNow(): Promise<void> {
   }
 }
 
+/**
+ * The empty batch a machine on its way out still has to send.
+ *
+ * `DRAINING` holds the shop's single writer slot until the device itself says it
+ * is holding nothing, and the server can only finish that on a request which
+ * says so — no operations and `queueEmpty` true, which the wire contract allows
+ * for exactly this. A pass that simply returned on an empty queue would leave
+ * the slot occupied forever, and the replacement machine could never be approved
+ * without the owner forcing the old one off.
+ *
+ * Only while draining. On every other machine this would be a request per pass
+ * asking the server to do nothing.
+ */
+async function announceDrained(token: string, key: string): Promise<void> {
+  if (useOfflineStatus().status.value?.device?.status !== 'DRAINING') return;
+  await pushOperations(token, key, {
+    wireVersion: SYNC_WIRE_VERSION,
+    deviceKey: key,
+    operations: [],
+    queueEmpty: true,
+  });
+}
+
 async function push(token: string, key: string): Promise<void> {
   for (;;) {
-    const queued = await pendingOperations(BATCH);
-    if (queued.length === 0) return;
+    /*
+     * One more than the batch is asked for, and only the batch is sent. That
+     * extra row is what makes `queueEmpty` below a reading of the queue rather
+     * than a guess: a queue holding exactly `BATCH` operations sends a full
+     * batch, empties, and would otherwise never say so.
+     */
+    const waiting = await pendingOperations(BATCH + 1);
+    const queued = waiting.slice(0, BATCH);
+    if (queued.length === 0) {
+      await announceDrained(token, key);
+      return;
+    }
 
     phase.value = 'PUSHING';
     const operations: SyncOperation[] = queued.map((row) => ({
@@ -111,6 +145,10 @@ async function push(token: string, key: string): Promise<void> {
       wireVersion: SYNC_WIRE_VERSION,
       deviceKey: key,
       operations,
+      // Whether this batch empties the queue. A machine being handed over
+      // finishes draining on this, so it is read from the queue itself — the
+      // row beyond the batch — rather than assumed from the batch being short.
+      queueEmpty: waiting.length <= BATCH,
     });
 
     let progressed = false;

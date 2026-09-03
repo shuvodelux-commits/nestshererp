@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "types": ["vite/client"],
+    "noEmit": true,
+    "declaration": false,
+    "paths": {
+      "@sher/control-contracts": ["../../packages/control-contracts/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

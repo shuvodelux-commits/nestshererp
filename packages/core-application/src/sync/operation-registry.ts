@@ -204,7 +204,11 @@ export async function replayOperation(
         saleId: body.saleId,
         // The line the goods came back on is named by the sale's own line id,
         // exactly as the counter names it (`sourceLineId` on the wire).
-        lines: body.lines.map((line) => ({ saleLineId: line.sourceLineId, qty: line.qty })),
+        lines: body.lines.map((line) => ({
+          saleLineId: line.sourceLineId,
+          qty: line.qty,
+          serialUnitIds: line.serialUnitIds,
+        })),
         reason: body.reason,
         note: body.note,
         refundMinor: body.refundMinor,

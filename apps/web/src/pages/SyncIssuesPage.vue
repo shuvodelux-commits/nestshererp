@@ -6,6 +6,7 @@ import { fetchSyncConflicts, fetchSyncStatus, resolveSyncConflict } from '../api
 import { useSession } from '../auth/session';
 import AppShell from '../components/shell/AppShell.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
+import { taka } from '../components/money/money-text';
 import { useSync } from '../offline/sync';
 
 import { ApiError } from '../api/client';
@@ -113,6 +114,40 @@ const ACTION_WORDS: Readonly<Record<string, string>> = {
   KEEP_BOTH_EDIT: 'Keep both',
   DISCARD_WITH_REASON: 'Never post this',
 };
+
+/**
+ * One side of a conflict, in words (Phase 18.3).
+ *
+ * The state a device pushed is an operation payload, not a document, so it
+ * carries plenty a manager cannot act on: the internal ids of the rows it
+ * touches, the operation's own key, a version number. Those come out. What
+ * stays is what somebody standing at the counter would recognise — an amount,
+ * a quantity, a date, a name — with money turned back into taka, because a
+ * `grandTotalMinor` of `49000` on a screen about a disputed sale is the kind of
+ * figure that starts an argument.
+ */
+function readable(state: unknown): readonly { label: string; text: string }[] {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) return [];
+
+  return Object.entries(state as Record<string, unknown>).flatMap(([key, value]) => {
+    if (value === null || value === undefined || typeof value === 'object') return [];
+    // ULIDs and the keys that hold them: 26 characters nobody reads aloud.
+    if (/(^|[a-z])Id$|^id$|^version$|^operationId$/.test(key)) return [];
+    if (typeof value === 'string' && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value)) return [];
+
+    const label = key
+      .replace(/Minor$/, '')
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, (first) => first.toUpperCase())
+      .trim();
+
+    const text = key.endsWith('Minor') && typeof value === 'number'
+      ? taka(value)
+      : String(value);
+
+    return [{ label, text }];
+  });
+}
 
 async function load(): Promise<void> {
   const token = session.accessToken.value;
@@ -260,13 +295,29 @@ onMounted(load);
               <dt>Typed at the counter</dt>
               <dd>{{ conflict.recordedByName }} · {{ new Date(conflict.deviceCreatedAt).toLocaleString() }}</dd>
             </div>
-            <div v-if="conflict.localState !== null">
+            <!--
+              Phase 18.3 (owner decision 2026-09-03): these two were
+              `JSON.stringify` of the raw operation — braces, quotes, ULIDs and
+              minor units — on a screen a manager opens mid-shift to decide
+              what to do about a refused sale. The values are the same; what is
+              gone is the punctuation, the internal ids nobody can act on, and
+              poisha printed as an integer.
+            -->
+            <div v-if="readable(conflict.localState).length > 0">
               <dt>What the slip said</dt>
-              <dd>{{ JSON.stringify(conflict.localState) }}</dd>
+              <dd>
+                <span v-for="entry in readable(conflict.localState)" :key="entry.label" class="pair">
+                  {{ entry.label }}: <strong>{{ entry.text }}</strong>
+                </span>
+              </dd>
             </div>
-            <div v-if="conflict.serverState !== null">
+            <div v-if="readable(conflict.serverState).length > 0">
               <dt>What the books say</dt>
-              <dd>{{ JSON.stringify(conflict.serverState) }}</dd>
+              <dd>
+                <span v-for="entry in readable(conflict.serverState)" :key="entry.label" class="pair">
+                  {{ entry.label }}: <strong>{{ entry.text }}</strong>
+                </span>
+              </dd>
             </div>
             <div v-if="conflict.attempts > 1">
               <dt>Tried</dt>
@@ -482,6 +533,11 @@ h1 {
 .sides dd {
   margin: 0;
   word-break: break-word;
+}
+
+/* One fact per line — a run-together sentence of pairs is the JSON again. */
+.pair {
+  display: block;
 }
 
 .actions {

@@ -229,12 +229,27 @@ export const saleResponseSchema = z
       .default([]),
     /** Said once, beside the data (§5.26) — a sale below cost, a stock warning. */
     warnings: z.array(z.string()).default([]),
+    /**
+     * Where this invoice was typed (Phase 12.4, §18).
+     *
+     * Permanent and informational. A synced offline sale is an ordinary posted
+     * sale in every respect — same journal, same corrections, counted in every
+     * report without qualification — and this exists so a shopkeeper
+     * reconciling an outage afterwards can see which slips came in late. It
+     * never changes how anything behaves, and never carries warning styling.
+     */
+    originMode: z.union([z.literal('ONLINE'), z.literal('OFFLINE')]).default('ONLINE'),
+    /** The machine that typed it, and the moment it was typed. Both null online. */
+    originDeviceName: z.string().nullable().default(null),
+    originDeviceCode: z.string().nullable().default(null),
+    deviceCreatedAt: z.string().nullable().default(null),
   })
   .strict();
 export type SaleResponse = z.infer<typeof saleResponseSchema>;
 
 export const saleListItemSchema = z
   .object({
+    originMode: z.union([z.literal('ONLINE'), z.literal('OFFLINE')]).default('ONLINE'),
     id: ULID,
     number: z.string(),
     partyId: ULID,
@@ -281,6 +296,8 @@ export const saleListQuerySchema = z
     fromDate: BUSINESS_DATE.optional(),
     toDate: BUSINESS_DATE.optional(),
     unpaidOnly: z.coerce.boolean().optional(),
+    /** Phase 12.4 (§18): all invoices, or only the ones typed during an outage. */
+    origin: z.union([z.literal('ALL'), z.literal('ONLINE'), z.literal('OFFLINE')]).optional(),
     cursor: z.string().max(120).optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
   })

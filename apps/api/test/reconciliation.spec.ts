@@ -1,3 +1,19 @@
+/*
+ * Coverage claims, read by `pnpm test:inventory` (owner request 2026-09-03).
+ *
+ * These are what this file is answerable for in the test matrix. A claim naming
+ * something the inventory no longer contains fails the scan, so a screen renamed
+ * out from under a test cannot leave the coverage report quietly overstating itself.
+ *
+ * @covers endpoint:DELETE /api/v1/money/reconciliations/:id/matches/:matchId
+ * @covers endpoint:GET /api/v1/money/reconciliations/:id
+ * @covers endpoint:POST /api/v1/money/reconciliations
+ * @covers endpoint:POST /api/v1/money/reconciliations/:id/complete
+ * @covers endpoint:POST /api/v1/money/reconciliations/:id/matches
+ * @covers endpoint:POST /api/v1/money/reconciliations/:id/reopen
+ * @covers endpoint:POST /api/v1/money/reconciliations/:id/statement
+ * @covers endpoint:POST /api/v1/money/reconciliations/:id/statement/confirm
+ */
 import 'reflect-metadata';
 
 import { readFileSync } from 'node:fs';

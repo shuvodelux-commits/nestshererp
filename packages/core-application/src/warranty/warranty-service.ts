@@ -269,7 +269,18 @@ export class WarrantyService {
           source: 'WARRANTY',
           counterAccount: fixedAccount('WARRANTY_EXPENSE'),
         });
-        await this.serials.setStatus(tx, ctx, replacement.id, 'SOLD');
+        /*
+         * The unit is gone from the shelf, but it was not sold: no invoice, no
+         * revenue, and §5.19 forbids a warranty receivable, so the whole of it
+         * sits in `WARRANTY_EXPENSE`. Marking it `SOLD` would claim a sale that
+         * does not exist and would break `inventory_units_sold_has_sale`
+         * (migration 0033), which insists a sold unit names the sale that took
+         * it and the day it went — `setStatus` writes neither, so the shop
+         * handing a customer a replacement got a raw constraint error instead
+         * of a settled claim. `WARRANTY_REPLACEMENT` is the honest state, and
+         * like `SOLD` it releases the serial number (D-18).
+         */
+        await this.serials.setStatus(tx, ctx, replacement.id, 'WARRANTY_REPLACEMENT');
         replacementJournalEntryId = command.operationId;
       }
 
@@ -336,7 +347,25 @@ export class WarrantyService {
         if (to === 'SENT_TO_SUPPLIER') {
           await this.serials.setStatus(tx, ctx, claim.inventoryUnitId, 'WITH_SUPPLIER');
         } else if (to === 'RETURNED_TO_CUSTOMER' && settlement !== 'REPLACED') {
-          await this.serials.setStatus(tx, ctx, claim.inventoryUnitId, 'SOLD');
+          /*
+           * Back to whoever had it. Usually that is the customer who bought it,
+           * and the row still carries the sale and the date it went — nothing
+           * along the claim ever cleared them — so `SOLD` is both true and
+           * allowed by `inventory_units_sold_has_sale` (migration 0033).
+           *
+           * A claim may also be raised on a unit that was never sold: something
+           * found faulty on the shelf, looked up by its serial. That one has no
+           * sale to name, so writing `SOLD` would break the same constraint
+           * that broke the replacement path. It goes back where it came from.
+           */
+          const unit = await this.serials.findById(tx, ctx, claim.inventoryUnitId);
+          const wasSold = unit !== null && unit.saleId !== null && unit.soldDate !== null;
+          await this.serials.setStatus(
+            tx,
+            ctx,
+            claim.inventoryUnitId,
+            wasSold ? 'SOLD' : 'IN_STOCK',
+          );
         }
       }
 

@@ -1,6 +1,10 @@
 import { localProducts } from '@sher/adapter-sqlite-wasm';
 import type { CreateSaleRequest, SaleResponse } from '@sher/core-contracts';
 import { saleTotals } from '@sher/core-domain';
+import { SystemClock } from '@sher/shared-utils';
+
+/** Time comes from the Clock port, here as everywhere else (B-clock). */
+const clock = new SystemClock();
 
 /**
  * The invoice the counter prints while the line is down (§4, §5, Phase 12.4).
@@ -26,6 +30,7 @@ export async function localSaleResponse(
   saleNumber: string,
   operationId: string,
   businessDate: string,
+  deviceCode: string,
 ): Promise<SaleResponse> {
   const totals = saleTotals({
     lines: payload.lines.map((line) => ({
@@ -104,6 +109,16 @@ export async function localSaleResponse(
     warnings: [
       'Made on this computer while the internet was down. It goes into the shop’s books when the line is back — the amounts above do not change.',
     ],
+    /*
+     * The origin trail (§18), filled in here so the slip the counter prints
+     * already says what the server will say after replay. The device *name* is
+     * the server's own record of this authorisation and is not in the local
+     * copy, so it stays null until the sale comes back from a sync.
+     */
+    originMode: 'OFFLINE',
+    originDeviceName: null,
+    originDeviceCode: deviceCode,
+    deviceCreatedAt: clock.now().toISOString(),
   };
 }
 

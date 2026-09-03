@@ -6,6 +6,7 @@ import type {
   TenantContext,
   Tx,
 } from '@sher/core-application';
+import type { SerialUnitStatus } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
@@ -31,6 +32,7 @@ interface RawUnit extends Record<string, unknown> {
   display_name: string;
   status: string;
   received_date: string;
+  expiry_date: string | null;
   sold_date: string | null;
   supplier_party_id: string | null;
   supplier_name: string | null;
@@ -52,7 +54,7 @@ const UNIT_SELECT = sql`
   SELECT iu.id, iu.serial_no, iu.product_id,
          CASE WHEN b.name IS NULL OR b.name = '' THEN p.name
               ELSE b.name || ' ' || p.name END AS display_name,
-         iu.status, iu.received_date::text, iu.sold_date::text,
+         iu.status, iu.received_date::text, iu.expiry_date::text, iu.sold_date::text,
          iu.supplier_party_id, sup.name AS supplier_name,
          iu.customer_party_id, cus.name AS customer_name,
          iu.sale_id, s.sale_number AS invoice_number, iu.purchase_id, iu.lot_id,
@@ -74,6 +76,7 @@ function toUnit(row: RawUnit): SerialUnitRow {
     displayName: row.display_name,
     status: row.status,
     receivedDate: row.received_date,
+    expiryDate: row.expiry_date,
     soldDate: row.sold_date,
     supplierPartyId: row.supplier_party_id,
     supplierName: row.supplier_name,
@@ -307,12 +310,26 @@ export class PostgresSerialRepository implements SerialRepository {
     ctx: TenantContext,
     productId: string,
     limit: number,
+    expiredOn: string | null,
   ): Promise<readonly SerialUnitRow[]> {
+    /*
+     * The expiry cut-off is a rule about **selling the shop's own batches**
+     * (§5.13): under BLOCK an expired owned batch stops being sellable stock,
+     * so the picker passes over it. It was never a rule about consignment —
+     * `listSellableLots` applies no expiry test at all, so an expired vendor
+     * lot is sold exactly as any other is — and applying it here anyway hid the
+     * one thing a shop most wants to do with expired consignment goods: hand
+     * them back (§5.6 M07). The return dialog needs one serial per unit and the
+     * server insists on it, so a filter that showed nothing refused the return
+     * outright. Owned units are still cut off; nothing about selling changes.
+     */
     const rows = await txOf(tx).execute<RawUnit>(sql`
       ${UNIT_SELECT}
        WHERE iu.tenant_id = ${ctx.tenantId}
          AND iu.product_id = ${productId}
          AND iu.status = 'IN_STOCK'
+         AND (${expiredOn}::date IS NULL OR iu.vendor_lot_id IS NOT NULL
+              OR iu.expiry_date IS NULL OR iu.expiry_date >= ${expiredOn}::date)
        ORDER BY iu.received_date ASC, iu.id ASC
        LIMIT ${limit}
     `);
@@ -407,7 +424,7 @@ export class PostgresSerialRepository implements SerialRepository {
     tx: Tx,
     ctx: TenantContext,
     unitId: string,
-    status: 'IN_STOCK' | 'SOLD' | 'WITH_SUPPLIER' | 'WRITTEN_OFF',
+    status: SerialUnitStatus,
   ): Promise<void> {
     await txOf(tx)
       .update(inventoryUnits)
@@ -418,5 +435,36 @@ export class PostgresSerialRepository implements SerialRepository {
         version: sql`${inventoryUnits.version} + 1`,
       })
       .where(and(eq(inventoryUnits.tenantId, ctx.tenantId), eq(inventoryUnits.id, unitId)));
+  }
+
+  async markReturnedToVendor(
+    tx: Tx,
+    ctx: TenantContext,
+    input: {
+      readonly unitIds: readonly string[];
+      readonly vendorStockReceiptId: string;
+      readonly vendorLotId: string;
+    },
+  ): Promise<number> {
+    if (input.unitIds.length === 0) return 0;
+    const changed = await txOf(tx)
+      .update(inventoryUnits)
+      .set({
+        status: 'RETURNED_TO_VENDOR',
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+        version: sql`${inventoryUnits.version} + 1`,
+      })
+      .where(
+        and(
+          eq(inventoryUnits.tenantId, ctx.tenantId),
+          inArray(inventoryUnits.id, [...input.unitIds]),
+          eq(inventoryUnits.status, 'IN_STOCK'),
+          eq(inventoryUnits.vendorStockReceiptId, input.vendorStockReceiptId),
+          eq(inventoryUnits.vendorLotId, input.vendorLotId),
+        ),
+      )
+      .returning({ id: inventoryUnits.id });
+    return changed.length;
   }
 }

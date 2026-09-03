@@ -663,3 +663,361 @@ device code + pull cursor, per-device numbering, origin trail on twelve tables) 
 `0048_offline_origin_cash_movements.sql` (the thirteenth) · `0049_sync_in_flight.sql` (the
 `IN_FLIGHT` status that makes an interrupted replay detectable) · `0050_return_operation_uniqueness.sql`
 (the two `operation_id` indexes both return tables were missing).
+
+## 16. Licence key, cold offline sign-in, and the pre-release hardening — 2026-09-02
+
+**Operator-side licence tooling — `tools/licence/`.** `keygen.ts` makes an
+Ed25519 keypair; `issue.ts` signs a licence payload. Run them as
+`pnpm licence:keygen -- …` / `pnpm licence:issue -- …`. **Never on a customer
+machine.** `keyfile.ts` writes the private key to `~/.sher/licence-keys/`
+(dir 0700, file 0600) — it must never reach the repository, a customer, or a
+backup.
+
+**Verifying and installing a licence — `apps/api/src/deployment/`.**
+`license-codec.ts` → `Ed25519LicenseVerifier`; verify over
+`SHERLIC1.` + the payload **re-canonicalised from the Zod-parsed object**
+(`canonicalLicensePayload` in `packages/core-contracts/src/license-key.ts`),
+never over the pasted text. `license-key-store.ts` → `FileLicenseKeyStore`
+(read/install). `license-keys.ts` → `EMBEDDED_KEYS` (empty until the production
+keypair exists). `license-machine-state.ts` → `MachineLicenseState.observe`,
+the anti-rollback high-water mark, held **outside PostgreSQL and outside the
+`.sherdb`**; it refuses a forward jump beyond 400 days rather than clamping.
+Application side: `packages/core-application/src/licensing/` —
+`LicenseInstallService.install` (audits a rejection in its own committed
+transaction before throwing), `license-ports.ts`, `entitlement-binding.ts`.
+Domain: `packages/core-domain/src/licensing/` — `license-clock.ts`
+(`effectiveLicenseNow`, `clockBehindMs`, `advancedHighWater`),
+`license-regression.ts` (`replacement_of` is the only signed way down),
+`license-state.ts`. Web: `apps/web/src/api/license.ts`,
+`apps/web/src/pages/SettingsLicensePage.vue`. Permission: `license.install`.
+
+**READ_ONLY enforcement.** `apps/api/src/deployment/read-only.guard.ts` is the
+one place a lapsed licence blocks a write. It allowlists read methods only —
+**`/api/v1/sync/` is no longer exempt**, so `POST push` and
+`POST conflicts/:id/resolve` refuse while READ_ONLY and the `GET`s stay open in
+every state. Do not re-add the exemption; nothing in the replay path checks
+entitlement.
+
+**Cold offline sign-in — `apps/web/src/offline/`.**
+`offline-session.ts` → `offlineSignInOptions()` (returns `users`, or an
+`OfflineSignInBlock` with `NO_COPY` / `NO_USERS` / `ONLINE` that LoginPage
+renders), `signInOffline()`, `startOfflineSessionWatch()` (hands the session
+back when the line returns; wired in `AppLayout.vue`), `rememberFeatures()`.
+`pin.ts` → `verifyPin(pin, encoded)` and `scrypt(...)`, a hand-written RFC 7914
+implementation because `crypto.subtle` has no scrypt; the encoding is the
+server's own `scrypt$N$r$p$salt$key` from
+`apps/api/src/auth/password-hasher.ts`, and the two are verified to agree.
+`useSession().signInOffline()` **always clears the online tokens** —
+`isOfflineSession()` is `accessToken === null && offlineUser !== null`, and the
+handover watch depends on it. `loadMyAccess()` returns
+`'LOADED' | 'SKIPPED' | 'REFUSED' | 'UNREACHABLE'`: on `UNREACHABLE` it does
+**not** blank permissions, because an offline session carries its own.
+
+**Replay actor check.** `ReplayService.push` loads the device's permitted users
+(`DeviceRepository.listDeviceUsers`) once per batch and quarantines any
+operation whose `op.context.userId` is not among them, with reason
+`PERMISSION_REVOKED`. An **empty list checks nothing**, deliberately — see the
+comment in `replay-service.ts`.
+
+**Offline reads with a local fallback.** Only two exist: `fetchProducts`
+(`apps/web/src/api/products.ts` → `localProducts`) and `fetchParties`
+(`api/parties.ts` → `localParties`), both through
+`apps/web/src/api/offline-fallback.ts`, and **only** on
+`NETWORK_UNREACHABLE` — never on a 403, because serving cached rows over a
+refusal turns "you may not see this" into "here it is". **`fetchPosProducts`
+and `fetchAccounts` have no local read**, which is why an offline sale is
+currently due-only (`docs/NEXT_TASKS.md` TD-1).
+
+**Serial unit statuses.** `packages/core-domain/src/inventory/serial-unit.ts` —
+`IN_STOCK · SOLD · WITH_SUPPLIER · WRITTEN_OFF · RETURNED_TO_VENDOR ·
+WARRANTY_REPLACEMENT`, matching the CHECK constraint (migrations 0033, 0051,
+0052). `ACTIVE_SERIAL_STATUSES = ['IN_STOCK', 'WITH_SUPPLIER']` and must match
+the partial unique index. `setStatus` takes the domain type, so a new status is
+a one-line change in one place; it cannot enforce that `SOLD` requires a row
+that already names its sale — the caller must.
+
+**Security headers.** `apps/api/src/common/security-headers.ts`, mounted in
+`main.ts` before every route: `nosniff`, `DENY`, `no-referrer`, and HSTS only
+when the request arrived over TLS. No CSP — that belongs on the origin serving
+the app.
+
+**Environment.** `apps/api/.env.example` documents every variable **name** the
+code reads, with its default. Required: `DATABASE_URL`, `JWT_SECRET`.
+
+## 17. The vendor control plane and secure remote support — Phase 17 (2026-09-03)
+
+**The one distinction that governs the whole module.** SherERP is still an
+independently deployable installed product; the vendor now has a *management*
+plane beside it. Four processes, and the line between them is enforced by
+`pnpm test:boundaries` (`control-plane-no-erp-data-plane`): `apps/control-plane`,
+`apps/agent` and `apps/admin` may not import `@sher/core-domain`,
+`@sher/core-application` or either adapter. They manage installations; they do
+not read a shop's books. `@sher/core-contracts` is the deliberate exception —
+the licence format has to be byte-identical on both sides, and a second copy of
+`canonicalLicensePayload` is how a vendor ends up signing keys customers cannot
+verify (`apps/control-plane/src/licences/licence-payload.ts` says so in place).
+
+| Process | Where | What it is |
+|---|---|---|
+| Control plane | `apps/control-plane` | Vendor backend. **Its own Postgres database** (`sher_control`), its own migrations, its own pool — never a shop's. |
+| Operator console | `apps/admin` | Vue 3, port 5175, distinct dark/amber theme and a **persistent tenant banner**, so a live customer ERP embedded in an iframe can never be mistaken for the console around it. |
+| Sidecar | `apps/agent` | A **separate process** on the shop's machine. Separate because a process cannot cleanly overwrite the files it is running from, and because it can report that the ERP is down. |
+| Signer | `tools/signer` | Loopback-only, bearer-authenticated, one operation: sign. **The only process that ever reads a private key.** |
+
+**The channel is outbound, always** (§1, §16). The sidecar POSTs a signed
+check-in and its pending commands ride back on the response; a WSS reverse
+tunnel is raised *only* while a support session is live and dropped when it
+ends. No customer configures a port, a forwarding rule or a public URL, and an
+installation with no live session has no channel into it at all.
+
+**Shared contracts — `packages/control-contracts/`.** Types and canonical bytes,
+no crypto, no I/O (the `@sher/core-contracts` discipline, same reasons).
+`canonical.ts` → `canonicalJson` (sorted keys, no whitespace) and the four
+signing prefixes `SHERCMD1` · `SHERAGT1` · `SHERSUP1` · `SHERREL1`, each **inside**
+the signed bytes so a signature can never be lifted from one message type to
+another. `command.ts` → `commandTypeSchema`, the eleven things a vendor may ask
+for; **that enum is the security boundary**, there is no general case, and the
+agent's switch has no `default`. `states.ts` · `identity.ts` · `support.ts` ·
+`release.ts` · `flags.ts` · `operators.ts` (`ROLE_PERMISSIONS` written out as a
+table, not derived).
+
+**Identity — §3.** The dashboard mints a single-use enrolment token (72 h, only
+its SHA-256 stored); the agent generates its **own** Ed25519 keypair on the
+shop's machine and posts the public half; the control plane binds it and burns
+the token, all in one transaction. The vendor never holds a customer's private
+key. Identity binds to the ERP's own `tenant_id`, never a domain name (§2).
+`agent-auth.guard.ts` checks five things in order — installation exists and is
+not revoked · signature verifies against *that installation's* key · the body
+hash inside the signed document matches the body received · the clock is within
+five minutes · the nonce is unseen. The nonce insert *is* the replay check, and
+it runs before any handler, so protection does not depend on an endpoint
+happening to be idempotent.
+
+**Commands — §17, §18.** Signed envelope carrying tenant, installation, type,
+payload, issued-at, expires-at and an idempotency key. Idempotency is the unique
+index `commands_idempotent`, not a convention. The agent refuses on
+`TENANT_MISMATCH` · `INSTALLATION_MISMATCH` · `SIGNATURE_INVALID` ·
+`UNTRUSTED_KEY` · `EXPIRED` · `UNKNOWN_TYPE`, canonicalising from the **parsed**
+envelope rather than the received text. A machine handed work comes back in 10
+seconds instead of 180 — on the other end of every command is an operator
+watching a screen.
+
+**Licences — §4, and nothing about verification changed.** `LicencesService`
+asks the signer for a signature and queues a `LICENCE_REFRESH`; the sidecar
+hands the key to the **existing** `LicenseInstallService`. Same signature check,
+same business binding, same anti-rollback rules, same audit row as a pasted key.
+`MachineLicenseState`, the grace ladder and `read-only.guard.ts` are untouched.
+The Settings → Licence paste box stays exactly as it was — the offline renewal
+path for a shop with no line. Delivery is tracked `ISSUED → DELIVERED →
+INSTALLED → FAILED`. A vendor-side revocation stops renewal and marks the fleet
+view; it **cannot** stop a paid-up shop trading (§20).
+
+**Signing keys — §5.** `tools/signer/src/keys.ts`. Licence key stays where
+`tools/licence` already writes it (`~/.sher/licence-keys/`); command, support and
+release keys live in `~/.sher/control-keys/`, 0600 in a 0700 directory. Not in
+the repository, not in the control-plane database, not in an environment
+variable, not returned by any route. Every signature is appended to
+`signer-audit.log` beside the keys, so the log and the database can be compared
+after a compromise of either. `SignerClient` has **no fallback path** — no
+local key, no "sign in-process for development"; the signer being down is a
+plain refusal.
+
+**Releases and deployment — §9, §10, §11.** A release is a `.tar.gz` of built
+artifacts, hashed **from disk by the control plane** and Ed25519-signed. The
+agent verifies signature *then* hash — the hash catches the truncated download,
+the signature catches the substituted artifact. Pre-flight order is deliberate:
+identity, version compatibility, then a real pre-update backup (through the
+ERP's own `runAutomatic`, so it is an archive the restore path has actually been
+exercised against). Then unpack to a versioned directory → migrate → **symlink
+flip** → restart → health check, every stage reported. A migration failure keeps
+the old build on the old schema, reports `MIGRATION_FAILED` with the failing
+file, and **halts the whole job** — no queued target moves until an operator
+clears it with a written reason. Rollback is offered only where it is genuinely
+possible; a release that changed the database says so instead of pretending.
+
+**Support — §12–§15, owner decisions 2026-09-03.** Access is **pre-authorized**
+by the support arrangement: a Platform Owner opens a session without asking the
+shop. That places the whole of containment on three things, so all three are
+checked by the *installation*, on every request: the signature, the expiry, and
+revocation. 30-minute sliding inactivity, **4-hour absolute ceiling** clamped by
+`Math.min` on every renewal. The principal is **not a user row** — no password,
+no PIN, nothing left behind — and it is recognised in exactly two places:
+`apps/api/src/management/support-grant.ts` (`verifySupportGrant`, called from
+`TenantContextGuard` so every existing route works unchanged) and
+`packages/adapter-postgres/src/access-control.ts` (`SUPPORT_PRINCIPAL_PREFIX`).
+It holds owner-equivalent reach **except** identity and erasure —
+`SUPPORT_FORBIDDEN_PERMISSIONS` and `SUPPORT_FORBIDDEN_ROUTE_PREFIXES`, the same
+list at both fences, because a route that forgot to declare a permission would
+otherwise inherit the ceiling by omission.
+
+**The grant carries two tenant ids and they are different things.**
+`tenant_id` is the vendor's customer record; `erp_tenant_id` is the shop's own,
+and it is the one the ERP acts on. Overloading one field cost a debugging cycle
+during verification and would eventually have pointed a session at the wrong
+business.
+
+**Corrections go the ordinary way** (§14). The gateway attaches the grant and
+forwards; the shop's ERP applies its own permissions, its own domain rules and
+its own `AuditWriter`. There is no database connection anywhere in `apps/agent`
+or in `apps/api/src/management/`, so there is no shortcut to take by accident.
+Audit rows carry `support:<operatorId>`, permanently distinguishable from the
+owner's own actions.
+
+**What the shop sees.** `ProviderSupportNotice.vue` under the top bar — a small
+non-blocking "Software Provider Support active", naming the operator and the
+reason, polled once a minute. No Support History screen (the owner declined
+one); the authoritative immutable record is `support_sessions` +
+`support_actions` in the control plane, both append-only by database trigger.
+
+**Diagnostics — §7, §22.** Hooked into `AppErrorFilter`, the one place every
+failure passes through. Code · module · route **pattern** · status · correlation
+id · versions · count. **There is no message field**, so redaction is structural
+rather than a pattern list somebody has to keep current, and
+`FORBIDDEN_DIAGNOSTIC_FIELDS` fails a future contributor loudly at the boundary.
+4xx refusals are not reported — a shop's typing mistakes are not the vendor's
+signal.
+
+**Feature flags — §19.** Visibility and optional features only, from
+`KNOWN_FEATURE_FLAGS`. Unknown or unreachable resolves to **enabled**
+(`ManagementState.isEnabled`), so a vendor outage can never switch a customer's
+features off. Costing, posting, VAT, period and ledger rules contain no flag
+lookup at all — a switch that does not exist cannot be thrown.
+
+**New ERP surface.** `apps/api/src/management/` — six token-guarded endpoints
+(`status`, `diagnostics`, `licence`, `backup`, `feature-flags`,
+`support-session`) plus `/api/v1/provider/status` for the shop's own shell.
+Empty `MANAGEMENT_TOKEN` means the whole surface 404s, which is simply true of
+an install sold without remote management (D-34's reasoning). New port
+`ManagementProfileRepository` (`packages/core-application/src/ports/management-profile.ts`)
+reads six deployment facts and **cannot** reach a business table.
+
+**Environment.** ERP: `MANAGEMENT_TOKEN`, `SUPPORT_PUBLIC_KEY`, `APP_VERSION` —
+all empty by default, and empty means off. Control plane: `CONTROL_DATABASE_URL`,
+`CONTROL_JWT_SECRET`, `CONTROL_SECRET_KEY` (32 bytes base64, seals TOTP
+secrets), `CONTROL_SIGNER_TOKEN`, `CONTROL_SIGNER_URL` (**refuses a non-loopback
+host at boot**), `CONTROL_RELEASE_DIR`, `CONTROL_PUBLIC_BASE_URL`. Sidecar:
+`SHER_CONTROL_URL`, `SHER_ERP_URL`, `SHER_ERP_MANAGEMENT_TOKEN`,
+`SHER_RELEASES_DIR`, `SHER_RESTART_COMMAND`.
+
+**Commands to run it.** `pnpm signer:keygen` · `pnpm signer` ·
+`pnpm control:migrate` · `pnpm control:operator -- --email … --name … --password …` ·
+`pnpm control:dev` (console) · `pnpm agent:enrol -- --token …` · `pnpm agent`.
+
+---
+
+## 18. Daily-first workflow UI, Global Search and E2E — Phase 18 (2026-09-03)
+
+**No accounting, stock, permission or business-logic change.** Every screen
+calls the use case it called before. Nothing under `packages/core-domain` was
+touched, and the only new thing in `packages/core-application` reads.
+
+### Global Search (18.1)
+
+| Piece | Location | Notes for callers |
+|---|---|---|
+| `GlobalSearchService` | `core-application/src/search/global-search-service.ts` | **One transaction, one endpoint.** Reads `accessControl.permissionsOf` once and calls `ProductRepository.list`, `PartyRepository.list`, `SaleRepository.listSales` and `PurchaseRepository.listPurchases` with the same filter structs the owning lists pass — no query logic is duplicated, and products are ranked by the same `searchProducts` the POS uses. A caller missing a permission gets **no group**, never an empty one or a 403 |
+| `globalSearchQuerySchema`, `GlobalSearchResponse` | `core-contracts/src/search.ts` | Hits carry `kind` + `id`, never a route: where a hit opens is the client's business |
+| `SearchController` | `apps/api/src/search/` | `GET /api/v1/search?q=…` |
+| `globalSearch()` | `apps/web/src/api/search.ts` | **Deliberately not cancellable** — `request()` reads a failed `fetch` as the line being down, so aborting a stale keystroke would flip the whole app offline. The palette drops out-of-order answers by sequence number |
+| `GlobalSearchDialog.vue` | `components/shell/` | The `Ctrl K` palette. Records first, then a separately grouped `Go to…` built client-side from `resolveNavigation` — the two kinds never interleave |
+
+### Navigation and the shared shapes (18.1–18.4)
+
+- **`navigation.ts` reordered**: `Daily` is first and Dashboard is its first
+  entry; the `overview` category is **gone** (feature id `daily.dashboard.page`).
+  `settings.sync` is gone too — `/sync` is still a route and is now an
+  `activePrefix` of `settings.offline.page`, so the sidebar lights up on it.
+- **The list pattern** every daily screen now follows: page-level
+  `<form class="filters">` above the card, `.field.grow` around `SearchField`,
+  a `Clear` ghost button when filters are active, and **two** empty states —
+  "nothing yet" with a create button, "Nothing matched" with a clear button.
+  `design/components.css` owns `.filters`; a page must not redefine it.
+- **`.list-cards` / `.list-card`** (`design/components.css`) is the phone shape
+  below 640px. Put the `<ul class="list-cards">` immediately before a
+  `.table-wrap`, or mark the desktop table `phone-hidden` when it is a
+  PrimeVue `DataTable`. The same media query makes `.p-dialog` full-screen and
+  stacks `.filters` one field per line.
+- **`AmountInput`** now pins `inputmode="decimal"` through `pt.pcInputText`.
+  PrimeVue defaulted it to `numeric` — the keypad with **no decimal point** —
+  so no amount or quantity in the application could be typed on a phone.
+  `SearchField` gained `inputmode="search"` and `enterkeyhint="search"`.
+
+### E2E — `apps/web/e2e` (18.5)
+
+**The only test files an agent may write here.** R-0 §1 forbids them outright;
+the owner authorised **Playwright specs only**, in conversation, on 2026-09-03.
+No vitest suite may be added alongside them.
+
+| Piece | What it does |
+|---|---|
+| `support/database.ts` | `assertE2eDatabase` **aborts unless the database is exactly `sher_e2e`** — parsed from the URL, not pattern-matched. Never weaken this |
+| `support/stack.ts` | `prepareDatabase` (drop → migrate → backfill) · `runUpgradeSteps` (migrate → backfill, no drop — the upgrade spec needs a traded database) · `startApi`/`stopApi` on port 3100 |
+| `support/seed.ts` | The baseline, **created through the ERP's own HTTP API**. Opening stock goes through the real opening workflow; opening cash is a money account's opening balance. No balance is ever written by SQL |
+| `support/ui.ts` | `signIn`, `baseline()`, `today()`. Selectors are roles and visible text (owner decision 13) |
+| Specs | `manager-daily-flow` · `cashier-permissions` (menu **and** route **and** API) · `mobile-daily-screens` (no screenshot baselines) · `upgrade-safety` |
+
+`VITE_PORT` and `VITE_API_TARGET` in `vite.config.ts` let the suite run its own
+Vite and API while the owner drives the development stack on 5173/3000.
+
+**Commands.** `pnpm test:e2e` (root) or `pnpm --filter @sher/web test:e2e`.
+Requires `pnpm --filter "@sher/api..." build` first — the E2E API runs from
+`dist`, not from source.
+
+## 19. The test inventory and coverage report — Phase 19 (owner request 2026-09-03)
+
+`tools/test-inventory` reads the application and writes `docs/testing/`. Run it
+with **`pnpm test:inventory`**. Nothing under `docs/testing/` is edited by hand;
+it is regenerated, and a stale entry there is a bug in the scanner rather than
+in the file.
+
+| Where | What it does |
+| --- | --- |
+| `src/tokens.ts` | `tokenize(template)` — a quote-aware tag reader for Vue templates, with nesting. Use it rather than a regex over `<tag[^>]*>`: attributes on this codebase contain `>` (`v-if="drafts.length > 0"`), and the naive form misreads the POS. |
+| `src/sfc.ts` | `fields`, `dropdowns`, `actions`, `tables`, `opensDialogs`, `validationMessages`, `apiCalls`, `permissionsUsed` — everything on one screen. Reads all three field idioms this codebase uses: `<label for>`, a wrapping `<label>`, and a control named only by its placeholder (which it reports as unlabelled rather than skipping). |
+| `src/scan.ts` | `buildInventory(root)` — routes from `router.ts`, nav permissions from `navigation.ts`, endpoints from the controllers, permission codes from `core-contracts`, and `WORKFLOWS`, the one hand-maintained list. |
+| `src/coverage.ts` | `readClaims` / `buildCoverage` — links `@covers` lines in the specs to inventory ids. `NOT_APPLICABLE` carries the reason each exclusion is defensible. |
+| `src/render.ts` | `renderMatrix`, `renderCoverage`. |
+
+**How a test claims coverage.** A block comment at the top of the spec, one line
+per thing it is answerable for:
+
+```
+ * @covers screen:products
+ * @covers dialog:stock-adjust
+ * @covers endpoint:POST /api/v1/products
+ * @covers permission:catalog.product.create
+ * @covers workflow:cash-sale
+```
+
+Nothing is inferred from a filename. A claim naming something the inventory no
+longer contains is reported and fails `--check`, so a screen renamed out from
+under a test cannot leave the report quietly overstating itself.
+
+### The accounting and business-rule suites — `apps/api/test` (Phase 19)
+
+Six suites added on 2026-09-03, all built the same way and worth copying rather
+than inventing a seventh style:
+
+| Suite | What it holds the line on |
+| --- | --- |
+| `sales.spec.ts` | Cash and credit sales, advance vs change, discounts reaching the ledger, cancellation (INV-08), and the API refusing what the screen would not send. |
+| `purchases.spec.ts` | Payables, part payment, landed cost going into stock value rather than expenses, supplier payment, voiding a bill. |
+| `returns.spec.ts` | Goods back in both directions — refund out of the drawer, or left on account — and refusing more than was sold or bought. |
+| `cash-day.spec.ts` | Day open and close, the short/over reaching `CASH_SHORT_OVER` (INV-07b), expenses, transfers and owner capital. |
+| `stock-count.spec.ts` | Variance to `STOCK_ADJUSTMENT`, never `COGS`; per-product adjustments; refusing to write off more than exists. |
+| `corrections.spec.ts` | A correction adds and never overwrites — the original entry, its reversal and the new posting all stand — plus the append-only audit trail. |
+
+**The three rules they all follow.**
+
+1. **Assert the ledger, not the response.** Each file has a local `ledger()` that
+   sums `journal_lines` per account and an `onHand()` that nets
+   `stock_movements`, both read through RLS as the tenant. A document that
+   returns the right total and posts the wrong journal is the failure worth
+   catching, and it is invisible to a test that trusts the API's own arithmetic.
+2. **`afterEach` calls `assertGoldenInvariants`.** Whatever the case set out to
+   prove, §3.11 still has to hold when it finishes.
+3. **Setup uses `must(response, what)`.** A silent setup failure reads as a
+   baffling assertion failure three steps later; `must` names the step that
+   actually broke. `seedWalkInCustomer` is in `support/database.ts` for the same
+   reason — `seedTenant` does not run tenant provisioning, so a shop it creates
+   has no walk-in party and every guest sale fails until one is added.

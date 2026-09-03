@@ -3,9 +3,12 @@ import { onMounted, ref, useTemplateRef } from 'vue';
 import { RouterView, useRouter } from 'vue-router';
 
 import { loadMyAccess } from '../../auth/access';
+import { useSession } from '../../auth/session';
+import { offlineSignInOptions, startOfflineSessionWatch } from '../../offline/offline-session';
 import AppBottomNav from './AppBottomNav.vue';
 import AppSidebar from './AppSidebar.vue';
 import LicenseNotice from './LicenseNotice.vue';
+import ProviderSupportNotice from './ProviderSupportNotice.vue';
 import AppTopBar from './AppTopBar.vue';
 import { navigationModuleId } from './navigation';
 
@@ -25,6 +28,7 @@ import { navigationModuleId } from './navigation';
  * a separate layout, not a variant of this one.
  */
 const router = useRouter();
+const session = useSession();
 
 const collapsed = ref(false);
 const navigationOpen = ref(false);
@@ -55,9 +59,45 @@ function toggleNavigation(): void {
   navigationOpen.value = true;
 }
 
-// UI-09: the sidebar cannot be permission-filtered until it knows the
-// permissions. Loaded here, once, because every signed-in screen sits inside it.
-onMounted(() => void loadMyAccess());
+/**
+ * UI-09: the sidebar cannot be permission-filtered until it knows the
+ * permissions. Loaded here, once, because every signed-in screen sits inside it.
+ *
+ * **Phase 12.4 — the machine that boots cold into an outage.** An access token
+ * outlives the browser tab, so a computer switched off last night starts up
+ * holding one that no longer works and no longer can be renewed. The router
+ * counts that as signed in and lands here, on a shell that can reach nothing —
+ * and the offline door on the login screen, the one thing that would let the
+ * shop open, is never shown.
+ *
+ * So an unreachable server ends that dead session and sends the person to sign
+ * in, **but only when this machine actually has a door to offer**. On any other
+ * computer the same blip is a passing one, and throwing a signed-in shopkeeper
+ * back to a login screen they cannot use would be the worse answer by far.
+ */
+async function openTheDoorIfNeeded(): Promise<void> {
+  const outcome = await loadMyAccess();
+  if (outcome !== 'UNREACHABLE' || session.isOfflineSession()) return;
+
+  const options = await offlineSignInOptions();
+  if (!('users' in options)) return;
+
+  session.lock();
+  await router.push({ name: 'login' });
+}
+
+onMounted(() => {
+  void openTheDoorIfNeeded();
+  /*
+   * Phase 12.4. A session opened against the snapshot alone cannot send the
+   * day's work up — the push endpoint needs a session the server issued — so
+   * the moment the line is back and no screen is mid-sale, the machine ends it
+   * and asks for a real sign-in. The queue stays on disk either way.
+   */
+  startOfflineSessionWatch(() => {
+    void router.push({ name: 'login', query: { reconnected: '1' } });
+  });
+});
 </script>
 
 <template>
@@ -75,6 +115,13 @@ onMounted(() => void loadMyAccess());
         healthy.
       -->
       <LicenseNotice />
+      <!--
+        Phase 17 (§15): a small line while the software provider is in. Below the
+        licence notice deliberately — a lapsed licence stops the shop trading and
+        a support session does not, so it must not push the more urgent message
+        down the page.
+      -->
+      <ProviderSupportNotice />
 
       <div ref="scroller" class="scroll">
         <div class="content">

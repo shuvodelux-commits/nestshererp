@@ -49,6 +49,7 @@ const costTaka = ref(0);
 const note = ref('');
 const serialText = ref('');
 const businessDate = ref('');
+const expiryDate = ref('');
 const busy = ref(false);
 const error = ref<{ code: string; message: string } | null>(null);
 const operationId = ref(Ulid.generate(clock));
@@ -88,6 +89,7 @@ watch(
     note.value = '';
     serialText.value = '';
     businessDate.value = '';
+    expiryDate.value = '';
     error.value = null;
     operationId.value = Ulid.generate(clock);
   },
@@ -120,6 +122,7 @@ async function save(): Promise<void> {
         productId: productId.value,
         qty: Math.round(qty.value * 1000),
         vendorUnitCostMinor: Math.round(costTaka.value * 100),
+        expiryDate: expiryDate.value === '' ? null : expiryDate.value,
         serials: serials.value,
         note: note.value.trim() === '' ? null : note.value.trim(),
         ...(businessDate.value === '' ? {} : { businessDate: businessDate.value }),
@@ -206,6 +209,11 @@ async function save(): Promise<void> {
         <div class="field">
           <label for="vs-date">Date <span class="label-bn">তারিখ — ফাঁকা রাখলে আজ</span></label>
           <DateOnlyPicker input-id="vs-date" v-model="businessDate" />
+        </div>
+
+        <div class="field">
+          <label for="vs-expiry">Expiry date <span class="label-bn">মেয়াদ — ঐচ্ছিক</span></label>
+          <DateOnlyPicker input-id="vs-expiry" v-model="expiryDate" />
         </div>
 
         <div class="field">

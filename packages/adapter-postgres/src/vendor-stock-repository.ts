@@ -7,7 +7,7 @@ import type {
   VendorStockRepository,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 
 import {
   inventoryLots,
@@ -36,6 +36,7 @@ interface RawReceipt extends Record<string, unknown> {
   display_name: string;
   unit_name: string;
   business_date: string;
+  expiry_date: string | null;
   note: string | null;
   qty: string;
   vendor_unit_cost: string;
@@ -53,7 +54,7 @@ const RECEIPT_SELECT = sql`
          CASE WHEN b.name IS NULL OR b.name = '' THEN p.name
               ELSE b.name || ' ' || p.name END AS display_name,
          u.name AS unit_name,
-         vsr.business_date::text, vsr.note,
+         vsr.business_date::text, il.expiry_date::text, vsr.note,
          vsr.qty::text, vsr.vendor_unit_cost::text, vsr.lot_id, vsr.location_id,
          COALESCE(il.qty_remaining, 0)::text AS lot_qty_remaining,
          COALESCE((
@@ -79,6 +80,7 @@ function toReceipt(row: RawReceipt): VendorReceiptRow {
     displayName: row.display_name,
     unitName: row.unit_name,
     businessDate: row.business_date,
+    expiryDate: row.expiry_date,
     note: row.note,
     qty: Number(row.qty),
     vendorUnitCost: Number(row.vendor_unit_cost),
@@ -120,7 +122,7 @@ export class PostgresVendorStockRepository implements VendorStockRepository {
       landedCostTotal: 0,
       actualUnitCost: receipt.vendorUnitCost,
       businessDate: receipt.businessDate,
-      expiryDate: null,
+      expiryDate: receipt.expiryDate,
       status: 'OPEN',
       createdAt: now,
       updatedAt: now,
@@ -171,11 +173,10 @@ export class PostgresVendorStockRepository implements VendorStockRepository {
   async insertReturn(
     tx: Tx,
     ctx: TenantContext,
-    input: { readonly record: NewVendorReturn; readonly lotQtyRemaining: number },
+    record: NewVendorReturn,
   ): Promise<void> {
     const db = txOf(tx);
     const now = this.clock.now();
-    const { record } = input;
 
     await db.insert(stockMovements).values({
       id: record.movementId,
@@ -194,18 +195,28 @@ export class PostgresVendorStockRepository implements VendorStockRepository {
       unitCost: null,
     });
 
-    await db
+    const updatedLot = await db
       .update(inventoryLots)
       .set({
-        qtyRemaining: input.lotQtyRemaining,
+        qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${record.qty}`,
         // A lot with nothing left is closed, exactly as a fully consumed
         // purchase lot is — the vendor's goods have all gone one way or another.
-        status: input.lotQtyRemaining <= 0 ? 'CLOSED' : 'OPEN',
+        status: sql`CASE WHEN ${inventoryLots.qtyRemaining} - ${record.qty} <= 0 THEN 'CLOSED' ELSE 'OPEN' END`,
         updatedAt: now,
         updatedBy: ctx.userId,
         version: sql`${inventoryLots.version} + 1`,
       })
-      .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, record.lotId)));
+      .where(
+        and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, record.lotId),
+          gte(inventoryLots.qtyRemaining, record.qty),
+        ),
+      )
+      .returning({ id: inventoryLots.id });
+    if (updatedLot.length === 0) {
+      throw new Error('Vendor stock changed while this return was being posted');
+    }
 
     await db.insert(vendorStockReturns).values({
       id: record.id,

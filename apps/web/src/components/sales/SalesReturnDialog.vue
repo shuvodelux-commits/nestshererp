@@ -50,6 +50,7 @@ const invoice = ref<ReturnableInvoiceResponse | null>(null);
 const accounts = ref<readonly MoneyAccountResponse[]>([]);
 /** Quantity coming back per sale line, keyed by line id. Scale 3, as sold. */
 const quantities = ref<Record<string, number>>({});
+const selectedSerials = ref<Record<string, string[]>>({});
 const reason = ref<ReturnReason>('CHANGED_MIND');
 const note = ref('');
 const settlement = ref<'REFUND' | 'CREDIT'>('CREDIT');
@@ -81,7 +82,7 @@ const REASONS: { value: ReturnReason; label: string }[] = [
   { value: 'OTHER', label: 'Other — অন্য কারণ' },
 ];
 
-/** Only what this invoice can still take back — its own stock, not consignment. */
+/** Only lines with an unrestored durable origin remain returnable. */
 const returnableLines = computed(() =>
   (invoice.value?.lines ?? []).filter((line) => line.returnable && line.qtyReturnable > 0),
 );
@@ -100,9 +101,15 @@ const soldLines = computed(() =>
 );
 
 const draftLines = computed(() =>
-  Object.entries(quantities.value)
-    .filter(([, qty]) => qty > 0)
-    .map(([saleLineId, qty]) => ({ saleLineId, qty: Math.round(qty * 1000) })),
+  returnableLines.value
+    .map((line) => ({
+      saleLineId: line.saleLineId,
+      qty: line.tracksSerial
+        ? (selectedSerials.value[line.saleLineId]?.length ?? 0) * 1000
+        : Math.round((quantities.value[line.saleLineId] ?? 0) * 1000),
+      serialUnitIds: selectedSerials.value[line.saleLineId] ?? [],
+    }))
+    .filter((line) => line.qty > 0),
 );
 
 /**
@@ -178,6 +185,9 @@ async function load(): Promise<void> {
     quantities.value = Object.fromEntries(
       returnable.lines.map((line) => [line.saleLineId, 0]),
     );
+    selectedSerials.value = Object.fromEntries(
+      returnable.lines.map((line) => [line.saleLineId, []]),
+    );
   } catch (cause) {
     failure.value = describe(cause, 'Could not open this invoice');
   } finally {
@@ -187,6 +197,14 @@ async function load(): Promise<void> {
 
 /** The whole of a line, in one tap — the common case at a counter. */
 function takeAll(saleLineId: string, qtyReturnable: number): void {
+  const line = returnableLines.value.find((candidate) => candidate.saleLineId === saleLineId);
+  if (line?.tracksSerial) {
+    selectedSerials.value = {
+      ...selectedSerials.value,
+      [saleLineId]: line.serials.map((serial) => serial.id),
+    };
+    return;
+  }
   quantities.value = { ...quantities.value, [saleLineId]: qtyReturnable / 1000 };
 }
 
@@ -212,6 +230,7 @@ async function submit(): Promise<void> {
         lines: draftLines.value.map((line) => ({
           sourceLineId: line.saleLineId,
           qty: line.qty,
+          serialUnitIds: line.serialUnitIds,
         })),
         reason: reason.value,
         note: note.value.trim() === '' ? null : note.value.trim(),
@@ -330,6 +349,7 @@ onMounted(load);
             <td class="num">
               <div class="ret__qty">
                 <AmountInput
+                  v-if="!line.tracksSerial"
                   :model-value="quantities[line.saleLineId] ?? 0"
                   @update:model-value="quantities[line.saleLineId] = $event"
                   :min="0"
@@ -343,6 +363,20 @@ onMounted(load);
                   size="small"
                   @click="takeAll(line.saleLineId, line.qtyReturnable)"
                 />
+              </div>
+              <div v-if="line.tracksSerial" class="serial-list">
+                <label v-for="serial in line.serials" :key="serial.id">
+                  <input
+                    v-model="selectedSerials[line.saleLineId]"
+                    type="checkbox"
+                    :value="serial.id"
+                  />
+                  <span>
+                    {{ serial.serialNo }}
+                    <small>{{ serial.sourceType === 'VENDOR' ? 'Vendor stock' : 'Own stock' }}</small>
+                  </span>
+                </label>
+                <small>{{ selectedSerials[line.saleLineId]?.length ?? 0 }} selected</small>
               </div>
             </td>
             <td class="num">

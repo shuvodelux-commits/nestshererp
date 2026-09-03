@@ -31,6 +31,7 @@ export class SalesReturnQueryService {
 
       const invoice = await this.returns.findReturnableInvoice(tx, ctx, saleId);
       if (invoice === null) throw new AppError(ErrorCode.NOT_FOUND, 'Invoice not found');
+      const origins = await this.returns.sourceAllocations(tx, ctx, saleId);
 
       const today = this.clock.businessDate(ctx.timezone);
       const caps = await this.returns.refundCapsOf(tx, ctx, ctx.userId);
@@ -48,7 +49,21 @@ export class SalesReturnQueryService {
         isWalkIn: invoice.isWalkIn,
         grandTotalMinor: invoice.grandTotalMinor,
         dueMinor: invoice.dueMinor,
-        lines: invoice.lines.map((line) => ({
+        lines: invoice.lines.map((line) => {
+          const lineOrigins = origins.filter(
+            (origin) => origin.saleLineId === line.saleLineId && origin.reversedQty < origin.qty,
+          );
+          const serials = lineOrigins.flatMap((origin) =>
+            origin.inventoryUnitId === null || origin.serialNo === null
+              ? []
+              : [{
+                  id: origin.inventoryUnitId,
+                  serialNo: origin.serialNo,
+                  sourceType: origin.sourceType === 'VENDOR' ? 'VENDOR' as const : 'OWNED' as const,
+                  vendorPartyId: origin.vendorPartyId,
+                }],
+          );
+          return {
           saleLineId: line.saleLineId,
           productId: line.productId,
           productName: line.productName,
@@ -58,11 +73,11 @@ export class SalesReturnQueryService {
           qtyReturnable: Math.max(line.qtySold - line.qtyReturned, 0),
           unitPriceMinor: line.unitPriceMinor,
           netAmountMinor: line.netAmountMinor,
-          // Consignment stock was never the shop's, so it cannot come back
-          // (INV-04). The line is still shown, because an invoice that hides a
-          // line the customer is holding is worse than one that explains it.
-          returnable: line.source === 'OWN_STOCK',
-        })),
+          returnable: lineOrigins.length > 0 || line.source === 'OWN_STOCK',
+          tracksSerial: serials.length > 0,
+          serials,
+        };
+        }),
         refundLimit: {
           perReturnMinor: caps.perReturnMinor,
           perDayMinor: caps.perDayMinor,

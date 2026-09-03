@@ -76,7 +76,11 @@ export class SalesReturnsController {
         ctx,
         operationId,
         saleId: request.saleId,
-        lines: request.lines.map((line) => ({ saleLineId: line.sourceLineId, qty: line.qty })),
+        lines: request.lines.map((line) => ({
+          saleLineId: line.sourceLineId,
+          qty: line.qty,
+          serialUnitIds: line.serialUnitIds,
+        })),
         reason: request.reason,
         note: request.note,
         refundMinor: request.refundMinor,

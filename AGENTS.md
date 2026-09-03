@@ -146,6 +146,28 @@ a **rejected** screen.
 
 `docs/archive/` holds superseded planning documents. **Do not read them** — they contradict the current spec.
 
+### Plus the agent-handoff set in `docs/` — added 2026-09-02 by owner request
+
+The four files above remain the canonical project documentation and the only
+place a requirement, a decision or a delivery status may be recorded. The owner
+additionally asked for a handoff set so another AI account, Codex or a new
+developer can pick the project up without this repository's conversation
+history. It is **exactly four more files, and no others**:
+
+| File | Contains |
+|---|---|
+| `docs/AI_HANDOFF.md` | The cold-start briefing: purpose, stack, structure, conventions, invariants, commands, what must not be redesigned |
+| `docs/CURRENT_STATE.md` | Where the project stands today — branch, commit, working tree, gate results, deployment readiness |
+| `docs/NEXT_TASKS.md` | Remaining work, split into post-release / maintenance / future features / technical debt |
+| `docs/DECISIONS.md` | Confirmed architectural, business, accounting, security and operational decisions, with the reason and the consequence of each |
+
+`CLAUDE.md` at the repository root is a short pointer to this file for Claude
+Code, plus the Claude-specific notes. It adds no requirement of its own.
+
+**The "do not create new .md files" rule is otherwise unchanged.** These eight
+files plus `CLAUDE.md` and `SKILL.md` are the complete set. Still no task logs,
+no progress READMEs, no module notes, no scratch files.
+
 ## Token efficiency — binding
 
 - Read `AI_CODING_INSTRUCTIONS.md` in full before writing code.

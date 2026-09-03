@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@sher/shared-utils": ["../../packages/shared-utils/src/index.ts"],
+      "@sher/control-contracts": ["../../packages/control-contracts/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

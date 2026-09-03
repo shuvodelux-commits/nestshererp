@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { qtyText } from '../money/money-text';
-import type { VendorStockReceiptResponse } from '@sher/core-contracts';
+import type { SerialUnitResponse, VendorStockReceiptResponse } from '@sher/core-contracts';
 import { Qty, SystemClock, Ulid } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import { computed, ref, watch } from 'vue';
 
 import { ApiError } from '../../api/client';
 import { returnVendorStock } from '../../api/vendors';
+import { fetchAvailableSerials } from '../../api/warranty';
 import { useSession } from '../../auth/session';
 import AmountInput from '../fields/AmountInput.vue';
 import DateOnlyPicker from '../DateOnlyPicker.vue';
@@ -32,6 +33,8 @@ const businessDate = ref('');
 const busy = ref(false);
 const error = ref<{ code: string; message: string } | null>(null);
 const operationId = ref(Ulid.generate(clock));
+const receiptSerials = ref<readonly SerialUnitResponse[]>([]);
+const selectedSerialIds = ref<string[]>([]);
 
 const visible = computed({
   get: () => props.receipt !== null,
@@ -44,12 +47,29 @@ const onHand = computed(() => (props.receipt?.onHandQty ?? 0) / 1000);
 
 watch(
   () => props.receipt?.id,
-  () => {
+  async () => {
     qty.value = onHand.value;
     note.value = '';
     businessDate.value = '';
     error.value = null;
     operationId.value = Ulid.generate(clock);
+    receiptSerials.value = [];
+    selectedSerialIds.value = [];
+    const receipt = props.receipt;
+    const token = session.accessToken.value;
+    if (receipt !== null && token !== null && receipt.onHandQty > 0) {
+      /*
+       * The whole page, because the units wanted are picked out of it here: a
+       * product with more in-stock serials than one default page could answer
+       * without a single one of this receipt's, and the dialog would then ask
+       * for a serial that was not on offer. 500 is the endpoint's ceiling.
+       */
+      const available = await fetchAvailableSerials(token, receipt.productId, 500);
+      receiptSerials.value = available.data.filter(
+        (unit) => unit.vendorStockReceiptId === receipt.id && unit.vendorLotId !== null,
+      );
+      selectedSerialIds.value = receiptSerials.value.map((unit) => unit.id);
+    }
   },
 );
 
@@ -64,6 +84,16 @@ async function save(): Promise<void> {
     };
     return;
   }
+  if (
+    receiptSerials.value.length > 0 &&
+    (qty.value !== Math.round(qty.value) || selectedSerialIds.value.length !== Math.round(qty.value))
+  ) {
+    error.value = {
+      code: 'VALIDATION_FAILED',
+      message: 'Select exactly one serial for every unit going back',
+    };
+    return;
+  }
 
   busy.value = true;
   error.value = null;
@@ -73,6 +103,7 @@ async function save(): Promise<void> {
       {
         receiptId: receipt.id,
         qty: Math.round(qty.value * 1000),
+        serialUnitIds: selectedSerialIds.value,
         note: note.value.trim() === '' ? null : note.value.trim(),
         ...(businessDate.value === '' ? {} : { businessDate: businessDate.value }),
       },
@@ -111,6 +142,15 @@ async function save(): Promise<void> {
       <div class="field">
         <label for="vr-qty">How many going back <span class="label-bn">কতটা ফেরত যাচ্ছে</span></label>
         <AmountInput input-id="vr-qty" v-model="qty" :min="0" :max="onHand" :fraction-digits="3" />
+      </div>
+
+      <div v-if="receiptSerials.length > 0" class="field serial-list">
+        <label>Manufacturer serials <span class="label-bn">ফেরত যাওয়া সিরিয়াল</span></label>
+        <label v-for="unit in receiptSerials" :key="unit.id">
+          <input v-model="selectedSerialIds" type="checkbox" :value="unit.id" />
+          <span>{{ unit.serialNo }}</span>
+        </label>
+        <small>{{ selectedSerialIds.length }} selected · quantity {{ Math.round(qty) }}</small>
       </div>
 
       <div class="field">

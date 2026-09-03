@@ -78,6 +78,19 @@ export class ReceiveCustomerPaymentService {
   ) {}
 
   async receive(command: ReceiveCustomerPaymentCommand): Promise<CustomerReceiptResponse> {
+    return this.receiveForRole(command, Permission.SALE_RECEIVE_PAYMENT, 'CUSTOMER');
+  }
+
+  /** Vendor credit sales use the same receipt writer with vendor authority. */
+  async receiveVendor(command: ReceiveCustomerPaymentCommand): Promise<CustomerReceiptResponse> {
+    return this.receiveForRole(command, Permission.VENDOR_RECEIPT_RECORD, 'VENDOR');
+  }
+
+  private async receiveForRole(
+    command: ReceiveCustomerPaymentCommand,
+    permission: Permission,
+    partyRole: 'CUSTOMER' | 'VENDOR',
+  ): Promise<CustomerReceiptResponse> {
     if (!Number.isSafeInteger(command.amountMinor) || command.amountMinor <= 0) {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Enter how much money was received');
     }
@@ -92,7 +105,7 @@ export class ReceiveCustomerPaymentService {
 
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
-      await this.access.require(tx, ctx, Permission.SALE_RECEIVE_PAYMENT);
+      await this.access.require(tx, ctx, permission);
 
       const replay = await this.idempotency.find(tx, ctx, command.operationId);
       if (replay !== null) {
@@ -115,9 +128,12 @@ export class ReceiveCustomerPaymentService {
       }
 
       const customer = await this.parties.findById(tx, ctx, command.customerPartyId);
-      if (customer === null) throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
-      if (!customer.roles.includes('CUSTOMER')) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, `“${customer.name}” is not a customer`);
+      if (customer === null) throw new AppError(ErrorCode.NOT_FOUND, 'Party not found');
+      if (!customer.roles.includes(partyRole)) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          `“${customer.name}” is not a ${partyRole.toLowerCase()}`,
+        );
       }
       if (customer.isSystemReserved) {
         // The walk-in party is every guest at once. Money "received" against it
@@ -126,6 +142,9 @@ export class ReceiveCustomerPaymentService {
           ErrorCode.VALIDATION_FAILED,
           'Walk-in customers pay at the counter — there is no balance to receive against',
         );
+      }
+      if (!(await this.sales.lockReceivableParty(tx, ctx, customer.id))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Party not found');
       }
 
       const account = await resolvePaymentAccount(

@@ -31,6 +31,7 @@ import {
 } from '../components/offline/offline-text';
 import AppShell from '../components/shell/AppShell.vue';
 import { useSnapshot } from '../offline/snapshot';
+import { useSync } from '../offline/sync';
 import { requestPersistence } from '../offline/gate';
 import { deviceKey, suggestedDeviceName, describeThisBrowser } from '../offline/identity';
 import { promptInstall, useAppUpdates } from '../offline/service-worker';
@@ -72,6 +73,14 @@ const canForce = computed(() => status.value?.canForceRevoke === true);
 /* Owner-only in every seeded role, and named that way rather than by inventing
    a sixth permission code for one diagnostics screen. */
 const canRunStorageCheck = computed(() => session.can('settings.setting.edit'));
+
+/*
+ * Phase 18.3. Sync lost its own sidebar entry and folded in here; the same
+ * permission still decides whether anybody sees it, so a role that never works
+ * an outage finds no trace of the subject on this page either (UI-09).
+ */
+const canSeeSync = computed(() => session.can('sync.status.view'));
+const sync = useSync();
 
 const writer = computed(() => devices.value.find((device) => device.status === 'ACTIVE') ?? null);
 const draining = computed(() => devices.value.find((device) => device.status === 'DRAINING') ?? null);
@@ -404,6 +413,43 @@ onMounted(async () => {
         </p>
       </AppCard>
 
+      <!--
+        Phase 18.3 (owner decision 2026-09-03) — Settings had three doors onto
+        one subject: Offline, Sync, and the storage check. They are one door
+        now. Sync has lost its sidebar entry and lives here, because "what is
+        still waiting to be sent" is a fact about *this machine's* outage, which
+        is what the rest of this page is about; `/sync` stays a real route so
+        every bookmark and every support call that names it still works.
+
+        The counts come from the sync client the top-bar chip already reads, so
+        this card and that chip cannot disagree.
+      -->
+      <AppCard
+        v-if="canSeeSync"
+        title="Waiting to be sent"
+        subtitle-bn="সিংক — কী কী এখনো পাঠানো হয়নি"
+        icon="pi-sync"
+      >
+        <template #actions>
+          <RouterLink class="btn btn-ghost" to="/sync">
+            Open sync <span class="label-bn">সিংক খুলুন</span>
+          </RouterLink>
+        </template>
+
+        <p v-if="sync.pending.value === 0 && sync.refused.value === 0" class="off__note">
+          Nothing is waiting. Everything this computer recorded has reached the shop's books.
+          <span class="label-bn">সব পাঠানো হয়ে গেছে</span>
+        </p>
+
+        <p v-else class="off__note">
+          <strong>{{ sync.pending.value }}</strong> waiting to be sent<template
+            v-if="sync.refused.value > 0"
+          >, and <strong>{{ sync.refused.value }}</strong> the books would not accept</template>.
+          <span class="label-bn">
+            {{ sync.refused.value > 0 ? 'কিছু ঢোকেনি — দেখে ঠিক করতে হবে' : 'পাঠানো হচ্ছে' }}
+          </span>
+        </p>
+      </AppCard>
 
       <!--
         Phase 12.3 — the copy of the shop's data on this machine.

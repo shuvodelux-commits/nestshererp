@@ -64,11 +64,16 @@ export class CancelSaleService {
       const { ctx } = command;
       await this.access.require(tx, ctx, Permission.SALE_VOID);
 
+      if (!(await this.sales.lockSale(tx, ctx, command.saleId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Sale not found');
+      }
+
       const sale = await this.sales.findSaleById(tx, ctx, command.saleId);
       if (sale === null) throw new AppError(ErrorCode.NOT_FOUND, 'Sale not found');
       if (sale.status === 'VOIDED') {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'This sale is already cancelled');
       }
+      await this.sales.lockReceivableParty(tx, ctx, sale.partyId);
       if (sale.receipts.length > 0) {
         // Money received afterwards is its own document against this invoice.
         // Cancelling underneath it would leave a receipt allocated to a sale
@@ -76,6 +81,19 @@ export class CancelSaleService {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
           'Money has been received against this invoice — reverse the receipt first',
+        );
+      }
+      const blocker = await this.sales.cancellationBlocker(tx, ctx, sale.id);
+      if (blocker === 'POSTED_RETURN') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Goods have been returned against this invoice — cancel the return first',
+        );
+      }
+      if (blocker === 'VENDOR_SETTLEMENT') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Products have settled this vendor invoice — reverse that settlement first',
         );
       }
 

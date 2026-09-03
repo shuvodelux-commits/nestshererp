@@ -404,6 +404,7 @@ export const Permission = {
   SYNC_CONFLICT_RESOLVE: 'sync.conflict.resolve',
   SYNC_CONFLICT_DISCARD: 'sync.conflict.discard',
   LICENSE_VIEW: 'license.term.view',
+  LICENSE_INSTALL: 'license.install',
   BACKUP_EXPORT: 'backup.export',
   BACKUP_RESTORE: 'backup.restore',
   BUSINESS_RESET: 'business.reset',
@@ -1170,6 +1171,13 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     group: 'Licence & backup',
     label: 'See the licence',
     detail: 'Open Settings → Licence and see when the term ends and what it includes.',
+  },
+  {
+    code: Permission.LICENSE_INSTALL,
+    group: 'Licence & backup',
+    label: 'Install or renew the licence',
+    detail:
+      'Paste in the licence key the supplier sent and put it to work straight away. The key is checked first: one meant for another business, or one that ends sooner than the licence already here, is refused and nothing changes.',
   },
   {
     code: Permission.BACKUP_EXPORT,

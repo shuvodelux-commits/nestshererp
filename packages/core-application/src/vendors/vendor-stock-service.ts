@@ -48,6 +48,7 @@ export interface ReceiveVendorStockCommand {
   readonly productId: string;
   readonly qty: number;
   readonly vendorUnitCostMinor: number;
+  readonly expiryDate: string | null;
   readonly serials: readonly string[];
   readonly note: string | null;
   readonly businessDate?: string | undefined;
@@ -58,6 +59,7 @@ export interface ReturnVendorStockCommand {
   readonly operationId: string;
   readonly receiptId: string;
   readonly qty: number;
+  readonly serialUnitIds: readonly string[];
   readonly note: string | null;
   readonly businessDate?: string | undefined;
 }
@@ -86,6 +88,7 @@ export class VendorStockService {
       command.productId,
       command.qty,
       command.vendorUnitCostMinor,
+      command.expiryDate,
       command.serials,
       command.businessDate ?? null,
     ]);
@@ -172,6 +175,7 @@ export class VendorStockService {
         movementId: Ulid.generate(this.clock),
         note: command.note,
         businessDate,
+        expiryDate: command.expiryDate,
         operationId: command.operationId,
       });
       if (normalisedSerials.length > 0) {
@@ -190,7 +194,7 @@ export class VendorStockService {
             vendorStockReceiptId: receiptId,
             vendorLotId: lotId,
             receivedDate: businessDate,
-            expiryDate: null,
+            expiryDate: command.expiryDate,
             supplierWarrantyMonths: product.supplierWarrantyMonths,
           })),
         );
@@ -237,6 +241,7 @@ export class VendorStockService {
     const fingerprint = JSON.stringify([
       command.receiptId,
       command.qty,
+      [...command.serialUnitIds].sort(),
       command.businessDate ?? null,
     ]);
 
@@ -258,6 +263,43 @@ export class VendorStockService {
       const receipt = await this.vendors.findReceipt(tx, ctx, command.receiptId);
       if (receipt === null) throw new AppError(ErrorCode.NOT_FOUND, 'That receipt was not found');
 
+      const product = await this.products.findById(tx, ctx, receipt.productId);
+      if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'That product was not found');
+      if (product.tracksSerial) {
+        if (
+          command.qty % QTY_SCALE !== 0 ||
+          command.serialUnitIds.length !== command.qty / QTY_SCALE ||
+          new Set(command.serialUnitIds).size !== command.serialUnitIds.length
+        ) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'Select exactly one available serial for every serialized unit being returned',
+          );
+        }
+        const selected = await this.serials.findAvailableByIds(
+          tx,
+          ctx,
+          receipt.productId,
+          command.serialUnitIds,
+        );
+        if (
+          selected.length !== command.serialUnitIds.length ||
+          selected.some(
+            (unit) =>
+              unit.vendorPartyId !== receipt.vendorPartyId ||
+              unit.vendorStockReceiptId !== receipt.id ||
+              unit.vendorLotId !== receipt.lotId,
+          )
+        ) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'Every selected serial must be available stock from this vendor receipt',
+          );
+        }
+      } else if (command.serialUnitIds.length > 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This product does not use serial numbers');
+      }
+
       if (command.qty > receipt.lotQtyRemaining) {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
@@ -274,7 +316,6 @@ export class VendorStockService {
 
       const returnId = Ulid.generate(this.clock);
       await this.vendors.insertReturn(tx, ctx, {
-        record: {
           id: returnId,
           returnNumber: await this.numbering.allocate(
             tx,
@@ -292,9 +333,18 @@ export class VendorStockService {
           note: command.note,
           businessDate,
           operationId: command.operationId,
-        },
-        lotQtyRemaining: Qty(receipt.lotQtyRemaining).subtract(Qty(command.qty)).raw,
       });
+      const returnedSerials = await this.serials.markReturnedToVendor(tx, ctx, {
+        unitIds: command.serialUnitIds,
+        vendorStockReceiptId: receipt.id,
+        vendorLotId: receipt.lotId,
+      });
+      if (returnedSerials !== command.serialUnitIds.length) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'One or more selected serials changed before the vendor return was posted',
+        );
+      }
 
       await this.audit.append(tx, ctx, {
         entityType: 'vendor_stock_return',
@@ -428,6 +478,7 @@ function toReceiptResponse(
     displayName: receipt.displayName,
     unitName: receipt.unitName,
     businessDate: receipt.businessDate,
+    expiryDate: receipt.expiryDate,
     note: receipt.note,
     receivedQty: receipt.qty,
     soldQty,

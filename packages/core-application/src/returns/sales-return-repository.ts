@@ -70,6 +70,7 @@ export interface ReturnableSourceAllocationRow {
   readonly vendorPartyId: string | null;
   readonly vendorLotId: string | null;
   readonly inventoryUnitId: string | null;
+  readonly serialNo: string | null;
   readonly unitCostUsed: number;
 }
 
@@ -294,6 +295,7 @@ export interface SalesReturnReversal {
 }
 
 export interface SalesReturnRepository {
+  lockSale(tx: Tx, ctx: TenantContext, saleId: string): Promise<boolean>;
   refundCapsOf(tx: Tx, ctx: TenantContext, userId: string): Promise<RefundCaps>;
   /**
    * Every live user whose own role could hand this refund back today — the only

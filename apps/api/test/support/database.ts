@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { createPool, runMigrations } from '@sher/adapter-postgres';
+import { WALK_IN_PARTY_NAME } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 
@@ -196,6 +197,45 @@ export async function seedTenant(
   });
 
   return { tenantId, userId, roleId, timezone };
+}
+
+/**
+ * D-02's walk-in customer, which a real business is provisioned with and
+ * `seedTenant` is not (owner request 2026-09-03).
+ *
+ * `seedTenant` writes the tenant row directly rather than running registration,
+ * which is right — a products test should not have to sign up — but it means the
+ * shop it creates is missing the one party every fully paid counter sale points
+ * at. Without this, a guest sale fails with "This shop has no walk-in customer",
+ * which is a correct refusal against a shop that genuinely cannot exist through
+ * the real signup path, and a confusing one to meet in a test.
+ *
+ * Written as SQL for the same reason `seedTenant` is: this is provisioning, not
+ * business activity. Nothing here is a balance, a movement or a journal line —
+ * those are always created by calling the application's own endpoints.
+ */
+export async function seedWalkInCustomer(pool: pg.Pool, tenant: SeededTenant): Promise<string> {
+  const partyId = Ulid.generate(clock);
+  const now = clock.now();
+
+  await asTenant(pool, tenant.tenantId, async (client) => {
+    await client.query(
+      `INSERT INTO parties (id, tenant_id, name, phone, address, guardian_name, nid, email, notes,
+                            customer_group_id, credit_limit_minor, status, is_system_reserved,
+                            created_at, updated_at, created_by, updated_by, version)
+       VALUES ($1, $2, $3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', TRUE,
+               $4, $4, $5, $5, 1)`,
+      [partyId, tenant.tenantId, WALK_IN_PARTY_NAME, now, tenant.userId],
+    );
+    await client.query(
+      `INSERT INTO party_roles (id, tenant_id, party_id, role, created_at, updated_at,
+                                created_by, updated_by, version)
+       VALUES ($1, $2, $3, 'CUSTOMER', $4, $4, $5, $5, 1)`,
+      [Ulid.generate(clock), tenant.tenantId, partyId, now, tenant.userId],
+    );
+  });
+
+  return partyId;
 }
 
 export async function closePeriod(

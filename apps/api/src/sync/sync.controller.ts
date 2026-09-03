@@ -30,6 +30,13 @@ import { REPLAY_SERVICE, RESOLVE_CONFLICT_SERVICE, SYNC_READ_SERVICE } from './t
  * may be posted, in what order, by whom, and what to do with the ones the books
  * refuse are all decided in the application layer, exactly as they are for
  * every other module — this file knows nothing about sales, periods or lots.
+ *
+ * **A lapsed licence stops this wire like any other** (D-36). `push` and
+ * `conflicts/:id/resolve` are the two endpoints here that put new business
+ * documents into the books, and they are `POST`, so `ReadOnlyLicenseGuard`
+ * refuses them in `READ_ONLY` with the same message the counter would get.
+ * The reads below are `GET` and stay open in every state, because there is no
+ * state in which a shop cannot read and export its own data.
  */
 @Controller('api/v1/sync')
 @UseGuards(TenantContextGuard)

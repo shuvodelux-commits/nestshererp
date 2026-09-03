@@ -19,6 +19,10 @@ export const serialUnitStatusSchema = z.enum([
   'SOLD',
   'WITH_SUPPLIER',
   'WRITTEN_OFF',
+  'RETURNED_TO_VENDOR',
+  // Handed over to settle a warranty claim (§5.19). Not `SOLD`: no sale, no
+  // invoice, no revenue — the cost went to `WARRANTY_EXPENSE`.
+  'WARRANTY_REPLACEMENT',
 ]);
 export type SerialUnitStatusValue = z.infer<typeof serialUnitStatusSchema>;
 
