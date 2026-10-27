@@ -29,7 +29,9 @@
     "control:operator": "pnpm --filter @sher/control-plane run operator:create --",
     "control:dev": "pnpm --filter @sher/admin run dev",
     "agent:enrol": "pnpm --filter @sher/agent run enrol --",
-    "agent": "pnpm --filter @sher/agent run start"
+    "agent": "pnpm --filter @sher/agent run start",
+    "e2e:visual": "pnpm --filter @sher/web exec playwright test --project=desktop visual",
+    "test:a11y": "pnpm --filter @sher/web exec playwright test --project=desktop accessibility"
   },
   "devDependencies": {
     "@types/node": "20.19.9",

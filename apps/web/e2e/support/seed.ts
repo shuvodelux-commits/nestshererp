@@ -287,6 +287,22 @@ export async function seedBaseline(): Promise<Baseline> {
     },
   });
 
+  /*
+   * Vendors on (Phase 19, 2026-09-03).
+   *
+   * Consignment is off in a fresh shop, and with it off the vendor screens
+   * refuse with `FEATURE_DISABLED` — correctly, but it means the whole-product
+   * sweep cannot see three real screens, and a suite that skips a screen because
+   * it is switched off is a suite that never tests it. Turning it on in the
+   * baseline exercises them instead of excusing them. Nothing else in the
+   * baseline depends on the flag, so the other specs are unaffected.
+   */
+  await call('/api/v1/settings/value', {
+    method: 'POST',
+    token: ownerToken,
+    body: { key: 'vendor_management_enabled', value: 'on' },
+  });
+
   return {
     ownerToken,
     productAId,

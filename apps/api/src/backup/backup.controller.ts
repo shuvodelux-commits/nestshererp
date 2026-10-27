@@ -44,9 +44,19 @@ export class BackupController {
     @Inject(RESET_BUSINESS_SERVICE) private readonly resets: ResetBusinessService,
   ) {}
 
+  /*
+   * Wrapped in `{ data }` like every other endpoint (§5.26's envelope).
+   *
+   * It was the one endpoint in this controller that returned its body bare, and
+   * `apps/web/src/api/client.ts` unwraps `.data` from every response — so the
+   * Backup settings screen received `undefined`, threw on
+   * `status.secretConfigured` while rendering, and never showed the warning
+   * that no backup password is set. The only test on this route asserted a 403,
+   * so nothing ever looked at the successful shape.
+   */
   @Get('status')
-  async status(@Ctx() ctx: TenantContext): Promise<BackupStatusResponse> {
-    return this.backups.status({ ctx });
+  async status(@Ctx() ctx: TenantContext): Promise<{ data: BackupStatusResponse }> {
+    return { data: await this.backups.status({ ctx }) };
   }
 
   /**

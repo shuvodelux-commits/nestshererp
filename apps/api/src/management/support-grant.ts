@@ -50,13 +50,19 @@ export const SUPPORT_GRANT_HEADER = 'x-sher-support-grant';
  * destroy the evidence of what they did.
  */
 export const SUPPORT_FORBIDDEN_ROUTE_PREFIXES: readonly string[] = [
-  '/api/v1/auth/change-credentials',
-  '/api/v1/auth/reset-password',
+  // Identity. Credential changes are self-service and have no permission code,
+  // so this is the only place they can be refused.
+  '/api/v1/settings/security',
+  '/api/v1/auth/password',
   '/api/v1/users',
   '/api/v1/roles',
+  // Erasure. `/backup/reset` is Reset Business Data — the route really is under
+  // `/backup`, not under `/settings`, and it must be named in full: it does
+  // not start with `/api/v1/backup/restore`, so the restore prefix does not
+  // cover it and for a while nothing did.
   '/api/v1/backup/restore',
   '/api/v1/backup/secret',
-  '/api/v1/settings/reset-business-data',
+  '/api/v1/backup/reset',
 ];
 
 /** Sorted keys, no whitespace — the same bytes the control plane signed. */

@@ -9,77 +9,61 @@
 
 | | Total | Covered | |
 | --- | ---: | ---: | ---: |
-| Routes | 54 | 3 | 6% |
+| Routes | 54 | 19 | 35% |
 | Forms, dialogs and drawers | 57 | 0 | 0% |
-| Fields | 392 | 100 | — |
+| Fields | 392 | 175 | — |
 | Dropdowns | 94 | 0 | — |
 | Business actions | 106 | — | — |
 | Endpoints | 229 | 102 | 45% |
-| Permission codes | 119 | 13 | 11% |
+| Permission codes | 119 | 119 | 100% |
 | Critical workflows | 17 | 11 | 65% |
-| Mobile-relevant screens | 14 | 5 | 36% |
+| Mobile-relevant screens | 14 | 14 | 100% |
 
 ## Screens by status
 
-- ✅ TESTED — 3
-- 🟡 PARTIALLY TESTED — 21
-- ❌ NOT TESTED — 85
+- ✅ TESTED — 19
+- 🟡 PARTIALLY TESTED — 38
+- ❌ NOT TESTED — 52
 - ⬜ NOT APPLICABLE — 3
 
 ## Everything not fully covered
 
 | Screen | Status | What is missing |
 | --- | --- | --- |
-| AccountLedgerPage | ❌ NOT TESTED | the screen itself, dropdown ledger-account, dropdown ledger-kind |
-| AccountReconcilePage | ❌ NOT TESTED | the screen itself, action Finish, action Match these two, action Confirm, action Record it |
+| AccountLedgerPage | 🟡 PARTIALLY TESTED | dropdown ledger-account, dropdown ledger-kind |
+| AccountReconcilePage | 🟡 PARTIALLY TESTED | action Finish, action Match these two, action Confirm, action Record it |
 | AuditPage | 🟡 PARTIALLY TESTED | dropdown filter-actor, dropdown filter-entity, dropdown filter-action, action Apply |
-| CapitalLoansPage | ❌ NOT TESTED | the screen itself |
 | CatalogPage | 🟡 PARTIALLY TESTED | required field catalog-name, action Add category, action Add the first unit, action Remove, action Add the first brand, action Add the first category, action Add |
-| CounterPage | ❌ NOT TESTED | the screen itself, dropdown ctr-party, action Continue |
+| CounterPage | 🟡 PARTIALLY TESTED | dropdown ctr-party, action Continue |
 | DaybookPage | 🟡 PARTIALLY TESTED | required field daybook-note, dropdown daybook-kind |
-| ExpensesPage | ❌ NOT TESTED | the screen itself, dropdown categoryId |
-| FinanceOverviewPage | ❌ NOT TESTED | the screen itself |
-| FinanceReconciliationPage | ❌ NOT TESTED | the screen itself, dropdown reconcile-account |
+| ExpensesPage | 🟡 PARTIALLY TESTED | dropdown categoryId |
+| FinanceReconciliationPage | 🟡 PARTIALLY TESTED | dropdown reconcile-account |
 | ForgotPasswordPage | 🟡 PARTIALLY TESTED | required field identifier, required field password, action Send code, action Set new password, action Go to sign in |
 | ImportPage | 🟡 PARTIALLY TESTED | dropdown import-type |
 | InventoryReportPage | 🟡 PARTIALLY TESTED | action Apply |
-| InvoiceDetailPage | ❌ NOT TESTED | the screen itself |
-| InvoiceSettingsPage | ❌ NOT TESTED | the screen itself, dropdown settings.language, dropdown settings.defaultTemplate, dropdown settings.thermalPaper, action Remove logo |
+| InvoiceSettingsPage | 🟡 PARTIALLY TESTED | dropdown settings.language, dropdown settings.defaultTemplate, dropdown settings.thermalPaper, action Remove logo |
 | LoginPage | 🟡 PARTIALLY TESTED | required field identifier, required field password, action Open the counter, action Unlock, action Sign in |
-| MoneyAccountsPage | ❌ NOT TESTED | the screen itself |
-| MoneyReportPage | ❌ NOT TESTED | the screen itself, required field money-from, required field money-to, required field view, dropdown view |
+| MoneyReportPage | 🟡 PARTIALLY TESTED | required field money-from, required field money-to, required field view, dropdown view |
 | PartiesPage | 🟡 PARTIALLY TESTED | dropdown filter-group, dropdown filter-status, action Add, action Add the first, action Delete, action Reactivate, action Remove |
 | PartyFormPage | 🟡 PARTIALLY TESTED | required field party-name, required field party-phone, required field party-credit, required field party-opening, dropdown customerGroupId, dropdown openingDirection, dropdown party-opening-role, action Edit details, action Delete, action Save changes |
-| PartyLedgerPage | ❌ NOT TESTED | the screen itself, dropdown ledger-page-size, action Vendor workspace, action Receive payment, action New sale, action Pay supplier |
-| PeriodsPage | ❌ NOT TESTED | the screen itself |
+| PartyLedgerPage | 🟡 PARTIALLY TESTED | dropdown ledger-page-size, action Vendor workspace, action Receive payment, action New sale, action Pay supplier |
 | PosPage | 🟡 PARTIALLY TESTED | dropdown customerId, dropdown line.vendorPartyId, dropdown payment.accountId, action Sell anyway, action Remove …, action Confirm Allocation, action Remove this payment, action Delete this draft |
-| ProductFormPage | ❌ NOT TESTED | the screen itself |
 | ProductsPage | 🟡 PARTIALLY TESTED | dropdown filter-brand, dropdown filter-category, dropdown filter-subcategory, dropdown filter-stock, dropdown filter-status, action Add the first product, action Reactivate, action Delete |
-| PurchaseDetailPage | ❌ NOT TESTED | the screen itself, action New purchase, action Cancel bill |
+| PurchaseDetailPage | 🟡 PARTIALLY TESTED | action New purchase, action Cancel bill |
 | PurchaseFormPage | 🟡 PARTIALLY TESTED | required field supplierId, required field paidAccountId, dropdown supplierId, dropdown productPick, dropdown categoryId, dropdown cost.category, dropdown cost.method, dropdown paidAccountId, action Remove …, action Remove landed cost … |
-| PurchasePlanDetailPage | ❌ NOT TESTED | the screen itself |
-| PurchasePlanPage | ❌ NOT TESTED | the screen itself, dropdown pp-scope, dropdown pp-history, dropdown pp-add, action Delete |
-| PurchaseReportPage | ❌ NOT TESTED | the screen itself |
-| PurchaseReturnsPage | ❌ NOT TESTED | the screen itself |
-| PurchasesPage | ❌ NOT TESTED | the screen itself, dropdown purchase-settlement, action New purchase, action Record the first purchase |
+| PurchasePlanPage | 🟡 PARTIALLY TESTED | dropdown pp-scope, dropdown pp-history, dropdown pp-add, action Delete |
+| PurchasesPage | 🟡 PARTIALLY TESTED | dropdown purchase-settlement, action New purchase, action Record the first purchase |
 | RegisterPage | 🟡 PARTIALLY TESTED | required field identifier, required field business, required field username, required field password, required field pin, action Send code, action Verify, action Create account |
 | RolesPage | 🟡 PARTIALLY TESTED | required field role-name, required field role-confirm, required field delete-confirm, action Add role, action Delete, action Save changes, action Delete role |
-| SalesReportPage | ❌ NOT TESTED | the screen itself |
-| SalesReturnsPage | ❌ NOT TESTED | the screen itself |
-| SettingsBackupPage | ❌ NOT TESTED | the screen itself, action Download, action Download backup, action Reset business data |
-| SettingsLicensePage | ❌ NOT TESTED | the screen itself, action Install licence |
-| SettingsOfflinePage | ❌ NOT TESTED | the screen itself, action Register this computer, action Cut off |
+| SettingsBackupPage | 🟡 PARTIALLY TESTED | action Download, action Download backup, action Reset business data |
+| SettingsLicensePage | 🟡 PARTIALLY TESTED | action Install licence |
+| SettingsOfflinePage | 🟡 PARTIALLY TESTED | action Register this computer, action Cut off |
 | SettingsPage | 🟡 PARTIALLY TESTED | dropdown business-timezone, dropdown `setting-${descriptor.key}`, action Save, action Confirm |
 | SettingsSecurityPage | 🟡 PARTIALLY TESTED | required field current-password, required field new-password, action Set password, action Set PIN |
-| StockCountPage | ❌ NOT TESTED | the screen itself, action Post count |
-| SupplierOrderPage | ❌ NOT TESTED | the screen itself |
-| SyncIssuesPage | ❌ NOT TESTED | the screen itself |
-| TransferMoneyPage | ❌ NOT TESTED | the screen itself |
+| StockCountPage | 🟡 PARTIALLY TESTED | action Post count |
 | UsersPage | 🟡 PARTIALLY TESTED | required field display-name, required field username, required field identifier, required field confirm, required field confirm-toggle, dropdown role, action Add user, action Disable, action Save changes |
-| VendorStockPage | ❌ NOT TESTED | the screen itself |
-| VendorWorkspacePage | ❌ NOT TESTED | the screen itself, dropdown workspace-vendor |
-| WarrantyClaimPage | ❌ NOT TESTED | the screen itself |
-| WarrantyClaimsPage | ❌ NOT TESTED | the screen itself, required field wc-complaint, action Take it in |
+| VendorWorkspacePage | 🟡 PARTIALLY TESTED | dropdown workspace-vendor |
+| WarrantyClaimsPage | 🟡 PARTIALLY TESTED | required field wc-complaint, action Take it in |
 | CancelDocumentDialog | ❌ NOT TESTED | the screen itself |
 | ConfirmDialog | ❌ NOT TESTED | the screen itself, action Confirm |
 | DateOnlyPicker | 🟡 PARTIALLY TESTED | required field inputId |

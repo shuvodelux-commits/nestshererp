@@ -1261,7 +1261,8 @@ onMounted(loadSetup);
 /* ---------------------------------------------------------------- finish */
 .finish-bar {
   position: sticky;
-  bottom: 0;
+  /* Above the fixed bottom navigation on a phone; zero on a desktop. */
+  bottom: var(--sher-bottom-nav-h);
   z-index: 2;
   display: flex;
   flex-wrap: wrap;

@@ -285,3 +285,29 @@ body {
     animation-duration: 0.01ms !important;
   }
 }
+
+/*
+ * How much of the bottom of the window the fixed navigation owns (Phase 19,
+ * 2026-09-03).
+ *
+ * Zero on a desktop, where the bar is not fixed; the bar's own height plus the
+ * device's safe area on a phone. It exists because a page footer pinned with
+ * `position: sticky; bottom: 0` sticks to the **viewport**, not to the end of
+ * the content — so on a phone it lands underneath the fixed bar and the button
+ * that finishes the job cannot be pressed. Reserving space on the content, which
+ * `AppLayout` already does, does not help a sticky element at all.
+ *
+ * Found on `/stock-count`, where `Post the count` sat 53px under the bar: a
+ * shopkeeper counting stock on a phone could fill the sheet in and not submit
+ * it. `PurchaseFormPage` and `AccountReconcilePage` pin their footers the same
+ * way and are spared the same fate by using this token.
+ */
+:root {
+  --sher-bottom-nav-h: 0px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --sher-bottom-nav-h: calc(64px + env(safe-area-inset-bottom));
+  }
+}

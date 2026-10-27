@@ -5,6 +5,14 @@ on:
   pull_request:
 
 jobs:
+  # ---------------------------------------------------------------- the gates
+  # Split in two on purpose (Phase 19, owner request 2026-09-03). `verify` is
+  # cheap and answers in a couple of minutes; `acceptance` starts a browser and
+  # a second database and takes far longer. Running them as one job would mean a
+  # typo waiting behind a Playwright suite to be told about itself.
+  #
+  # Both must pass. §19: "A production candidate must not pass if any required
+  # test fails."
   verify:
     runs-on: ubuntu-latest
 
@@ -49,6 +57,19 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test:boundaries
+
+      # The test matrix is generated from the source, so a claim naming a screen
+      # that has been renamed or removed makes the coverage report overstate
+      # itself. `--check` fails on exactly that.
+      - run: pnpm test:inventory -- --check
+
+      # And the report must be committed in the state the source produces, or it
+      # is a stale document that looks authoritative.
+      - name: the generated matrix is up to date
+        run: git diff --exit-code -- docs/testing/
+
+      # Unit, API integration (with the golden invariants after every case) and
+      # component tests.
       - run: pnpm test
 
       # The four gates above cannot see a Vue template that fails to parse:
@@ -57,3 +78,65 @@ jobs:
       # four and was a blank screen in the browser. Only compiling the templates
       # catches that, so the build runs here as well.
       - run: pnpm --filter @sher/web run build
+
+  # ------------------------------------------------------------- the browser
+  # Desktop and mobile Playwright, the layout guards, the accessibility ratchet,
+  # the browser-health assertions and the visual baselines. All of them run in
+  # one `playwright test` invocation because they share one seeded database:
+  # `global-setup` drops, migrates and seeds `sher_e2e` once, and the guard in
+  # `e2e/support/database.ts` aborts outright if the database it is pointed at
+  # is not called exactly that.
+  acceptance:
+    runs-on: ubuntu-latest
+    needs: verify
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_DATABASE_URL: postgres://postgres:dev@localhost:5432/sher_e2e
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The API is served from `dist` by `global-setup`, so it has to be built
+      # before a browser can talk to it.
+      - run: pnpm --filter "@sher/api..." build
+
+      - run: pnpm --filter @sher/web exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      # Kept only on a failure: a passing run should leave nothing behind, and a
+      # trace is the fastest way to see what a screen actually looked like.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7

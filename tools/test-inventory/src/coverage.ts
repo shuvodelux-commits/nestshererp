@@ -43,15 +43,63 @@ export function layerOf(file: string): string {
   return 'unit';
 }
 
-export function readClaims(root: string): readonly Claim[] {
+/**
+ * A spec that proves something for *every* permission code rather than one.
+ *
+ * `permission-matrix.spec.ts` runs the whole role × code grid against the real
+ * access control, so listing 117 `@covers` lines in its header would be a
+ * hand-kept copy of the catalogue — the one thing in that file able to go stale,
+ * and the exact failure the support ceiling suffered. It writes
+ * `@covers-all-permissions` instead and the catalogue is expanded here.
+ *
+ * This is the only wildcard the linker understands, deliberately: a claim should
+ * normally name what it covers, and a second wildcard would be the beginning of
+ * a coverage report that claims everything.
+ */
+const ALL_PERMISSIONS_DIRECTIVE = '@covers-all-permissions';
+
+/**
+ * The two sweeps, which cover every routed screen rather than a named few.
+ *
+ * Same argument as the permission matrix: `screen-sweep.spec.ts` reads its
+ * route list out of this very inventory at run time, so a header listing them
+ * would be a copy of a generated file, stale the moment a route is added — and
+ * the sweep would still be testing the new screen while the report said it was
+ * untested.
+ */
+const ALL_ROUTES_DIRECTIVE = '@covers-all-routes';
+const ALL_MOBILE_ROUTES_DIRECTIVE = '@covers-all-mobile-routes';
+
+export interface ClaimSources {
+  readonly permissionCodes?: readonly string[];
+  /** Screen ids with a route, for `@covers-all-routes`. */
+  readonly routedScreenIds?: readonly string[];
+  readonly mobileScreenIds?: readonly string[];
+}
+
+export function readClaims(root: string, sources: ClaimSources = {}): readonly Claim[] {
   const dirs = ['apps', 'packages', 'tools'];
   const out: Claim[] = [];
   for (const dir of dirs) {
     for (const file of walk(join(root, dir), (path) => path.endsWith('.spec.ts'))) {
       const source = readFileSync(file, 'utf8');
+      const here = relative(root, file);
+      if (source.includes(ALL_PERMISSIONS_DIRECTIVE)) {
+        for (const code of sources.permissionCodes ?? []) {
+          out.push({ target: `permission:${code}`, file: here });
+        }
+      }
+      if (source.includes(ALL_ROUTES_DIRECTIVE)) {
+        for (const id of sources.routedScreenIds ?? []) out.push({ target: id, file: here });
+      }
+      if (source.includes(ALL_MOBILE_ROUTES_DIRECTIVE)) {
+        for (const id of sources.mobileScreenIds ?? []) out.push({ target: id, file: here });
+      }
       for (const match of source.matchAll(/@covers\s+([^\n*]+)/g)) {
         const target = (match[1] ?? '').trim();
-        if (target !== '') out.push({ target, file: relative(root, file) });
+        // The directive itself is matched by the `@covers` pattern above.
+        if (target === '' || target.startsWith('-all-')) continue;
+        out.push({ target, file: relative(root, file) });
       }
     }
   }

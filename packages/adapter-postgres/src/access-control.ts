@@ -10,6 +10,7 @@ import {
   ErrorCode,
   LICENSED_MODULES,
   moduleOwning,
+  Permission,
   PERMISSION_CATALOGUE,
 } from '@sher/core-contracts';
 import type { LicensedModule } from '@sher/core-contracts';
@@ -52,23 +53,50 @@ function isSupportPrincipal(ctx: TenantContext): boolean {
  *    the backup secret each destroy the evidence of what the session did. A
  *    capability that can erase its own audit trail is not audited.
  *
- * It is the same list as `SUPPORT_FORBIDDEN_ROUTE_PREFIXES` in the API,
- * expressed as permissions. Both exist because a route that forgot to declare
- * a permission would otherwise inherit the ceiling by omission, and a
+ * It is the permission half of the ceiling; `SUPPORT_FORBIDDEN_ROUTE_PREFIXES`
+ * in the API is the route half. Both exist because a route that forgot to
+ * declare a permission would otherwise inherit the ceiling by omission, and a
  * permission checked by a service that has no route would be missed by the edge.
+ * They are **not** the same list expressed twice: two of the forbidden acts have
+ * no permission code of their own and can only be stopped at the route, which is
+ * set out below.
+ *
+ * **Every entry must be a real code.** Until 2026-09-03 nine of the ten entries
+ * here were names that no permission has ever had — `users.create` where the
+ * code is `user.account.create`, `settings.reset_business_data` where it is
+ * `business.reset` — so `includes` never matched and the whole permission half
+ * of the ceiling was inert. `support-ceiling.spec.ts` now holds this list
+ * against `PERMISSION_CATALOGUE` so a name that does not exist cannot be
+ * mistaken for a control again.
  */
-const SUPPORT_FORBIDDEN_PERMISSIONS: readonly string[] = [
-  'users.create',
-  'users.update',
-  'users.delete',
-  'users.credentials.change',
-  'roles.create',
-  'roles.update',
-  'roles.delete',
-  'settings.reset_business_data',
-  'backup.restore',
-  'backup.secret.replace',
+export const SUPPORT_FORBIDDEN_PERMISSIONS: readonly string[] = [
+  Permission.USER_CREATE,
+  Permission.USER_EDIT,
+  Permission.USER_DISABLE,
+  Permission.ROLE_MANAGE,
+  Permission.BACKUP_RESTORE,
+  Permission.BUSINESS_RESET,
 ];
+
+/*
+ * Two acts §13 forbids that have no permission code of their own, and are
+ * therefore stopped at the route instead (2026-09-03).
+ *
+ * **Changing a password or PIN** is self-service: `ChangeCredentialsService`
+ * acts on `ctx.userId`, so there is nothing for a role to gate. A support
+ * principal has no `users` row, so `findCredentials` returns null and the
+ * service refuses it anyway — but that is an accident of the lookup, not a
+ * control, so `/api/v1/settings/security` and `/api/v1/auth/password` are
+ * named in `SUPPORT_FORBIDDEN_ROUTE_PREFIXES` and that is the control.
+ *
+ * **Replacing the backup secret** requires `backup.export`, which support
+ * legitimately needs in order to take a backup before it changes anything.
+ * Refusing the code would refuse the export too, so `/api/v1/backup/secret`
+ * is the only place the distinction can be drawn.
+ *
+ * Listing invented codes for either — which is what this list used to do —
+ * looks like protection and is none.
+ */
 
 /**
  * Resolves the acting user's role and asks whether it holds the code (§5.26).

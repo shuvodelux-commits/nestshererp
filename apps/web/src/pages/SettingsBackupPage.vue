@@ -132,7 +132,7 @@ onMounted(load);
     <div class="bk">
       <ErrorNotice v-if="failure" :code="failure.code" :message="failure.message" />
 
-      <AppCard v-if="status !== null && !status.secretConfigured" class="bk__alert bk__alert--bad">
+      <AppCard v-if="status != null && !status.secretConfigured" class="bk__alert bk__alert--bad">
         <h2>No backup password is set</h2>
         <p>
           Nothing can be encrypted until you set one, so no backup is being taken at all. Set it

@@ -451,7 +451,8 @@ onMounted(load);
   align-items: flex-end;
   flex-wrap: wrap;
   position: sticky;
-  bottom: 0;
+  /* Above the fixed bottom navigation on a phone; zero on a desktop. */
+  bottom: var(--sher-bottom-nav-h);
   padding: 0.75rem;
   background: var(--sher-raised, #fff);
   border-top: 1px solid var(--sher-line);

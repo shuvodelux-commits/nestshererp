@@ -4,7 +4,10 @@ export { createDatabase, createPool, setTenantForTransaction } from './database'
 export type { Database, DatabaseTransaction } from './database';
 export { runMigrations } from './migrator';
 export { PostgresUnitOfWork, txOf } from './unit-of-work';
-export { PostgresAccessControl } from './access-control';
+// `SUPPORT_FORBIDDEN_PERMISSIONS` is exported so the ceiling can be held
+// against the real permission catalogue by a test; it was unreachable, and
+// therefore unchecked, while it was private.
+export { PostgresAccessControl, SUPPORT_FORBIDDEN_PERMISSIONS } from './access-control';
 export { PostgresPeriodGuard } from './period-guard';
 export { PostgresAuditWriter } from './audit-writer';
 export { PostgresIdempotencyStore } from './idempotency-store';

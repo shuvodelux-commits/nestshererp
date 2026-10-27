@@ -15,7 +15,15 @@ import { renderCoverage, renderMatrix } from './render.js';
 function main(): void {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
   const inventory = buildInventory(root);
-  const claims = readClaims(root);
+  const claims = readClaims(root, {
+    permissionCodes: inventory.permissions.map((entry) => entry.code),
+    routedScreenIds: inventory.screens
+      .filter((screen) => screen.route !== null && screen.kind === 'PAGE')
+      .map((screen) => screen.id),
+    mobileScreenIds: inventory.screens
+      .filter((screen) => screen.mobileRelevant)
+      .map((screen) => screen.id),
+  });
   const report = buildCoverage(inventory, claims);
 
   const out = join(root, 'docs/testing');
