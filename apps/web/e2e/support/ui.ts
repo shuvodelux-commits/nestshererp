@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 import type { Page } from '@playwright/test';
-import { SystemClock } from '@sher/shared-utils';
+import { SystemClock } from './shared-utils';
 
 import type { Baseline } from './seed';
 

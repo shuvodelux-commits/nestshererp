@@ -20,10 +20,10 @@ import ProductsPage from '../src/pages/ProductsPage.vue';
  * UI-44: one workflow smoke test — renders, loading, error, and the
  * permission-hidden cases.
  *
- * The one thing this suite really has to prove is UI-40: the purchase-price and
- * stock-value columns are absent for a caller without `inventory.cost.view`. The
- * server does not send those fields at all; this checks the screen does not
- * invent a column for them either.
+ * The suite protects UI-40: purchase price is hidden without
+ * `inventory.cost.view` while stock quantity remains available. Phase 18.3
+ * moved stock valuation to Inventory Report; this compact product list must
+ * not add that removed column back, even for cost-authorized users.
  *
  * Since §5.5 made Products the product working hub, it also proves the `⋯` row
  * menu offers the right actions — and, for §3.6, that `Delete` is **not**
@@ -175,16 +175,17 @@ describe('ProductsPage', () => {
     expect(headers.some((text) => text.startsWith('Reorder at'))).toBe(false);
   });
 
-  // §5.5: stock and its value are daily-use columns, and they come from the
-  // read model — the page must not sum or guess them.
-  it('shows stock and stock value from the server’s own figures', async () => {
+  // Phase 18.3: keep stock quantity from the server read model in this compact
+  // list; its monetary valuation belongs on Inventory Report instead.
+  it('shows server stock quantity without restoring the removed stock value column', async () => {
     const wrapper = await mountLoaded();
 
     const headers = wrapper.findAll('thead th').map((cell) => cell.text());
-    expect(headers.some((text) => text.startsWith('Stock'))).toBe(true);
-    expect(headers.some((text) => text.startsWith('Stock value'))).toBe(true);
-    expect(wrapper.text()).toContain('48');
-    expect(wrapper.text()).toContain('৳4,800.00');
+    const stockIndex = headers.findIndex((text) => text.startsWith('Stock'));
+    expect(stockIndex).toBeGreaterThan(-1);
+    expect(headers.some((text) => text.startsWith('Stock value'))).toBe(false);
+    expect(wrapper.find('tbody tr').findAll('td')[stockIndex]?.text()).toBe('48');
+    expect(wrapper.text()).not.toContain('৳4,800.00');
   });
 
   it("shows the server's own code and message on failure (UI-28)", async () => {
