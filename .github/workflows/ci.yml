@@ -53,8 +53,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Order is binding: lint, typecheck, boundaries, test. All must pass.
+      # Order is binding: lint, build, typecheck, boundaries, test. All must pass.
       - run: pnpm lint
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test:boundaries
 
