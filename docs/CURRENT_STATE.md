@@ -14,10 +14,10 @@ current acceptance evidence.
 - One Codex worker, human approval for every merge, no automated migrations.
 - Installed Codex helpers resolve; verification config and launch syntax pass.
   Claude guard hooks are installed; native Codex hook enforcement is not claimed.
-- Current selected task: https://github.com/shuvodelux-commits/nestshererp/issues/1
+- Previous selected task: https://github.com/shuvodelux-commits/nestshererp/issues/1
   (A01b). Owner authorized the existing-file repair. The isolated worker
   completed it and both lint and boundary checks exited 0; PR #2 merged with owner authorization as `8ab03d0`.
-- Full build exited 0. Final check evidence and remaining violations are in
+- A01b full build exited 0. Its check evidence is in
   `docs/super-board/pre-flight.md`. No automated suites were run during setup.
 - The local Podman database is `hisabiq-a01-postgres`, bound to 127.0.0.1:5546.
   API health and reference Vue web returned HTTP 200 on ports 3000 and 5173
@@ -37,7 +37,14 @@ commit `05b4bb6`. Its fixture content is identical to PR #2 (`d7b5cf5`).
 No suites were run. PR #2 is merged; preserve the separate worker and review
 worktrees. CI build-order repair remains separate. The owner next requested
 shared rules and three development modes: remote computer, Codex Cloud,
-and ChatGPT via GitHub. Specific new rules are still to be agreed.
+and ChatGPT via GitHub. Issue #3 now records the owner-approved overview and BUILD execution contract.
+Session `root/workflow_setup` owns branch `issue-3-shared-workflow`, from
+`e82cc86`, for shared instructions, issue contract and cloud preparation only.
+Repository preparation is not cloud activation or proof of Node 20 execution.
+Coordinator retains actual account activation and separate CI build-order repair.
+Five product-module plans are not approved or dispatched by this setup; populate
+and approve the issue-tracker dispatch contract before using those slots.
+Live PR/command evidence belongs on issue #3 and its linked draft PR.
 
 ---
 

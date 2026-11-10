@@ -4,7 +4,13 @@
 boundary checks exited 0; no suites ran. PR #2 merged with explicit owner authorization as `8ab03d0`. The integration setup branch is now pushed.
 
 Next setup goal: shared rules for (1) ChatGPT + Remote Desktop Commander,
-(2) Codex Cloud, (3) ChatGPT + GitHub. Rules are pending agreement.
+(2) Codex Cloud, (3) ChatGPT + GitHub. Owner approved the overview on
+2026-11-10; issue #3 scopes the BUILD slice to repository preparation.
+Coordinator still must activate/verify the actual cloud environment and record
+its identifier, Node 20 command results and isolated DB/network evidence (or the
+exact account/access blocker). Five module issue plans need owner-selected
+scopes, environments and sessions before dispatch; the blank contract is not
+approval. Each merge needs a separate explicit owner instruction.
 
 Required foundation: repair clean-checkout CI build order. CI currently
 reads shared-utils dist declarations before building them. Keep runtime-version

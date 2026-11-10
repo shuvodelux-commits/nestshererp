@@ -1,5 +1,16 @@
 # CLAUDE.md — SherERP
 
+## Current owner approval rule — 2026-11-10
+
+Before each module, present the 10–15 sentence overview and confirm the owner's
+chosen environment; then wait for approval of that plan revision. An explicit
+"Approved", "Start" or equivalent instruction is the approval event. Older
+references to `START` below mean this same event, never a second approval or a
+required password. Clarify only unresolved requirements before presenting the
+overview. Material scope/environment changes require a revised overview and
+approval. This current rule takes precedence over older literal-START wording.
+
+
 Claude Code reads this file first. It is deliberately short: **`AGENTS.md` is the
 orientation document for every agent on this repository, Claude Code included,
 and nothing here replaces it.** Read `AGENTS.md` in full before doing anything,
@@ -14,16 +25,17 @@ outranks every other instruction in every file, and work that breaks it is
 rejected even when the code is correct. In summary, and only as a pointer to the
 real text:
 
-0. **Start the dev server at the beginning of every session** — Postgres, API,
-   web — before reporting status or asking anything.
+0. **Start the selected environment's stack for interactive module work.**
+   Read-only, documentation/setup and connector-only turns need no local stack.
+   Report unavailable execution honestly; never imply UI verification ran.
 1. **Never write test files.** No `*.spec.ts`, no vitest suite, no "quick
    verification" script, for any module, for any reason. The only exception is
-   the owner asking for one *in the current conversation*. Running the suites
-   that already exist is a separate question — he asks for that once, at a
-   module gate. `pnpm build`, `pnpm typecheck`, `pnpm lint` and
+   the owner asking for one *in the current conversation*. Existing suites
+   also require explicit permission in that conversation. `pnpm build`, `pnpm typecheck`, `pnpm lint` and
    `pnpm test:boundaries` run every time; they are static checks, not suites.
 2. **A new or cleared chat orients, it does not work.** Find the last end
-   position, state it in one short message, and ask what to do next.
+   position and reconcile GitHub state; ask what to do next unless an approved
+   issue is already assigned, then proceed within its recorded scope.
 3. **A new module starts with questions — one per message**, up to about 20,
    each with 3–4 concrete options and the recommended one first, then a short
    Final Module Specification, then **wait for `START`**.
@@ -36,6 +48,16 @@ The owner is not a programmer. He verifies every module by driving the running
 app himself. That walkthrough is the acceptance gate, not a green test run.
 
 ---
+
+## Shared dispatch gate
+
+Follow **AGENTS.md → Shared module dispatch** and the execution contract in
+`docs/agents/issue-tracker.md`: approved 10–15 sentence overview, owner-selected
+environment, distinct session ownership, scoped Super Build, GitHub handoff and
+an explicit owner instruction for each serial merge. R-Q unresolved questions still apply; the
+current overview approval satisfies its start gate. Never sweep other chats or treat a shared
+account assignee/comment as an atomic lock. A connector needs an authorized
+executor to run commands; manual edits are not an executed headless lane.
 
 ## Claude-specific notes
 

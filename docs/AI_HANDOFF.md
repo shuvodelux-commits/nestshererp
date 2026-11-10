@@ -9,6 +9,77 @@ outranks everything here.
 
 ---
 
+## Adoption execution preparation — 2026-11-10
+
+Issue #3's approved BUILD slice prepares repository instructions only. The
+coordinator owns account activation and separate clean-checkout CI repair.
+Follow AGENTS.md's shared dispatch gate and `docs/agents/issue-tracker.md`
+before dispatching; historical authorizations below do not permit new tests,
+suites, migrations or product modules. Existing test-file repair also needs
+explicit scope. No reusable business code changes in this setup slice.
+
+### Reproducible checkout and static verification
+
+Start from the issue's recorded repository/base SHA and assigned branch in a
+fresh worktree or cloud checkout. Set the environment runtime to **Node 20**
+(`.nvmrc`, `package.json`: `>=20 <21`) and use **pnpm 9.15.9** (manifest).
+Do not upgrade versions, install global tools or bypass engine checks to claim
+cloud readiness. The local Node 24 compatibility probe proves only that host.
+From the checkout root, record each command's output and exit separately:
+
+```bash
+node --version
+node -e 'if (process.versions.node.split(".")[0] !== "20") process.exit(1)'
+npm exec --yes --package=pnpm@9.15.9 -- pnpm --version
+npm exec --yes --package=pnpm@9.15.9 -- pnpm install --frozen-lockfile
+npm exec --yes --package=pnpm@9.15.9 -- pnpm build
+npm exec --yes --package=pnpm@9.15.9 -- pnpm typecheck
+npm exec --yes --package=pnpm@9.15.9 -- pnpm lint
+npm exec --yes --package=pnpm@9.15.9 -- pnpm test:boundaries
+```
+
+Stop on a failed prerequisite; report its exact command/exit. Build precedes
+typecheck/lint because workspace imports need generated declarations on a clean
+checkout. Do not patch CI here or infer a successful CI run from local output.
+If npm's cache is not writable, set `npm_config_cache` to a writable temporary
+directory for these commands; record that environment difference. No command
+above runs a suite, applies migrations or provisions a database.
+
+### Environment activation and interactive verification
+
+| Environment | Proof required on that environment |
+|---|---|
+| Remote computer | Authorized shell access, repository/branch/SHA, actual versions and gates; browser access to its isolated runtime when checking UI |
+| Codex Cloud | Connected account/repository access, selected Node 20 runtime, completed setup with frozen install/build output, authorized network and isolated development DB reachability |
+| ChatGPT + GitHub | Repository reads/writes separately from an identified authorized shell runner; connector access alone leaves command execution blocked |
+
+Coordinator activation action: attach the owner's repository to the selected
+cloud account/environment, configure the Node 20 runtime and the frozen install
+command above, and verify a fresh task checkout at the recorded SHA. Confirm
+network access to GitHub, the package registry and the assigned development DB
+without printing credentials. Run the four gates in that cloud checkout and
+attach the command exits to the issue/PR. Account activation and Node 20 cloud
+execution are **not evidenced by this repository preparation**; coordinator
+must record the environment identifier and actual results or exact access blocker.
+
+Each chat needs a distinct disposable PostgreSQL database and credentials,
+not merely a different tenant in a shared database. Record only its identifier
+and secret-reference names. Use `apps/api/.env.example` for variable names;
+provide development-only values through that environment's secret mechanism,
+never copy a local filled-in env file or production data. Do not enable the
+subscription entitlement stub. Migrations/backfills are never automatic here;
+if the assigned database needs schema setup, stop for a separately authorized
+development provisioning step before claiming UI readiness.
+
+For an interactive module, build the API workspace, load that environment's
+approved configuration explicitly, start API/web on its reserved ports, then
+record API `/health` and web HTTP results and browser URL. Use the UI manual to
+verify the workflow; static gates alone are not acceptance. Keep processes
+available for the owner's walkthrough or report the runtime/browser blocker.
+No Docker, Podman, user-home or secret path from one machine is a cloud premise.
+
+---
+
 ## 1. What SherERP is
 
 A multi-tenant ERP for **Bangladeshi SME retail** — a shop that buys stock on
@@ -370,14 +441,11 @@ pnpm licence:keygen -- …
 pnpm licence:issue  -- …
 ```
 
-**On `pnpm test`:** `AGENTS.md` R-0 tells agents not to run the suites and never
-to write new test files — the owner verifies each module by driving the running
-app himself, and that walkthrough is the acceptance gate. Since 2026-08-26 he
-asks for the existing suites to be run **once, at a module gate**. Updating a
-guard test that a legitimate change invalidated (for example the route list in
-`apps/web/test/navigation-architecture.spec.ts`) is maintenance, not new
-test-writing. **Writing a new test file requires the owner asking for it in the
-current conversation.**
+**On `pnpm test`:** Do not run any automated suite or create test code without
+explicit permission in the current conversation (AGENTS.md R-0). Historical
+permission is not current authorization. Repairing an existing test file also
+requires explicit scope; maintenance is not a blanket exception. The owner
+accepts modules in the running UI; only the four static gates run by default.
 
 ---
 
