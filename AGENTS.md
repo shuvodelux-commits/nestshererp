@@ -1,5 +1,16 @@
 # AGENTS.md — SherERP
 
+## Current owner approval rule — 2026-11-10
+
+Before each module, present the 10–15 sentence overview and confirm the owner's
+chosen environment; then wait for approval of that plan revision. An explicit
+"Approved", "Start" or equivalent instruction is the approval event. Older
+references to `START` below mean this same event, never a second approval or a
+required password. Clarify only unresolved requirements before presenting the
+overview. Material scope/environment changes require a revised overview and
+approval. This current rule takes precedence over older literal-START wording.
+
+
 Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith. Canonical delivery path: online-first → sync infrastructure → PWA Offline → Mobile → optional future Tauri packaging → MCP.
 
 ---
@@ -13,12 +24,14 @@ token-efficiency and workflow sections. Work that breaks any of these
 steps is rejected even when the code is correct. Full text:
 `AI_CODING_INSTRUCTIONS.md` → **R-0**.
 
-### 0. START THE DEV SERVER — every session, before anything else
+### 0. START THE DEV SERVER — interactive module sessions
 
-**Mandatory.** Postgres up, API built and running, web server running, at the
-beginning of **every** session — before reporting status, before asking
-anything, before writing a line. If it will not start, say so in one line with
-the error and stop there.
+**Mandatory when implementing or verifying an interactive module in the chosen
+environment.** Postgres up, API built and running, web server running before
+claiming UI readiness. Read-only, documentation/setup and connector-only sessions
+do not start a local stack. Report unavailable runtime honestly; hand off UI
+verification rather than pretending it ran. Use the selected environment's
+isolated database/runtime, not machine-specific Docker commands elsewhere.
 
 ```bash
 sudo service docker start && docker start sher-pg     # WSL2 does not start Docker itself
@@ -47,8 +60,9 @@ keep the layering honest, not test suites.
 
 Find the last end position — git log, working tree, the SRS change log, the
 unfinished module — then **say what it is in one short message and ask what to
-do next**. Do not assume the next obvious task is the wanted task. Do not start
-coding on the strength of a fresh context window.
+do next** unless the owner already assigned an approved issue. For an assigned
+issue, reconcile GitHub state and proceed within that approval. Never infer a
+new task from a fresh context window.
 
 ### 3. A new module starts with the questions — ONE AT A TIME
 
@@ -334,3 +348,22 @@ business module or replace the SRS business rules.
   This computer has Codex signed in, so use the Codex board lane.
 - The installed guard hooks are Claude hooks. They do not establish native
   Codex hook enforcement; Codex workers must obey these instructions and config.
+
+
+## Shared module dispatch — owner-approved 2026-11-10
+
+| Gate | Binding rule |
+|---|---|
+| Overview | ALWAYS give the owner a plain-English **10–15 sentence overview** of the result, scope and approach before every module build; wait for explicit approval. |
+| Environment | Owner chooses **ChatGPT + Remote Desktop Commander**, **Codex Cloud**, or **ChatGPT + GitHub with an authorized runner** for that module. NEVER choose silently. |
+| Product clarification | Retain R-Q's unresolved questions and final specification; current overview approval satisfies its start gate. Record approval evidence and plan revision on the issue; NEVER re-ask settled decisions. |
+| Dispatch | ALWAYS use installed **Super Build**, scoped to the single approved issue and selected environment. NEVER call a manual source edit an executed headless run. |
+| GitHub contract | Before implementation, coordinator records the approved plan and distinct owner session using `docs/agents/issue-tracker.md`; reconcile issue, all comments, linked PR/head and board before resuming. |
+| Five chats | Up to five independently approved module chats may work on separate branches/worktrees and disposable databases. Coordinator sequences overlapping files, shared contracts, canonical docs and migrations before dispatch. |
+| Ownership | NEVER claim another session's module or recover its locks/worktree. A shared account assignee or issue comment is **not an atomic distributed lock**; coordinator confirms session ownership. |
+| Worker boundary | Module chats NEVER drain Ready, run cross-chat recovery sweeps, or change shared runner configuration. Current runner stays at one worker; five chats need separately approved scoped dispatches. |
+| Capability | Check repository read/write, shell execution, database, network and browser capabilities separately. A GitHub connector cannot execute a shell runner; hand off to a verified authorized executor or report blocked. |
+| Handoff | EVERY completed module produces a draft PR with source/head SHA, actual command exits, blockers and resume steps. Requirements remain canonical; issue plans reference SRS sections, never replace them. |
+| Integration | Owner reviews and **explicitly instructs each merge**; coordinator integrates serially through the merge gate. Overview approval NEVER permits merge, deployment, production data or destructive migration. |
+| Scope change | Material plan/environment/ownership changes require a revised overview and fresh owner approval. NEVER act from stale conversation state. |
+| Tests | NEVER create tests or run suites without explicit current-conversation permission; build, typecheck, lint and test:boundaries remain required. |

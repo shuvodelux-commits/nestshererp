@@ -1,5 +1,16 @@
 # SherERP — AI Coding Agent Instructions
 
+## Current owner approval rule — 2026-11-10
+
+Before each module, present the 10–15 sentence overview and confirm the owner's
+chosen environment; then wait for approval of that plan revision. An explicit
+"Approved", "Start" or equivalent instruction is the approval event. Older
+references to `START` below mean this same event, never a second approval or a
+required password. Clarify only unresolved requirements before presenting the
+overview. Material scope/environment changes require a revised overview and
+approval. This current rule takes precedence over older literal-START wording.
+
+
 **Status: BINDING.** A change violating any rule below is rejected in full, regardless of how much of it works.
 
 Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading must be **“SherERP — Master SRS & Build Guide v4.2 (Reuse & UI Migration Reconciled)”**. This file is *how to build*, not *what to build*. It does not repeat requirements. If the repo SRS has an older heading/version, **STOP before coding**: the instructions and requirements are out of sync.
@@ -12,14 +23,15 @@ Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading
 > and any other. Violating any of the five steps means the work is rejected even
 > if the code is perfect. The full text is [R-0 below](#r-0--the-owners-working-protocol-very-important).
 >
-> 0. **START THE DEV SERVER AT THE BEGINNING OF EVERY SESSION** — mandatory,
->    before anything else. Postgres, API, web. See Step 5 in practice for the
->    exact commands.
+> 0. **START THE DEV SERVER for interactive module work in the chosen environment.**
+>    Read-only, documentation/setup and connector-only work needs no local stack.
+>    Never claim UI readiness without a running API, web and isolated database.
 > 1. **NEVER write test files.** Not `*.spec.ts`, not a vitest suite, not a
 >    "quick check" — **not for any reason** until the owner says, in that
 >    conversation, that he wants tests. He verifies the work himself in the UI.
 > 2. **On a new or cleared chat: do not start work.** Find the last end
->    position, state it in one short message, and **ask before continuing**.
+>    position and reconcile GitHub state. **Ask before continuing** unless an
+>    approved issue is already assigned; then proceed only within that approval.
 > 3. **A new module starts with the questions asked ONE AT A TIME** — up to ~20,
 >    each with 3–4 suggested answers, one marked **(Recommended)**, plus "type
 >    your own". Record each answer, ask the next. Then the Final Module
@@ -33,7 +45,7 @@ Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading
 > a new component style, or a new layout pattern.** Reuse the shared PrimeVue
 > controls, the design tokens and the patterns the existing screens already use.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every module starts at the R-0 step 0 dev server, runs the R-Q question round one question at a time, waits for the owner's `START`, and ends with the app built and running plus a step-by-step manual for the owner to test it in the UI (R-0, R-E). Automated test suites are neither written nor run unless the owner asks. `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every interactive module starts at the R-0 step 0 runtime in its approved environment, runs the R-Q question round one question at a time, waits for the owner's `START`, and ends with the app built and running plus a step-by-step manual for the owner to test it in the UI (R-0, R-E). Automated test suites are neither written nor run unless the owner asks. `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
 
 ---
 
@@ -60,9 +72,9 @@ help — it is unrequested work he then has to review, understand and clean up.
 
 | # | Step | Rule |
 |---|---|---|
-| **0** | **Start the dev server, every session** | **Mandatory, at the beginning of every session, before anything else** (owner instruction 2026-08-24). Postgres up, the API built and running, the web server running — so the owner can open the app at any moment without asking, and so the agent never reports work it has not seen run. Do this on a fresh chat *before* reporting the last end position (step 1), and after any change that needs a rebuild (see **Step 5 in practice** below). If it will not start, say so in one line with the error before doing anything else — a session spent coding against a broken environment is a session wasted. |
+| **0** | **Start the dev server for interactive module work** | **Mandatory for interactive module implementation/verification in the owner-selected environment** (reconciled 2026-11-10). Build and run Postgres, API and web against that session's isolated database before claiming UI readiness. Read-only, documentation/setup and connector-only sessions do not start a local stack. If runtime is unavailable, report the exact blocker and hand off verification; never claim it ran. Local commands below are examples, not cloud prerequisites. |
 | **1** | **No tests** | **NEVER write a test file.** No `*.spec.ts`, no vitest suite, no test helper, no "temporary" test script — **for any module, for any reason**, however useful it seems. The only exception is an explicit instruction from the owner **in the current conversation** saying he wants tests. "It would catch bugs", "it proves the accounting", "the codebase has tests elsewhere" and "it found a real defect" are **not** exceptions; the first two were the exact arguments used when this rule was broken. |
-| **2** | **New chat = orient, then ask** | On a new or cleared conversation, **do not begin work.** First find where the last session stopped — the git log, the working tree, `SRS_AND_BUILD_GUIDE.md`'s changelog, the unfinished module. Then say, briefly, what the last end position is and what would come next, and **wait for the owner to tell you to start.** Do not assume the obvious next task is wanted. |
+| **2** | **New chat = orient, then ask** | On a new or cleared conversation, **do not begin work.** First find where the last session stopped — the git log, the working tree, `SRS_AND_BUILD_GUIDE.md`'s changelog, the unfinished module. Then say, briefly, what the last end position is and what would come next, and **wait for the owner to tell you to start.** An already-assigned approved issue may proceed after GitHub reconciliation; do not assume the obvious next task is wanted. |
 | **3** | **One question at a time** | A new module begins with the R-Q round asked **one question per message** — up to about **20** where the module needs them, fewer when it is already well defined. Each question carries **3–4 suggested answers**, the best marked **(Recommended)**, each option short and stated as its practical effect, plus a final **“Type your own answer”**. The owner picks one or writes his own; **record the decision, then ask the next question.** Never ask what the SRS, these instructions, an existing decision or an earlier part of the conversation already answers. Aim the questions at real workflow, permissions, accounting behaviour, edge cases and UI/UX — and remember the users may have **low literacy**, so prefer simple flows, Bangla-friendly labels, few steps and clear actions. When every question is answered, show the **Final Module Specification** (R-Q Q4) and **wait for `START`.** |
 | **4** | **Code only** | Implement **only the confirmed module** — every layer, top to bottom (R-S), reusing existing SherERP components, patterns, APIs, functions and `--sher-*` tokens (R-A10…A15). **Do not invent a new visual style.** No tests (step 1), no unrelated cleanup, no adjacent-module changes, no extra tooling unless required **and approved**. |
 | **5** | **Build it, then write the manual** | When the code is finished: **build and start the app** so the owner can use it, then hand over a **step-by-step manual for testing the module in the UI** — what to click, in what order, what should appear, which refusals to try. **Do not run automated test suites** (`pnpm test`) unless the owner asks. The gates that make the app runnable and enforce architecture — `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries` — are still run; they are static checks, not test suites. |
@@ -70,8 +82,7 @@ help — it is unrequested work he then has to review, understand and clean up.
 
 ### Steps 0 and 5 in practice — the app runs, and the change is reachable
 
-**At the start of every session (step 0)** bring the whole stack up, in this
-order. Full guide: `DEV_SERVER_START_GUIDE.md`.
+**For interactive module work (step 0)** bring the selected environment's stack up. The following commands apply only to the original local Docker setup. Full guide: `DEV_SERVER_START_GUIDE.md`.
 
 ```bash
 sudo service docker start && docker start sher-pg     # WSL2 does not start Docker itself
@@ -166,6 +177,18 @@ When two rules or principles conflict, the higher one wins. This ordering is its
 
 ## R-Q — Pre-Build Clarification (mandatory, before any module)
 
+**Dispatch gate (owner-approved 2026-11-10):** Follow AGENTS.md's Shared module
+dispatch rules before every module build: 10–15 sentence overview, explicit
+approval, owner-chosen environment and a revisioned GitHub execution contract.
+Use installed Super Build for only that issue. Preserve unresolved questions below; overview approval satisfies the start
+gate for new business modules without a second confirmation. Approval of setup issue #3 is
+limited to its named infrastructure scope, not permission for product modules.
+A resumed approved plan needs GitHub reconciliation, not repeated approval;
+material changes need fresh approval. Only the coordinator dispatches/integrates;
+up to five independent chats remain subject to disjoint ownership and sequenced
+shared contracts/migrations. Every completed module has a PR; each merge needs
+an explicit owner instruction, never just overview approval.
+
 **No code is written for a module until the owner replies `START`.** The flow is fixed:
 
 ```
@@ -205,9 +228,9 @@ Every module increment follows this order:
  5  Repository/adapter delta                ← reuse current business-specific seam
  6  API + contract delta                    ← reuse existing endpoint/use case when authoritative
  7  Frontend migration/workflow             ← final v4.2 hub/Counter/Daybook design
- 8  Focused tests                           ← changed rules + reuse-path integration
+ 8  Owner manual checklist                  ← changed rules + reuse paths; no suites
  9  Real UI checkpoints                     ← desktop/tablet/phone for applicable daily paths
-10  Module regression                       ← lint · typecheck · test:boundaries · test
+10  Static gates                            ← build · typecheck · lint · test:boundaries
 11  End-to-end module scenario in the real UI
 12  Update the status ledger and FUNCTION_MAP.md, then report for owner acceptance
 ```
@@ -217,7 +240,7 @@ Every module increment follows this order:
 | S1 | **Never** build all backend, then all database, then all frontend. Each internal path is connected domain → application → database → API → UI before the next path begins. |
 | S2 | A module is not complete because the backend compiles, a field exists, or endpoints return 200. It is complete when all listed module actions and UI behaviours work **in the UI**, required print/share/search/filter states are present, the app builds and runs, and the owner confirms the numbers/workflow by testing it himself in the UI (R-E). |
 | S3 | If a module has no user-visible outcome, say so before starting — it is either Phase 0 foundation work or it is mis-scoped. |
-| S4 | Do not start a second module while the current module is incomplete. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
+| S4 | Do not start a second module in the same chat while its current module is incomplete. Separately approved independent chats follow the shared dispatch gate. Internal checkpoint commits are allowed and encouraged, but they are not accepted module releases. |
 | S4b | At module completion, update the status ledger (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Set `CODE COMPLETE`; **only the owner sets `DONE`** after manual acceptance. The owner may record the accepted code commit in a small follow-up ledger commit; a commit is not required to contain its own hash. |
 | S5 | **Foundation exception:** infrastructure may be built without UI only in Phase 0, and only for the items listed in `SRS_AND_BUILD_GUIDE.md` §6.0. Outside Phase 0, any proposed foundation work must name the specific current module path that is blocked without it. "We will need it later" is not that. |
 | S6 | Write migrations for **this module only**. Do not create tables for a later module. |
@@ -242,9 +265,9 @@ These rules reduce reading and re-running. **They never reduce correctness, secu
 |---|---|
 | T1 | **Read `FUNCTION_MAP.md` before searching the codebase.** It is the first lookup for every task, ahead of `grep`, directory listings and file reads. Search the source only for what the map does not answer, and then only in the area it points at. |
 | T2 | **The map is the reuse map's starting point (A13).** An action already listed there is `REUSE` or `EXTEND` by default; deciding `MISSING` for something the map lists requires opening that file and saying why it does not fit. |
-| T3 | **Do not run the full test suite after every change.** Finish the module, then run it once (R-E1). |
+| T3 | **Do not run test suites** without explicit current-conversation permission (R-E1). |
 | T4 | **Do not write new tests to fill the gap.** The testing policy is R-E: the owner tests the running UI and reports what is wrong. |
-| T5 | **The four gates run once, when the module is complete** (`lint`, `typecheck`, `test:boundaries`, `test`), with real output pasted. A module reported as complete without them is not complete (F2). |
+| T5 | **The four gates run once, when the module is complete** (`build`, `typecheck`, `lint`, `test:boundaries`), with real output pasted. A module reported as complete without them is not complete (F2). |
 | T6 | **Update `FUNCTION_MAP.md` at the end of every coding session**, in the same commit as the work. Record new and modified reusable functions, services, use cases, API endpoints, repository/database methods, shared UI components and the important business rules, each with its file path and one line on when to reuse it. Delete entries whose code is gone. A session that wrote no reusable code says so and changes nothing. |
 | T7 | **Token economy never buys a shortcut through quality.** Not reading a file is fine; not reading the file you are about to change is not. Skipping a test run is fine; skipping the test is not. Never skip the SRS sections A7 requires, the security/tenant checks, or the real-UI verification because they are expensive. |
 | T8 | **Do not restate architecture that is already written down.** Point at the section or the map entry instead of copying it into a report, a comment or a new document. Duplicated documentation drifts exactly like duplicated code. |
@@ -576,7 +599,7 @@ Before `CODE COMPLETE`, verify the real UI at the applicable desktop/tablet/phon
 | E5 | When the code is finished, **build and start the app**, then give the owner a **step-by-step manual** for testing the real UI, the calculations, the data flow and the business workflow: what to click, in what order, what should appear, which refusals to try. This is the acceptance gate. |
 | E6 | Additional permanent tests for critical logic — financial calculations, balances, FIFO/stock, payments, refunds, accounting, unit conversion, settlements and other data-critical rules — are **optional and need the owner's permission first**. Do not write or run them until the owner has manually tested the module and explicitly approved further testing. |
 | E7 | **When the owner reports a bug: inspect only the implementation and dependencies needed to diagnose it**, fix it, rebuild so he can verify again, and say exactly what to retest. No test written to prove the fix (E2), no refactor of code the bug did not touch. |
-| E8 | **Do not start the next module until the owner confirms the current one.** |
+| E8 | **Within a module chat, do not start the next module until the owner confirms the current one.** Independent approved chats follow the shared dispatch gate. |
 | E9 | If the owner does approve extra tests, they assert **exact expected numbers** from the module specification — never "greater than zero", never snapshot output — and domain tests stay pure and fast: no database, no HTTP. |
 
 Manual owner acceptance in the real UI is this project's primary correctness gate. Writing fewer automated tests never means less care about money, stock, permissions or tenant isolation — it means the owner verifies them, and the agent does not spend the budget on tests nobody asked for.
@@ -605,8 +628,8 @@ When finished, report in exactly this format. Do not narrate outside it.
 
 | # | Rule |
 |---|---|
-| F1 | Paste **real** test runner output. Never describe, summarise, or fabricate results. |
-| F2 | If any of `lint`, `typecheck`, `test:boundaries`, `test` fails, the task is **not complete**. Say so. |
+| F1 | Paste **real** gate command output and exits; never fabricate results or run suites without explicit permission. |
+| F2 | If any of `build`, `typecheck`, `lint`, `test:boundaries` fails, the task is **not complete**. Say so. |
 | F3 | State every assumption. An unstated assumption in an accounting system becomes a wrong number nobody can trace. |
 | F4 | Report risks you noticed even if outside the current module. |
 | F5 | The UI section must tell the owner exactly what to click to accept the module workflow, including contextual entry and return path. A module they cannot find or complete is not accepted. |
@@ -653,8 +676,9 @@ must never have to ask for the servers to be started.
 5. Give the owner the browser URL and report any sign-in/session reset that may be needed.
 
 If the environment prevents a server from starting, report the exact command and blocker instead
-of claiming the application is ready. Documentation-only and read-only turns do not require a
-restart. This browser handoff is required after focused increments as well as module gates; it does
+of claiming the application is ready. Documentation/setup, read-only and connector-only turns do not require a
+local restart. Interactive work requires the selected environment's isolated
+runtime; report unavailable execution and verification as blocked. This browser handoff is required after focused increments as well as module gates; it does
 not replace the four automated gates or owner UI acceptance.
 
 ### Gate 1 — Automated (CI blocks the merge)
@@ -763,7 +787,8 @@ API -> Vue before starting the next path. Write no new tests. When the whole mod
 build and start the app, and hand the owner a step-by-step manual for testing it in the real UI.
 If the module cannot be completed in 3-5 working days, propose two cohesive increments.
 
-BEFORE ANY CODE (R-Q): ask 10-20 concise questions about unresolved decisions only, then give the
+BEFORE ANY CODE: follow the approved overview/environment/GitHub dispatch gate above.
+For a new business module (R-Q), ask 10-20 concise questions about unresolved decisions only, then give the
 final module specification, what is added/changed/reused, the exact UI and workflow, and the files
 and modules affected. Then WAIT. Only the owner's `START` authorises code.
 

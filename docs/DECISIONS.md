@@ -1228,3 +1228,17 @@ fixture violations and lint/boundary verification. This permits only that
 maintenance; it does not authorize new tests or automated suite execution.
 The source fix is in draft PR #2 and was validated against the isolated setup
 baseline with both static gates exiting 0. All merges remain human approved.
+
+
+## Approved shared module workflow — 2026-11-10
+
+The owner approved issue #3's 13-sentence setup overview: every module needs a
+10–15 sentence overview, approval and an owner-selected execution method; each
+has a GitHub plan, distinct chat/session ownership, branch/worktree and isolated
+development database. Five independent chats may proceed on disjoint scopes;
+shared contracts, migrations and overlapping files are coordinated and sequenced.
+Each module uses scoped Super Build and produces a PR awaiting a separate owner
+merge instruction. GitHub-only command execution requires an authorized runner.
+"Approved" satisfies the old START gate for that exact plan/environment; there
+is no second approval password. Tests remain restricted until explicitly asked.
+Cloud account activation remains separate from repository instructions.
