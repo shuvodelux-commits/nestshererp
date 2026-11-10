@@ -25,61 +25,61 @@
 
 | Screen | Route | Fields | Dropdowns | Actions | Mobile | Status |
 | --- | --- | ---: | ---: | ---: | :---: | --- |
-| AccountLedgerPage | `/finance/ledger` | 5 | 2 | 1 | — | 🟡 PARTIALLY TESTED |
-| AccountReconcilePage | `/finance/accounts/:accountId/reconcile/:id` | 0 | 0 | 13 | — | 🟡 PARTIALLY TESTED |
+| AccountLedgerPage | `/finance/ledger` | 5 | 2 | 1 | — | ❌ NOT TESTED |
+| AccountReconcilePage | `/finance/accounts/:accountId/reconcile/:id` | 0 | 0 | 13 | — | ❌ NOT TESTED |
 | AuditPage | `/audit` | 5 | 3 | 4 | — | 🟡 PARTIALLY TESTED |
-| CapitalLoansPage | `/finance/capital-loans` | 0 | 0 | 4 | — | ✅ TESTED |
+| CapitalLoansPage | `/finance/capital-loans` | 0 | 0 | 4 | — | ❌ NOT TESTED |
 | CatalogPage | `/catalog` | 1 | 0 | 10 | 📱 | 🟡 PARTIALLY TESTED |
-| CounterPage | `/counter` | 1 | 1 | 4 | 📱 | 🟡 PARTIALLY TESTED |
+| CounterPage | `/counter` | 1 | 1 | 4 | 📱 | ❌ NOT TESTED |
 | DailyCashPage | `/daily-cash` | 0 | 0 | 4 | 📱 | ✅ TESTED |
 | DashboardPage | `/dashboard` | 0 | 0 | 2 | 📱 | ✅ TESTED |
 | DaybookPage | `/daybook` | 4 | 1 | 10 | 📱 | 🟡 PARTIALLY TESTED |
-| ExpensesPage | `/expenses` | 4 | 1 | 5 | 📱 | 🟡 PARTIALLY TESTED |
-| FinanceOverviewPage | `/finance` | 1 | 0 | 2 | — | ✅ TESTED |
-| FinanceReconciliationPage | `/finance/reconciliation` | 1 | 1 | 3 | — | 🟡 PARTIALLY TESTED |
+| ExpensesPage | `/expenses` | 4 | 1 | 5 | 📱 | ❌ NOT TESTED |
+| FinanceOverviewPage | `/finance` | 1 | 0 | 2 | — | ❌ NOT TESTED |
+| FinanceReconciliationPage | `/finance/reconciliation` | 1 | 1 | 3 | — | ❌ NOT TESTED |
 | ForgotPasswordPage | `/forgot-password` | 3 | 0 | 6 | — | 🟡 PARTIALLY TESTED |
 | GoogleCallbackPage | _(dialog)_ | 1 | 0 | 3 | — | ⬜ NOT APPLICABLE |
 | ImportPage | `/import` | 2 | 1 | 3 | 📱 | 🟡 PARTIALLY TESTED |
 | InventoryReportPage | `/inventory-report` | 2 | 0 | 8 | 📱 | 🟡 PARTIALLY TESTED |
-| InvoiceDetailPage | `/sales/:id` | 0 | 0 | 3 | — | ✅ TESTED |
-| InvoiceSettingsPage | `/settings/invoice-design` | 25 | 3 | 5 | — | 🟡 PARTIALLY TESTED |
+| InvoiceDetailPage | `/sales/:id` | 0 | 0 | 3 | — | ❌ NOT TESTED |
+| InvoiceSettingsPage | `/settings/invoice-design` | 25 | 3 | 5 | — | ❌ NOT TESTED |
 | LoginPage | `/login` | 4 | 0 | 9 | — | 🟡 PARTIALLY TESTED |
-| MoneyAccountsPage | `/finance/accounts` | 1 | 0 | 5 | — | ✅ TESTED |
-| MoneyReportPage | `/reports/money` | 3 | 1 | 3 | — | 🟡 PARTIALLY TESTED |
+| MoneyAccountsPage | `/finance/accounts` | 1 | 0 | 5 | — | ❌ NOT TESTED |
+| MoneyReportPage | `/reports/money` | 3 | 1 | 3 | — | ❌ NOT TESTED |
 | PartiesPage | `/parties` | 5 | 2 | 15 | — | 🟡 PARTIALLY TESTED |
 | PartyFormPage | `/parties/:id` | 14 | 3 | 6 | — | 🟡 PARTIALLY TESTED |
-| PartyLedgerPage | `/parties/:id/ledger` | 3 | 1 | 10 | — | 🟡 PARTIALLY TESTED |
-| PeriodsPage | `/settings/periods` | 0 | 0 | 1 | — | ✅ TESTED |
+| PartyLedgerPage | `/parties/:id/ledger` | 3 | 1 | 10 | — | ❌ NOT TESTED |
+| PeriodsPage | `/settings/periods` | 0 | 0 | 1 | — | ❌ NOT TESTED |
 | PosPage | `/pos` | 17 | 3 | 28 | 📱 | 🟡 PARTIALLY TESTED |
-| ProductFormPage | `/products/:id` | 0 | 0 | 1 | — | ✅ TESTED |
+| ProductFormPage | `/products/:id` | 0 | 0 | 1 | — | ❌ NOT TESTED |
 | ProductsPage | `/products` | 6 | 5 | 11 | 📱 | 🟡 PARTIALLY TESTED |
-| PurchaseDetailPage | `/purchases/:id` | 0 | 0 | 9 | — | 🟡 PARTIALLY TESTED |
+| PurchaseDetailPage | `/purchases/:id` | 0 | 0 | 9 | — | ❌ NOT TESTED |
 | PurchaseFormPage | `/purchases/new` | 19 | 6 | 7 | — | 🟡 PARTIALLY TESTED |
-| PurchasePlanDetailPage | `/purchase-plans/:id` | 0 | 0 | 2 | — | ✅ TESTED |
-| PurchasePlanPage | `/purchase-plans` | 8 | 3 | 13 | — | 🟡 PARTIALLY TESTED |
-| PurchaseReportPage | `/reports/purchases` | 0 | 0 | 0 | — | ✅ TESTED |
-| PurchaseReturnsPage | `/purchase-returns` | 3 | 0 | 2 | — | ✅ TESTED |
-| PurchasesPage | `/purchases` | 4 | 1 | 5 | — | 🟡 PARTIALLY TESTED |
+| PurchasePlanDetailPage | `/purchase-plans/:id` | 0 | 0 | 2 | — | ❌ NOT TESTED |
+| PurchasePlanPage | `/purchase-plans` | 8 | 3 | 13 | — | ❌ NOT TESTED |
+| PurchaseReportPage | `/reports/purchases` | 0 | 0 | 0 | — | ❌ NOT TESTED |
+| PurchaseReturnsPage | `/purchase-returns` | 3 | 0 | 2 | — | ❌ NOT TESTED |
+| PurchasesPage | `/purchases` | 4 | 1 | 5 | — | ❌ NOT TESTED |
 | RegisterPage | `/register` | 6 | 0 | 5 | — | 🟡 PARTIALLY TESTED |
 | RolesPage | `/roles` | 3 | 0 | 7 | — | 🟡 PARTIALLY TESTED |
 | SalesPage | `/sales` | 1 | 0 | 3 | 📱 | ✅ TESTED |
-| SalesReportPage | `/reports/sales` | 0 | 0 | 0 | — | ✅ TESTED |
-| SalesReturnsPage | `/sales-returns` | 3 | 0 | 2 | 📱 | ✅ TESTED |
-| SettingsBackupPage | `/settings/backup` | 1 | 0 | 6 | — | 🟡 PARTIALLY TESTED |
-| SettingsLicensePage | `/settings/license` | 1 | 0 | 2 | — | 🟡 PARTIALLY TESTED |
-| SettingsOfflinePage | `/settings/offline` | 0 | 0 | 10 | — | 🟡 PARTIALLY TESTED |
+| SalesReportPage | `/reports/sales` | 0 | 0 | 0 | — | ❌ NOT TESTED |
+| SalesReturnsPage | `/sales-returns` | 3 | 0 | 2 | 📱 | ❌ NOT TESTED |
+| SettingsBackupPage | `/settings/backup` | 1 | 0 | 6 | — | ❌ NOT TESTED |
+| SettingsLicensePage | `/settings/license` | 1 | 0 | 2 | — | ❌ NOT TESTED |
+| SettingsOfflinePage | `/settings/offline` | 0 | 0 | 10 | — | ❌ NOT TESTED |
 | SettingsPage | `/settings` | 4 | 2 | 4 | — | 🟡 PARTIALLY TESTED |
 | SettingsSecurityPage | `/settings/security` | 4 | 0 | 4 | — | 🟡 PARTIALLY TESTED |
-| StockCountPage | `/stock-count` | 5 | 0 | 4 | 📱 | 🟡 PARTIALLY TESTED |
+| StockCountPage | `/stock-count` | 5 | 0 | 4 | 📱 | ❌ NOT TESTED |
 | StorageCheckPage | `/settings/offline/storage-check` | 0 | 0 | 1 | — | ⬜ NOT APPLICABLE |
-| SupplierOrderPage | `/supplier-orders/:id` | 0 | 0 | 2 | — | ✅ TESTED |
-| SyncIssuesPage | `/sync` | 1 | 0 | 4 | — | ✅ TESTED |
-| TransferMoneyPage | `/finance/transfers` | 3 | 0 | 5 | — | ✅ TESTED |
+| SupplierOrderPage | `/supplier-orders/:id` | 0 | 0 | 2 | — | ❌ NOT TESTED |
+| SyncIssuesPage | `/sync` | 1 | 0 | 4 | — | ❌ NOT TESTED |
+| TransferMoneyPage | `/finance/transfers` | 3 | 0 | 5 | — | ❌ NOT TESTED |
 | UsersPage | `/users` | 6 | 1 | 6 | — | 🟡 PARTIALLY TESTED |
-| VendorStockPage | `/vendor-stock` | 0 | 0 | 2 | — | ✅ TESTED |
-| VendorWorkspacePage | `/vendors/workspace` | 1 | 1 | 9 | — | 🟡 PARTIALLY TESTED |
-| WarrantyClaimPage | `/warranty/:id` | 0 | 0 | 1 | — | ✅ TESTED |
-| WarrantyClaimsPage | `/warranty` | 5 | 0 | 3 | 📱 | 🟡 PARTIALLY TESTED |
+| VendorStockPage | `/vendor-stock` | 0 | 0 | 2 | — | ❌ NOT TESTED |
+| VendorWorkspacePage | `/vendors/workspace` | 1 | 1 | 9 | — | ❌ NOT TESTED |
+| WarrantyClaimPage | `/warranty/:id` | 0 | 0 | 1 | — | ❌ NOT TESTED |
+| WarrantyClaimsPage | `/warranty` | 5 | 0 | 3 | 📱 | ❌ NOT TESTED |
 | CancelDocumentDialog | _(dialog)_ | 1 | 0 | 2 | — | ❌ NOT TESTED |
 | ConfirmDialog | _(dialog)_ | 0 | 0 | 2 | — | ❌ NOT TESTED |
 | DateOnlyPicker | _(dialog)_ | 1 | 0 | 0 | — | 🟡 PARTIALLY TESTED |
@@ -165,9 +165,9 @@
 | **Business effects** | fetchAccountStatement, fetchAccounts |
 | **Permissions** | bank.reconciliation.view |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown ledger-account, dropdown ledger-kind |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown ledger-account, dropdown ledger-kind |
 
 ### AccountReconcilePage
 
@@ -194,9 +194,9 @@
 | **Business effects** | loadConfig, fetchAccounts, fetchReconciliation, openStatementFile, removeMatch, reopenReconciliation, saveMatch |
 | **Permissions** | bank.reconciliation.perform, bank.reconciliation.reopen |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action Finish, action Match these two, action Confirm, action Record it |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action Finish, action Match these two, action Confirm, action Record it |
 
 ### AuditPage
 
@@ -223,7 +223,7 @@
 | **Business effects** | fetchAuditEvents |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | dropdown filter-actor, dropdown filter-entity, dropdown filter-action, action Apply |
 
@@ -252,9 +252,9 @@
 | **Business effects** | fetchAccounts, fetchMovements, voidMovement |
 | **Permissions** | owner.capital.record, loan.movement.record, loan.account.manage, cash.movement.void |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### CatalogPage
 
@@ -281,7 +281,7 @@
 | **Business effects** | createCatalogEntry, fetchCatalog, removeCatalogEntry, renameCatalogEntry |
 | **Permissions** | catalog.unit.manage, catalog.brand.manage, catalog.category.manage |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | component, playwright, playwright-mobile |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field catalog-name, action Add category, action Add the first unit, action Remove, action Add the first brand, action Add the first category, action Add |
 
@@ -310,9 +310,9 @@
 | **Business effects** | fetchDaybook, fetchExpenses, fetchDayStatus, fetchParties |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown ctr-party, action Continue |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown ctr-party, action Continue |
 
 ### DailyCashPage
 
@@ -368,7 +368,7 @@
 | **Business effects** | fetchDashboardCards, saveTarget, fetchBackupStatus |
 | **Permissions** | report.target.manage |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | component, playwright, playwright-mobile |
+| **Responsible tests** | component, playwright-mobile |
 | **Status** | ✅ TESTED |
 | **Gaps** | — |
 
@@ -397,7 +397,7 @@
 | **Business effects** | cancelDocument, canCancelKind, fetchDaybook, markDayReviewed, recordDaybookPrint, isRedatableKind |
 | **Permissions** | daybook.review.mark, daybook.print, daybook.view.entry_date |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
+| **Responsible tests** | playwright |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field daybook-note, dropdown daybook-kind |
 
@@ -426,9 +426,9 @@
 | **Business effects** | addExpenseCategory, voidExpense, archiveExpenseCategory, fetchExpenses, renameExpenseCategory |
 | **Permissions** | expense.record |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown categoryId |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown categoryId |
 
 ### FinanceOverviewPage
 
@@ -455,9 +455,9 @@
 | **Business effects** | fetchAccounts, fetchMovements |
 | **Permissions** | cash.account.view, bank.account.view, loan.account.manage, loan.movement.record, cash.movement.record, owner.capital.record, bank.reconciliation.view |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### FinanceReconciliationPage
 
@@ -484,9 +484,9 @@
 | **Business effects** | fetchAccounts, fetchReconciliations |
 | **Permissions** | bank.reconciliation.perform |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown reconcile-account |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown reconcile-account |
 
 ### ForgotPasswordPage
 
@@ -513,7 +513,7 @@
 | **Business effects** | requestPasswordResetOtp, resetPassword |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field identifier, required field password, action Send code, action Set new password, action Go to sign in |
 
@@ -571,7 +571,7 @@
 | **Business effects** | commitImport, previewImport |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | component, playwright, playwright-mobile |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | dropdown import-type |
 
@@ -600,7 +600,7 @@
 | **Business effects** | fetchCostAdjustments, fetchInventory, fetchInventoryLots, fetchInventoryValuation, fetchOpeningStock, fetchStockAdjustments, fetchStockReport |
 | **Permissions** | inventory.cost.view, inventory.lot.view |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | component, playwright, playwright-mobile |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | action Apply |
 
@@ -629,9 +629,9 @@
 | **Business effects** | fetchSale |
 | **Permissions** | sale.payment.record |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### InvoiceSettingsPage
 
@@ -658,9 +658,9 @@
 | **Business effects** | fetchInvoiceSettings, removeInvoiceLogo, saveInvoiceLogo, updateInvoiceSettings |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown settings.language, dropdown settings.defaultTemplate, dropdown settings.thermalPaper, action Remove logo |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown settings.language, dropdown settings.defaultTemplate, dropdown settings.thermalPaper, action Remove logo |
 
 ### LoginPage
 
@@ -716,9 +716,9 @@
 | **Business effects** | deactivateAccount, fetchAccounts |
 | **Permissions** | cash.account.manage, bank.account.manage, loan.account.manage |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### MoneyReportPage
 
@@ -745,9 +745,9 @@
 | **Business effects** | fetchMoneyReport |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | required field money-from, required field money-to, required field view, dropdown view |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, required field money-from, required field money-to, required field view, dropdown view |
 
 ### PartiesPage
 
@@ -774,7 +774,7 @@
 | **Business effects** | createCustomerGroup, deleteParty, fetchParties, fetchPartySetup, removeCustomerGroup, renameCustomerGroup, setPartyStatus |
 | **Permissions** | party.group.manage |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | dropdown filter-group, dropdown filter-status, action Add, action Add the first, action Delete, action Reactivate, action Remove |
 
@@ -803,7 +803,7 @@
 | **Business effects** | createCustomerGroup, createParty, deleteParty, fetchParty, fetchPartySetup, updateParty |
 | **Permissions** | party.group.manage |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field party-name, required field party-phone, required field party-credit, required field party-opening, dropdown customerGroupId, dropdown openingDirection, dropdown party-opening-role, action Edit details, action Delete, action Save changes |
 
@@ -832,9 +832,9 @@
 | **Business effects** | fetchParty, fetchPartyLedger, fetchPartyOpening |
 | **Permissions** | sale.payment.record, sale.invoice.create, party.vendor.view, purchase.payment.record, purchase.bill.create |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown ledger-page-size, action Vendor workspace, action Receive payment, action New sale, action Pay supplier |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown ledger-page-size, action Vendor workspace, action Receive payment, action New sale, action Pay supplier |
 
 ### PeriodsPage
 
@@ -861,9 +861,9 @@
 | **Business effects** | closePeriod, fetchPeriods |
 | **Permissions** | period.close |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### PosPage
 
@@ -919,9 +919,9 @@
 | **Business effects** | — |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### ProductsPage
 
@@ -948,7 +948,7 @@
 | **Business effects** | fetchCatalog, deleteProduct, fetchProducts, setProductStatus |
 | **Permissions** | catalog.product.create, catalog.product.edit, catalog.product.deactivate, catalog.product.delete, inventory.lot.view, inventory.cost.view |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | component, playwright, playwright-mobile |
+| **Responsible tests** | component, playwright-mobile |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | dropdown filter-brand, dropdown filter-category, dropdown filter-subcategory, dropdown filter-stock, dropdown filter-status, action Add the first product, action Reactivate, action Delete |
 
@@ -977,9 +977,9 @@
 | **Business effects** | fetchPurchase, voidPurchase, fetchAccounts, fetchSerialProgress |
 | **Permissions** | purchase.payment.record, purchase.return.create, purchase.bill.edit, purchase.bill.void, purchase.bill.create |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action New purchase, action Cancel bill |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action New purchase, action Cancel bill |
 
 ### PurchaseFormPage
 
@@ -1035,9 +1035,9 @@
 | **Business effects** | decidePurchasePlan, fetchPurchasePlan |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### PurchasePlanPage
 
@@ -1064,9 +1064,9 @@
 | **Business effects** | fetchParties, fetchCatalog, fetchProducts, createPurchasePlan, decidePurchasePlan, deletePurchasePlan, fetchPlannerSuggestions, fetchPurchasePlans, fetchSupplierOrders |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown pp-scope, dropdown pp-history, dropdown pp-add, action Delete |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown pp-scope, dropdown pp-history, dropdown pp-add, action Delete |
 
 ### PurchaseReportPage
 
@@ -1093,9 +1093,9 @@
 | **Business effects** | fetchPurchaseReport |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### PurchaseReturnsPage
 
@@ -1122,9 +1122,9 @@
 | **Business effects** | fetchPurchaseReturns |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### PurchasesPage
 
@@ -1151,9 +1151,9 @@
 | **Business effects** | fetchPurchases |
 | **Permissions** | purchase.bill.create, inventory.cost.view |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown purchase-settlement, action New purchase, action Record the first purchase |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown purchase-settlement, action New purchase, action Record the first purchase |
 
 ### RegisterPage
 
@@ -1180,7 +1180,7 @@
 | **Business effects** | completeRegistration, requestSignupOtp, verifySignupOtp |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field identifier, required field business, required field username, required field password, required field pin, action Send code, action Verify, action Create account |
 
@@ -1209,7 +1209,7 @@
 | **Business effects** | createRole, deleteRole, fetchRoles, updateRole |
 | **Permissions** | user.role.manage |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field role-name, required field role-confirm, required field delete-confirm, action Add role, action Delete, action Save changes, action Delete role |
 
@@ -1238,7 +1238,7 @@
 | **Business effects** | cancelSale, fetchSale, fetchSales |
 | **Permissions** | sale.invoice.create, sale.payment.record, sale.invoice.edit, sale.invoice.void, sales.return.create |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
+| **Responsible tests** | playwright-mobile |
 | **Status** | ✅ TESTED |
 | **Gaps** | — |
 
@@ -1267,9 +1267,9 @@
 | **Business effects** | fetchSalesReport |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### SalesReturnsPage
 
@@ -1296,9 +1296,9 @@
 | **Business effects** | fetchSalesReturns |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### SettingsBackupPage
 
@@ -1325,9 +1325,9 @@
 | **Business effects** | downloadBackup, fetchBackupStatus |
 | **Permissions** | backup.restore, business.reset |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action Download, action Download backup, action Reset business data |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action Download, action Download backup, action Reset business data |
 
 ### SettingsLicensePage
 
@@ -1354,9 +1354,9 @@
 | **Business effects** | fetchLicenseStatus, installLicense |
 | **Permissions** | license.install |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action Install licence |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action Install licence |
 
 ### SettingsOfflinePage
 
@@ -1383,9 +1383,9 @@
 | **Business effects** | approveDevice, fetchDevices, forceRevokeDevice, registerDevice, renameDevice, replaceWriter, requestOfflineWrite, revokeDevice |
 | **Permissions** | settings.setting.edit, sync.status.view |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action Register this computer, action Cut off |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action Register this computer, action Cut off |
 
 ### SettingsPage
 
@@ -1412,7 +1412,7 @@
 | **Business effects** | fetchSettings, saveBusinessProfile, saveSetting |
 | **Permissions** | settings.setting.edit, settings.module.toggle |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | dropdown business-timezone, dropdown `setting-${descriptor.key}`, action Save, action Confirm |
 
@@ -1441,7 +1441,7 @@
 | **Business effects** | changePassword, changePin, fetchSecuritySettings |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field current-password, required field new-password, action Set password, action Set PIN |
 
@@ -1470,9 +1470,9 @@
 | **Business effects** | fetchInventory, postStockCount |
 | **Permissions** | period.backdate |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | action Post count |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, action Post count |
 
 ### StorageCheckPage
 
@@ -1499,7 +1499,7 @@
 | **Business effects** | — |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
+| **Responsible tests** | — |
 | **Status** | ⬜ NOT APPLICABLE |
 | **Gaps** | The O-6 storage spike measures this physical machine's disk and browser quota. Its whole purpose is to report what varies per device, so an assertion about the number would be an assertion about the CI runner. |
 
@@ -1528,9 +1528,9 @@
 | **Business effects** | fetchSupplierOrder |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### SyncIssuesPage
 
@@ -1557,9 +1557,9 @@
 | **Business effects** | fetchSyncConflicts, fetchSyncStatus, resolveSyncConflict |
 | **Permissions** | sync.conflict.resolve, sync.conflict.discard |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### TransferMoneyPage
 
@@ -1586,9 +1586,9 @@
 | **Business effects** | fetchMovements, voidMovement |
 | **Permissions** | cash.movement.record, cash.movement.void |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### UsersPage
 
@@ -1615,7 +1615,7 @@
 | **Business effects** | createUser, fetchUsers, setUserDisabled, updateUser |
 | **Permissions** | user.account.create, user.account.edit, user.account.disable |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | component, playwright |
+| **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |
 | **Gaps** | required field display-name, required field username, required field identifier, required field confirm, required field confirm-toggle, dropdown role, action Add user, action Disable, action Save changes |
 
@@ -1644,9 +1644,9 @@
 | **Business effects** | fetchParties, fetchProducts, fetchVendorStock |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### VendorWorkspacePage
 
@@ -1673,9 +1673,9 @@
 | **Business effects** | fetchAccounts, fetchParties, fetchProducts, fetchVendorActivity, fetchVendorWorkspace |
 | **Permissions** | vendor.payment.record, vendor.receipt.record, vendor.issue.manage, vendor.stock.manage, purchase.bill.create, purchase.bill.edit |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | dropdown workspace-vendor |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, dropdown workspace-vendor |
 
 ### WarrantyClaimPage
 
@@ -1702,9 +1702,9 @@
 | **Business effects** | fetchAccounts, fetchWarrantyClaim |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop |
-| **Responsible tests** | playwright |
-| **Status** | ✅ TESTED |
-| **Gaps** | — |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself |
 
 ### WarrantyClaimsPage
 
@@ -1731,9 +1731,9 @@
 | **Business effects** | createWarrantyClaim, fetchWarrantyClaims, lookupWarranty |
 | **Permissions** | — |
 | **Desktop / mobile** | desktop + mobile layout guard |
-| **Responsible tests** | playwright, playwright-mobile |
-| **Status** | 🟡 PARTIALLY TESTED |
-| **Gaps** | required field wc-complaint, action Take it in |
+| **Responsible tests** | — |
+| **Status** | ❌ NOT TESTED |
+| **Gaps** | the screen itself, required field wc-complaint, action Take it in |
 
 ## Dialogs, drawers and shared forms
 
@@ -3634,125 +3634,125 @@
 
 | Code | Module | Status |
 | --- | --- | --- |
-| `demo.note.create` | demo | ✅ TESTED |
-| `demo.note.view` | demo | ✅ TESTED |
-| `user.account.view` | user | ✅ TESTED |
-| `user.account.create` | user | ✅ TESTED |
-| `user.account.edit` | user | ✅ TESTED |
-| `user.account.disable` | user | ✅ TESTED |
-| `user.role.view` | user | ✅ TESTED |
-| `user.role.manage` | user | ✅ TESTED |
-| `settings.setting.view` | settings | ✅ TESTED |
-| `settings.setting.edit` | settings | ✅ TESTED |
-| `settings.module.toggle` | settings | ✅ TESTED |
+| `demo.note.create` | demo | ❌ NOT TESTED |
+| `demo.note.view` | demo | ❌ NOT TESTED |
+| `user.account.view` | user | ❌ NOT TESTED |
+| `user.account.create` | user | ❌ NOT TESTED |
+| `user.account.edit` | user | ❌ NOT TESTED |
+| `user.account.disable` | user | ❌ NOT TESTED |
+| `user.role.view` | user | ❌ NOT TESTED |
+| `user.role.manage` | user | ❌ NOT TESTED |
+| `settings.setting.view` | settings | ❌ NOT TESTED |
+| `settings.setting.edit` | settings | ❌ NOT TESTED |
+| `settings.module.toggle` | settings | ❌ NOT TESTED |
 | `audit.event.view` | audit | ✅ TESTED |
-| `catalog.product.view` | catalog | ✅ TESTED |
-| `catalog.product.create` | catalog | ✅ TESTED |
-| `catalog.product.edit` | catalog | ✅ TESTED |
-| `catalog.product.deactivate` | catalog | ✅ TESTED |
-| `catalog.product.delete` | catalog | ✅ TESTED |
-| `catalog.brand.manage` | catalog | ✅ TESTED |
-| `catalog.category.manage` | catalog | ✅ TESTED |
-| `catalog.unit.manage` | catalog | ✅ TESTED |
-| `inventory.cost.view` | inventory | ✅ TESTED |
-| `inventory.lot.view` | inventory | ✅ TESTED |
-| `inventory.cost.recompute` | inventory | ✅ TESTED |
-| `party.customer.view` | party | ✅ TESTED |
-| `party.customer.create` | party | ✅ TESTED |
-| `party.customer.edit` | party | ✅ TESTED |
-| `party.customer.deactivate` | party | ✅ TESTED |
-| `party.supplier.view` | party | ✅ TESTED |
-| `party.supplier.create` | party | ✅ TESTED |
-| `party.supplier.edit` | party | ✅ TESTED |
-| `party.supplier.deactivate` | party | ✅ TESTED |
-| `party.vendor.view` | party | ✅ TESTED |
-| `party.vendor.create` | party | ✅ TESTED |
-| `party.vendor.edit` | party | ✅ TESTED |
-| `party.vendor.deactivate` | party | ✅ TESTED |
-| `party.group.manage` | party | ✅ TESTED |
-| `data.import.run` | data | ✅ TESTED |
-| `cash.account.view` | cash | ✅ TESTED |
-| `cash.account.manage` | cash | ✅ TESTED |
+| `catalog.product.view` | catalog | ❌ NOT TESTED |
+| `catalog.product.create` | catalog | ❌ NOT TESTED |
+| `catalog.product.edit` | catalog | ❌ NOT TESTED |
+| `catalog.product.deactivate` | catalog | ❌ NOT TESTED |
+| `catalog.product.delete` | catalog | ❌ NOT TESTED |
+| `catalog.brand.manage` | catalog | ❌ NOT TESTED |
+| `catalog.category.manage` | catalog | ❌ NOT TESTED |
+| `catalog.unit.manage` | catalog | ❌ NOT TESTED |
+| `inventory.cost.view` | inventory | ❌ NOT TESTED |
+| `inventory.lot.view` | inventory | ❌ NOT TESTED |
+| `inventory.cost.recompute` | inventory | ❌ NOT TESTED |
+| `party.customer.view` | party | ❌ NOT TESTED |
+| `party.customer.create` | party | ❌ NOT TESTED |
+| `party.customer.edit` | party | ❌ NOT TESTED |
+| `party.customer.deactivate` | party | ❌ NOT TESTED |
+| `party.supplier.view` | party | ❌ NOT TESTED |
+| `party.supplier.create` | party | ❌ NOT TESTED |
+| `party.supplier.edit` | party | ❌ NOT TESTED |
+| `party.supplier.deactivate` | party | ❌ NOT TESTED |
+| `party.vendor.view` | party | ❌ NOT TESTED |
+| `party.vendor.create` | party | ❌ NOT TESTED |
+| `party.vendor.edit` | party | ❌ NOT TESTED |
+| `party.vendor.deactivate` | party | ❌ NOT TESTED |
+| `party.group.manage` | party | ❌ NOT TESTED |
+| `data.import.run` | data | ❌ NOT TESTED |
+| `cash.account.view` | cash | ❌ NOT TESTED |
+| `cash.account.manage` | cash | ❌ NOT TESTED |
 | `cash.session.start` | cash | ✅ TESTED |
 | `cash.session.close` | cash | ✅ TESTED |
-| `cash.session.reopen` | cash | ✅ TESTED |
+| `cash.session.reopen` | cash | ❌ NOT TESTED |
 | `cash.movement.record` | cash | ✅ TESTED |
-| `cash.daily.view` | cash | ✅ TESTED |
-| `cash.daily.investigate` | cash | ✅ TESTED |
-| `bank.account.view` | bank | ✅ TESTED |
-| `bank.account.manage` | bank | ✅ TESTED |
-| `owner.capital.record` | owner | ✅ TESTED |
-| `loan.movement.record` | loan | ✅ TESTED |
-| `loan.account.manage` | loan | ✅ TESTED |
-| `bank.reconciliation.view` | bank | ✅ TESTED |
-| `bank.reconciliation.perform` | bank | ✅ TESTED |
-| `bank.reconciliation.reopen` | bank | ✅ TESTED |
-| `purchase.bill.view` | purchase | ✅ TESTED |
+| `cash.daily.view` | cash | ❌ NOT TESTED |
+| `cash.daily.investigate` | cash | ❌ NOT TESTED |
+| `bank.account.view` | bank | ❌ NOT TESTED |
+| `bank.account.manage` | bank | ❌ NOT TESTED |
+| `owner.capital.record` | owner | ❌ NOT TESTED |
+| `loan.movement.record` | loan | ❌ NOT TESTED |
+| `loan.account.manage` | loan | ❌ NOT TESTED |
+| `bank.reconciliation.view` | bank | ❌ NOT TESTED |
+| `bank.reconciliation.perform` | bank | ❌ NOT TESTED |
+| `bank.reconciliation.reopen` | bank | ❌ NOT TESTED |
+| `purchase.bill.view` | purchase | ❌ NOT TESTED |
 | `purchase.bill.create` | purchase | ✅ TESTED |
 | `purchase.payment.record` | purchase | ✅ TESTED |
-| `sale.invoice.view` | sale | ✅ TESTED |
+| `sale.invoice.view` | sale | ❌ NOT TESTED |
 | `sale.invoice.create` | sale | ✅ TESTED |
-| `sale.invoice.edit` | sale | ✅ TESTED |
+| `sale.invoice.edit` | sale | ❌ NOT TESTED |
 | `sale.invoice.void` | sale | ✅ TESTED |
-| `sale.payment.record` | sale | ✅ TESTED |
-| `sale.price.edit` | sale | ✅ TESTED |
-| `sale.discount.apply` | sale | ✅ TESTED |
-| `invoice.presentation.edit` | invoice | ✅ TESTED |
-| `sale.quotation.manage` | sale | ✅ TESTED |
-| `sale.order.manage` | sale | ✅ TESTED |
-| `sales.return.view` | sales | ✅ TESTED |
+| `sale.payment.record` | sale | ❌ NOT TESTED |
+| `sale.price.edit` | sale | ❌ NOT TESTED |
+| `sale.discount.apply` | sale | ❌ NOT TESTED |
+| `invoice.presentation.edit` | invoice | ❌ NOT TESTED |
+| `sale.quotation.manage` | sale | ❌ NOT TESTED |
+| `sale.order.manage` | sale | ❌ NOT TESTED |
+| `sales.return.view` | sales | ❌ NOT TESTED |
 | `sales.return.create` | sales | ✅ TESTED |
-| `purchase.return.view` | purchase | ✅ TESTED |
+| `purchase.return.view` | purchase | ❌ NOT TESTED |
 | `purchase.return.create` | purchase | ✅ TESTED |
-| `purchase.bill.edit` | purchase | ✅ TESTED |
+| `purchase.bill.edit` | purchase | ❌ NOT TESTED |
 | `purchase.bill.void` | purchase | ✅ TESTED |
-| `expense.view` | expense | ✅ TESTED |
+| `expense.view` | expense | ❌ NOT TESTED |
 | `expense.record` | expense | ✅ TESTED |
 | `stock.count.post` | stock | ✅ TESTED |
-| `period.close` | period | ✅ TESTED |
-| `period.backdate` | period | ✅ TESTED |
-| `purchase.plan.view` | purchase | ✅ TESTED |
-| `purchase.plan.manage` | purchase | ✅ TESTED |
-| `warranty.claim.view` | warranty | ✅ TESTED |
-| `warranty.claim.manage` | warranty | ✅ TESTED |
-| `vendor.stock.manage` | vendor | ✅ TESTED |
-| `vendor.payment.record` | vendor | ✅ TESTED |
-| `vendor.receipt.record` | vendor | ✅ TESTED |
-| `vendor.issue.manage` | vendor | ✅ TESTED |
-| `report.sales.view` | report | ✅ TESTED |
-| `report.purchase.view` | report | ✅ TESTED |
-| `report.stock.view` | report | ✅ TESTED |
-| `report.money.view` | report | ✅ TESTED |
-| `report.profit.view` | report | ✅ TESTED |
-| `report.target.manage` | report | ✅ TESTED |
-| `dashboard.card.view` | dashboard | ✅ TESTED |
-| `daybook.view` | daybook | ✅ TESTED |
-| `daybook.view.all_users` | daybook | ✅ TESTED |
-| `daybook.view.entry_date` | daybook | ✅ TESTED |
-| `daybook.review.mark` | daybook | ✅ TESTED |
-| `daybook.print` | daybook | ✅ TESTED |
-| `sale.receipt.void` | sale | ✅ TESTED |
-| `purchase.payment.void` | purchase | ✅ TESTED |
-| `expense.void` | expense | ✅ TESTED |
-| `cash.movement.void` | cash | ✅ TESTED |
-| `stock.adjustment.void` | stock | ✅ TESTED |
-| `sales.return.void` | sales | ✅ TESTED |
-| `purchase.return.void` | purchase | ✅ TESTED |
-| `finance.transaction_date.change` | finance | ✅ TESTED |
-| `finance.transaction_date.change_locked` | finance | ✅ TESTED |
-| `offline.device.register` | offline | ✅ TESTED |
-| `offline.device.approve` | offline | ✅ TESTED |
-| `offline.device.rename` | offline | ✅ TESTED |
-| `offline.device.revoke` | offline | ✅ TESTED |
-| `offline.device.force_revoke` | offline | ✅ TESTED |
-| `sync.status.view` | sync | ✅ TESTED |
-| `sync.conflict.resolve` | sync | ✅ TESTED |
-| `sync.conflict.discard` | sync | ✅ TESTED |
-| `license.term.view` | license | ✅ TESTED |
-| `license.install` | license | ✅ TESTED |
-| `backup.export` | backup | ✅ TESTED |
-| `backup.restore` | backup | ✅ TESTED |
-| `business.reset` | business | ✅ TESTED |
+| `period.close` | period | ❌ NOT TESTED |
+| `period.backdate` | period | ❌ NOT TESTED |
+| `purchase.plan.view` | purchase | ❌ NOT TESTED |
+| `purchase.plan.manage` | purchase | ❌ NOT TESTED |
+| `warranty.claim.view` | warranty | ❌ NOT TESTED |
+| `warranty.claim.manage` | warranty | ❌ NOT TESTED |
+| `vendor.stock.manage` | vendor | ❌ NOT TESTED |
+| `vendor.payment.record` | vendor | ❌ NOT TESTED |
+| `vendor.receipt.record` | vendor | ❌ NOT TESTED |
+| `vendor.issue.manage` | vendor | ❌ NOT TESTED |
+| `report.sales.view` | report | ❌ NOT TESTED |
+| `report.purchase.view` | report | ❌ NOT TESTED |
+| `report.stock.view` | report | ❌ NOT TESTED |
+| `report.money.view` | report | ❌ NOT TESTED |
+| `report.profit.view` | report | ❌ NOT TESTED |
+| `report.target.manage` | report | ❌ NOT TESTED |
+| `dashboard.card.view` | dashboard | ❌ NOT TESTED |
+| `daybook.view` | daybook | ❌ NOT TESTED |
+| `daybook.view.all_users` | daybook | ❌ NOT TESTED |
+| `daybook.view.entry_date` | daybook | ❌ NOT TESTED |
+| `daybook.review.mark` | daybook | ❌ NOT TESTED |
+| `daybook.print` | daybook | ❌ NOT TESTED |
+| `sale.receipt.void` | sale | ❌ NOT TESTED |
+| `purchase.payment.void` | purchase | ❌ NOT TESTED |
+| `expense.void` | expense | ❌ NOT TESTED |
+| `cash.movement.void` | cash | ❌ NOT TESTED |
+| `stock.adjustment.void` | stock | ❌ NOT TESTED |
+| `sales.return.void` | sales | ❌ NOT TESTED |
+| `purchase.return.void` | purchase | ❌ NOT TESTED |
+| `finance.transaction_date.change` | finance | ❌ NOT TESTED |
+| `finance.transaction_date.change_locked` | finance | ❌ NOT TESTED |
+| `offline.device.register` | offline | ❌ NOT TESTED |
+| `offline.device.approve` | offline | ❌ NOT TESTED |
+| `offline.device.rename` | offline | ❌ NOT TESTED |
+| `offline.device.revoke` | offline | ❌ NOT TESTED |
+| `offline.device.force_revoke` | offline | ❌ NOT TESTED |
+| `sync.status.view` | sync | ❌ NOT TESTED |
+| `sync.conflict.resolve` | sync | ❌ NOT TESTED |
+| `sync.conflict.discard` | sync | ❌ NOT TESTED |
+| `license.term.view` | license | ❌ NOT TESTED |
+| `license.install` | license | ❌ NOT TESTED |
+| `backup.export` | backup | ❌ NOT TESTED |
+| `backup.restore` | backup | ❌ NOT TESTED |
+| `business.reset` | business | ❌ NOT TESTED |
 
 ## Cross-module workflows
 
