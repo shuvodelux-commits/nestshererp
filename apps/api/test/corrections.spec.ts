@@ -13,7 +13,7 @@ import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Permission } from '@sher/core-contracts';
-import { SystemClock, Ulid } from '@sher/shared-utils';
+import { addDays, SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -50,7 +50,6 @@ let app: INestApplication;
 let pool: pg.Pool;
 let tenant: SeededTenant;
 let token: string;
-let drawerCode: string;
 let categoryId: string;
 let categoryCode: string;
 let bankCode: string;
@@ -101,12 +100,11 @@ beforeEach(async () => {
   token = signToken(tenant, TEST_JWT_SECRET);
   today = todayIn(tenant.timezone);
 
-  const drawer = must(await bearer(api().post('/api/v1/money/accounts')).send({
+  must(await bearer(api().post('/api/v1/money/accounts')).send({
     name: 'Counter drawer', type: 'CASH', holderName: null, reference: null,
     isDrawer: true, openingAmountMinor: 10000_00, openingDate: openingDay,
     operationId: Ulid.generate(clock),
   }), 'drawer');
-  drawerCode = `CASH:${drawer.body.data.id as string}`;
 
   const bank = must(await bearer(api().post('/api/v1/money/accounts')).send({
     name: 'City Bank', type: 'BANK', holderName: 'Shop Ltd', reference: null,
@@ -177,9 +175,7 @@ describe('moving a posted document to the day it really happened (§2.5)', () =>
     const before = await entriesFor(expense.id);
     expect(before).toHaveLength(1);
 
-    const yesterday = new Date(`${today}T00:00:00Z`);
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    const movedTo = yesterday.toISOString().slice(0, 10);
+    const movedTo = addDays(today, -1);
 
     const changed = await bearer(api().post('/api/v1/corrections/transaction-date')).send({
       documentType: 'EXPENSE', documentId: expense.id, version: expense.version,
