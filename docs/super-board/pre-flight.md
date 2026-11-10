@@ -1,7 +1,7 @@
 # HisabIQ adoption preflight — 2026-11-10
 
-Setup is configured; the application baseline is not accepted. No coding worker
-was dispatched and no suite, merge, migration or deployment was run in setup.
+Setup is pushed. A01b fixture maintenance is validated locally; broader application
+acceptance is pending. No suites, merges, migrations or deployments were run.
 
 ## Scope and identity
 
@@ -26,8 +26,8 @@ was dispatched and no suite, merge, migration or deployment was run in setup.
 | Relative host links | all resolve; no absolute host links |
 | Full workspace build | exit 0, observed 2026-11-09; large Vite chunk warning |
 | Full workspace typecheck | exit 0, rerun 2026-11-10 |
-| Lint | exit 1; corrections.spec.ts:53 unused drawerCode |
-| Boundary enforcement | exit 1; corrections.spec.ts:180 direct new Date() |
+| Lint | exit 0 on isolated A01b worktree, 2026-11-10 |
+| Boundary enforcement | exit 0; Boundaries OK, 2026-11-10 |
 | API health | HTTP 200 on 127.0.0.1:3000/health after 2026-11-10 restart |
 | Reference Vue web | HTTP 200 on 127.0.0.1:5173 after restart |
 
@@ -55,15 +55,19 @@ helper installs from this attempt were removed. The existing verification and
 testing-strategy helpers were reused; optional security-audit is installed but
 was not run. Claude hooks do not prove native Codex hook enforcement.
 
-## Dispatch gate
+## A01b outcome and next gate
 
-Issue #1 is Blocked and human-gated because AGENTS.md R-0 requires an explicit
-current-session owner request before editing existing test files. Permission
-must cover only the unused fixture bookkeeping and direct Date construction,
-preserving fixture side effects, tenant-local date semantics and assertions.
-Suites stay disabled. Record permission, remove human-gated and move only that
-card to Ready. Its build should produce a draft PR for human review.
+Owner explicitly authorized the two existing-fixture repairs. Worker branch
+`issue-1-static-checks` at `05b4bb6` derives from setup `ae378cc`; only the
+corrections fixture changed. Its blob `8f4b9613c5fb31af8d5325da0d443b473fc776e8`
+is identical to published PR #2 at `d7b5cf5`. Offline frozen install, lint and
+boundary checks all exited 0. Evidence is retained in the restricted runtime
+state directory: A01b-checks.json, A01b-lint.log, A01b-test-boundaries.log and
+A01b-install.log. No suites ran. Both local worktrees were clean after commits.
 
-Current allowed checks: install, build, typecheck, lint and test:boundaries.
-Later business-module QA/TDD policy must be resolved separately; these static
-checks do not establish accounting, isolation or production acceptance.
+PR #2 remains a draft for QA/review; every merge requires the owner. GitHub CI
+run 42743963968 independently passed lint but failed typecheck: shared-utils
+exposes dist declarations, while CI typechecks before building those outputs.
+Its boundary and suite steps were skipped. Do not represent CI as passing or
+change its workflow inside this fixture-only task. Scope CI/runtime alignment
+separately. No later product module has been started.

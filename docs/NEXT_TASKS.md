@@ -1,17 +1,15 @@
 # HisabIQ adoption — selected next task
 
-**Updated 2026-11-10.** Adoption work takes priority over the historical
-SherERP queue below. A generic continue does not authorize additional modules.
+**Updated 2026-11-10.** A01b source repair is verified: isolated lint and
+boundary checks exited 0; no suites ran. Draft PR #2 awaits QA/review and
+human merge approval. The integration setup branch is now pushed.
 
-1. A01b / GitHub issue #1: owner authorizes maintenance of the existing
-   `apps/api/test/corrections.spec.ts`; remove unused drawer bookkeeping and
-   direct Date construction, preserve fixture behavior, then run lint and
-   test:boundaries. No new tests or automated suites. Draft PR, human merge.
-2. Separately scope Node-runtime declarations and CI alignment.
-3. Continue the approved adoption roadmap with the UI-to-API action matrix
-   before starting product-module integration; retain the compact React design.
+Next bounded follow-up: repair clean-checkout CI build order. CI currently
+reads shared-utils dist declarations before building them. Keep runtime-version
+alignment separately scoped if it requires upgrades; preserve the four gates.
+Do not start product-module integration while baseline acceptance is unresolved.
 
-Board: https://github.com/users/shuvodelux-commits/projects/2
+PR: https://github.com/shuvodelux-commits/nestshererp/pull/2
 Issue: https://github.com/shuvodelux-commits/nestshererp/issues/1
 
 ---

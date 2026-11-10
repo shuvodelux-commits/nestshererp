@@ -15,8 +15,8 @@ current acceptance evidence.
 - Installed Codex helpers resolve; verification config and launch syntax pass.
   Claude guard hooks are installed; native Codex hook enforcement is not claimed.
 - Current selected task: https://github.com/shuvodelux-commits/nestshererp/issues/1
-  (A01b). It is Blocked/human-gated, awaiting explicit scope for maintenance of
-  the existing test file; no coding worker has been dispatched.
+  (A01b). Owner authorized the existing-file repair. The isolated worker
+  completed it and both lint and boundary checks exited 0; draft PR #2 awaits QA/review.
 - Full build exited 0. Final check evidence and remaining violations are in
   `docs/super-board/pre-flight.md`. No automated suites were run during setup.
 - The local Podman database is `hisabiq-a01-postgres`, bound to 127.0.0.1:5546.
@@ -26,15 +26,16 @@ current acceptance evidence.
   `/home/shoaib/.local/state/hisabiq-a01-runtime`; never print or commit secrets.
 - Node 24.22.2 with isolated pnpm 9.15.9 is the recorded local compatibility
   probe. The manifest still declares Node 20; runtime/CI alignment is separate.
+- Setup was pushed successfully; the GitHub integration branch is available.
 - No business-module code, schema, production database, entitlement setting,
   merge or deployment was changed by this setup.
 
 ## Resume
 
-Read AGENTS.md's adoption section and the preflight evidence first. A01b needs
-permission to edit only the existing corrections fixture while keeping suite
-execution disabled. Record permission on issue #1 before removing human-gated
-and moving that single card to Ready. Keep all other work queued separately.
+Read AGENTS.md's adoption section and the preflight evidence first. A01b fixture repair is validated locally in branch `issue-1-static-checks`,
+commit `05b4bb6`. Its fixture content is identical to PR #2 (`d7b5cf5`).
+No suites were run. Preserve the separate local worker branch; do not reapply
+the patch or merge without the owner. CI build-order repair remains separate.
 
 ---
 

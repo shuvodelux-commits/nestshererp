@@ -1219,3 +1219,12 @@ made available to both hosts and actual Codex resolution was checked. Reused
 verification-before-completion from the installed Superpowers 7.0.1 bundle and
 the existing testing-strategy helper. No business-module implementation is
 included in this setup.
+
+
+### A01b maintenance authorization — 2026-11-10
+
+Owner replied "Fix" to the concrete request for the two existing corrections
+fixture violations and lint/boundary verification. This permits only that
+maintenance; it does not authorize new tests or automated suite execution.
+The source fix is in draft PR #2 and was validated against the isolated setup
+baseline with both static gates exiting 0. All merges remain human approved.
