@@ -1,10 +1,12 @@
 # HisabIQ adoption — selected next task
 
 **Updated 2026-11-10.** A01b source repair is verified: isolated lint and
-boundary checks exited 0; no suites ran. Draft PR #2 awaits QA/review and
-human merge approval. The integration setup branch is now pushed.
+boundary checks exited 0; no suites ran. PR #2 merged with explicit owner authorization as `8ab03d0`. The integration setup branch is now pushed.
 
-Next bounded follow-up: repair clean-checkout CI build order. CI currently
+Next setup goal: shared rules for (1) ChatGPT + Remote Desktop Commander,
+(2) Codex Cloud, (3) ChatGPT + GitHub. Rules are pending agreement.
+
+Required foundation: repair clean-checkout CI build order. CI currently
 reads shared-utils dist declarations before building them. Keep runtime-version
 alignment separately scoped if it requires upgrades; preserve the four gates.
 Do not start product-module integration while baseline acceptance is unresolved.

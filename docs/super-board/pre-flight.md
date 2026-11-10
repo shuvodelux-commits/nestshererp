@@ -65,7 +65,9 @@ boundary checks all exited 0. Evidence is retained in the restricted runtime
 state directory: A01b-checks.json, A01b-lint.log, A01b-test-boundaries.log and
 A01b-install.log. No suites ran. Both local worktrees were clean after commits.
 
-PR #2 remains a draft for QA/review; every merge requires the owner. GitHub CI
+PR #2 merged with explicit owner authorization as `8ab03d0`; full independent
+review of the exact merged tree passed install, build, typecheck, lint and
+boundaries. No suites ran. Every future merge still requires the owner. GitHub CI
 run 42743963968 independently passed lint but failed typecheck: shared-utils
 exposes dist declarations, while CI typechecks before building those outputs.
 Its boundary and suite steps were skipped. Do not represent CI as passing or
