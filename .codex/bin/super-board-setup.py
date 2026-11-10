@@ -1,0 +1,1 @@
+../../.agents/bin/super-board-setup.py

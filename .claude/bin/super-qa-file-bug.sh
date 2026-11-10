@@ -1,0 +1,1 @@
+../../.agents/bin/super-qa-file-bug.sh

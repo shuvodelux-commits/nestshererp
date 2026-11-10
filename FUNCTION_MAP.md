@@ -1021,3 +1021,15 @@ than inventing a seventh style:
    actually broke. `seedWalkInCustomer` is in `support/database.ts` for the same
    reason — `seedTenant` does not run tenant provisioning, so a shop it creates
    has no walk-in party and every guest sale fails until one is added.
+
+
+## Agent workflow tools — `.agents/`
+
+| Entry | Location | Reuse |
+|---|---|---|
+| Build lane | `.agents/skills/super-build/SKILL.md` | Implement one curated GitHub card in its own worktree; hand a draft PR to QA |
+| Codex wave launcher | `.agents/bin/super-board-codex-wave.sh` | Board-controlled Codex build/QA/review dispatch after preflight |
+| Helper resolution | `.agents/bin/super-board-skills-ready.py` | Verify actual host-visible skills before claiming or dispatching cards |
+| Verification configuration | `.agents/bin/super-board-verification-ready.py` | Check the selected repository has real verification commands |
+| Project card operations | `.agents/bin/super-board-card.sh` | Read or move a card on the configured adoption project |
+| Pipeline snapshot | `.agents/bin/super-board-status.py` | Read-only status; optional positional config slug |

@@ -1,3 +1,45 @@
+# HisabIQ adoption — Current State
+
+**Updated:** 2026-11-10 (Asia/Dhaka). This section supersedes the historical
+SherERP snapshot below for adoption work; historical suite results are not
+current acceptance evidence.
+
+- Repository: `shuvodelux-commits/nestshererp`.
+- Worktree: `/home/shoaib/Projects/hisabiq-nest-adoption`.
+- Branch: `chore/hisabiq-adoption-runtime-a01`, based on `76421b0`.
+- Super Board 3.3.0 tooling is installed from upstream `d0b7d5a`; the original
+  backend checkout and older greenfield board were preserved.
+- Board: https://github.com/users/shuvodelux-commits/projects/2
+- Config: `.claude/super-board/configs/hisabiq-nest-adoption.json`.
+- One Codex worker, human approval for every merge, no automated migrations.
+- Installed Codex helpers resolve; verification config and launch syntax pass.
+  Claude guard hooks are installed; native Codex hook enforcement is not claimed.
+- Current selected task: https://github.com/shuvodelux-commits/nestshererp/issues/1
+  (A01b). It is Blocked/human-gated, awaiting explicit scope for maintenance of
+  the existing test file; no coding worker has been dispatched.
+- Full build exited 0. Final check evidence and remaining violations are in
+  `docs/super-board/pre-flight.md`. No automated suites were run during setup.
+- The local Podman database is `hisabiq-a01-postgres`, bound to 127.0.0.1:5546.
+  API health and reference Vue web returned HTTP 200 on ports 3000 and 5173
+  after restart. This is not yet the HisabIQ React UI connected to the backend.
+- Runtime state, logs and credentials remain outside Git under
+  `/home/shoaib/.local/state/hisabiq-a01-runtime`; never print or commit secrets.
+- Node 24.22.2 with isolated pnpm 9.15.9 is the recorded local compatibility
+  probe. The manifest still declares Node 20; runtime/CI alignment is separate.
+- No business-module code, schema, production database, entitlement setting,
+  merge or deployment was changed by this setup.
+
+## Resume
+
+Read AGENTS.md's adoption section and the preflight evidence first. A01b needs
+permission to edit only the existing corrections fixture while keeping suite
+execution disabled. Record permission on issue #1 before removing human-gated
+and moving that single card to Ready. Keep all other work queued separately.
+
+---
+
+## Historical upstream snapshot (2026-09-03)
+
 # SherERP — Current State
 
 **Date:** 2026-09-03

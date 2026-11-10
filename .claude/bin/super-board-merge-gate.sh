@@ -1,0 +1,1 @@
+../../.agents/bin/super-board-merge-gate.sh

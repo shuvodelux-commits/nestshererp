@@ -1204,3 +1204,18 @@ with a single exception — the owner asking in the current conversation. He did
 explicitly, for Playwright, on 2026-09-03. That authorisation covers **Playwright
 specs only**; no new vitest suite may be added alongside them, and R-0 §1
 otherwise stands unchanged for every future module.
+
+
+## HisabIQ adoption tooling — 2026-11-09
+
+Owner request: "setup /super build and continue". Install the existing Super
+Board 3.3.0 bundle (upstream d0b7d5a) in the isolated adoption worktree and use
+its own GitHub project 2. Keep one worker, human approval for every merge, no
+automated migrations, and only the four permitted static/build gates. The
+no-test rule remains in effect. Scope the workflow-document exception in
+AGENTS.md; do not replace the existing canonical specification. The installer
+initially installed helpers for Claude only; the required helper files were
+made available to both hosts and actual Codex resolution was checked. Reused
+verification-before-completion from the installed Superpowers 7.0.1 bundle and
+the existing testing-strategy helper. No business-module implementation is
+included in this setup.

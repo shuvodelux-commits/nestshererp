@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "description": "HisabIQ NestJS adoption; one selected task and human-approved merges",
+  "project": {
+    "owner": "shuvodelux-commits",
+    "title": "HisabIQ Nest Adoption",
+    "number": 2
+  },
+  "worker_backend": "workflow",
+  "host": "codex",
+  "model_tier": "medium",
+  "target": {
+    "type": "repo",
+    "url": null
+  },
+  "repo": {
+    "path": ".",
+    "remote": "https://github.com/shuvodelux-commits/nestshererp"
+  },
+  "base_branch": "chore/hisabiq-adoption-runtime-a01",
+  "timezone": "Asia/Dhaka",
+  "columns": [
+    "Backlog",
+    "Ready",
+    "Building",
+    "QA",
+    "Review",
+    "Blocked",
+    "Done"
+  ],
+  "labels": [
+    "qa",
+    "bug",
+    "feature"
+  ],
+  "paths": {
+    "project_md": null,
+    "pre_flight_md": "docs/super-board/pre-flight.md",
+    "runs_dir": "docs/super-board/runs"
+  },
+  "human_approves_merge": true,
+  "merge_policy": {
+    "default": "human",
+    "auto_max_lines": 400,
+    "allow_auto_on_production": false
+  },
+  "migrations": {
+    "globs": [
+      "**/migrations/*.sql"
+    ],
+    "allowed_envs": [],
+    "target_env": "test",
+    "commands": {},
+    "checks": {},
+    "human_steps": []
+  },
+  "max_workers": 1,
+  "no_progress_cycles": 6,
+  "rebuild_cap": 2,
+  "truth_gate": "non-trivial",
+  "truth_threshold": 70,
+  "verify_commands": [
+    "npm exec --yes --package=pnpm@9.15.9 -- pnpm install --frozen-lockfile --config.engine-strict=false",
+    "npm exec --yes --package=pnpm@9.15.9 -- pnpm build",
+    "npm exec --yes --package=pnpm@9.15.9 -- pnpm typecheck",
+    "npm exec --yes --package=pnpm@9.15.9 -- pnpm lint",
+    "npm exec --yes --package=pnpm@9.15.9 -- pnpm test:boundaries"
+  ],
+  "collect": {
+    "sources": [
+      "github"
+    ],
+    "window_days": 14,
+    "custom": []
+  },
+  "notifications": {
+    "channel": "session",
+    "bot_identity": "shuvodelux-commits"
+  },
+  "calibration": {
+    "enabled": false
+  }
+}

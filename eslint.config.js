@@ -5,7 +5,8 @@ module.exports = tseslint.config(
   {
     // Build output, dependencies, and the boundary checker's deliberate
     // violation fixtures — those exist to be broken, linting them is noise.
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'tools/boundaries/__fixtures__/**'],
+    // Installed agent tooling follows its upstream rules, outside application lint.
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'tools/boundaries/__fixtures__/**', '.agents/**', '.claude/**', '.codex/**'],
   },
   ...tseslint.configs.recommended,
   {

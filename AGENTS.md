@@ -305,3 +305,32 @@ Report as: Module increment · Acceptance criteria and numbers verified · Assum
 The last step of every module gate is updating the **delivery status ledger** (`SRS_AND_BUILD_GUIDE.md` §6.1.1). Before marking `CODE COMPLETE`, verify every acceptance item in the target module against the real UI, including explicit filters, actions, print/share behaviour, stay-in-context behavior, reuse of one authoritative business function across repeated entry points, compact Bangla/tooltip treatment, compact ledger columns, date-basis behavior and edge states required by the v4.2 SRS. This is the only permanent record of what is built — do not create a status file, task log or progress README instead.
 
 Set status to `CODE COMPLETE`. **Only the owner sets `DONE`**, after running the complete module workflow and confirming the numbers. The owner may fill the accepted code commit in a small follow-up ledger commit; a commit cannot contain its own final hash. Never delete or rewrite existing history.
+
+
+## HisabIQ adoption workflow setup — 2026-11-09
+
+The current owner request authorizes Super Build setup and continuation of the
+adoption baseline. This section scopes tooling only; it does not start a new
+business module or replace the SRS business rules.
+
+- Work from `chore/hisabiq-adoption-runtime-a01`, derived from `76421b0`.
+- Use `.claude/super-board/configs/hisabiq-nest-adoption.json`: project 2,
+  one worker, human approval for every merge, no automatic database migrations.
+- The setup exception to the Markdown-file rule permits the installed skill
+  bundle and its references in `.agents/`, host links in `.claude/` and `.codex/`,
+  `docs/agents/issue-tracker.md`, and board preflight/run evidence under
+  `docs/super-board/`. Requirements and decisions remain in the canonical files.
+- Preserve R-0's test restrictions. Workflow defaults requiring TDD or automated
+  suites do not authorize them. Obtain explicit scope for existing test-file
+  repairs before dispatching A01b; do not weaken ESLint or boundary rules.
+- Select only one reviewed card. Never merge, deploy, enable entitlement stubs,
+  modify a production database, or start another product module during setup.
+- Development uses the existing isolated Podman/Postgres instance. API health
+  is `http://127.0.0.1:3000/health`; reference Vue web is on port 5173.
+- Node 24 with pnpm 9.15.9 is the recorded local compatibility probe. The
+  manifest still pins Node 20; runtime/CI alignment is a separate task.
+- Codex invocation: `$super-board status` and `$super-board run --codex`.
+  `$super-build` is the build skill; standalone legacy dispatch requires Claude.
+  This computer has Codex signed in, so use the Codex board lane.
+- The installed guard hooks are Claude hooks. They do not establish native
+  Codex hook enforcement; Codex workers must obey these instructions and config.
