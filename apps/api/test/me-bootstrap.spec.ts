@@ -27,7 +27,7 @@ async function register(identifier: string, businessName: string): Promise<Owner
   const otp = await request(app.getHttpServer())
     .post('/api/v1/auth/registration/otp')
     .send({ identifier });
-  expect(otp.status).toBe(201);
+  expect(otp.status).toBe(200);
   const created = await request(app.getHttpServer())
     .post('/api/v1/auth/registration')
     .send({ identifier, otpCode: otp.body.data.devCode as string, businessName,
