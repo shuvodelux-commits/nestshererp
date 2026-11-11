@@ -32,6 +32,7 @@ import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import { isFeatureOn, settingValuesOf } from '../settings/feature-dependencies';
 import type { SettingsRepository } from '../settings/settings-repository';
+import { lockCashSessionPolicy } from '../settings/manage-settings-service';
 import type {
   CashSessionCloseRow,
   CashSessionRow,
@@ -187,16 +188,19 @@ export class CashSessionService {
 
   /** §5.16.2 — the counted cash going into the drawer opens the day. */
   async startDay(command: StartDayCommand): Promise<CashSessionResponse> {
-    const { ctx } = command;
     const fingerprint = JSON.stringify({
       businessDate: command.businessDate,
       openingAmountMinor: command.openingAmountMinor,
       counterpartAccountCode: command.counterpartAccountCode,
     });
 
-    return this.uow.run(ctx, async (tx) => {
-      await this.accessControl.require(tx, ctx, Permission.CASH_SESSION_START);
-      await this.requireSessionsEnabled(tx, ctx);
+    return this.uow.run(command.ctx, async (tx) => {
+      await this.accessControl.require(tx, command.ctx, Permission.CASH_SESSION_START);
+      const policy = await lockCashSessionPolicy(tx, command.ctx, this.settings, this.clock);
+      const { ctx } = policy;
+      if (!policy.enabled) {
+        throw new AppError(ErrorCode.FEATURE_DISABLED, 'The cash drawer is switched off for this shop');
+      }
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
@@ -209,8 +213,12 @@ export class CashSessionService {
         return replayed.response as CashSessionResponse;
       }
 
-      const today = this.clock.businessDate(ctx.timezone);
+      const today = policy.businessDate;
       const { businessDate } = command;
+
+      if (policy.offDates.some((range) => businessDate >= range.from && businessDate <= range.through)) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'This business date contained a cash-session OFF interval; start a day that was fully enabled');
+      }
 
       // A day cannot be opened before it happens: every movement in it would be
       // dated ahead of the shop's own clock, and the drawer cannot be counted
@@ -456,10 +464,13 @@ export class CashSessionService {
    * count standing where the reports found it.
    */
   async reopenDay(command: ReopenDayCommand): Promise<CashSessionResponse> {
-    const { ctx } = command;
-
-    return this.uow.run(ctx, async (tx) => {
-      await this.requireSessionsEnabled(tx, ctx);
+    return this.uow.run(command.ctx, async (tx) => {
+      // Reopening also makes a session OPEN, so it shares Start Day's lock.
+      const policy = await lockCashSessionPolicy(tx, command.ctx, this.settings, this.clock);
+      const { ctx } = policy;
+      if (!policy.enabled) {
+        throw new AppError(ErrorCode.FEATURE_DISABLED, 'The cash drawer is switched off for this shop');
+      }
 
       const session = await this.requireSession(tx, ctx, command.sessionId);
       const close = await this.money.findActiveClose(tx, ctx, session.id);
@@ -468,7 +479,7 @@ export class CashSessionService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'This day is not closed');
       }
 
-      const today = this.clock.businessDate(ctx.timezone);
+      const today = policy.businessDate;
       if (session.businessDate !== today) {
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,

@@ -20,12 +20,16 @@ import 'reflect-metadata';
 
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { FixedClock, SystemClock } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppModule } from '../src/app.module';
+import { signToken } from '../src/auth/jwt';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { CLOCK } from '../src/infrastructure/tokens';
+import { TEST_JWT_SECRET } from './support/auth';
 import { asTenant, prepareTestDatabase, resetDatabase, testPool } from './support/database';
 
 /**
@@ -51,6 +55,7 @@ const OWNER_PASSWORD = 'Passw0rd23';
 
 let app: INestApplication;
 let pool: pg.Pool;
+const clock = new SystemClock();
 
 interface Owner {
   readonly accessToken: string;
@@ -118,7 +123,8 @@ beforeAll(async () => {
   await prepareTestDatabase();
   pool = testPool();
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(CLOCK).useValue(clock).compile();
   app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AppErrorFilter());
   await app.init();
@@ -133,7 +139,51 @@ beforeEach(async () => {
   await resetDatabase(pool);
 });
 
+afterEach(() => { vi.restoreAllMocks(); });
+
 describe('settings', () => {
+  describe('cash-session transitions (Issue #14)', () => {
+    it('allows OFF without a drawer or open session, with exactly one audited change', async () => {
+      const owner = await registerOwner();
+      expect((await setValue(owner.accessToken, { key: 'cash_session_enabled', value: 'off' })).status).toBe(201);
+      // Retrying the same value is still a no-op, including on the OFF date.
+      expect((await setValue(owner.accessToken, { key: 'cash_session_enabled', value: 'off' })).status).toBe(201);
+      const saved = await asTenant(pool, owner.tenantId, async (db) => ({
+        settings: (await db.query('SELECT value, version FROM settings')).rows,
+        audit: (await db.query("SELECT before_json, after_json FROM audit_events WHERE entity_type = 'setting'")).rows,
+      }));
+      expect(saved.settings).toEqual([{ value: 'off', version: 1 }]);
+      expect(saved.audit).toEqual([{ before_json: { value: 'on' }, after_json: { value: 'off' } }]);
+    });
+
+    it('refuses same-business-date re-enablement even without money activity', async () => {
+      const owner = await registerOwner();
+      expect((await setValue(owner.accessToken, { key: 'cash_session_enabled', value: 'off' })).status).toBe(201);
+      const refused = await setValue(owner.accessToken, { key: 'cash_session_enabled', value: 'on' });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+      expect((await getSettings(owner.accessToken)).body.data.values.cash_session_enabled).toBe('off');
+      const count = await asTenant(pool, owner.tenantId, (db) => db.query(
+        "SELECT count(*)::int AS n FROM audit_events WHERE entity_type = 'setting' AND entity_id = 'cash_session_enabled'",
+      ));
+      expect(count.rows).toEqual([{ n: 1 }]);
+    });
+
+    it('permits re-enablement after Dhaka midnight using the locked tenant timezone, not the token', async () => {
+      const now = vi.spyOn(clock, 'now').mockReturnValue(new FixedClock('2099-08-15T17:59:58Z').now());
+      const owner = await registerOwner();
+      // Simulates a still-signed token whose timezone is stale.
+      const stale = signToken({ ...owner, timezone: 'UTC' }, TEST_JWT_SECRET, clock);
+      expect((await setValue(stale, { key: 'cash_session_enabled', value: 'off' })).status).toBe(201);
+      expect((await setValue(stale, { key: 'cash_session_enabled', value: 'on' })).status).toBe(400);
+      now.mockReturnValue(new FixedClock('2099-08-15T18:00:01Z').now());
+      const enabled = await setValue(stale, { key: 'cash_session_enabled', value: 'on' });
+      expect(enabled.status).toBe(201);
+      expect(enabled.body.data.timezone).toBe('Asia/Dhaka');
+      expect(enabled.body.data.values.cash_session_enabled).toBe('on');
+    });
+  });
+
   it('reads the shipped defaults before anything has been changed', async () => {
     const owner = await registerOwner();
 

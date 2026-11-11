@@ -3,17 +3,21 @@ import type {
   AccessControl,
   AuditWriter,
   BusinessProfileRepository,
+  MoneyRepository,
   PasswordHasher,
   SettingsRepository,
   UnitOfWork,
   UserRepository,
 } from '@sher/core-application';
+import type { Clock } from '@sher/shared-utils';
 import { ManageSettingsService } from '@sher/core-application';
 
 import {
   ACCESS_CONTROL,
   AUDIT_WRITER,
   BUSINESS_PROFILE_REPOSITORY,
+  CLOCK,
+  MONEY_REPOSITORY,
   PASSWORD_HASHER,
   SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
@@ -35,8 +39,10 @@ import { MANAGE_SETTINGS_SERVICE } from './tokens';
         users: UserRepository,
         hasher: PasswordHasher,
         audit: AuditWriter,
+        money: MoneyRepository,
+        clock: Clock,
       ): ManageSettingsService =>
-        new ManageSettingsService(uow, accessControl, settings, profiles, users, hasher, audit),
+        new ManageSettingsService(uow, accessControl, settings, profiles, users, hasher, audit, money, clock),
       inject: [
         UNIT_OF_WORK,
         ACCESS_CONTROL,
@@ -45,6 +51,8 @@ import { MANAGE_SETTINGS_SERVICE } from './tokens';
         USER_REPOSITORY,
         PASSWORD_HASHER,
         AUDIT_WRITER,
+        MONEY_REPOSITORY,
+        CLOCK,
       ],
     },
   ],

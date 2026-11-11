@@ -3,11 +3,16 @@ import {
   ErrorCode,
   Permission,
   SETTING_CATALOGUE,
+  SettingKey,
   SUPPORTED_TIMEZONES,
   TOGGLE_OFF,
+  TOGGLE_ON,
 } from '@sher/core-contracts';
 import type { SettingDescriptor, SettingsResponse } from '@sher/core-contracts';
+import { addSeconds, businessDateAt } from '@sher/shared-utils';
+import type { Clock } from '@sher/shared-utils';
 import type { UserRepository } from '../auth/registration-repository';
+import type { MoneyRepository } from '../money/money-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { PasswordHasher } from '../ports/password-hasher';
@@ -86,6 +91,8 @@ export class ManageSettingsService {
     private readonly users: UserRepository,
     private readonly hasher: PasswordHasher,
     private readonly audit: AuditWriter,
+    private readonly money: MoneyRepository,
+    private readonly clock: Clock,
   ) {}
 
   async get(command: GetSettingsCommand): Promise<SettingsResponse> {
@@ -132,12 +139,25 @@ export class ManageSettingsService {
         await this.assertStepUp(tx, ctx, command.confirmPassword ?? '');
       }
 
+      const cashPolicy = descriptor.key === SettingKey.CASH_SESSION_ENABLED
+        ? await lockCashSessionPolicy(tx, ctx, this.settings, this.clock)
+        : null;
       const stored = await this.loadValues(tx, ctx);
       const before = effectiveValue(descriptor, stored);
       if (before === command.value) {
         // Nothing moved. Writing an audit row saying `FIFO` became `FIFO` would
         // pad the trail with events that record no change (§5.22).
         return { settings: await this.snapshot(tx, ctx), cascadedOff: [] };
+      }
+
+      if (cashPolicy !== null) {
+        if (command.value === TOGGLE_OFF && await this.money.findOpenSession(tx, ctx) !== null) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Close the open cash day before switching cash sessions off');
+        }
+        if (command.value === TOGGLE_ON &&
+            (cashPolicy.lastDisabledDate === null || cashPolicy.businessDate <= cashPolicy.lastDisabledDate)) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Cash sessions can only be switched on on a later business date');
+        }
       }
 
       // §5.21: "invalid combinations are prevented, not merely discouraged."
@@ -212,6 +232,9 @@ export class ManageSettingsService {
         });
       }
 
+      // Read the old timezone only after the same lock used by cash eligibility.
+      // Otherwise concurrent profile saves could leave a misleading audit chain.
+      await this.settings.lockTenant(tx, ctx);
       const before = await this.profiles.findProfile(tx, ctx);
       if (before === null) throw new AppError(ErrorCode.NOT_FOUND, 'Business not found');
 
@@ -272,6 +295,96 @@ export class ManageSettingsService {
     }
     if (!(await this.hasher.verify(confirmPassword, self.passwordHash))) throw stepUpFailed();
   }
+}
+
+/**
+ * One eligibility reader for settings and Start/Reopen Day. Call inside the
+ * caller's UoW: the tenant row stays locked through its eventual commit.
+ * Defaults have no stored row. Each real setting write increments its version
+ * and appends one event; an incomplete or ambiguous chain must never mean ON.
+ */
+export async function lockCashSessionPolicy(
+  tx: Tx,
+  ctx: TenantContext,
+  settings: SettingsRepository,
+  clock: Clock,
+): Promise<{
+  ctx: TenantContext;
+  businessDate: string;
+  enabled: boolean;
+  lastDisabledDate: string | null;
+  offDates: readonly { from: string; through: string }[];
+}> {
+  const tenant = await settings.lockTenant(tx, ctx);
+  if (tenant === null) throw new AppError(ErrorCode.NOT_FOUND, 'Business not found');
+  const { stored, events } = await settings.cashSessionHistory(tx, ctx);
+  const invalid = (): never => {
+    throw new AppError(ErrorCode.VALIDATION_FAILED, 'Cash-session history cannot be verified; keep the existing books and ask the owner to review it');
+  };
+  const text = (json: unknown, key: string): string => {
+    if (typeof json !== 'object' || json === null || !(key in json)) return invalid();
+    const value: unknown = (json as Record<string, unknown>)[key];
+    return typeof value === 'string' ? value : invalid();
+  };
+  const changes = events.filter((event) => event.entityType === 'setting');
+  const profiles = events.filter((event) => event.entityType === 'tenant');
+  if (tenant.version !== profiles.length + 1 ||
+      (stored === null ? changes.length !== 0 :
+        stored.deletedAt !== null || stored.version !== changes.length || changes.length === 0)) invalid();
+
+  // Reconstruct the timezone at each transition, rather than interpreting old
+  // OFF dates using a stale token or silently moving them when a profile changes.
+  let timezone = tenant.timezone;
+  for (const event of [...profiles].reverse()) {
+    if (text(event.after, 'timezone') !== timezone) invalid();
+    timezone = text(event.before, 'timezone');
+  }
+  const now = clock.now();
+  if (!Number.isFinite(tenant.createdAt.getTime()) || tenant.createdAt.getTime() > now.getTime()) invalid();
+  const offDates: { from: string; through: string }[] = [];
+  const dateAt = (at: Date, zone: string): string => {
+    try { return businessDateAt(at, zone); } catch { return invalid(); }
+  };
+  let value: string = TOGGLE_ON;
+  let previousAt = tenant.createdAt;
+  let lastDisabledDate: string | null = null;
+  const recordOff = (until: Date): void => {
+    if (value === TOGGLE_OFF && until.getTime() > previousAt.getTime()) {
+      offDates.push({ from: dateAt(previousAt, timezone), through: dateAt(addSeconds(until, -0.001), timezone) });
+    }
+  };
+  for (const [index, event] of events.entries()) {
+    const time = event.occurredAt.getTime();
+    // Equal timestamps cannot prove the ordering of old multi-process writes.
+    if (event.action !== 'UPDATE' || !Number.isFinite(time) || time > now.getTime() ||
+        time < previousAt.getTime() || (index > 0 && time === previousAt.getTime())) invalid();
+    recordOff(event.occurredAt);
+    if (event.entityType === 'tenant') {
+      if (text(event.before, 'timezone') !== timezone) invalid();
+      timezone = text(event.after, 'timezone');
+    } else {
+      const after = text(event.after, 'value');
+      if (text(event.before, 'value') !== value || after === value ||
+          (after !== TOGGLE_ON && after !== TOGGLE_OFF)) invalid();
+      value = after;
+      if (value === TOGGLE_OFF) lastDisabledDate = dateAt(event.occurredAt, timezone);
+    }
+    previousAt = event.occurredAt;
+  }
+  recordOff(now);
+  if (value !== (stored?.value ?? TOGGLE_ON) || timezone !== tenant.timezone) invalid();
+  const first = changes[0];
+  const last = changes[changes.length - 1];
+  if (stored !== null && (first === undefined || last === undefined ||
+      stored.createdAt.getTime() < tenant.createdAt.getTime() ||
+      stored.createdAt.getTime() > first.occurredAt.getTime() ||
+      stored.updatedAt.getTime() < stored.createdAt.getTime() ||
+      stored.updatedAt.getTime() > last.occurredAt.getTime())) invalid();
+  return {
+    ctx: { ...ctx, timezone: tenant.timezone },
+    businessDate: dateAt(now, tenant.timezone), enabled: value === TOGGLE_ON,
+    lastDisabledDate, offDates,
+  };
 }
 
 function quoted(descriptor: SettingDescriptor): string {
