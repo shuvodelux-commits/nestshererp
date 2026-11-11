@@ -1,3 +1,36 @@
+# HisabIQ integration entry point — current owner scope
+
+Canonical documents live in `shuvodelux-commits/hisabiq_ui`, under `docs/integration/`; do not duplicate the whole package into this backend.
+Documentation revision: `2cbfe253b5017d6a5b5096c480850b045d3d434b`.
+
+Read in this order:
+
+1. [Master blueprint](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/HISABIQ_NESTSHERERP_MODULE_INTEGRATION_PLAN.md) and [integrate-then-extend sequence](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/HISABIQ_INTEGRATE_THEN_EXTEND_PLAN.md).
+2. [Critical review](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/REVIEW.md) and [decision register](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/DECISIONS.md). Several broad packets remain blocked; do not invent their missing contracts.
+3. The assigned module packet, its contract/field mappings, source evidence and tasks, all from that same revision.
+4. For approved work now: [MOD-000-A specification](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/modules/MOD-000-FOUNDATION_EXECUTION_SPEC.md), [execution handoff](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/MOD-000-EXECUTION-CONTRACT.md), [GitHub instructions](https://github.com/shuvodelux-commits/hisabiq_ui/blob/2cbfe253b5017d6a5b5096c480850b045d3d434b/docs/integration/tasks/GITHUB.md), and [issue 17 with current comments](https://github.com/shuvodelux-commits/nestshererp/issues/17).
+
+The pinned package is published on a documentation branch; publication is not a merge or deployment. Verify current draft PRs and live board before dispatch.
+
+For this integration, the owner's newer instructions explicitly authorize the external integration document set and the approved MOD-000-A tests. They are scoped exceptions to the older eight-file/no-new-Markdown and no-tests rules below. Existing Vue/PrimeVue/`--sher-*` UI instructions apply to the legacy backend web app; HisabIQ retains its React components and own design authority. Read backend SRS, AI_CODING_INSTRUCTIONS.md and FUNCTION_MAP.md for existing services and invariants; do not copy a conflicting legacy UI restriction into HisabIQ.
+
+
+## HisabIQ × NestSherERP integration — owner instructions, 2026-11-11
+
+These scoped instructions govern the HisabIQ React integration. Preserve all existing HisabIQ UI, functionality, routes, compact controls, Bangla/English helpers, carts, drafts and keyboard/touch workflows. Integrate compatible existing Nest APIs/services first; then extend the same backend for verified gaps. Do not replace HisabIQ with the Vue frontend or create a separate ERP engine.
+
+Before each module: compare current frontend actions/fields with backend contracts, classify REUSE / ADAPT / EXTEND / BLOCKED, present a 10–15 sentence overview with exact scope and environment, then obtain approval for that revision. An existing approval remains valid for unchanged scope/environment; do not demand a second START. MOD-000-A is already approved as recorded in backend issue 17; this is not approval of all 23 modules.
+
+Read source code and the critical review before treating a packet as executable. Inventory headings, lexical action counts and planned test vectors do not establish complete behavior or passing tests. Resolve engineering omissions against source rather than asking the owner to invent implementation details. Current explicit owner decisions take precedence over older conflicting drafts.
+
+Historical opening party/customer/supplier/lender/borrower balances are non-cash historical journals against Opening Equity and require no active cash session. Actual tracked-drawer receipts/payments require an eligible open session when the feature is ON; OFF permits ordinary journaled cash without a session. Bank/MFS-only and unpaid/non-cash flows do not require one. Preserve journal/stock integrity, tenant isolation, permissions, idempotency and source-linked corrections.
+
+Keep flexible multilevel units and independent pricing, split/partial payments and purchases, unpaid expenses, bundle versions, installments and COD visible in the gap register; never remove an existing UI capability to fit a narrower API. Reports/Analytics integration is excluded, existing report UI/navigation is preserved, and operational Dashboard remains in scope.
+
+Use one scoped branch/draft PR per approved task, record paired repository SHAs, exact allowed paths and actual verification exits. Current board capacity is one worker; verify live claims before dispatch and never treat a comment as a reservation. No merge, deployment, production data operation or destructive migration follows from plan approval. Documentation-only work does not start the application stack. MOD-000-A approval includes its named automated tests and disposable CI; older blanket no-test wording must not defeat that specific approval. Other modules need an explicit verification scope.
+
+---
+
 # AGENTS.md — SherERP
 
 ## Current owner approval rule — 2026-11-10
