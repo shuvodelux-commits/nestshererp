@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import type {
   AccessControl,
   AuditWriter,
+  BusinessProfileRepository,
   CatalogRepository,
   GoogleVerifier,
   IdentityVerifier,
@@ -35,6 +36,7 @@ import type { Clock } from '@sher/shared-utils';
 import {
   ACCESS_CONTROL,
   AUDIT_WRITER,
+  BUSINESS_PROFILE_REPOSITORY,
   CATALOG_REPOSITORY,
   CLOCK,
   IDENTITY_VERIFIER,
@@ -327,15 +329,15 @@ import {
         uow: UnitOfWork,
         accessControl: AccessControl,
         users: UserRepository,
-        tenants: TenantRepository,
+        profiles: BusinessProfileRepository,
         settings: SettingsRepository,
       ): GetMyAccessService =>
-        new GetMyAccessService(uow, accessControl, users, tenants, settings),
+        new GetMyAccessService(uow, accessControl, users, profiles, settings),
       inject: [
         UNIT_OF_WORK,
         ACCESS_CONTROL,
         USER_REPOSITORY,
-        TENANT_REPOSITORY,
+        BUSINESS_PROFILE_REPOSITORY,
         SETTINGS_REPOSITORY,
       ],
     },

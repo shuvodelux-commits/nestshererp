@@ -229,6 +229,18 @@ export type DashboardSummaryResponse = z.infer<typeof dashboardSummaryResponseSc
  */
 export const myAccessResponseSchema = z
   .object({
+    // Tenant namespace is authenticated by the bearer token, not selected by the caller.
+    tenantId: z.string().regex(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/),
+    // Keep current business-profile time semantics separate from token claims.
+    timezone: z.string().min(1).max(60).refine((zone) => {
+      if (zone !== 'UTC' && !/^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+$/.test(zone)) return false;
+      try {
+        Intl.DateTimeFormat('en-US', { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Invalid IANA timezone'),
     user: z
       .object({
         id: z.string().length(26),
