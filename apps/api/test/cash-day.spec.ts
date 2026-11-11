@@ -21,14 +21,17 @@ import 'reflect-metadata';
 
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { SettingsRepository } from '@sher/core-application';
 import { Permission } from '@sher/core-contracts';
-import { SystemClock, Ulid } from '@sher/shared-utils';
+import { FixedClock, SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppModule } from '../src/app.module';
+import { signToken as signTokenAt } from '../src/auth/jwt';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { CLOCK, SETTINGS_REPOSITORY } from '../src/infrastructure/tokens';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import {
@@ -72,13 +75,14 @@ const PERMISSIONS = [
   // Owner capital is its own code (§5.26): putting money into the business is
   // a bigger act than moving it between the shop's own boxes.
   Permission.OWNER_CAPITAL_RECORD,
-  Permission.SETTING_VIEW, Permission.SETTING_EDIT,
+  Permission.SETTING_VIEW, Permission.SETTING_EDIT, Permission.SETTING_TOGGLE,
 ];
 
 beforeAll(async () => {
   pool = testPool();
   await prepareTestDatabase();
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(CLOCK).useValue(clock).compile();
   app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AppErrorFilter());
   await app.init();
@@ -90,7 +94,158 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await assertGoldenInvariants(pool, tenant.tenantId);
+});
+
+describe('cash-session settings safeguard (Issue #14)', () => {
+  const toggle = (value: string, as = token): request.Test => bearer(api().post('/api/v1/settings/value'), as)
+    .send({ key: 'cash_session_enabled', value });
+  const start = (businessDate = today): request.Test => bearer(api().post('/api/v1/money/day/start')).send({
+    businessDate, openingAmountMinor: 5000_00, counterpartAccountCode: null,
+    note: null, operationId: Ulid.generate(clock),
+  });
+  const snapshot = async (): Promise<unknown> => asTenant(pool, tenant.tenantId, async (db) => ({
+    settings: (await db.query('SELECT id, value, version FROM settings ORDER BY id')).rows,
+    sessions: (await db.query('SELECT id, status, version FROM cash_sessions ORDER BY id')).rows,
+    closes: (await db.query('SELECT id, expected_closing_minor, counted_closing_minor, difference_minor FROM cash_session_closes ORDER BY id')).rows,
+    audit: (await db.query('SELECT id, before_json, after_json FROM audit_events ORDER BY id')).rows,
+    journal: (await db.query('SELECT id, account_code, amount_minor FROM journal_lines ORDER BY id')).rows,
+  }));
+
+  it('refuses OFF for an open earlier day without changing settings, audit, sessions or journal', async () => {
+    await startDay();
+    vi.spyOn(clock, 'now').mockReturnValue(new FixedClock('2099-08-16T06:00:00Z').now());
+    token = signTokenAt(tenant, TEST_JWT_SECRET, clock);
+    const before = await snapshot();
+    const refused = await toggle('off');
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('permits OFF after a counted close and preserves that immutable close', async () => {
+    const sessionId = await startDay();
+    must(await bearer(api().post(`/api/v1/money/day/${sessionId}/close`)).send({
+      countedClosingMinor: 5000_00, reason: null, operationId: Ulid.generate(clock),
+    }), 'close');
+    const before = await asTenant(pool, tenant.tenantId, (db) => db.query(
+      'SELECT id, expected_closing_minor, counted_closing_minor, difference_minor, status FROM cash_session_closes',
+    ));
+    expect((await toggle('off')).status).toBe(201);
+    expect((await bearer(api().get('/api/v1/money/day'))).body.enabled).toBe(false);
+    const after = await asTenant(pool, tenant.tenantId, (db) => db.query(
+      'SELECT id, expected_closing_minor, counted_closing_minor, difference_minor, status FROM cash_session_closes',
+    ));
+    expect(after.rows).toEqual(before.rows);
+    expect(after.rows[0].expected_closing_minor).toBe(5000_00);
+    expect(after.rows[0].counted_closing_minor).toBe(5000_00);
+  });
+
+  it.each([
+    ['2099-08-15T18:00:00Z', 201],
+    ['2099-08-15T18:00:01Z', 400],
+  ] as const)('handles an OFF interval ending at %s (day-two Start Day status %i)', async (enableAt, status) => {
+    const now = vi.spyOn(clock, 'now').mockReturnValue(new FixedClock('2099-08-15T17:59:59Z').now());
+    token = signTokenAt({ ...tenant, timezone: 'UTC' }, TEST_JWT_SECRET, clock);
+    expect((await toggle('off')).status).toBe(201);
+    now.mockReturnValue(new FixedClock(enableAt).now());
+    expect((await toggle('on')).status).toBe(201);
+    expect((await start('2099-08-15')).status).toBe(400);
+    const dayTwo = await start('2099-08-16');
+    expect(dayTwo.status, JSON.stringify(dayTwo.body)).toBe(status);
+    if (status === 201) {
+      expect(dayTwo.body.data.cashInMinor).toBe(0);
+      expect(dayTwo.body.data.cashOutMinor).toBe(0);
+      expect(dayTwo.body.data.expectedClosingMinor).toBe(5000_00);
+    }
+  });
+
+  it('rejects backdated OFF dates with no transition event that day, then allows the first fully enabled date', async () => {
+    const now = vi.spyOn(clock, 'now').mockReturnValue(new FixedClock('2099-08-15T06:00:00Z').now());
+    token = signTokenAt(tenant, TEST_JWT_SECRET, clock);
+    expect((await toggle('off')).status).toBe(201);
+    now.mockReturnValue(new FixedClock('2099-08-18T06:00:00Z').now());
+    token = signTokenAt(tenant, TEST_JWT_SECRET, clock);
+    expect((await toggle('on')).status).toBe(201);
+    for (const date of ['2099-08-15', '2099-08-16', '2099-08-17', '2099-08-18']) {
+      expect((await start(date)).status).toBe(400);
+    }
+    now.mockReturnValue(new FixedClock('2099-08-19T06:00:00Z').now());
+    token = signTokenAt(tenant, TEST_JWT_SECRET, clock);
+    expect((await start('2099-08-19')).status).toBe(201);
+  });
+
+  it('does not let one tenant’s open session block another tenant’s OFF request', async () => {
+    await startDay();
+    const other = await seedTenant(pool, { name: 'Other shop', permissions: [Permission.SETTING_TOGGLE] });
+    expect((await toggle('off', signToken(other, TEST_JWT_SECRET))).status).toBe(201);
+    const own = await bearer(api().get('/api/v1/money/day'));
+    expect(own.body.enabled).toBe(true);
+    expect(own.body.todaySession.status).toBe('OPEN');
+  });
+
+  it('does not apply another tenant’s OFF history to Start Day', async () => {
+    const other = await seedTenant(pool, { name: 'Other shop', permissions: [Permission.SETTING_TOGGLE] });
+    expect((await toggle('off', signToken(other, TEST_JWT_SECRET))).status).toBe(201);
+    expect((await start()).status).toBe(201);
+  });
+
+  it('keeps toggle and Start Day permissions enforced', async () => {
+    const viewer = await seedTenant(pool, { name: 'Viewer', permissions: [Permission.SETTING_VIEW] });
+    const viewerToken = signToken(viewer, TEST_JWT_SECRET);
+    expect((await toggle('off', viewerToken)).status).toBe(403);
+    const refused = await bearer(api().post('/api/v1/money/day/start'), viewerToken).send({
+      businessDate: today, openingAmountMinor: 0, operationId: Ulid.generate(clock),
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it.each(['start', 'off', 'reopen'] as const)('serializes a leading %s with the opposing setting/session request', async (first) => {
+    let sessionId = '';
+    if (first === 'reopen') {
+      sessionId = await startDay();
+      must(await bearer(api().post(`/api/v1/money/day/${sessionId}/close`)).send({
+        countedClosingMinor: 5000_00, operationId: Ulid.generate(clock),
+      }), 'close');
+    }
+    const repository = app.get<SettingsRepository>(SETTINGS_REPOSITORY);
+    const original = repository.lockTenant.bind(repository);
+    let acquired = false;
+    let calls = 0;
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(repository, 'lockTenant').mockImplementation(async (...args) => {
+      const call = ++calls;
+      const row = await original(...args);
+      if (call === 1) { acquired = true; await gate; }
+      return row;
+    });
+    const leading = (first === 'off' ? toggle('off') : first === 'start' ? start() :
+      bearer(api().post(`/api/v1/money/day/${sessionId}/reopen`)).send({
+        reason: 'Closed by mistake', operationId: Ulid.generate(clock),
+      })).then((response) => response);
+    let following: Promise<request.Response> | undefined;
+    try {
+      await vi.waitFor(() => expect(acquired).toBe(true), { timeout: 5000 });
+      following = (first === 'off' ? start() : toggle('off')).then((response) => response);
+      await vi.waitFor(async () => {
+        const waiting = await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE '%for update%'");
+        expect(waiting.rows[0].n).toBe(1);
+      }, { timeout: 5000 });
+    } finally {
+      release();
+      // A failed assertion must not leave live requests in the next test's reset.
+      await Promise.all([leading, following]);
+    }
+    const winner = await leading;
+    const loser = await following;
+    expect(winner.status, JSON.stringify(winner.body)).toBe(201);
+    expect(loser?.status).toBe(first === 'off' ? 403 : 400);
+    const state = await bearer(api().get('/api/v1/money/day'));
+    expect(state.body.enabled).toBe(first !== 'off');
+    if (first !== 'off') expect(state.body.todaySession.status).toBe('OPEN');
+  });
 });
 
 const api = (): ReturnType<typeof request> => request(app.getHttpServer());
