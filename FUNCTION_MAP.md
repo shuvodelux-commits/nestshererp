@@ -962,7 +962,7 @@ No vitest suite may be added alongside them.
 | `support/stack.ts` | `prepareDatabase` (drop → migrate → backfill) · `runUpgradeSteps` (migrate → backfill, no drop — the upgrade spec needs a traded database) · `startApi`/`stopApi` on port 3100 |
 | `support/seed.ts` | The baseline, **created through the ERP's own HTTP API**. Opening stock goes through the real opening workflow; opening cash is a money account's opening balance. No balance is ever written by SQL |
 | `support/ui.ts` | `signIn`, `baseline()`, `today()`. Selectors are roles and visible text (owner decision 13) |
-| Specs | `manager-daily-flow` · `cashier-permissions` (menu **and** route **and** API) · `mobile-daily-screens` (no screenshot baselines) · `upgrade-safety` |
+| Specs | `manager-daily-flow` anchors the trading day to the opened cash session, selects purchase/Daybook dates through the real date pickers, and checks the exact purchase once with amount/date and adjacent-day exclusion. Fixed UTC/Dhaka midnight browser clocks exercise real unpaid purchases without changing cash sessions. · `cashier-permissions` (menu **and** route **and** API) · `mobile-daily-screens` (no screenshot baselines) · `upgrade-safety` |
 
 `VITE_PORT` and `VITE_API_TARGET` in `vite.config.ts` let the suite run its own
 Vite and API while the owner drives the development stack on 5173/3000.
