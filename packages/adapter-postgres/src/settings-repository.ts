@@ -8,9 +8,10 @@ import type {
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { SettingKey } from '@sher/core-contracts';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 
-import { settings, tenants } from './schema';
+import { auditEvents, settings, tenants } from './schema';
 import { txOf } from './unit-of-work';
 
 /**
@@ -20,6 +21,46 @@ import { txOf } from './unit-of-work';
  */
 export class PostgresSettingsRepository implements SettingsRepository {
   constructor(private readonly clock: Clock) {}
+
+  async lockTenant(
+    tx: Tx,
+    ctx: TenantContext,
+  ): ReturnType<SettingsRepository['lockTenant']> {
+    const [row] = await txOf(tx)
+      .select({ timezone: tenants.timezone, createdAt: tenants.createdAt, version: tenants.version })
+      .from(tenants)
+      .where(and(eq(tenants.id, ctx.tenantId), isNull(tenants.deletedAt)))
+      .for('update');
+    return row ?? null;
+  }
+
+  async cashSessionHistory(
+    tx: Tx,
+    ctx: TenantContext,
+  ): ReturnType<SettingsRepository['cashSessionHistory']> {
+    const [stored] = await txOf(tx)
+      .select({
+        key: settings.settingKey, value: settings.value, version: settings.version,
+        createdAt: settings.createdAt, updatedAt: settings.updatedAt, deletedAt: settings.deletedAt,
+      })
+      .from(settings)
+      .where(and(
+        eq(settings.tenantId, ctx.tenantId),
+        eq(settings.settingKey, SettingKey.CASH_SESSION_ENABLED),
+      ));
+    const events = await txOf(tx)
+      .select({
+        entityType: auditEvents.entityType, action: auditEvents.action,
+        occurredAt: auditEvents.createdAt, before: auditEvents.beforeJson, after: auditEvents.afterJson,
+      })
+      .from(auditEvents)
+      .where(and(eq(auditEvents.tenantId, ctx.tenantId), or(
+        and(eq(auditEvents.entityType, 'setting'), eq(auditEvents.entityId, SettingKey.CASH_SESSION_ENABLED)),
+        and(eq(auditEvents.entityType, 'tenant'), eq(auditEvents.entityId, ctx.tenantId), eq(auditEvents.action, 'UPDATE')),
+      )))
+      .orderBy(asc(auditEvents.createdAt), asc(auditEvents.id));
+    return { stored: stored ?? null, events };
+  }
 
   async listStored(tx: Tx, ctx: TenantContext): Promise<readonly StoredSetting[]> {
     const rows = await txOf(tx)

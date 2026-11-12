@@ -14,13 +14,16 @@
  * @covers workflow:credit-sale
  * @covers workflow:trading-day
  */
+import type { DaybookResponse, PurchaseResponse } from '@sher/core-contracts';
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { call } from './support/api';
 import {
   CASHIER, EXPENSE_CATEGORY, MANAGER, OPENING_CASH_MINOR, PRODUCT_A, PRODUCT_B, tokenFor,
 } from './support/seed';
-import { baseline, END_DAY, open, signIn, START_DAY, today } from './support/ui';
+import { addDays } from './support/shared-utils';
+import { baseline, END_DAY, open, signIn, START_DAY } from './support/ui';
 
 /**
  * One continuous business day, driven through the screens (Phase 18.5, owner
@@ -82,11 +85,87 @@ async function balanceOf(token: string, partyId: string): Promise<number> {
   return party.balance.netMinor;
 }
 
+/** Use the calendar as an operator does; readonly DOM inputs are never patched. */
+async function selectDate(page: Page, label: RegExp, businessDate: string): Promise<void> {
+  const input = page.getByRole('combobox', { name: label });
+  const initial = await input.inputValue();
+  const monthIndex = (value: string): number => Number(value.slice(0, 4)) * 12 + Number(value.slice(5, 7));
+  const months = monthIndex(businessDate) - monthIndex(initial);
+  await input.click();
+  const calendar = page.getByRole('dialog', { name: 'Choose Date', exact: true });
+  for (let offset = 0; offset < Math.abs(months); offset += 1) {
+    await calendar.getByRole('button', { name: months < 0 ? 'Previous Month' : 'Next Month', exact: true }).click();
+  }
+  await calendar.locator('td:not([data-p-other-month="true"])')
+    .getByText(String(Number(businessDate.slice(8))), { exact: true })
+    .and(calendar.locator('[data-pc-group-section="tablebodycelllabel"]')).click({ timeout: 10_000 });
+  await expect(input).toHaveValue(businessDate);
+  await expect(calendar).toBeHidden();
+}
+
+async function buyOnDate(page: Page, businessDate: string): Promise<PurchaseResponse> {
+  await open(page, '/purchases/new');
+  await selectDate(page, /purchase date/i, businessDate);
+  await page.getByPlaceholder(/supplier/i).first().click();
+  await page.getByRole('option', { name: /E2E Supplier/i }).click();
+  await page.getByPlaceholder(/product/i).first().click();
+  await page.getByRole('option', { name: new RegExp(PRODUCT_B.name, 'i') }).click();
+  const posted = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/purchases',
+  );
+  await page.getByRole('button', { name: /complete purchase/i }).click();
+  const response = await posted;
+  expect(response.status()).toBe(201);
+  expect(response.request().postDataJSON()).toMatchObject({ businessDate });
+  const { data: purchase } = await response.json() as { data: PurchaseResponse };
+  expect(purchase).toMatchObject({
+    businessDate, grandTotalMinor: PRODUCT_B.costMinor, paidMinor: 0, dueMinor: PRODUCT_B.costMinor,
+  });
+  return purchase;
+}
+
+async function reviewDate(page: Page, businessDate: string): Promise<void> {
+  await open(page, '/daybook');
+  const loaded = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/daybook' && url.searchParams.get('from') === businessDate &&
+      url.searchParams.get('to') === businessDate && response.status() === 200;
+  });
+  const from = await page.getByRole('combobox', { name: /^from$/i }).inputValue();
+  // Expand before contracting, so a temporary reversed range never sends 400.
+  const labels = businessDate > from ? [/^to$/i, /^from$/i] : [/^from$/i, /^to$/i];
+  for (const label of labels) await selectDate(page, label, businessDate);
+  await loaded;
+}
+
+async function expectPurchaseOnDate(
+  page: Page, token: string, purchase: PurchaseResponse, businessDate: string,
+): Promise<void> {
+  const daybook = await call<DaybookResponse>(
+    `/api/v1/daybook?from=${businessDate}&to=${businessDate}&dateBasis=BUSINESS_DATE&limit=300`, { token },
+  );
+  const rows = daybook.rows.filter((row) => row.sourceId === purchase.id);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    kind: 'PURCHASE', sourceType: 'PURCHASE', sourceNumber: purchase.number, businessDate,
+    amountMinor: PRODUCT_B.costMinor, cashEffectMinor: 0, partyId: purchase.supplierPartyId,
+  });
+  const transactions = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: 'Time', exact: true }),
+  });
+  await expect(transactions.getByRole('row').filter({ hasText: purchase.number })).toHaveCount(1);
+  for (const adjacent of [addDays(businessDate, -1), addDays(businessDate, 1)]) {
+    const otherDay = await call<DaybookResponse>(
+      `/api/v1/daybook?from=${adjacent}&to=${adjacent}&dateBasis=BUSINESS_DATE&limit=300`, { token },
+    );
+    expect(otherDay.rows.filter((row) => row.sourceId === purchase.id)).toHaveLength(0);
+  }
+}
+
 test.describe('the manager works one business day', () => {
   test('open, sell, collect, buy, spend, review and close', async ({ page }) => {
     const seeded = baseline();
     const token = await tokenFor(MANAGER);
-    const businessDate = today();
 
     const stockABefore = await stockOf(token, seeded.productAId);
     expect(stockABefore).toBe(PRODUCT_A.qty * 1000);
@@ -103,12 +182,16 @@ test.describe('the manager works one business day', () => {
     await startDialog.getByRole('button', { name: START_DAY }).click();
     await expect(startDialog).toBeHidden();
 
-    const dayAfterOpen = await call<{ todaySession: { status: string; openingAmountMinor: number } | null }>(
+    const dayAfterOpen = await call<{
+      todaySession: { status: string; openingAmountMinor: number; businessDate: string } | null;
+    }>(
       '/api/v1/money/day',
       { token },
     );
     expect(dayAfterOpen.todaySession?.status).toBe('OPEN');
     expect(dayAfterOpen.todaySession?.openingAmountMinor).toBe(OPENING_CASH_MINOR);
+    const businessDate = dayAfterOpen.todaySession?.businessDate;
+    if (businessDate === undefined) throw new Error('The opened cash session has no business date');
 
     /* ------------------------------------- a sale, part paid and part on tick */
 
@@ -208,19 +291,13 @@ test.describe('the manager works one business day', () => {
 
     const stockBBefore = await stockOf(token, seeded.productBId);
 
-    await open(page, '/purchases/new');
-    await page.getByPlaceholder(/supplier/i).first().click();
-    await page.getByRole('option', { name: /E2E Supplier/i }).click();
-    await page.getByPlaceholder(/product/i).first().click();
-    await page.getByRole('option', { name: new RegExp(PRODUCT_B.name, 'i') }).click();
-
     /*
      * One unit at the product's purchase price, which is what the line defaults
      * to — the bill is left exactly as the form built it. The point of this leg
      * is that goods arriving put stock up and money on the supplier's account,
      * not that a manager can retype prices.
      */
-    await page.getByRole('button', { name: /complete purchase/i }).click();
+    const purchase = await buyOnDate(page, businessDate);
 
     await expect
       .poll(async () => stockOf(token, seeded.productBId), { timeout: 15_000 })
@@ -266,7 +343,7 @@ test.describe('the manager works one business day', () => {
 
     /* ------------------------------- the whole day, in the order it happened */
 
-    await open(page, '/daybook');
+    await reviewDate(page, businessDate);
 
     /*
      * Daybook lists **documents**, one line per thing that happened, so it
@@ -286,7 +363,7 @@ test.describe('the manager works one business day', () => {
       page.getByText(/E2E Customer/i).filter({ visible: true }).first(),
     ).toBeVisible();
 
-    const daybook = await call<{ rows: readonly { kind: string }[] }>(
+    const daybook = await call<DaybookResponse>(
       `/api/v1/daybook?from=${businessDate}&to=${businessDate}&limit=300`,
       { token },
     );
@@ -294,6 +371,8 @@ test.describe('the manager works one business day', () => {
     for (const kind of ['SALE', 'CUSTOMER_RECEIPT', 'PURCHASE', 'EXPENSE']) {
       expect(kinds, `Daybook is missing the day's ${kind}`).toContain(kind);
     }
+
+    await expectPurchaseOnDate(page, token, purchase, businessDate);
 
     /* --------------------------------------------------------- close the day */
 
@@ -345,3 +424,29 @@ test('the seeded cashier can sign in', async ({ page }) => {
   await signIn(page, CASHIER);
   await expect(page).toHaveURL(/\/dashboard/);
 });
+
+// Fixed instants straddle the two different day boundaries. Only the browser
+// clock is fixed: purchases still post through the real API, unpaid and session-free.
+for (const timezoneId of ['UTC', 'Asia/Dhaka']) {
+  test.describe(`explicit purchase dates in ${timezoneId}`, () => {
+    test.use({ timezoneId });
+    for (const instant of ['2026-01-15T18:00:00Z', '2026-01-16T00:00:00Z']) {
+      test(`purchase stays on its selected day at ${instant}`, async ({ page }) => {
+        const businessDate = '2026-01-16';
+        const token = await tokenFor(MANAGER);
+        await page.clock.setFixedTime(instant);
+        await signIn(page, MANAGER);
+        const stockBefore = await stockOf(token, baseline().productBId);
+        const balanceBefore = await balanceOf(token, baseline().supplierId);
+        const cashBefore = await call<{ todaySession: unknown }>('/api/v1/money/day', { token });
+        const purchase = await buyOnDate(page, businessDate);
+        expect(await stockOf(token, baseline().productBId)).toBe(stockBefore + 1000);
+        expect(await balanceOf(token, baseline().supplierId)).toBe(balanceBefore - PRODUCT_B.costMinor);
+        await reviewDate(page, businessDate);
+        await expectPurchaseOnDate(page, token, purchase, businessDate);
+        const cashAfter = await call<{ todaySession: unknown }>('/api/v1/money/day', { token });
+        expect(cashAfter.todaySession).toEqual(cashBefore.todaySession);
+      });
+    }
+  });
+}

@@ -22,13 +22,13 @@ import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type pg from 'pg';
-import { parseInstant } from '@sher/shared-utils';
+import { parseInstant, SystemClock, Ulid } from '@sher/shared-utils';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
-import { prepareTestDatabase, resetDatabase, testPool } from './support/database';
+import { asTenant, prepareTestDatabase, resetDatabase, testPool } from './support/database';
 
 /**
  * Slice 1.6 — the audit trail (§5.22). Expected values written before the code.
@@ -159,6 +159,51 @@ beforeEach(async () => {
 });
 
 describe('audit trail', () => {
+  it.each(['missing', 'broken', 'orphan', 'profile'] as const)('fails closed on a %s cash-session transition without rewriting history', async (damage) => {
+    const owner = await registerOwner();
+    const off = await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ key: 'cash_session_enabled', value: 'off' });
+    expect(off.status).toBe(201);
+    // Simulate an incomplete legacy row, or append a malformed legacy event.
+    // Existing audit events are never edited or deleted, even by this fixture.
+    await asTenant(pool, owner.tenantId, async (db) => {
+      if (damage === 'orphan') {
+        await db.query("DELETE FROM settings WHERE setting_key = 'cash_session_enabled'");
+      } else if (damage === 'profile') {
+        await db.query('UPDATE tenants SET version = version + 1');
+      } else {
+        await db.query("UPDATE settings SET version = version + 1 WHERE setting_key = 'cash_session_enabled'");
+      }
+      if (damage === 'broken') {
+        const clock = new SystemClock();
+        await db.query(
+          `INSERT INTO audit_events (id, tenant_id, created_at, created_by, entity_type, entity_id, action, before_json, after_json, source)
+           VALUES ($1, $2, $3, $4, 'setting', 'cash_session_enabled', 'UPDATE', $5, $6, 'API')`,
+          [Ulid.generate(clock), owner.tenantId, clock.now(), owner.userId,
+            JSON.stringify({ value: 'on' }), JSON.stringify({ value: 'off' })],
+        );
+      }
+    });
+    const before = await listAudit(owner.accessToken, { entityId: 'cash_session_enabled' });
+    const refused = await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ key: 'cash_session_enabled', value: 'on' });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.message).toContain('history cannot be verified');
+    const start = await request(app.getHttpServer()).post('/api/v1/money/day/start')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ businessDate: '2026-01-01', openingAmountMinor: 0, operationId: Ulid.generate(new SystemClock()) });
+    expect(start.status).toBe(400);
+    expect(start.body.error.message).toContain('history cannot be verified');
+    const after = await listAudit(owner.accessToken, { entityId: 'cash_session_enabled' });
+    expect(after.body.data.events).toEqual(before.body.data.events);
+    const stored = await asTenant(pool, owner.tenantId, (db) => db.query(
+      "SELECT value, version FROM settings WHERE setting_key = 'cash_session_enabled'",
+    ));
+    expect(stored.rows).toEqual(damage === 'orphan' ? [] : [{ value: 'off', version: damage === 'profile' ? 1 : 2 }]);
+  });
+
   it('shows a setting change with its before and after values (§5.22)', async () => {
     const owner = await registerOwner();
     await request(app.getHttpServer())

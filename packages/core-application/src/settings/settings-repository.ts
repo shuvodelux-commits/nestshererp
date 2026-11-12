@@ -16,6 +16,27 @@ export interface StoredSetting {
  * the use case. This reads and writes rows.
  */
 export interface SettingsRepository {
+  /** Shared transaction lock for cash-session eligibility and profile changes. */
+  lockTenant(tx: Tx, ctx: TenantContext): Promise<{
+    readonly timezone: string;
+    readonly createdAt: Date;
+    readonly version: number;
+  } | null>;
+  /** Unfiltered history: the application verifies its continuity before using it. */
+  cashSessionHistory(tx: Tx, ctx: TenantContext): Promise<{
+    readonly stored: (StoredSetting & {
+      readonly createdAt: Date;
+      readonly updatedAt: Date;
+      readonly deletedAt: Date | null;
+    }) | null;
+    readonly events: readonly {
+      readonly entityType: string;
+      readonly action: string;
+      readonly occurredAt: Date;
+      readonly before: unknown;
+      readonly after: unknown;
+    }[];
+  }>;
   /** Every value this tenant has changed. Never the defaults — those are not rows. */
   listStored(tx: Tx, ctx: TenantContext): Promise<readonly StoredSetting[]>;
   findByKey(tx: Tx, ctx: TenantContext, key: string): Promise<StoredSetting | null>;
