@@ -287,7 +287,18 @@ export class ManageProductsService {
             'This operation id was already used with a different product',
           );
         }
-        return replayed.response as ProductResponse;
+        // Cached create responses can contain purchase cost and stock valuation
+        // from a previously authorised actor. Permission is current, not
+        // captured by an idempotency key, so apply cost visibility on EVERY
+        // replay (including after revocation and from another tenant user).
+        // Do not mutate the stored response: the original replay fingerprint,
+        // product identity, audit/outbox and other callers stay unchanged.
+        const response = replayed.response as ProductResponse;
+        if (await this.maySeeCost(tx, ctx)) return response;
+        const visible: ProductResponse = { ...response };
+        delete visible.purchasePriceMinor;
+        delete visible.stockValueMinor;
+        return visible;
       }
 
       const response = await this.createWithin(tx, ctx, command.input, 'API');
