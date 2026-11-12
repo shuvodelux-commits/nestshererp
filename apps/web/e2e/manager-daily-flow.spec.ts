@@ -96,8 +96,8 @@ async function selectDate(page: Page, label: RegExp, businessDate: string): Prom
   for (let offset = 0; offset < Math.abs(months); offset += 1) {
     await calendar.getByRole('button', { name: months < 0 ? 'Previous Month' : 'Next Month', exact: true }).click();
   }
-  await calendar.getByRole('gridcell', { name: String(Number(businessDate.slice(8))), exact: true })
-    .and(calendar.locator('[data-p-other-month="false"]')).click();
+  await calendar.locator('[data-p-other-month="false"]')
+    .getByText(String(Number(businessDate.slice(8))), { exact: true }).click();
   await expect(input).toHaveValue(businessDate);
   await expect(calendar).toBeHidden();
 }
