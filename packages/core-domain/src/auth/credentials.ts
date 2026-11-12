@@ -10,7 +10,10 @@
  * step-up, which is why 4 digits is acceptable for it and not for a password.
  */
 export const PASSWORD_MIN_LENGTH = 8;
+// Keep the original four-digit PIN contract for existing SherERP sessions.
 export const PIN_LENGTH = 4;
+// HisabIQ's six-slot PIN is additive; existing hashes are never migrated.
+export const HISABIQ_PIN_LENGTH = 6;
 
 const HAS_LETTER = /[A-Za-z]/;
 const HAS_DIGIT = /\d/;
@@ -23,5 +26,5 @@ export function isValidPassword(password: string): boolean {
 }
 
 export function isValidPin(pin: string): boolean {
-  return pin.length === PIN_LENGTH && ONLY_DIGITS.test(pin);
+  return (pin.length === PIN_LENGTH || pin.length === HISABIQ_PIN_LENGTH) && ONLY_DIGITS.test(pin);
 }
