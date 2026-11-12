@@ -43,7 +43,7 @@ interface Registered {
   readonly userId: string;
 }
 
-async function registerAccount(identifier = PHONE): Promise<Registered> {
+async function registerAccount(identifier = PHONE, pin = PIN): Promise<Registered> {
   const otp = await request(app.getHttpServer())
     .post('/api/v1/auth/registration/otp')
     .send({ identifier });
@@ -56,7 +56,7 @@ async function registerAccount(identifier = PHONE): Promise<Registered> {
       businessName: 'Karim Traders',
       username: 'karim',
       password: PASSWORD,
-      pin: PIN,
+      pin,
     });
 
   expect(created.status).toBe(201);
@@ -181,6 +181,25 @@ describe('PIN login (§5.3)', () => {
 
     expect(response.status).toBe(200);
     expect((await dashboard(response.body.data.accessToken as string)).status).toBe(200);
+  });
+
+  it('registers a six-digit PIN, unlocks its own session and rotates the refresh credential', async () => {
+    const sixDigitPin = '482193';
+    const registered = await registerAccount(PHONE, sixDigitPin);
+    const response = await withPin({ refreshToken: registered.refreshToken, pin: sixDigitPin });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.refreshToken).not.toBe(registered.refreshToken);
+    expect((await dashboard(response.body.data.accessToken as string)).status).toBe(200);
+    expect((await withPin({ refreshToken: registered.refreshToken, pin: sixDigitPin })).status).toBe(401);
+    expect((await withPin({ refreshToken: response.body.data.refreshToken as string, pin: sixDigitPin })).status).toBe(200);
+  });
+
+  it('refuses a six-digit PIN when the refresh credential is invalid', async () => {
+    await registerAccount(PHONE, '482193');
+    const response = await withPin({ refreshToken: 'not-a-real-token', pin: '482193' });
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
   });
 
   it('refuses a wrong PIN', async () => {
