@@ -2,11 +2,11 @@ import { AppError, ErrorCode, TOGGLE_ON } from '@sher/core-contracts';
 import type { MyAccessResponse } from '@sher/core-contracts';
 
 import { effectiveSettings, settingValuesOf } from '../settings/feature-dependencies';
-import type { SettingsRepository } from '../settings/settings-repository';
+import type { BusinessProfileRepository, SettingsRepository } from '../settings/settings-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
-import type { TenantRepository, UserRepository } from './registration-repository';
+import type { UserRepository } from './registration-repository';
 
 /**
  * Who is signed in, and what they may do.
@@ -30,7 +30,7 @@ export class GetMyAccessService {
     private readonly uow: UnitOfWork,
     private readonly accessControl: AccessControl,
     private readonly users: UserRepository,
-    private readonly tenants: TenantRepository,
+    private readonly profiles: BusinessProfileRepository,
     private readonly settings: SettingsRepository,
   ) {}
 
@@ -43,11 +43,14 @@ export class GetMyAccessService {
         throw new AppError(ErrorCode.NOT_FOUND, 'User not found');
       }
 
-      const [businessName, permissions, stored] = await Promise.all([
-        this.tenants.findName(tx, ctx),
+      const [profile, permissions, stored] = await Promise.all([
+        this.profiles.findProfile(tx, ctx),
         this.accessControl.permissionsOf(tx, ctx),
         this.settings.listStored(tx, ctx),
       ]);
+      if (profile === null) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Business profile not found');
+      }
 
       /*
        * Which §5.21 toggles are on, so the shell can leave Vendors and Customer
@@ -64,13 +67,15 @@ export class GetMyAccessService {
         .map(([key]) => key);
 
       return {
+        tenantId: ctx.tenantId,
+        timezone: profile.timezone,
         user: {
           id: user.id,
           username: user.username,
           displayName: user.displayName,
           roleName: user.roleName,
         },
-        businessName: businessName ?? '',
+        businessName: profile.businessName,
         permissions: [...permissions],
         features,
       };
