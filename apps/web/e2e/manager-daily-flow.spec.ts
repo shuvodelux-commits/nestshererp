@@ -96,9 +96,9 @@ async function selectDate(page: Page, label: RegExp, businessDate: string): Prom
   for (let offset = 0; offset < Math.abs(months); offset += 1) {
     await calendar.getByRole('button', { name: months < 0 ? 'Previous Month' : 'Next Month', exact: true }).click();
   }
-  await calendar.locator('[data-p-other-month="false"]')
+  await calendar.locator('td:not([data-p-other-month="true"])')
     .getByText(String(Number(businessDate.slice(8))), { exact: true })
-    .and(calendar.locator('[data-pc-group-section="tablebodycelllabel"]')).click();
+    .and(calendar.locator('[data-pc-group-section="tablebodycelllabel"]')).click({ timeout: 10_000 });
   await expect(input).toHaveValue(businessDate);
   await expect(calendar).toBeHidden();
 }
