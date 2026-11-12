@@ -150,7 +150,10 @@ async function expectPurchaseOnDate(
     kind: 'PURCHASE', sourceType: 'PURCHASE', sourceNumber: purchase.number, businessDate,
     amountMinor: PRODUCT_B.costMinor, cashEffectMinor: 0, partyId: purchase.supplierPartyId,
   });
-  await expect(page.getByRole('row').filter({ hasText: purchase.number }).filter({ visible: true })).toHaveCount(1);
+  const transactions = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: 'Time', exact: true }),
+  });
+  await expect(transactions.getByRole('row').filter({ hasText: purchase.number })).toHaveCount(1);
   for (const adjacent of [addDays(businessDate, -1), addDays(businessDate, 1)]) {
     const otherDay = await call<DaybookResponse>(
       `/api/v1/daybook?from=${adjacent}&to=${adjacent}&dateBasis=BUSINESS_DATE&limit=300`, { token },
