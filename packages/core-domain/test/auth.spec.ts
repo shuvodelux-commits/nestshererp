@@ -91,11 +91,20 @@ describe('isValidPassword / isValidPin', () => {
     expect(isValidPassword('12345678')).toBe(false); // no letter
   });
 
-  it('requires exactly 4 digits for a PIN', () => {
+  it('retains four-digit PIN compatibility for existing users', () => {
     expect(isValidPin('4821')).toBe(true);
     expect(isValidPin('482')).toBe(false);
-    expect(isValidPin('48211')).toBe(false);
     expect(isValidPin('48a1')).toBe(false);
+  });
+
+  it('accepts HisabIQ six-digit PINs but refuses five/seven digits or non-ASCII digits', () => {
+    expect(isValidPin('482193')).toBe(true);
+    expect(isValidPin('000000')).toBe(true);
+    expect(isValidPin('48219')).toBe(false);
+    expect(isValidPin('4821937')).toBe(false);
+    expect(isValidPin('48219a')).toBe(false);
+    expect(isValidPin('৪৮২১৯৩')).toBe(false);
+    expect(isValidPin('48219  ')).toBe(false);
   });
 });
 
