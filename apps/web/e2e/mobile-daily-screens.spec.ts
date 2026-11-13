@@ -61,8 +61,14 @@ async function horizontalOverflow(page: Page): Promise<number> {
 }
 
 test.describe('the daily screens on a phone', () => {
-  test.beforeEach(async ({ page }) => {
-    await signIn(page, MANAGER);
+  const cashierSaleTitle = 'the cashier can sell on a phone, end to end';
+
+  test.beforeEach(async ({ page }, testInfo) => {
+    // A Playwright test gets its own new browser context. The cashier must start
+    // anonymous: signing in as Manager here persists tokens in localStorage,
+    // which context.clearCookies() cannot remove. It can leave the login in PIN
+    // mode and hide the password form needed for the cashier's real sign-in.
+    if (testInfo.title !== cashierSaleTitle) await signIn(page, MANAGER);
   });
 
   for (const screen of DAILY_SCREENS) {
@@ -173,8 +179,9 @@ test.describe('the daily screens on a phone', () => {
     await expect(search).toHaveAttribute('enterkeyhint', 'search');
   });
 
-  test('the cashier can sell on a phone, end to end', async ({ page, context }) => {
-    await context.clearCookies();
+  test(cashierSaleTitle, async ({ page }) => {
+    // The shared Manager sign-in deliberately does not run for this case.
+    // Verify a real Cashier login in this fresh context, not a reused Manager.
     await signIn(page, CASHIER);
 
     await page.goto('/pos');
