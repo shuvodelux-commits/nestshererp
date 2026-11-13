@@ -250,7 +250,7 @@ describe('MOD-008 durable purchase drafts, never postings', () => {
         'SELECT create_operation_id, create_fingerprint FROM purchase_drafts')).rows);
     expect(rowsA).toHaveLength(1);
     expect(rowsA[0].create_operation_id.trim()).toBe(OPERATION_ID);
-    expect(rowsA[0].create_fingerprint).toContain('Unfinished supplier invoice');
+    expect(rowsA[0].create_fingerprint.trim()).toMatch(/^[a-f0-9]{64}$/);
     const rowsB = await asTenant(pool, tenantB.tenantId,
       async client => (await client.query(
         'SELECT create_operation_id FROM purchase_drafts')).rows);
