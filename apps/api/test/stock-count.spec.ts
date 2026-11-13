@@ -219,3 +219,150 @@ describe('correcting one product’s stock (§5.10)', () => {
     expect(refused.status).toBe(400);
   });
 });
+
+
+/**
+ * MOD-003 C003-07: private count valuation must remain correct when COST_VIEW
+ * is absent, and count responses/replays must re-evaluate current permissions.
+ */
+async function setCostView(enabled: boolean): Promise<void> {
+  await asTenant(pool, tenant.tenantId, async (db) => {
+    await db.query(
+      'DELETE FROM role_permissions WHERE role_id = $1 AND permission_code = $2',
+      [tenant.roleId, Permission.COST_VIEW],
+    );
+    if (enabled) {
+      await db.query(
+        \`INSERT INTO role_permissions
+          (id, tenant_id, role_id, permission_code, created_at, updated_at, created_by, updated_by, version)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)\`,
+        [Ulid.generate(clock), tenant.tenantId, tenant.roleId, Permission.COST_VIEW,
+          clock.now(), tenant.userId],
+      );
+    }
+  });
+}
+
+describe('MOD-003 C003-07 stock count valuation and cost permissions', () => {
+  it('cost-blind counter posts exact shrinkage and persists true amount without disclosing cost', async () => {
+    await setCostView(false);
+    const op = Ulid.generate(clock);
+    const posted = await api().post('/api/v1/stock-counts')
+      .set('Authorization', \`Bearer \${token}\`)
+      .set('Idempotency-Key', op)
+      .send({ scopeLabel: 'Blind recount', note: null,
+        lines: [{ productId, countedQty: 18_000, systemQty: 20_000 }] });
+    expect(posted.status, JSON.stringify(posted.body)).toBeLessThan(300);
+    expect(posted.body.data.shortageValueMinor).toBeUndefined();
+    expect(posted.body.data.surplusValueMinor).toBeUndefined();
+    expect(posted.body.data.lines[0].valueMinor).toBeUndefined();
+    expect(posted.body.data.lines[0].qtyDelta).toBe(-2_000);
+
+    const blindList = await auth(api().get('/api/v1/stock-counts'));
+    expect(blindList.status).toBe(200);
+    expect(blindList.body.data[0].shortageValueMinor).toBeUndefined();
+    expect(blindList.body.data[0].surplusValueMinor).toBeUndefined();
+    expect(blindList.body.data[0].lines[0].valueMinor).toBeUndefined();
+
+    const stored = await asTenant(pool, tenant.tenantId, async (db) => {
+      const result = await db.query<{shortage: string; surplus: string; line: string}>(
+        \`SELECT sc.shortage_value_minor::text AS shortage,
+                sc.surplus_value_minor::text AS surplus,
+                cl.value_minor::text AS line
+           FROM stock_counts sc
+           JOIN stock_count_lines cl ON cl.count_id = sc.id AND cl.tenant_id = sc.tenant_id
+          WHERE sc.operation_id = $1\`, [op]);
+      return result.rows[0];
+    });
+    expect(stored?.shortage).toBe('20000');
+    expect(stored?.surplus).toBe('0');
+    expect(stored?.line).toBe('20000');
+    expect((await ledger())['INVENTORY']).toBe(1800_00);
+    expect((await ledger())['STOCK_ADJUSTMENT']).toBe(200_00);
+
+    await setCostView(true);
+    const authorized = await auth(api().get('/api/v1/stock-counts'));
+    expect(authorized.status).toBe(200);
+    expect(authorized.body.data[0].shortageValueMinor).toBe(200_00);
+    expect(authorized.body.data[0].surplusValueMinor).toBe(0);
+    expect(authorized.body.data[0].lines[0].valueMinor).toBe(200_00);
+  });
+
+  it('cost-blind surplus uses true booked FIFO/average value; no negative/false zero metadata', async () => {
+    await setCostView(false);
+    const posted = await auth(api().post('/api/v1/stock-counts'))
+      .send({ scopeLabel: 'Surplus', note: null,
+        lines: [{ productId, countedQty: 23_000, systemQty: 20_000 }] });
+    expect(posted.status, JSON.stringify(posted.body)).toBeLessThan(300);
+    expect(posted.body.data.surplusValueMinor).toBeUndefined();
+    expect(posted.body.data.lines[0].valueMinor).toBeUndefined();
+    expect((await ledger())['STOCK_ADJUSTMENT']).toBe(-300_00);
+    await setCostView(true);
+    const detail = await auth(api().get('/api/v1/stock-counts'));
+    expect(detail.body.data[0].surplusValueMinor).toBe(300_00);
+    expect(detail.body.data[0].lines[0].valueMinor).toBe(300_00);
+    expect(await onHand()).toBe(23_000);
+  });
+
+  it('replay does not leak cached cost after permission revocation or book a second stock change', async () => {
+    const operationId = Ulid.generate(clock);
+    const body = { scopeLabel: 'Recheck', note: null,
+      lines: [{ productId, countedQty: 18_000, systemQty: 20_000 }] };
+    const send = () => api().post('/api/v1/stock-counts')
+      .set('Authorization', \`Bearer \${token}\`).set('Idempotency-Key', operationId).send(body);
+    const privileged = await send();
+    expect(privileged.status, JSON.stringify(privileged.body)).toBeLessThan(300);
+    expect(privileged.body.data.shortageValueMinor).toBe(200_00);
+    const countId = privileged.body.data.id;
+
+    await setCostView(false);
+    const blindReplay = await send();
+    expect(blindReplay.status, JSON.stringify(blindReplay.body)).toBeLessThan(300);
+    expect(blindReplay.body.data.id).toBe(countId);
+    expect(blindReplay.body.data.shortageValueMinor).toBeUndefined();
+    expect(blindReplay.body.data.surplusValueMinor).toBeUndefined();
+    expect(blindReplay.body.data.lines[0].valueMinor).toBeUndefined();
+
+    expect(await onHand()).toBe(18_000);
+    expect((await ledger())['STOCK_ADJUSTMENT']).toBe(200_00);
+    const mismatched = await api().post('/api/v1/stock-counts')
+      .set('Authorization', \`Bearer \${token}\`).set('Idempotency-Key', operationId)
+      .send({ ...body, lines: [{ productId, countedQty: 19_000, systemQty: 20_000 }] });
+    expect(mismatched.status).toBeGreaterThanOrEqual(400);
+
+    await setCostView(true);
+    const authorizedReplay = await send();
+    expect(authorizedReplay.status).toBeLessThan(300);
+    expect(authorizedReplay.body.data.id).toBe(countId);
+    expect(authorizedReplay.body.data.shortageValueMinor).toBe(200_00);
+    expect(await onHand()).toBe(18_000);
+  });
+
+  it('zero-delta count distinguishes cost absent from genuinely zero and keeps tenant isolation', async () => {
+    await setCostView(false);
+    const post = await auth(api().post('/api/v1/stock-counts'))
+      .send({ scopeLabel: 'Unchanged', note: null,
+        lines: [{ productId, countedQty: 20_000, systemQty: 20_000 }] });
+    expect(post.status, JSON.stringify(post.body)).toBeLessThan(300);
+    expect(post.body.data.lines[0].valueMinor).toBeUndefined();
+    expect(post.body.data.shortageValueMinor).toBeUndefined();
+    expect(post.body.data.differenceCount).toBe(0);
+    await setCostView(true);
+    const authorized = await auth(api().get('/api/v1/stock-counts'));
+    expect(authorized.body.data[0].shortageValueMinor).toBe(0);
+    expect(authorized.body.data[0].surplusValueMinor).toBe(0);
+    expect(authorized.body.data[0].lines[0].valueMinor).toBe(0);
+
+    const other = await seedTenant(pool, { name: 'Other Count Tenant',
+      permissions: [Permission.STOCK_COUNT_POST, Permission.PRODUCT_VIEW, Permission.COST_VIEW] });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    const otherList = await auth(api().get('/api/v1/stock-counts'), otherToken);
+    expect(otherList.status).toBe(200);
+    expect(otherList.body.data).toEqual([]);
+    const wrongTenantPost = await auth(api().post('/api/v1/stock-counts'), otherToken)
+      .send({ scopeLabel: 'Other', note: null,
+        lines: [{ productId, countedQty: 20_000, systemQty: 20_000 }] });
+    expect(wrongTenantPost.status).toBeGreaterThanOrEqual(400);
+    expect((await ledger())['INVENTORY']).toBe(2000_00);
+  });
+});
