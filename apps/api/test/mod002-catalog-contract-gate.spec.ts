@@ -179,7 +179,7 @@ describe('MOD-002 metadata catalog: transport and strict contract', () => {
 
   it('normalizes NFC and whitespace while allowing optional explicit null values', async () => {
     const unit = await only('units', {
-      name: 'Wire', nameBn: '  কা\u09be   তার ', symbol: '  গে ',
+      name: 'Wire', nameBn: '  ক\u09be   তার ', symbol: '  গে ',
     });
     expect(unit.nameBn).toBe('কা তার');
     expect(unit.symbol).toBe('গে');
