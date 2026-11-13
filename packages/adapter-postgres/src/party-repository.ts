@@ -683,9 +683,9 @@ export class PostgresPartyRepository implements PartyRepository {
     ctx: TenantContext,
     filter: PartyLedgerFilter,
   ): Promise<number> {
-    // A continuation page opens at all lines before its validated cursor,
-    // including those before fromDate. Never AND these predicates: that would
-    // discard earlier in-range lines and produce a misleading running balance.
+    // A continuation page opens at all lines THROUGH its validated cursor:
+    // page one already includes the cursor's amount in its final running balance.
+    // Include pre-fromDate lines too, so page two has the exact prior closing balance.
     if (filter.fromDate === null && filter.cursor === null) return 0;
 
     const conditions: (SQL<unknown> | undefined)[] = [
@@ -696,7 +696,7 @@ export class PostgresPartyRepository implements PartyRepository {
 
     if (filter.cursor !== null) {
       conditions.push(
-        sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) <
+        sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) <=
             (SELECT e.business_date, l.created_at, l.id
              FROM journal_lines l
              JOIN journal_entries e ON e.id = l.journal_entry_id
