@@ -1816,3 +1816,198 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
     }
   });
 });
+
+
+/**
+ * QA #120: complete the Customer-group lifecycle matrix through signed API
+ * requests and tenant-scoped PostgreSQL 16. Existing T09A/B tests cover reads;
+ * these cases verify mutation outcomes, rollback and hidden state.
+ */
+describe('QA120 — customer-group lifecycle and adversarial workflows', () => {
+  const createGroup = (name: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + as)
+      .send({ name });
+
+  const renameGroup = (id: string, name: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .patch('/api/v1/party-setup/groups/' + id)
+      .set('Authorization', 'Bearer ' + as)
+      .send({ name });
+
+  const deleteGroup = (id: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .delete('/api/v1/party-setup/groups/' + id)
+      .set('Authorization', 'Bearer ' + as);
+
+  const setup = (as = token): request.Test =>
+    request(app.getHttpServer())
+      .get('/api/v1/party-setup')
+      .set('Authorization', 'Bearer ' + as);
+
+  it('renames an assigned group without changing Party identity, and audits its lifecycle', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Dealer').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+    const party = await createParty(minimalCustomer({
+      customerGroupId: groupId,
+    })).expect(201);
+    const partyId = (party.body.data as PartyBody).id;
+
+    const renamed = await renameGroup(groupId, 'Trade Partner').expect(200);
+    expect(renamed.body.data.groups).toContainEqual({ id: groupId, name: 'Trade Partner' });
+    const detail = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(detail.body.data.id).toBe(partyId);
+    expect(detail.body.data.customerGroupId).toBe(groupId);
+    expect(detail.body.data.customerGroupName).toBe('Trade Partner');
+    const list = await listParties('?role=CUSTOMER&groupId=' + groupId).expect(200);
+    expect(list.body.data.map((item: { id: string }) => item.id)).toContain(partyId);
+
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' AND entity_id = $1 ORDER BY id",
+        [groupId],
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE', 'UPDATE']);
+  });
+
+  it('deletes an unused group, but archives an assigned group without clearing customer history', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const unused = await createGroup('Unused Tier').expect(201);
+    const unusedId = unused.body.data.groups[0].id as string;
+    const inUse = await createGroup('Customer Tier').expect(201);
+    const usedId = (inUse.body.data.groups as { id: string; name: string }[])
+      .find((group) => group.name === 'Customer Tier')!.id;
+    const party = await createParty(minimalCustomer({ customerGroupId: usedId })).expect(201);
+    const partyId = (party.body.data as PartyBody).id;
+
+    expect((await deleteGroup(unusedId).expect(200)).body.data.outcome).toBe('DELETED');
+    expect((await deleteGroup(usedId).expect(200)).body.data.outcome).toBe('ARCHIVED');
+    const current = await setup().expect(200);
+    expect(current.body.data.groups).toEqual([]);
+    const detail = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(detail.body.data.customerGroupId).toBe(usedId);
+    expect(detail.body.data.customerGroupName).toBe('Customer Tier');
+
+    const persisted = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ id: string; deleted_at: string | null }>(
+        'SELECT id, deleted_at FROM customer_groups WHERE tenant_id = $1 AND id = ANY($2::text[]) ORDER BY id',
+        [tenant.tenantId, [usedId, unusedId]],
+      ),
+    );
+    expect(persisted.rows).toHaveLength(1);
+    expect(persisted.rows[0]?.id).toBe(usedId);
+    expect(persisted.rows[0]?.deleted_at).not.toBeNull();
+  });
+
+  it('rejects duplicate or invalid names and preserves the existing catalog', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const first = await createGroup('Dealer').expect(201);
+    const groupId = first.body.data.groups[0].id as string;
+
+    for (const name of ['dealer', ' Dealer ']) {
+      const duplicate = await createGroup(name).expect(400);
+      expect(duplicate.body.error.code).toBe('VALIDATION_FAILED');
+    }
+    await createGroup(' ').expect(400);
+    await createGroup('X'.repeat(121)).expect(400);
+    const renamed = await renameGroup(groupId, 'DEALER').expect(200);
+    expect(renamed.body.data.groups).toEqual([{ id: groupId, name: 'DEALER' }]);
+    expect((await setup().expect(200)).body.data.groups).toHaveLength(1);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' ORDER BY id",
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE', 'UPDATE']);
+  });
+
+  it('allows Customer-only catalog reads but denies all group mutations without manage permission', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Private Customer Group').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+
+    await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.PARTY_GROUP_MANAGE],
+      ),
+    );
+    expect((await setup().expect(200)).body.data.groups).toContainEqual({
+      id: groupId, name: 'Private Customer Group',
+    });
+    await createGroup('Forbidden').expect(403);
+    await renameGroup(groupId, 'Forbidden').expect(403);
+    await deleteGroup(groupId).expect(403);
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupId, name: 'Private Customer Group' },
+    ]);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' AND entity_id = $1",
+        [groupId],
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE']);
+  });
+
+  it('rejects rename/delete while groups are OFF and restores the saved catalog when ON again', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Kept Group').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'off');
+    expect((await setup().expect(200)).body.data.groups).toEqual([]);
+    expect((await renameGroup(groupId, 'Disallowed').expect(403)).body.error.code)
+      .toBe('FEATURE_DISABLED');
+    expect((await deleteGroup(groupId).expect(403)).body.error.code)
+      .toBe('FEATURE_DISABLED');
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupId, name: 'Kept Group' },
+    ]);
+  });
+
+  it('rejects cross-tenant rename and delete, while allowing the same name within each tenant', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Shared Name').expect(201);
+    const groupAId = created.body.data.groups[0].id as string;
+    const other = await seedTenant(pool, { name: 'QA120 Business B', permissions: ALL_PARTIES });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    await request(app.getHttpServer())
+      .post('/api/v1/settings/value')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .send({ key: SettingKey.CUSTOMER_GROUPS_ENABLED, value: 'on' })
+      .expect(201);
+
+    await renameGroup(groupAId, 'Intrusion', otherToken).expect(404);
+    await deleteGroup(groupAId, otherToken).expect(404);
+    const own = await createGroup('Shared Name', otherToken).expect(201);
+    expect(own.body.data.groups).toHaveLength(1);
+    expect(own.body.data.groups[0].id).not.toBe(groupAId);
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupAId, name: 'Shared Name' },
+    ]);
+  });
+
+  it('returns not found for an unknown group without changing the catalog or audit', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const unknownId = Ulid.generate(clock);
+    await renameGroup(unknownId, 'Not Here').expect(404);
+    await deleteGroup(unknownId).expect(404);
+    expect((await setup().expect(200)).body.data.groups).toEqual([]);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM audit_events WHERE entity_type = 'customer_group'",
+      ),
+    );
+    expect(events.rows[0]?.count).toBe(0);
+  });
+});
