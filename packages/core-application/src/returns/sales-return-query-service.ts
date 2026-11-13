@@ -70,6 +70,7 @@ export class SalesReturnQueryService {
           unitName: line.unitName,
           qtySold: line.qtySold,
           qtyReturned: line.qtyReturned,
+          valueReturnedMinor: line.valueReturnedMinor,
           qtyReturnable: Math.max(line.qtySold - line.qtyReturned, 0),
           unitPriceMinor: line.unitPriceMinor,
           netAmountMinor: line.netAmountMinor,
