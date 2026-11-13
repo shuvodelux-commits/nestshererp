@@ -3,6 +3,7 @@ import type {
   AccessControl,
   AuditWriter,
   CatalogRepository,
+  CatalogMetadataV1Repository,
   IdempotencyStore,
   InventoryRepository,
   NumberingService,
@@ -11,13 +12,14 @@ import type {
   SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
-import { ManageCatalogService, ManageProductsService } from '@sher/core-application';
+import { ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
 import {
   ACCESS_CONTROL,
   AUDIT_WRITER,
   CATALOG_REPOSITORY,
+  CATALOG_METADATA_V1_REPOSITORY,
   CLOCK,
   IDEMPOTENCY_STORE,
   INVENTORY_REPOSITORY,
@@ -28,12 +30,33 @@ import {
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
 import { CatalogController } from './catalog.controller';
+import { CatalogMetadataV1Controller } from './catalog-metadata-v1.controller';
 import { ProductsController } from './products.controller';
-import { MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
+import { MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
 
 @Module({
-  controllers: [CatalogController, ProductsController],
+  controllers: [CatalogController, CatalogMetadataV1Controller, ProductsController],
   providers: [
+    {
+      provide: MANAGE_CATALOG_METADATA_V1_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        catalog: CatalogMetadataV1Repository,
+        settings: SettingsRepository,
+        audit: AuditWriter,
+        outbox: Outbox,
+      ): ManageCatalogMetadataV1Service =>
+        new ManageCatalogMetadataV1Service(uow, accessControl, catalog, settings, audit, outbox),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        CATALOG_METADATA_V1_REPOSITORY,
+        SETTINGS_REPOSITORY,
+        AUDIT_WRITER,
+        OUTBOX,
+      ],
+    },
     {
       provide: MANAGE_CATALOG_SERVICE,
       useFactory: (
