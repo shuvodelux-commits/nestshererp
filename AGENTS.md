@@ -27,7 +27,7 @@ Historical opening party/customer/supplier/lender/borrower balances are non-cash
 
 Keep flexible multilevel units and independent pricing, split/partial payments and purchases, unpaid expenses, bundle versions, installments and COD visible in the gap register; never remove an existing UI capability to fit a narrower API. Reports/Analytics integration is excluded, existing report UI/navigation is preserved, and operational Dashboard remains in scope.
 
-Use one scoped branch/draft PR per approved task, record paired repository SHAs, exact allowed paths and actual verification exits. Current board capacity is one worker; verify live claims before dispatch and never treat a comment as a reservation. No merge, deployment, production data operation or destructive migration follows from plan approval. Documentation-only work does not start the application stack. MOD-000-A approval includes its named automated tests and disposable CI; older blanket no-test wording must not defeat that specific approval. Other modules need an explicit verification scope.
+Use one scoped branch/draft PR per approved task, record paired repository SHAs, exact allowed paths and actual verification exits. **Owner override 2026-11-13:** up to **five independent BUILDING module sessions/chats** may run at once if the coordinator verifies actual runner capacity, unique per-task reservations, accepted dependency heads, disjoint source allowlists and separate branches/worktrees/disposable test databases. The earlier one-worker policy is superseded as desired capacity; do not assume a runner currently configured for one can run five. Shared contracts/schema/migrations/accounting-cash settings and human merges remain centrally serialized. A comment/assignee is not a distributed lock. No merge, deployment, production data operation or destructive migration follows from plan approval. Documentation-only work does not start the application stack. MOD-000-A approval includes its named automated tests and disposable CI; older blanket no-test wording must not defeat that specific approval. Other modules need an explicit verification scope.
 
 ---
 
@@ -362,7 +362,7 @@ business module or replace the SRS business rules.
 
 - Work from `chore/hisabiq-adoption-runtime-a01`, derived from `76421b0`.
 - Use `.claude/super-board/configs/hisabiq-nest-adoption.json`: project 2,
-  one worker, human approval for every merge, no automatic database migrations.
+  historical one-worker setting (superseded by the 2026-11-13 owner five-lane direction), human approval for every merge, no automatic database migrations. Verify the active runtime config before launching more than one session from a shared runner; the referenced file was not found at its documented GitHub path.
 - The setup exception to the Markdown-file rule permits the installed skill
   bundle and its references in `.agents/`, host links in `.claude/` and `.codex/`,
   `docs/agents/issue-tracker.md`, and board preflight/run evidence under
@@ -392,9 +392,9 @@ business module or replace the SRS business rules.
 | Product clarification | Retain R-Q's unresolved questions and final specification; current overview approval satisfies its start gate. Record approval evidence and plan revision on the issue; NEVER re-ask settled decisions. |
 | Dispatch | ALWAYS use installed **Super Build**, scoped to the single approved issue and selected environment. NEVER call a manual source edit an executed headless run. |
 | GitHub contract | Before implementation, coordinator records the approved plan and distinct owner session using `docs/agents/issue-tracker.md`; reconcile issue, all comments, linked PR/head and board before resuming. |
-| Five chats | Up to five independently approved module chats may work on separate branches/worktrees and disposable databases. Coordinator sequences overlapping files, shared contracts, canonical docs and migrations before dispatch. |
+| Five chats | **Owner override 2026-11-13:** up to five separate module chats may BUILD concurrently on independently approved tasks with unique GitHub branches/worktrees and disposable databases. Coordinator serializes conflicting shared files, contracts, source ownership, cash policy, schema/migrations and merges; no overlapping live PR integration without accepted compatible heads. |
 | Ownership | NEVER claim another session's module or recover its locks/worktree. A shared account assignee or issue comment is **not an atomic distributed lock**; coordinator confirms session ownership. |
-| Worker boundary | Module chats NEVER drain Ready, run cross-chat recovery sweeps, or change shared runner configuration. Current runner stays at one worker; five chats need separately approved scoped dispatches. |
+| Worker boundary | Module chats NEVER drain Ready, run cross-chat recovery sweeps, or change shared runner configuration. Target capacity is up to five concurrent *separately approved* scoped sessions, not an automatic five-worker startup. Each chat uses its own verified executor and no overlapping source ownership; verify/change actual runner configuration through the coordinator before a shared runner exceeds its active capacity. Every task still requires independent QA and a human merge. |
 | Capability | Check repository read/write, shell execution, database, network and browser capabilities separately. A GitHub connector cannot execute a shell runner; hand off to a verified authorized executor or report blocked. |
 | Handoff | EVERY completed module produces a draft PR with source/head SHA, actual command exits, blockers and resume steps. Requirements remain canonical; issue plans reference SRS sections, never replace them. |
 | Integration | Owner reviews and **explicitly instructs each merge**; coordinator integrates serially through the merge gate. Overview approval NEVER permits merge, deployment, production data or destructive migration. |
