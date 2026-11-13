@@ -6,6 +6,7 @@ NestSherERP's worktrees, a running service, or any database.
 from __future__ import annotations
 
 import json
+import runpy
 import os
 from pathlib import Path
 import subprocess
@@ -176,6 +177,74 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
         self.run_cli("verify", "--receipt", str(self.receipt), "--check", "python-version")
         git(self.dest, "checkout", "--detach", self.base)
         self.run_cli("finalize", "--receipt", str(self.receipt), success=False)
+
+
+    def test_npm_frontend_presets_are_immutable_and_work_only_with_npm_lock(self) -> None:
+        """No arbitrary command supplied by client may reach subprocess.run."""
+        command_for = runpy.run_path(str(SCRIPT))["command_for"]
+        npm = self.root / "npm-fixture"
+        npm.mkdir()
+        (npm / "package-lock.json").write_text("{}", encoding="utf-8")
+        expected = {
+            "npm-install": ["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+            "npm-typecheck": ["node_modules/.bin/tsc", "--noEmit"],
+            "npm-lint": ["npm", "run", "lint"],
+            "npm-ui-contract": ["npm", "run", "check:ui-contract"],
+            "npm-unit": ["npm", "test"],
+            "npm-build": ["npm", "run", "build"],
+        }
+        for name, command in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(command_for(npm, name), command)
+
+    def test_npm_presets_refuse_missing_wrong_and_dual_lockfile_state(self) -> None:
+        command_for = runpy.run_path(str(SCRIPT))["command_for"]
+        missing = self.root / "no-lock"
+        missing.mkdir()
+        pnpm = self.root / "pnpm-fixture"
+        pnpm.mkdir()
+        (pnpm / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+        ambiguous = self.root / "both-locks"
+        ambiguous.mkdir()
+        (ambiguous / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+        (ambiguous / "package-lock.json").write_text("{}", encoding="utf-8")
+        for root in (missing, pnpm, ambiguous):
+            for preset in ("npm-install", "npm-typecheck", "npm-lint", "npm-unit"):
+                with self.subTest(root=root.name, preset=preset):
+                    with self.assertRaises(Exception):
+                        command_for(root, preset)
+
+    def test_existing_pnpm_checks_remain_supported_and_require_pnpm_lock(self) -> None:
+        command_for = runpy.run_path(str(SCRIPT))["command_for"]
+        pnpm = self.root / "pnpm-valid"
+        pnpm.mkdir()
+        (pnpm / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+        for check, command in {
+            "install": ["pnpm", "install", "--frozen-lockfile", "--offline", "--ignore-scripts"],
+            "typecheck": ["pnpm", "typecheck"],
+            "lint": ["pnpm", "lint"],
+            "build": ["pnpm", "build"],
+            "boundaries": ["pnpm", "test:boundaries"],
+        }.items():
+            with self.subTest(check=check):
+                self.assertEqual(command_for(pnpm, check), command)
+        npm = self.root / "npm-only"
+        npm.mkdir()
+        (npm / "package-lock.json").write_text("{}", encoding="utf-8")
+        for root in (npm, self.root):
+            with self.assertRaises(Exception):
+                command_for(root, "install")
+
+    def test_unknown_verification_commands_never_obtain_command_execution(self) -> None:
+        command_for = runpy.run_path(str(SCRIPT))["command_for"]
+        npm = self.root / "npm-verified"
+        npm.mkdir()
+        (npm / "package-lock.json").write_text("{}", encoding="utf-8")
+        for value in ("bash", "claude", "codex", "npm-run:postinstall",
+                      "npm-build;rm -rf /tmp/safe", "../../../etc/passwd"):
+            with self.subTest(value=value):
+                with self.assertRaises(Exception):
+                    command_for(npm, value)
 
 
 if __name__ == "__main__":
