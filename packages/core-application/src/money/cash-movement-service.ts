@@ -274,8 +274,8 @@ export class CashMovementService {
    * which is required, because a drawer that changed for no stated reason is
    * exactly what a day-end count cannot explain.
    *
-   * A movement that touched the drawer can only be undone while a day is open,
-   * for the same reason it could only be recorded while one was: cash that
+   * When session tracking is ON, a movement that touched the drawer can
+   * only be undone while an eligible day is open: cash that
    * moves on a day nobody counted is cash no count will ever see (§5.16.1).
    */
   async void(command: VoidMovementCommand): Promise<void> {
@@ -361,6 +361,23 @@ export class CashMovementService {
         );
       }
 
+      const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
+      const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
+      const rejection = rejectCashMovement({
+        kind: command.kind,
+        fromAccount: from.code as never,
+        toAccount: to.code as never,
+        amountMinor: command.amountMinor,
+      });
+      if (rejection !== null) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
+      }
+
+      const sessionId = await this.requireDrawerSession(
+        tx, ctx, placement.businessDate, from.isDrawer || to.isDrawer,
+        'Start the day before correcting cash in or out of the drawer',
+      );
+
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
@@ -382,23 +399,6 @@ export class CashMovementService {
           entityType: 'cash_movement',
           eventType: 'cash.movement.corrected',
         },
-      );
-
-      const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
-      const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
-      const rejection = rejectCashMovement({
-        kind: command.kind,
-        fromAccount: from.code as never,
-        toAccount: to.code as never,
-        amountMinor: command.amountMinor,
-      });
-      if (rejection !== null) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
-      }
-
-      const sessionId = await this.requireDrawerSession(
-        tx, ctx, placement.businessDate, from.isDrawer || to.isDrawer,
-        'Start the day before correcting cash in or out of the drawer',
       );
 
       const posting = cashMovementPosting({
@@ -494,8 +494,8 @@ export class CashMovementService {
   }
 
   /**
-   * Undoing drawer cash needs an open day, exactly as recording it did — the
-   * money comes back into a till somebody has to count tonight.
+   * Undoing drawer cash needs an eligible open day when the feature is ON.
+   * OFF mode preserves the exact reversal journal without a physical day.
    */
   private async assertDrawerOpenFor(
     tx: Tx,
