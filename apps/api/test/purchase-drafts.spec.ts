@@ -101,7 +101,7 @@ describe('MOD-008 durable purchase drafts, never postings', () => {
       .send({ expectedVersion: 2 });
     expect(recycled.status).toBe(200);
     expect(recycled.body.data.version).toBe(3);
-    expect(recycled.body.data.recoverableUntilEpochMs).toBeGreaterThan(Date.now());
+    expect(recycled.body.data.recoverableUntilEpochMs).toBe(Date.parse(recycled.body.data.deletedAt) + 30 * 86_400_000);
     const empty = await request(app.getHttpServer()).get(route).set(authed(tokenA));
     expect(empty.body.data).toEqual([]);
     const deleted = await request(app.getHttpServer()).get(`${route}?state=deleted`).set(authed(tokenA));
