@@ -150,6 +150,27 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
         self.prepare()
         self.run_cli(*self.prepare_args(), success=False)
 
+    def test_finalize_preserves_but_allows_recovered_failure(self) -> None:
+        self.prepare()
+        self.run_cli("verify", "--receipt", str(self.receipt), "--check", "python-version")
+        data = json.loads(self.receipt.read_text(encoding="utf-8"))
+        old_failed = dict(data["checks"][0])
+        old_failed["exit_code"] = 2
+        data["checks"].insert(0, old_failed)
+        self.receipt.write_text(json.dumps(data), encoding="utf-8")
+        result = self.run_cli("finalize", "--receipt", str(self.receipt))
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["failed_attempts"], 1)
+        self.assertEqual(payload["passed_checks"], ["python-version"])
+
+    def test_finalize_blocks_unresolved_failed_check(self) -> None:
+        self.prepare()
+        self.run_cli("verify", "--receipt", str(self.receipt), "--check", "python-version")
+        data = json.loads(self.receipt.read_text(encoding="utf-8"))
+        data["checks"].append({"name": "typecheck", "exit_code": 2, "clean_after": True})
+        self.receipt.write_text(json.dumps(data), encoding="utf-8")
+        self.run_cli("finalize", "--receipt", str(self.receipt), success=False)
+
     def test_verified_head_must_remain_exact(self) -> None:
         self.prepare()
         self.run_cli("verify", "--receipt", str(self.receipt), "--check", "python-version")
