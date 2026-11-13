@@ -57,9 +57,9 @@ let drawerCode: string;
 
 const PERMISSIONS = [
   Permission.SALE_CREATE, Permission.SALE_VIEW,
-  Permission.SALES_RETURN_CREATE, Permission.SALES_RETURN_VIEW,
+  Permission.SALES_RETURN_CREATE, Permission.SALES_RETURN_VIEW, Permission.SALES_RETURN_VOID,
   Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW,
-  Permission.PURCHASE_RETURN_CREATE, Permission.PURCHASE_RETURN_VIEW,
+  Permission.PURCHASE_RETURN_CREATE, Permission.PURCHASE_RETURN_VIEW, Permission.PURCHASE_RETURN_VOID,
   Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT,
   Permission.UNIT_MANAGE, Permission.CUSTOMER_VIEW, Permission.CUSTOMER_CREATE,
   Permission.SUPPLIER_VIEW, Permission.SUPPLIER_CREATE,
