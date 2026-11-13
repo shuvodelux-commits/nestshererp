@@ -1293,6 +1293,7 @@ export class PostgresSaleRepository implements SaleRepository {
     if (filter.categoryId !== null) conditions.push(eq(products.categoryId, filter.categoryId));
     if (filter.brandId !== null) conditions.push(eq(products.brandId, filter.brandId));
     if (!ranked && filter.cursor !== null) conditions.push(sql`${products.id} > ${filter.cursor}`);
+    if (ranked && filter.anchorId != null) conditions.push(eq(products.id, filter.anchorId));
 
     const groupPrice = filter.customerGroupId === null
       ? sql<number | null>`NULL::bigint`
