@@ -1136,3 +1136,157 @@ describe('opening balances and ledgers', () => {
     ).expect(400);
   });
 });
+
+
+/**
+ * T08-QA: actual Nest guards and PostgreSQL16 tenant/RLS isolation across
+ * all five GET families consumed by the unmounted HisabIQ Party read client.
+ * Setup and historical opening writes here are disposable test-only fixtures.
+ */
+describe('T08-QA — five-endpoint Party read and tenant isolation', () => {
+  it('keeps two tenants and both trading-role obligations separate after permission revocation', async () => {
+    const date = clock.businessDate('Asia/Dhaka');
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const group = await request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Tenant A Exclusive Group' })
+      .expect(201);
+    const groupId = group.body.data.groups[0].id as string;
+
+    const created = await createParty(minimalCustomer({
+      name: 'Dual Trading Identity', roles: ['CUSTOMER', 'SUPPLIER'],
+      customerGroupId: groupId,
+      opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 500_000, businessDate: date },
+    })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    const supplierPosted = await request(app.getHttpServer())
+      .post('/api/v1/parties/' + id + '/opening')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 300_000, businessDate: date })
+      .expect(201);
+    expect(supplierPosted.body.data.amountMinor).toBe(300_000);
+
+    const setupA = await request(app.getHttpServer())
+      .get('/api/v1/party-setup')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(Object.keys(setupA.body)).toEqual(['data']);
+    expect(setupA.body.data.features.customerGroups).toBe(true);
+    expect(setupA.body.data.groups).toContainEqual({ id: groupId, name: 'Tenant A Exclusive Group' });
+    expect(Object.keys(setupA.body.data.fields).sort()).toEqual([
+      'address', 'email', 'guardianName', 'nid', 'notes',
+    ]);
+
+    for (const [role, signedMinor, direction, account] of [
+      ['CUSTOMER', 500_000, 'RECEIVABLE', 'AR'],
+      ['SUPPLIER', -300_000, 'PAYABLE', 'AP'],
+    ] as const) {
+      const listed = await listParties('?role=' + role).expect(200);
+      expect(listed.body.data).toHaveLength(1);
+      expect(listed.body.data[0].id).toBe(id);
+      expect(listed.body.data[0].balance.netMinor).toBe(signedMinor);
+      expect(listed.body.summary.total).toBe(1);
+
+      const detail = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + id + '?role=' + role)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(detail.body.data.id).toBe(id);
+      expect(detail.body.data.balance.netMinor).toBe(signedMinor);
+
+      const opening = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + id + '/opening?role=' + role)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(opening.body.data.role).toBe(role);
+      expect(opening.body.data.direction).toBe(direction);
+      expect(opening.body.data.amountMinor).toBe(Math.abs(signedMinor));
+      expect(opening.body.data.businessDate).toBe(date);
+
+      const ledger = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + id + '/ledger?role=' + role)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(ledger.body.partyId).toBe(id);
+      expect(ledger.body.closingBalance.netMinor).toBe(signedMinor);
+      expect(ledger.body.rows).toHaveLength(1);
+      expect(ledger.body.rows[0].account).toBe(account);
+      expect(ledger.body.rows[0].sourceDocumentType).toBe('OPENING_BALANCE');
+      expect(ledger.body.rows[0].sourceDocumentId).toBe(opening.body.data.id);
+    }
+
+    // Tenant B has full trading permissions but no authority over tenant A.
+    const other = await seedTenant(pool, { name: 'Tenant B', permissions: ALL_PARTIES });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    const setupB = await request(app.getHttpServer())
+      .get('/api/v1/party-setup')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .expect(200);
+    expect(setupB.body.data.groups).toEqual([]);
+    expect(setupB.body.data.features.customerGroups).toBe(false);
+    expect(JSON.stringify(setupB.body)).not.toContain('Tenant A Exclusive Group');
+
+    for (const role of ['CUSTOMER', 'SUPPLIER'] as const) {
+      const otherList = await listParties('?role=' + role, otherToken).expect(200);
+      expect(otherList.body.data).toHaveLength(0);
+      expect(otherList.body.summary.total).toBe(0);
+      for (const url of [
+        '/api/v1/parties/' + id + '?role=' + role,
+        '/api/v1/parties/' + id + '/ledger?role=' + role,
+        '/api/v1/parties/' + id + '/opening?role=' + role,
+      ]) {
+        const missing = await request(app.getHttpServer())
+          .get(url).set('Authorization', 'Bearer ' + otherToken).expect(404);
+        expect(missing.body.error.code).toBe('NOT_FOUND');
+        expect(JSON.stringify(missing.body)).not.toContain('Dual Trading Identity');
+      }
+    }
+
+    // Customer-view permission must never confer Supplier information.
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.SUPPLIER_VIEW],
+      );
+    });
+    const deniedList = await listParties('?role=SUPPLIER').expect(403);
+    expect(deniedList.body.error.code).toBe('PERMISSION_DENIED');
+    for (const url of [
+      '/api/v1/parties/' + id + '?role=SUPPLIER',
+      '/api/v1/parties/' + id + '/ledger?role=SUPPLIER',
+      '/api/v1/parties/' + id + '/opening?role=SUPPLIER',
+    ]) {
+      const denied = await request(app.getHttpServer())
+        .get(url).set('Authorization', 'Bearer ' + token).expect(403);
+      expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+    }
+    const listA = await listParties('?role=CUSTOMER').expect(200);
+    expect(listA.body.data[0].roles).toEqual(['CUSTOMER']);
+    expect(listA.body.data[0].balance.netMinor).toBe(500_000);
+    const detailA = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(detailA.body.data.roles).toEqual(['CUSTOMER']);
+    expect(detailA.body.data.balance.netMinor).toBe(500_000);
+    const openingA = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '/opening?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(openingA.body.data.amountMinor).toBe(500_000);
+    const ledgerA = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '/ledger?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(ledgerA.body.closingBalance.netMinor).toBe(500_000);
+
+    // Historical opening journals exist independently of cash-session policy.
+    const cash = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ sessions: number; movements: number }>(
+        'SELECT (SELECT count(*)::int FROM cash_sessions WHERE tenant_id = $1) AS sessions, ' +
+        '(SELECT count(*)::int FROM cash_movements WHERE tenant_id = $1) AS movements',
+        [tenant.tenantId],
+      ),
+    );
+    expect(cash.rows[0]).toEqual({ sessions: 0, movements: 0 });
+  });
+});
