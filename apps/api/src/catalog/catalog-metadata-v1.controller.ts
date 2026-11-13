@@ -1,7 +1,10 @@
-import { Body, Controller, Get, Inject, Param, Patch, UseGuards } from '@nestjs/common';
-import type { ManageCatalogMetadataV1Service, TenantContext } from '@sher/core-application';
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import type { CreateCatalogMetadataV1Service, ManageCatalogMetadataV1Service, TenantContext } from '@sher/core-application';
 import {
   AppError,
+  createCatalogMetadataV1UnitRequestSchema,
+  createCatalogMetadataV1BrandRequestSchema,
+  createCatalogMetadataV1CategoryRequestSchema,
   ErrorCode,
   patchCatalogMetadataV1BrandRequestSchema,
   patchCatalogMetadataV1CategoryRequestSchema,
@@ -10,7 +13,7 @@ import {
 import type { CatalogMetadataV1Response } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
-import { MANAGE_CATALOG_METADATA_V1_SERVICE } from './tokens';
+import { CREATE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE } from './tokens';
 
 /**
  * HisabIQ MOD-002 T02A: opt-in catalog metadata endpoints.
@@ -22,9 +25,8 @@ import { MANAGE_CATALOG_METADATA_V1_SERVICE } from './tokens';
  *
  * Metadata-only edits never rename the English catalog key or reparent a
  * category. Unit symbols are display labels, not unit identities/factors.
- * Metadata-v1 create is NOT implemented here: the existing name-only create
- * route remains the supported path until a separately scoped create service
- * exists.
+ * Metadata-v1 creates are atomic, opt-in new routes and must never be
+ * implemented as legacy English create followed by a Bengali PATCH.
  */
 @Controller('api/v1/catalog/metadata-v1')
 @UseGuards(TenantContextGuard)
@@ -32,11 +34,43 @@ export class CatalogMetadataV1Controller {
   constructor(
     @Inject(MANAGE_CATALOG_METADATA_V1_SERVICE)
     private readonly metadata: ManageCatalogMetadataV1Service,
+    @Inject(CREATE_CATALOG_METADATA_V1_SERVICE)
+    private readonly createMetadata: CreateCatalogMetadataV1Service,
   ) {}
 
   @Get()
   async list(@Ctx() ctx: TenantContext): Promise<{ data: CatalogMetadataV1Response }> {
     return { data: await this.metadata.list({ ctx }) };
+  }
+
+  @Post('units')
+  async createUnit(
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: CatalogMetadataV1Response }> {
+    const input = createCatalogMetadataV1UnitRequestSchema.safeParse(body);
+    if (!input.success) throw invalidBody(input.error.issues);
+    return { data: await this.createMetadata.createUnit({ ctx, input: input.data }) };
+  }
+
+  @Post('brands')
+  async createBrand(
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: CatalogMetadataV1Response }> {
+    const input = createCatalogMetadataV1BrandRequestSchema.safeParse(body);
+    if (!input.success) throw invalidBody(input.error.issues);
+    return { data: await this.createMetadata.createBrand({ ctx, input: input.data }) };
+  }
+
+  @Post('categories')
+  async createCategory(
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: CatalogMetadataV1Response }> {
+    const input = createCatalogMetadataV1CategoryRequestSchema.safeParse(body);
+    if (!input.success) throw invalidBody(input.error.issues);
+    return { data: await this.createMetadata.createCategory({ ctx, input: input.data }) };
   }
 
   @Patch('units/:id')
