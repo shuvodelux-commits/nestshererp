@@ -52,8 +52,8 @@ export class PurchaseDraftService {
       createdAt: row.createdAt.toISOString(),
       version: row.version,
       deletedAt: row.deletedAt?.toISOString() ?? null,
-      recoverableUntil: row.deletedAt
-        ? new Date(row.deletedAt.getTime() + RECOVERY_WINDOW_MS).toISOString()
+      recoverableUntilEpochMs: row.deletedAt
+        ? row.deletedAt.getTime() + RECOVERY_WINDOW_MS
         : null,
     };
   }
