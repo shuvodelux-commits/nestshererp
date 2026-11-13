@@ -136,14 +136,19 @@ async function saleSource(
 ): Promise<SaleSource> {
   const id = syntheticId();
   const lineId = syntheticId();
+  const grossMinor = qty / 1_000;
+  if (!Number.isInteger(grossMinor) || grossMinor < netMinor) {
+    throw new Error('Synthetic sale requires whole units and valid source discount');
+  }
   const movementId = await movement(db, t, 'OUT', 'SALE', id);
   await db.query(
     "INSERT INTO sales (id,tenant_id,sale_number,party_id,customer_name_snapshot,location_id,items_total_minor,discount_minor,grand_total_minor,cogs_minor,paid_minor,business_date,entry_mode,status,operation_id,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,'Synthetic Only',$5,$6,0,$6,$7,0,$8,'ON_TIME','POSTED',$9,$10,$10,$11,$11)",
     [id, t.tenant, 'SA-' + id, t.party, t.location, netMinor, costMinor, DATE, syntheticId(), NOW, t.actor],
   );
   await db.query(
-    "INSERT INTO sale_lines (id,tenant_id,sale_id,line_no,product_id,qty,unit_price_minor,line_discount_minor,line_total_minor,discount_share_minor,net_amount_minor,cost_minor,source,movement_id,created_at,created_by) VALUES ($1,$2,$3,1,$4,$5,1,0,$6,0,$6,$7,'OWN_STOCK',$8,$9,$10)",
-    [lineId, t.tenant, id, t.product, qty, netMinor, costMinor, movementId, NOW, t.actor],
+    "INSERT INTO sale_lines (id,tenant_id,sale_id,line_no,product_id,qty,unit_price_minor,line_discount_minor,line_total_minor,discount_share_minor,net_amount_minor,cost_minor,source,movement_id,created_at,created_by) VALUES ($1,$2,$3,1,$4,$5,1,$6,$7,0,$7,$8,'OWN_STOCK',$9,$10,$11)",
+    [lineId, t.tenant, id, t.product, qty, grossMinor - netMinor,
+      netMinor, costMinor, movementId, NOW, t.actor],
   );
   return { id, lineId, movementId };
 }
@@ -155,19 +160,28 @@ async function purchaseSource(
   const lineId = syntheticId();
   const lotId = syntheticId();
   const sourceCost = Math.round(actualUnitCost * qty / 100_000);
+  const grossMinor = qty / 1_000;
+  if (!Number.isInteger(grossMinor) || grossMinor < billedMinor) {
+    throw new Error('Synthetic purchase requires whole units and valid bill discount');
+  }
+  const discountMinor = grossMinor - billedMinor;
+  const landedExtraMinor = Math.max(0, sourceCost - billedMinor);
   await db.query(
     "INSERT INTO inventory_lots (id,tenant_id,product_id,location_id,owner_type,source_document_type,source_document_id,source_number,qty_received,qty_remaining,purchase_unit_cost,landed_cost_total,actual_unit_cost,business_date,status,created_at,updated_at,created_by,updated_by,version) VALUES ($1,$2,$3,$4,'OWNED','PURCHASE',$5,$6,$7,$7,$8,$9,$10,$11,'OPEN',$12,$12,$13,$13,1)",
     [lotId, t.tenant, t.product, t.location, id, 'PU-' + id,
-      qty, billedMinor, sourceCost, actualUnitCost, DATE, NOW, t.actor],
+      qty, 100, sourceCost, actualUnitCost, DATE, NOW, t.actor],
   );
   const movementId = await movement(db, t, 'IN', 'PURCHASE', id, lotId);
   await db.query(
-    "INSERT INTO purchases (id,tenant_id,purchase_number,supplier_party_id,location_id,items_total_minor,discount_minor,extra_cost_minor,grand_total_minor,paid_minor,business_date,entry_mode,status,operation_id,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,0,0,$6,0,$7,'ON_TIME','POSTED',$8,$9,$9,$10,$10)",
-    [id, t.tenant, 'PU-' + id, t.party, t.location, billedMinor, DATE, syntheticId(), NOW, t.actor],
+    "INSERT INTO purchases (id,tenant_id,purchase_number,supplier_party_id,location_id,items_total_minor,discount_minor,extra_cost_minor,grand_total_minor,paid_minor,business_date,entry_mode,status,operation_id,created_at,updated_at,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,'ON_TIME','POSTED',$11,$12,$12,$13,$13)",
+    [id, t.tenant, 'PU-' + id, t.party, t.location, grossMinor,
+      discountMinor, landedExtraMinor, billedMinor + landedExtraMinor,
+      DATE, syntheticId(), NOW, t.actor],
   );
   await db.query(
-    'INSERT INTO purchase_lines (id,tenant_id,purchase_id,line_no,product_id,qty,unit_price_minor,line_total_minor,discount_share_minor,extra_cost_share_minor,actual_unit_cost,lot_id,movement_id,created_at,created_by) VALUES ($1,$2,$3,1,$4,$5,1,$6,0,0,$7,$8,$9,$10,$11)',
-    [lineId, t.tenant, id, t.product, qty, billedMinor, actualUnitCost, lotId, movementId, NOW, t.actor],
+    'INSERT INTO purchase_lines (id,tenant_id,purchase_id,line_no,product_id,qty,unit_price_minor,line_total_minor,discount_share_minor,extra_cost_share_minor,actual_unit_cost,lot_id,movement_id,created_at,created_by) VALUES ($1,$2,$3,1,$4,$5,1,$6,$7,$8,$9,$10,$11,$12,$13)',
+    [lineId, t.tenant, id, t.product, qty, grossMinor, discountMinor,
+      landedExtraMinor, actualUnitCost, lotId, movementId, NOW, t.actor],
   );
   return { id, lineId, movementId, lotId };
 }
