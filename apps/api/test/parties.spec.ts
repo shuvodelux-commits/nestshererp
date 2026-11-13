@@ -2150,7 +2150,12 @@ describe('QA120 P2 — historical Party opening and directory regression', () =>
     const ids = new Set<string>();
     let cursor: string | null = null;
     for (let i = 0; i < 3; i += 1) {
-      const page = await listParties(
+      const page: {
+        body: {
+          data: { id: string; name: string }[];
+          page: { hasMore: boolean; nextCursor: string | null };
+        };
+      } = await listParties(
         '?role=CUSTOMER&sort=name&direction=ASC&limit=1' +
         (cursor === null ? '' : '&cursor=' + cursor),
       ).expect(200);
