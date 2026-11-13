@@ -159,6 +159,8 @@ export function remainingWholeTakaReturnMinor(
   const cumulativeTaka = (2n * numerator + denominator) / (2n * denominator);
   const cumulativeMinor = cumulativeTaka * BigInt(POISHA_PER_TAKA);
   const difference = cumulativeMinor - BigInt(priorPostedMinor);
-  const remaining = BigInt(frozenSourceMinor - priorPostedMinor);
-  return Number(difference <= 0n ? 0n : difference > remaining ? remaining : difference);
+  // The target is <= frozenSourceMinor because cumulative quantity <= original.
+  // We already rejected priorPosted > frozenSource, so a positive difference
+  // cannot exceed the uncredited source remainder. No second rounding needed.
+  return Number(difference <= 0n ? 0n : difference);
 }
