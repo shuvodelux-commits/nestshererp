@@ -178,6 +178,24 @@ suite('MOD-006 T04 bank/MFS-only reconciliation account controls', () => {
     });
   });
 
+  it('concurrent identical operationId retries return the same draft with no duplicate', async () => {
+    const bank = await createAccount('BANK');
+    const operationId = Ulid.generate(clock);
+    const postSame = () => api().post('/api/v1/money/reconciliations')
+      .set('Authorization', 'Bearer ' + bearerToken)
+      .send({
+        accountId: bank, fromDate: '2026-08-01', toDate: '2026-08-31',
+        operationId,
+      });
+    const attempts = await Promise.all(Array.from({ length: 5 }, () => postSame()));
+    expect(attempts.map((result) => result.status)).toEqual([201, 201, 201, 201, 201]);
+    const ids = attempts.map((result) => result.body.data?.id);
+    expect(new Set(ids).size).toBe(1);
+    expect(await footprint()).toEqual({
+      journal_entries: 0, journal_lines: 0, cash_sessions: 0, reconciliations: 1,
+    });
+  });
+
   it('concurrent starts for the same BANK account produce one draft and no internal error', async () => {
     const bank = await createAccount('BANK');
     const attempts = await Promise.all(Array.from({ length: 5 }, () => postRecon(bank)));
