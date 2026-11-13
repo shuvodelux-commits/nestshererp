@@ -10,6 +10,7 @@
  * Only admin fixture setup can write. Audit queries use a separate SELECT-only
  * non-BYPASSRLS login and transaction-local app.tenant_id.
  */
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runMigrations } from '@sher/adapter-postgres';
@@ -339,6 +340,17 @@ describe.skipIf(!isExplicitlyEnabled)(
 beforeAll(async () => {
   // MUST precede any new Pool, query, migration, role operation or fixture setup.
   const cfg = verifyGates();
+  // This spec lives directly in apps/api/test (NOT test/support). Only three
+  // parent traversals reach the repo root: test -> api -> apps -> repo.
+  // Verify this before connecting to PostgreSQL, so a bad checkout fails closed.
+  const migrationsDir = join(__dirname, '../../../migrations');
+  if (
+    !existsSync(join(migrationsDir, '0001_foundation.sql')) ||
+    !existsSync(join(migrationsDir, '0027_sales_returns.sql')) ||
+    !existsSync(join(migrationsDir, '0028_purchase_returns.sql'))
+  ) {
+    throw new Error('Issue #44 migrations missing from the pinned backend checkout');
+  }
   admin = new pg.Pool({ connectionString: cfg.adminUrl, max: 1 });
   const info = await admin.query<{ database: string; user_name: string }>(
     'SELECT current_database() AS database, current_user AS user_name',
@@ -352,7 +364,7 @@ beforeAll(async () => {
   if (existing.rows[0]?.count !== '0') {
     throw new Error('Issue #44 DB already contains tables; refusing to touch existing data');
   }
-  await runMigrations(admin, join(__dirname, '../../../../migrations'));
+  await runMigrations(admin, migrationsDir);
   await admin.query(
     "CREATE ROLE " + AUDIT_ROLE +
       " LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD '" +
