@@ -4,7 +4,6 @@
  * @covers endpoint:PATCH /api/v1/money/accounts/:id
  * @covers endpoint:POST /api/v1/money/day/start
  * @covers permission:cash.account.manage
- * @covers workflow:cash-session
  *
  * Intentionally fails on the currently merged baseline until drawer-edit
  * guards serialize with the OPEN physical cash day. Opt in ONLY with a
