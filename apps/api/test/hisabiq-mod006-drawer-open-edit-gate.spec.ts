@@ -71,7 +71,7 @@ const signed = (r: request.Test): request.Test =>
 async function snapshot(): Promise<unknown> {
   return asTenant(pool, tenant.tenantId, async (db) => {
     const account = await db.query(
-      'SELECT id, type, is_drawer, version FROM money_accounts ORDER BY id',
+      'SELECT id, type, is_drawer, version FROM accounts ORDER BY id',
     );
     const days = await db.query(
       'SELECT id, account_id, status, business_date, version FROM cash_sessions ORDER BY id',
