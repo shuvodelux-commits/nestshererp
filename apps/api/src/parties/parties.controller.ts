@@ -28,7 +28,6 @@ import {
   correctOpeningBalanceRequestSchema,
   ErrorCode,
   openingBalanceRequestSchema,
-  partyDetailQuerySchema,
   partyLedgerQuerySchema,
   partyQuerySchema,
   partyRoleSchema,
