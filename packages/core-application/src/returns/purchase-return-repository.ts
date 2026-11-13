@@ -30,6 +30,8 @@ export interface ReturnableBillLineRow {
 
 export interface ReturnableBillRow {
   readonly purchaseId: string;
+  readonly returnValueMinor: number;
+  readonly inventoryMinor: number;
   readonly number: string;
   readonly businessDate: string;
   readonly status: string;
