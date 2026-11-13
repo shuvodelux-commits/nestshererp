@@ -93,10 +93,14 @@ const soldLines = computed(() =>
     productId: line.productId,
     qtySold: line.qtySold,
     qtyReturned: line.qtyReturned,
+    valueReturnedMinor: line.valueReturnedMinor,
     netAmountMinor: line.netAmountMinor,
     // The modal never shows cost and never needs it: zero here changes no
     // figure on this screen, and the server reads the real cost from the lots.
     costMinor: 0,
+    // Cost is deliberately withheld from the cashier preview; the server
+    // reads the real booked COGS and original lot allocation on posting.
+    costReturnedMinor: 0,
   })),
 );
 
@@ -161,7 +165,7 @@ const accountOptions = computed(() =>
 
 const ready = computed(
   () =>
-    returnValueMinor.value > 0 &&
+    totals.value !== null && totals.value.lines.length > 0 &&
     refundMinor.value <= returnValueMinor.value &&
     (refundMinor.value === 0 || accountId.value !== '') &&
     (!needsCustomer.value ||
@@ -499,7 +503,9 @@ onMounted(load);
     :message="
       refundMinor > 0
         ? `${taka(refundMinor)} will be handed back`
-        : 'The value stays on the customer’s account'
+        : returnValueMinor === 0
+          ? 'No money changes hands; the stock return will be recorded'
+          : 'The value stays on the customer’s account'
     "
     confirm-label="Take Return"
     @cancel="confirming = false"
