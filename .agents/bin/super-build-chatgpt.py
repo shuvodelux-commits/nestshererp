@@ -34,6 +34,13 @@ CHECKS = {
     "lint": ["pnpm", "lint"],
     "build": ["pnpm", "build"],
     "boundaries": ["pnpm", "test:boundaries"],
+    # HisabIQ React frontend: fixed npm/package-lock commands, never arbitrary scripts.
+    "npm-install": ["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+    "npm-typecheck": ["node_modules/.bin/tsc", "--noEmit"],
+    "npm-lint": ["npm", "run", "lint"],
+    "npm-ui-contract": ["npm", "run", "check:ui-contract"],
+    "npm-unit": ["npm", "test"],
+    "npm-build": ["npm", "run", "build"],
 }
 
 
@@ -224,11 +231,26 @@ def prepare(args: argparse.Namespace) -> None:
                       "changed_files": paths, "receipt": str(receipt), "native_launcher_ran": False}))
 
 
+def command_for(worktree: Path, check: str) -> list[str]:
+    """Choose only a pinned command under exactly one root lockfile contract."""
+    require(check in CHECKS, "Check not supported; no arbitrary commands or model dispatch")
+    if check == "python-version":
+        return CHECKS[check]
+
+    pnpm_lock = (worktree / "pnpm-lock.yaml").is_file()
+    npm_lock = (worktree / "package-lock.json").is_file()
+    require(pnpm_lock != npm_lock, "Expected exactly one root package manager lockfile")
+    require(
+        npm_lock if check.startswith("npm-") else pnpm_lock,
+        "Verification check does not match the repository package manager",
+    )
+    return CHECKS[check]
+
+
 def verify(args: argparse.Namespace) -> None:
     file, data = read_receipt(args.receipt)
     worktree = ensure_checked_out(data)
-    require(args.check in CHECKS, "Check not supported; no arbitrary commands or model dispatch")
-    command = CHECKS[args.check]
+    command = command_for(worktree, args.check)
     started = time.monotonic()
     result = subprocess.run(command, cwd=worktree, capture_output=True, text=True, check=False)
     duration = round(time.monotonic() - started, 3)
