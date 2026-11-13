@@ -32,7 +32,6 @@ export interface ReturnableLineRow {
 
 export interface ReturnableInvoiceRow {
   readonly saleId: string;
-  readonly returnValueMinor: number;
   readonly number: string;
   readonly businessDate: string;
   readonly status: 'POSTED' | 'VOIDED';
@@ -207,6 +206,7 @@ export interface SalesReturnForReversal {
   readonly id: string;
   /** Source sale whose return history must remain serialized during void. */
   readonly saleId: string;
+  readonly returnValueMinor: number;
   readonly number: string;
   readonly status: string;
   readonly businessDate: string;
