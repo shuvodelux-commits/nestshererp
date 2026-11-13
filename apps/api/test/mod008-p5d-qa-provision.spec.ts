@@ -9,6 +9,7 @@
  * process environment. Never commit that file or echo its contents.
  */
 import { writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import { Permission } from '@sher/core-contracts';
 import { expect, it } from 'vitest';
@@ -29,6 +30,14 @@ function assertDisposableEnvironment(): void {
     'postgres://postgres:dev@127.0.0.1:55681/sher_test',
   );
   expect(process.env.JWT_SECRET).toBe(TEST_JWT_SECRET);
+  // Never reset an arbitrary server on the expected loopback port.
+  // Only the task-labelled, running container may be used.
+  const check = spawnSync('podman', [
+    'inspect', '--format', '{{index .Config.Labels "hisabiq.qa"}}|{{.State.Running}}',
+    'hisabiq-mod008-p5d-pg16',
+  ], { encoding: 'utf8', timeout: 5000 });
+  expect(check.status).toBe(0);
+  expect(check.stdout.trim()).toBe('mod008-p5d-501|true');
 }
 
 async function addNoCostUser(pool: ReturnType<typeof testPool>, tenant: SeededTenant) {
