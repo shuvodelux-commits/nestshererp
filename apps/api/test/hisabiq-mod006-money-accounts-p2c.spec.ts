@@ -137,7 +137,7 @@ describe('P2-C actual authenticated PostgreSQL16 Money Accounts reads',() => {
     await enableBank(a);
     await enableBank(b);
     const cash=await account(a,'Same account name','CASH',12500);
-    const bank=await account(a,'Same account name','BANK',24000);
+    const bank=await account(a,'Distinct bank name','BANK',24000);
     const mobile=await account(a,'Mobile wallet','MFS',3300);
     const lender=await account(a,'Lender loan','LOAN',777700);
     const unknown=await account(a,'Missing opening','CASH',0,true);
@@ -181,6 +181,8 @@ describe('P2-C actual authenticated PostgreSQL16 Money Accounts reads',() => {
     const denied=await get(a,'/api/v1/money/accounts');
     expect(denied.status).toBe(403);
     expect(JSON.stringify(denied.body)).not.toContain('Same account name');
+    // Genuine per-tenant unique-name constraint disallows same-tenant duplicate labels.
+    // Matching labels across DIFFERENT tenants still exercise ULID and RLS isolation.
   },60000);
 
   it('respects source-linked signed journal lines and true keyset cursor pages',async () => {
