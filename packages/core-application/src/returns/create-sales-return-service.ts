@@ -85,6 +85,8 @@ const REFUSALS: Record<SalesReturnRejection, string> = {
   RETURN_QUANTITY_NOT_POSITIVE: 'A returned quantity must be more than zero',
   RETURN_LINE_NOT_ON_INVOICE: 'That item is not on this invoice',
   RETURN_EXCEEDS_SOLD: 'More is coming back than this invoice sold',
+  RETURN_DUPLICATE_LINE: 'The same invoice line was selected twice',
+  RETURN_SOURCE_HISTORY_INVALID: 'This invoice return has an accounting difference; review its history first',
   REFUND_NEGATIVE: 'A refund cannot be less than zero',
   REFUND_EXCEEDS_RETURN: 'The refund is more than the goods coming back are worth',
   RETURN_HAS_NO_VALUE: 'These goods are worth nothing to return',
@@ -141,10 +143,19 @@ export class CreateSalesReturnService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say why this is being cancelled');
       }
 
-      const original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      let original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
       if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That return was not found');
       if (original.status !== 'POSTED') {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'This return has already been cancelled');
+      }
+      // A void changes cumulative booked values. Serialize it with creates on
+      // the same source invoice, then re-read the original return under that lock.
+      if (!(await this.returns.lockSale(tx, ctx, original.saleId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Invoice not found');
+      }
+      original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      if (original === null || original.status !== 'POSTED') {
+        throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'This return changed; reload and retry');
       }
 
       const today = this.clock.businessDate(ctx.timezone);
@@ -261,7 +272,10 @@ export class CreateSalesReturnService {
         amountMinor: -line.amountMinor,
         partyId: line.partyId,
       }));
-      if (rejectEntry({ lines: reversalLines }) !== null) {
+      if (
+        (reversalLines.length === 0 && (original.returnValueMinor !== 0 || original.cogsMinor !== 0)) ||
+        (reversalLines.length > 0 && rejectEntry({ lines: reversalLines }) !== null)
+      ) {
         throw new AppError(ErrorCode.INTERNAL_ERROR, 'This return cannot be reversed cleanly');
       }
 
@@ -395,6 +409,8 @@ export class CreateSalesReturnService {
         productId: line.productId,
         qtySold: line.qtySold,
         qtyReturned: line.qtyReturned,
+        valueReturnedMinor: line.valueReturnedMinor,
+        costReturnedMinor: line.costReturnedMinor,
         netAmountMinor: line.netAmountMinor,
         costMinor: line.costMinor,
       }));
@@ -579,6 +595,14 @@ export class CreateSalesReturnService {
         }
         if (left !== 0) {
           throw new AppError(ErrorCode.VALIDATION_FAILED, 'More is being returned than remains from this line');
+        }
+        // The financial cost reversal is sourced from actual consumption origins,
+        // not the estimated preview. It must never exceed remaining booked COGS.
+        if (lineCostMinor < 0 || lineCostMinor > source.costMinor - source.costReturnedMinor) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This invoice return cost needs accounting review before more goods can be returned',
+          );
         }
 
         exactReturnCostMinor += lineCostMinor;
