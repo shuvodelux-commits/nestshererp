@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   IMPORT_COLUMNS,
   missingColumns,
@@ -170,7 +172,18 @@ export class ImportDataService {
    */
   async commit(command: CommitImportCommand): Promise<ImportResultResponse> {
     const { ctx, type } = command;
-    const fingerprint = JSON.stringify([type, command.csv.length]);
+    // Import files may be up to two million characters long. A length-only
+    // fingerprint accepts different files of the same size as a successful
+    // replay, while retaining the entire CSV in the idempotency table is
+    // wasteful. Hash the exact type + original CSV string, not parsed rows.
+    //
+    // The namespace/version intentionally never matches historical stored
+    // [type, csv.length] fingerprints. Those entries cannot prove the original
+    // bytes and must fail closed with IDEMPOTENCY_KEY_REUSED rather than replay
+    // a possibly unrelated success.
+    const fingerprint = `import:sha256:v1:${createHash('sha256')
+      .update(JSON.stringify([type, command.csv]), 'utf8')
+      .digest('hex')}`;
 
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, IMPORT_PERMISSIONS[type]);
