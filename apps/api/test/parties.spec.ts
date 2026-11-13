@@ -613,6 +613,52 @@ describe('opening balances and ledgers', () => {
     expect(lines.rows.reduce((sum, row) => sum + row.amount_minor, 0)).toBe(0);
   });
 
+  it('isolates trading ledgers by requested role for a multi-role party', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(
+      minimalCustomer({
+        name: 'Rahim Trading',
+        roles: ['CUSTOMER', 'SUPPLIER'],
+        opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 250_000, businessDate },
+      }),
+    ).expect(201);
+    const party = created.body.data as PartyBody;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/parties/${party.id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 150_000, businessDate })
+      .expect(201);
+
+    // A multi-role party must not silently combine AR and AP or let one
+    // role's permission authorize the other role's journal source details.
+    const ambiguous = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(ambiguous.status).toBe(400);
+
+    const customer = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(customer.body.rows.map((row: { account: string }) => row.account)).toEqual(['AR']);
+    expect(customer.body.closingBalance.netMinor).toBe(250_000);
+
+    const supplier = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supplier.body.rows.map((row: { account: string }) => row.account)).toEqual(['AP']);
+    expect(supplier.body.closingBalance.netMinor).toBe(-150_000);
+
+    const customerCursor = customer.body.rows[0].journalLineId as string;
+    await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=SUPPLIER&cursor=${customerCursor}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+  });
+
   it('shows the same figure on the list and in the ledger', async () => {
     const created = await createParty(
       minimalCustomer({
