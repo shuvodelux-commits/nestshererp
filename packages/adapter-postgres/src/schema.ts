@@ -1008,7 +1008,7 @@ export const purchaseDrafts = pgTable('purchase_drafts', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   operationId: char('create_operation_id', { length: 26 }),
-  createFingerprint: text('create_fingerprint'),
+  createFingerprint: char('create_fingerprint', { length: 64 }),
   label: text('label').notNull(),
   supplierName: text('supplier_name'),
   itemCount: integer('item_count').notNull(),
