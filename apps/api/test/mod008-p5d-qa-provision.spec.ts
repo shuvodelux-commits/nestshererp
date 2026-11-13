@@ -60,7 +60,7 @@ async function addNoCostUser(pool: ReturnType<typeof testPool>, tenant: SeededTe
   return { ...tenant, roleId, userId };
 }
 
-it('provisions two real disposable tenants and a cost-redacted same-tenant user', async () => {
+it.skipIf(process.env.HISABIQ_P5D_DISPOSABLE_ACK !== 'isolated-pg16-only')('provisions two real disposable tenants and a cost-redacted same-tenant user', async () => {
   assertDisposableEnvironment();
   const pool = testPool();
   try {
