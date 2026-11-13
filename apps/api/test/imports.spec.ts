@@ -269,6 +269,31 @@ describe('importing products', () => {
     expect(await products()).toHaveLength(2);
   });
 
+  // C003-01: two different files can have identical character counts. The
+  // operation id must never return success for a different import payload.
+  it('rejects a same-length changed CSV under an already committed import id', async () => {
+    const operationId = Ulid.generate(clock);
+    const changedFile = file.replace('PVC Pipe 1 inch', 'PVC Tube 1 inch');
+    expect(changedFile).not.toBe(file);
+    expect(changedFile.length).toBe(file.length);
+
+    const original = await commit('PRODUCTS', file, operationId);
+    expect(original.status).toBe(201);
+
+    const rejected = await commit('PRODUCTS', changedFile, operationId);
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect((await products()).map((row) => row.name)).toEqual(
+      expect.arrayContaining(['PVC Pipe 1 inch', 'Cement Bag']),
+    );
+    expect((await products()).some((row) => row.name === 'PVC Tube 1 inch')).toBe(false);
+
+    const retry = await commit('PRODUCTS', file, operationId);
+    expect(retry.status).toBe(201);
+    expect(retry.body.data).toEqual(original.body.data);
+    expect(await products()).toHaveLength(2);
+  });
+
   it('refuses a caller who may not create products, before reading the file', async () => {
     const readOnly = await seedTenant(pool, {
       name: 'Onboarding Shop Reader',
