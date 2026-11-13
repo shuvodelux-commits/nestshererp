@@ -2137,7 +2137,7 @@ describe('QA120 P2 — historical Party opening and directory regression', () =>
     const named = await listParties('?role=CUSTOMER&search=alpha').expect(200);
     expect(named.body.data.map((item: { name: string }) => item.name))
       .toEqual(['Alpha Electrical']);
-    const numbered = await listParties('?role=CUSTOMER&search=12002').expect(200);
+    const numbered = await listParties('?role=CUSTOMER&search=20002').expect(200);
     expect(numbered.body.data.map((item: { name: string }) => item.name))
       .toEqual(['Bravo Electrical']);
     const active = await listParties('?role=CUSTOMER&status=ACTIVE').expect(200);
