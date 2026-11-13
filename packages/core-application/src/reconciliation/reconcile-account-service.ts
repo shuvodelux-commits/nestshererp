@@ -117,12 +117,25 @@ export class ReconcileAccountService {
 
   async start(command: StartReconciliationCommand): Promise<ReconciliationWorkspaceResponse> {
     const { ctx } = command;
+    const fingerprint = JSON.stringify({
+      accountId: command.accountId,
+      fromDate: command.fromDate,
+      toDate: command.toDate,
+    });
 
     return this.uow.run(ctx, async (tx) => {
       await this.accessControl.require(tx, ctx, Permission.RECONCILIATION_PERFORM);
 
       const replay = await this.idempotency.find(tx, ctx, command.operationId);
-      if (replay !== null) return replay.response as ReconciliationWorkspaceResponse;
+      if (replay !== null) {
+        if (replay.requestFingerprint !== fingerprint) {
+          throw new AppError(
+            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            'This operation id was already used for a different reconciliation',
+          );
+        }
+        return replay.response as ReconciliationWorkspaceResponse;
+      }
 
       if (command.fromDate > command.toDate) {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'The last day cannot be before the first');
@@ -174,11 +187,7 @@ export class ReconcileAccountService {
       const workspace = await this.build(tx, ctx, id);
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
-        requestFingerprint: JSON.stringify({
-          accountId: command.accountId,
-          fromDate: command.fromDate,
-          toDate: command.toDate,
-        }),
+        requestFingerprint: fingerprint,
         response: workspace,
       });
 
