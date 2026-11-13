@@ -90,7 +90,6 @@ it.skipIf(process.env.HISABIQ_P5D_DISPOSABLE_ACK !== 'isolated-pg16-only')('prov
     await writeFile(output, contents, { mode: 0o600, flag: 'wx' });
     expect((await asTenant(pool, a.tenantId, client =>
       client.query('SELECT count(*)::int AS total FROM users'))).rows[0]?.total).toBe(2);
-    console.log('P5D signed disposable QA identities stored in protected task-only file');
   } finally {
     await pool.end();
   }
