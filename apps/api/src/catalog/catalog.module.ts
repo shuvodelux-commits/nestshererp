@@ -4,6 +4,7 @@ import type {
   AuditWriter,
   CatalogRepository,
   CatalogMetadataV1Repository,
+  CatalogMetadataV1CreationRepository,
   IdempotencyStore,
   InventoryRepository,
   NumberingService,
@@ -12,7 +13,7 @@ import type {
   SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
-import { ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService } from '@sher/core-application';
+import { CreateCatalogMetadataV1Service, ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
 import {
@@ -20,6 +21,7 @@ import {
   AUDIT_WRITER,
   CATALOG_REPOSITORY,
   CATALOG_METADATA_V1_REPOSITORY,
+  CATALOG_METADATA_V1_CREATION_REPOSITORY,
   CLOCK,
   IDEMPOTENCY_STORE,
   INVENTORY_REPOSITORY,
@@ -32,11 +34,37 @@ import {
 import { CatalogController } from './catalog.controller';
 import { CatalogMetadataV1Controller } from './catalog-metadata-v1.controller';
 import { ProductsController } from './products.controller';
-import { MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
+import { CREATE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
 
 @Module({
   controllers: [CatalogController, CatalogMetadataV1Controller, ProductsController],
   providers: [
+    {
+      provide: CREATE_CATALOG_METADATA_V1_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        catalog: CatalogMetadataV1Repository,
+        creation: CatalogMetadataV1CreationRepository,
+        settings: SettingsRepository,
+        audit: AuditWriter,
+        outbox: Outbox,
+        clock: Clock,
+      ): CreateCatalogMetadataV1Service =>
+        new CreateCatalogMetadataV1Service(
+          uow, accessControl, catalog, creation, settings, audit, outbox, clock,
+        ),
+      inject: [
+        UNIT_OF_WORK,
+        ACCESS_CONTROL,
+        CATALOG_METADATA_V1_REPOSITORY,
+        CATALOG_METADATA_V1_CREATION_REPOSITORY,
+        SETTINGS_REPOSITORY,
+        AUDIT_WRITER,
+        OUTBOX,
+        CLOCK,
+      ],
+    },
     {
       provide: MANAGE_CATALOG_METADATA_V1_SERVICE,
       useFactory: (

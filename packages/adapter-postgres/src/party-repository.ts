@@ -232,7 +232,10 @@ export class PostgresPartyRepository implements PartyRepository {
         total: sql<number>`count(*)::int`,
         active: sql<number>`count(*) FILTER (WHERE ${parties.status} = 'ACTIVE')::int`,
         inactive: sql<number>`count(*) FILTER (WHERE ${parties.status} = 'INACTIVE')::int`,
-        ungrouped: sql<number>`count(*) FILTER (WHERE ${parties.customerGroupId} IS NULL)::int`,
+        // Customer-only: do not let Supplier/Vendor summarize the hidden group membership.
+        ungrouped: filter.role === 'CUSTOMER'
+          ? sql<number>`count(*) FILTER (WHERE ${parties.customerGroupId} IS NULL)::int`
+          : sql<null>`NULL::integer`,
         /*
          * The money tiles, from the same query and the same filter as the rows
          * (§2.7.I). Summed as two one-sided totals rather than one net, because
@@ -262,7 +265,7 @@ export class PostgresPartyRepository implements PartyRepository {
       total: counts?.total ?? 0,
       active: counts?.active ?? 0,
       inactive: counts?.inactive ?? 0,
-      ungrouped: counts?.ungrouped ?? 0,
+      ungrouped: counts?.ungrouped ?? (filter.role === 'CUSTOMER' ? 0 : null),
       totalOutstandingMinor: counts?.totalOutstandingMinor ?? 0,
       totalAdvanceMinor: counts?.totalAdvanceMinor ?? 0,
       overCreditLimit: counts?.overCreditLimit ?? 0,
