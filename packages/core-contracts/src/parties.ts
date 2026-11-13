@@ -150,9 +150,9 @@ export const partyResponseSchema = z
      * see"). Nobody should have to open a ledger to find out whether a customer
      * owes money — that is the one fact a counter actually needs from a list.
      *
-     * Not a stored column: this is the INV-06 rollup of their journal lines,
-     * computed in the same query as the row, so the list and the ledger cannot
-     * disagree. See `balanceSchema` for what the three figures mean.
+     * Not a stored column: list/detail reads use only the requested trading
+     * relationship's journal controls, matching its role-scoped ledger. Internal
+     * write/guard projections may separately inspect party-wide history. See `balanceSchema` for what the three figures mean.
      */
     balance: balanceSchema,
     /**

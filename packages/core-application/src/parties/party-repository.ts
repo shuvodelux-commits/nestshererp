@@ -26,9 +26,10 @@ export interface PartyRow {
   readonly isSystemReserved: boolean;
   readonly version: number;
   /**
-   * The INV-06 rollup of this party's journal lines, computed in the same query
-   * as the row (§2.7.I) so a list column and the ledger under it cannot
-   * disagree. Signed: positive means the party owes the shop.
+   * The journal rollup, computed in SQL rather than cached. For list reads the
+   * selected role determines its control-account scope; internal single-party
+   * queries may retain full historical aggregation for write/guard functions.
+   * Signed: positive means the party owes the shop.
    *
    * Not a stored column — see `migrations/0015_party_openings.sql` for why a
    * cached balance is refused.
@@ -216,6 +217,8 @@ export interface PartyRepository {
   count(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<PartyCounts>;
 
   findById(tx: Tx, ctx: TenantContext, id: string): Promise<PartyRow | null>;
+  /** A single relationship's journal control balance; never party-wide netting. */
+  getRoleBalance(tx: Tx, ctx: TenantContext, partyId: string, role: PartyRole): Promise<number>;
   /**
    * The shop's system walk-in customer, seeded with the tenant (§5.6, §5.8).
    *

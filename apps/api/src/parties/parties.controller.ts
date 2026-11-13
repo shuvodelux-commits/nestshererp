@@ -66,8 +66,14 @@ export class PartiesController {
   }
 
   @Get(':id')
-  async get(@Param('id') id: string, @Ctx() ctx: TenantContext): Promise<{ data: PartyResponse }> {
-    return { data: await this.parties.get({ ctx, partyId: id }) };
+  async get(
+    @Param('id') id: string,
+    @Query() query: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: PartyResponse }> {
+    const parsed = partyQuerySchema.pick({ role: true }).partial().safeParse(query);
+    if (!parsed.success) throw invalidBody(parsed.error.issues);
+    return { data: await this.parties.get({ ctx, partyId: id, ...parsed.data }) };
   }
 
   /**
