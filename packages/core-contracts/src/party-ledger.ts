@@ -54,7 +54,7 @@ export const partyLedgerResponseSchema = z
      */
     openingBalance: balanceSchema,
     rows: z.array(partyLedgerRowSchema),
-    /** The same figure the parties list shows for this party. */
+    /** Current balance for only the requested trading role, not the legacy combined list total. */
     closingBalance: balanceSchema,
     totalDebitMinor: z.number().int().min(0),
     totalCreditMinor: z.number().int().min(0),
