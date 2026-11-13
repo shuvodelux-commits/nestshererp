@@ -1548,3 +1548,103 @@ describe('T09B — Party setup Customer-group catalog authority', () => {
     expect(unchangedB.body.data.groups).toEqual([groupB]);
   });
 });
+
+
+/**
+ * MOD-004 T09C-0: a read of one trading relationship is not authority to
+ * discard a shared Party whose *other* relationship has posted a journal.
+ * This fixes the accounting safety contract in a test; it does not decide
+ * who may see NID/notes or the party-global hasLedgerEntries wire flag.
+ */
+describe('T09C-0 — party-global delete guard with cross-role history', () => {
+  it('preserves Supplier-only postings after Customer-only delete request and still deletes genuinely unused parties', async () => {
+    const date = clock.businessDate('Asia/Dhaka');
+    const dual = await createParty(minimalCustomer({
+      name: 'T09C Shared Customer Supplier',
+      roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const sharedId = (dual.body.data as PartyBody).id;
+
+    // Posting through the *existing* source-linked historical-opening writer,
+    // not by constructing an orphan journal row in SQL.
+    const posted = await request(app.getHttpServer())
+      .post('/api/v1/parties/' + sharedId + '/opening')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        role: 'SUPPLIER',
+        direction: 'PAYABLE',
+        amountMinor: 315_000,
+        businessDate: date,
+      })
+      .expect(201);
+    expect(posted.body.data.amountMinor).toBe(315_000);
+    expect(posted.body.data.role).toBe('SUPPLIER');
+
+    const unused = await createParty(minimalCustomer({
+      name: 'T09C Unused Customer',
+      phone: '01899887766',
+    })).expect(201);
+    const unusedId = (unused.body.data as PartyBody).id;
+
+    // Simulate a cashier who may view/deactivate a Customer but cannot view,
+    // edit, or deactivate the Supplier relationship sharing the identity.
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code NOT IN ($3, $4)',
+        [tenant.tenantId, tenant.roleId, Permission.CUSTOMER_VIEW, Permission.CUSTOMER_DEACTIVATE],
+      );
+    });
+
+    const customer = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + sharedId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(customer.body.data.roles).toEqual(['CUSTOMER']);
+    expect(customer.body.data.balance.netMinor).toBe(0);
+    const customerOpening = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + sharedId + '/opening?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(customerOpening.body.data).toBeNull();
+    await request(app.getHttpServer())
+      .get('/api/v1/parties/' + sharedId + '/opening?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(403);
+    await listParties('?role=SUPPLIER').expect(403);
+
+    // The global delete guard must *not* use the selected Customer's zero
+    // balance or its absent opening as proof the shared Party is unused.
+    const refused = await request(app.getHttpServer())
+      .delete('/api/v1/parties/' + sharedId)
+      .set('Authorization', 'Bearer ' + token)
+      .expect(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+
+    const rows = await asTenant(pool, tenant.tenantId, (client) => client.query<{
+      parties: number; supplierLines: number;
+    }>(
+      'SELECT (SELECT count(*)::int FROM parties WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL) AS parties, ' +
+      '(SELECT count(*)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = $3) AS "supplierLines"',
+      [tenant.tenantId, sharedId, 'AP'],
+    ));
+    expect(rows.rows[0]).toEqual({ parties: 1, supplierLines: 1 });
+
+    // The same limited permission *does* allow removal of a truly unused,
+    // non-reserved Customer. Refusal above was about history, not blanket auth.
+    await request(app.getHttpServer())
+      .delete('/api/v1/parties/' + unusedId)
+      .set('Authorization', 'Bearer ' + token)
+      .expect(204);
+    await request(app.getHttpServer())
+      .get('/api/v1/parties/' + unusedId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(404);
+
+    const stillHere = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + sharedId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(stillHere.body.data.id).toBe(sharedId);
+  });
+});
