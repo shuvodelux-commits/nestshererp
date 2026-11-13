@@ -29,6 +29,7 @@ ISSUE_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/issues/([1-9][0-9]*
 VERSION = 1
 CHECKS = {
     "python-version": [sys.executable, "--version"],
+    "install": ["pnpm", "install", "--frozen-lockfile", "--offline", "--ignore-scripts"],
     "typecheck": ["pnpm", "typecheck"],
     "lint": ["pnpm", "lint"],
     "build": ["pnpm", "build"],
