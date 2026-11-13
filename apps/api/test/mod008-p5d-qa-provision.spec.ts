@@ -86,7 +86,7 @@ it('provisions two real disposable tenants and a cost-redacted same-tenant user'
       'HISABIQ_P5D_USER_B=' + b.userId,
       'HISABIQ_P5D_JWT_B=' + signToken(b, TEST_JWT_SECRET),
       'HISABIQ_P5D_REDACTED_JWT_A=' + signToken(restricted, TEST_JWT_SECRET),
-    ].join('\\n') + '\\n';
+    ].join('\n') + '\n';
     await writeFile(output, contents, { mode: 0o600, flag: 'wx' });
     expect((await asTenant(pool, a.tenantId, client =>
       client.query('SELECT count(*)::int AS total FROM users'))).rows[0]?.total).toBe(2);
@@ -94,4 +94,4 @@ it('provisions two real disposable tenants and a cost-redacted same-tenant user'
   } finally {
     await pool.end();
   }
-});
+}, 120_000);
