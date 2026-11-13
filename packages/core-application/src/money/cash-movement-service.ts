@@ -10,6 +10,8 @@ import type { Clock } from '@sher/shared-utils';
 import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
 import { reverseMoneyDocument } from '../corrections/reverse-money-document';
 import { entryModeFor } from '../notes/create-note-service';
+import { lockCashSessionPolicy } from '../settings/manage-settings-service';
+import type { SettingsRepository } from '../settings/settings-repository';
 import { requireLoanVisibility } from './loan-visibility';
 import type { Outbox } from '../ports/outbox';
 import type { AccessControl } from '../ports/access-control';
@@ -120,6 +122,7 @@ export class CashMovementService {
     private readonly uow: UnitOfWork,
     private readonly accessControl: AccessControl,
     private readonly money: MoneyRepository,
+    private readonly settings: SettingsRepository,
     private readonly numbering: NumberingService,
     private readonly periods: PeriodGuard,
     private readonly idempotency: IdempotencyStore,
@@ -172,20 +175,12 @@ export class CashMovementService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
       }
 
-      /*
-       * §5.16.1: with the drawer tracked, cash cannot move on a day nobody has
-       * opened — a movement with no session is a movement no count will ever
-       * see, and the day it belongs to would close as a shortage of exactly
-       * this amount.
-       */
-      const session = await this.money.findOpenSession(tx, ctx);
-      const touchesDrawer = from.isDrawer || to.isDrawer;
-      if (touchesDrawer && (session === null || session.businessDate !== command.businessDate)) {
-        throw new AppError(
-          ErrorCode.VALIDATION_FAILED,
-          'Start the day before moving cash in or out of the drawer',
-        );
-      }
+      // Session enforcement is tenant-configured, not a hard requirement of CASH.
+      // Resolve from the locked server setting in the same money-posting UoW.
+      const sessionId = await this.requireDrawerSession(
+        tx, ctx, command.businessDate, from.isDrawer || to.isDrawer,
+        'Start the day before moving cash in or out of the drawer',
+      );
 
       const posting = cashMovementPosting({
         kind: command.kind,
@@ -211,7 +206,7 @@ export class CashMovementService {
         amountMinor: command.amountMinor,
         reference: command.reference,
         note: command.note,
-        sessionId: touchesDrawer ? (session?.id ?? null) : null,
+        sessionId,
         businessDate: command.businessDate,
         entryMode: entryModeFor(command.businessDate, today),
         operationId: movementId,
@@ -279,8 +274,8 @@ export class CashMovementService {
    * which is required, because a drawer that changed for no stated reason is
    * exactly what a day-end count cannot explain.
    *
-   * A movement that touched the drawer can only be undone while a day is open,
-   * for the same reason it could only be recorded while one was: cash that
+   * When session tracking is ON, a movement that touched the drawer can
+   * only be undone while an eligible day is open: cash that
    * moves on a day nobody counted is cash no count will ever see (§5.16.1).
    */
   async void(command: VoidMovementCommand): Promise<void> {
@@ -343,6 +338,9 @@ export class CashMovementService {
        */
       await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[command.kind]);
       await this.requireKindPermission(tx, ctx, command.movementId);
+      // Reversing the original drawer movement is also a real cash movement.
+      // It must not be used to bypass ON mode when a correction changes accounts.
+      await this.assertDrawerOpenFor(tx, ctx, command.movementId);
 
       const posted = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', command.movementId);
       if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
@@ -362,6 +360,23 @@ export class CashMovementService {
             : 'A correction dated in the past needs a reason',
         );
       }
+
+      const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
+      const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
+      const rejection = rejectCashMovement({
+        kind: command.kind,
+        fromAccount: from.code as never,
+        toAccount: to.code as never,
+        amountMinor: command.amountMinor,
+      });
+      if (rejection !== null) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
+      }
+
+      const sessionId = await this.requireDrawerSession(
+        tx, ctx, placement.businessDate, from.isDrawer || to.isDrawer,
+        'Start the day before correcting cash in or out of the drawer',
+      );
 
       await reverseMoneyDocument(
         {
@@ -386,27 +401,6 @@ export class CashMovementService {
         },
       );
 
-      const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
-      const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
-      const rejection = rejectCashMovement({
-        kind: command.kind,
-        fromAccount: from.code as never,
-        toAccount: to.code as never,
-        amountMinor: command.amountMinor,
-      });
-      if (rejection !== null) {
-        throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
-      }
-
-      const session = await this.money.findOpenSession(tx, ctx);
-      const touchesDrawer = from.isDrawer || to.isDrawer;
-      if (touchesDrawer && (session === null || session.businessDate !== placement.businessDate)) {
-        throw new AppError(
-          ErrorCode.VALIDATION_FAILED,
-          'Start the day before correcting cash in or out of the drawer',
-        );
-      }
-
       const posting = cashMovementPosting({
         kind: command.kind,
         fromAccount: from.code as never,
@@ -424,7 +418,7 @@ export class CashMovementService {
         amountMinor: command.amountMinor,
         reference: command.reference,
         note: command.note,
-        sessionId: touchesDrawer ? (session?.id ?? null) : null,
+        sessionId,
         businessDate: placement.businessDate,
         entryMode: placement.entryMode,
         correctionReason: reason === '' ? null : reason,
@@ -500,8 +494,8 @@ export class CashMovementService {
   }
 
   /**
-   * Undoing drawer cash needs an open day, exactly as recording it did — the
-   * money comes back into a till somebody has to count tonight.
+   * Undoing drawer cash needs an eligible open day when the feature is ON.
+   * OFF mode preserves the exact reversal journal without a physical day.
    */
   private async assertDrawerOpenFor(
     tx: Tx,
@@ -510,16 +504,51 @@ export class CashMovementService {
   ): Promise<void> {
     const posted = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', movementId);
     if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
-    const touchesDrawer = posted.journalLines.some((line) => line.account.startsWith('CASH:'));
-    if (!touchesDrawer) return;
-
-    const session = await this.money.findOpenSession(tx, ctx);
-    if (session === null) {
-      throw new AppError(
-        ErrorCode.VALIDATION_FAILED,
+    // A CASH-prefixed journal line is not necessarily the tracked drawer:
+    // ordinary non-drawer CASH accounts must remain session-independent.
+    const cashCodes = new Set(posted.journalLines
+      .map((line) => line.account)
+      .filter((code) => code.startsWith('CASH:')));
+    for (const code of cashCodes) {
+      const account = await this.money.findAccountById(tx, ctx, code.slice('CASH:'.length));
+      if (account === null) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED,
+          'The original cash account is unavailable; review this correction');
+      }
+      if (account.type !== 'CASH' || !account.isDrawer) continue;
+      await this.requireDrawerSession(
+        tx, ctx, this.clock.businessDate(ctx.timezone), true,
         'Start the day before cancelling cash in or out of the drawer',
       );
+      return;
     }
+  }
+
+  /**
+   * Read the effective per-tenant policy under the same tenant row lock used
+   * by Settings and Start/Reopen Day. The lock is held through the UoW commit,
+   * preventing a session-mode switch racing an accounting write.
+   *
+   * Only the verified designated drawer is session-controlled. OFF-mode writes
+   * still have a full journal and audit trail, but carry no physical session.
+   */
+  private async requireDrawerSession(
+    tx: Tx,
+    ctx: TenantContext,
+    businessDate: string,
+    touchesDrawer: boolean,
+    refusal: string,
+  ): Promise<string | null> {
+    if (!touchesDrawer) return null;
+    const policy = await lockCashSessionPolicy(tx, ctx, this.settings, this.clock);
+    if (!policy.enabled) return null;
+    const session = await this.money.findOpenSession(tx, policy.ctx);
+    if (session === null ||
+        session.businessDate !== businessDate ||
+        businessDate !== policy.businessDate) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, refusal);
+    }
+    return session.id;
   }
 
   /**
