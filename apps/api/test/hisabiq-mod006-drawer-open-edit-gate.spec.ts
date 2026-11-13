@@ -77,7 +77,7 @@ async function snapshot(): Promise<unknown> {
       'SELECT id, account_id, status, business_date, version FROM cash_sessions ORDER BY id',
     );
     const entries = await db.query(
-      'SELECT id, source_type, business_date FROM journal_entries ORDER BY id',
+      'SELECT id, source_document_type, business_date FROM journal_entries ORDER BY id',
     );
     const lines = await db.query(
       'SELECT id, account_code, amount_minor FROM journal_lines ORDER BY id',
