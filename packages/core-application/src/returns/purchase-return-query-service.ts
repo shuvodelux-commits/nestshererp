@@ -44,6 +44,8 @@ export class PurchaseReturnQueryService {
           lotId: line.lotId,
           qtyReceived: line.qtyReceived,
           qtyReturned: line.qtyReturned,
+          valueReturnedMinor: line.valueReturnedMinor,
+          costReturnedMinor: line.costReturnedMinor,
           qtyReturnable: Math.max(line.qtyReceived - line.qtyReturned, 0),
           // What is actually on the shelf. The modal caps the box at the
           // smaller of the two, so nobody types a number the server will refuse.
