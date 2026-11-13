@@ -238,6 +238,72 @@ describe('creating a product', () => {
     expect(list.body.summary.total).toBe(1);
   });
 
+  it('never leaks cached create costs after the original user loses COST_VIEW', async () => {
+    const operationId = Ulid.generate(clock);
+    const body = minimalProduct();
+
+    const original = await createProduct(body, operationId);
+    expect(original.status).toBe(201);
+    expect((original.body.data as ProductBody).purchasePriceMinor).toBe(10_000);
+    expect(original.body.data).toHaveProperty('stockValueMinor');
+
+    // JWT remains valid with PRODUCT_CREATE; COST_VIEW was revoked in the DB.
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.COST_VIEW],
+      );
+    });
+
+    const replay = await createProduct(body, operationId);
+    expect(replay.status).toBe(201);
+    expect((replay.body.data as ProductBody).id).toBe((original.body.data as ProductBody).id);
+    expect(Object.hasOwn(replay.body.data as Record<string, unknown>, 'purchasePriceMinor')).toBe(false);
+    expect(Object.hasOwn(replay.body.data as Record<string, unknown>, 'stockValueMinor')).toBe(false);
+    expect((await listProducts()).body.summary.total).toBe(1);
+
+    const mismatched = await createProduct(minimalProduct({ name: 'Different' }), operationId);
+    expect(mismatched.status).toBe(409);
+    expect(mismatched.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('does not replay creator cost to a second same-tenant cost-blind user', async () => {
+    const operationId = Ulid.generate(clock);
+    const body = minimalProduct();
+    const original = await createProduct(body, operationId);
+    expect(original.status).toBe(201);
+    expect((original.body.data as ProductBody).purchasePriceMinor).toBe(10_000);
+
+    const roleId = Ulid.generate(clock);
+    const userId = Ulid.generate(clock);
+    const now = clock.now();
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'INSERT INTO roles (id, tenant_id, code, name, is_system, created_at, updated_at, created_by, updated_by, version) ' +
+        "VALUES ($1, $2, 'COST_BLIND_TEST', 'Cost-blind creator', FALSE, $3, $3, $4, $4, 1)",
+        [roleId, tenant.tenantId, now, tenant.userId],
+      );
+      await client.query(
+        'INSERT INTO users (id, tenant_id, role_id, email, display_name, created_at, updated_at, created_by, updated_by, version) ' +
+        "VALUES ($1, $2, $3, $4, 'Limited creator', $5, $5, $6, $6, 1)",
+        [userId, tenant.tenantId, roleId, 'limited@security.test', now, tenant.userId],
+      );
+      await client.query(
+        'INSERT INTO role_permissions (id, tenant_id, role_id, permission_code, created_at, updated_at, created_by, updated_by, version) ' +
+        'VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)',
+        [Ulid.generate(clock), tenant.tenantId, roleId, Permission.PRODUCT_CREATE, now, tenant.userId],
+      );
+    });
+
+    const limitedToken = signToken({ ...tenant, roleId, userId }, TEST_JWT_SECRET);
+    const replay = await createProduct(body, operationId, limitedToken);
+    expect(replay.status).toBe(201);
+    expect((replay.body.data as ProductBody).id).toBe((original.body.data as ProductBody).id);
+    expect(Object.hasOwn(replay.body.data as Record<string, unknown>, 'purchasePriceMinor')).toBe(false);
+    expect(Object.hasOwn(replay.body.data as Record<string, unknown>, 'stockValueMinor')).toBe(false);
+    expect((await listProducts()).body.summary.total).toBe(1);
+  });
+
   it('refuses the same key with a different product', async () => {
     const operationId = Ulid.generate(clock);
     await createProduct(minimalProduct(), operationId);
