@@ -3582,7 +3582,7 @@
 | GET | `/api/v1/quotations` | QuotationsController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | GET | `/api/v1/quotations/:id` | QuotationsController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | POST | `/api/v1/quotations` | QuotationsController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
-| GET | `/api/v1/sales/pos-products` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/sales/pos-products` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | GET | `/api/v1/sales/invoice-settings` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | PUT | `/api/v1/sales/invoice-settings` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | GET | `/api/v1/sales/invoice-logo` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |

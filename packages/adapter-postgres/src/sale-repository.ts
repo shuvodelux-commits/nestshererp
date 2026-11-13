@@ -1270,43 +1270,106 @@ export class PostgresSaleRepository implements SaleRepository {
    * price when one applies. Stock comes from `product_cost_state`, which is the
    * same cache every other stock screen reads.
    */
+
+  /**
+   * Legacy ID pagination is preserved. GLOBAL_V2 alone uses SQL-wide
+   * stock filtering, global ranking and a stable rank+id keyset before LIMIT.
+   */
   async listPosProducts(
     tx: Tx,
     ctx: TenantContext,
     filter: PosProductFilter,
   ): Promise<readonly PosProductRow[]> {
     const search = filter.search?.trim() ?? '';
-    const conditions = [
+    const tokens = searchTokens(search);
+    const ranked = filter.rankingMode === 'GLOBAL_V2';
+    const conditions: SQL[] = [
       eq(products.tenantId, ctx.tenantId),
       isNull(products.deletedAt),
       eq(products.status, 'ACTIVE'),
     ];
     if (filter.barcode !== null) conditions.push(eq(products.barcode, filter.barcode));
-    if (search !== '') {
-      /*
-       * Every fragment, anywhere, in any order (migration 0026) — the counter
-       * types `sam a15` and `a15 sam` and means the same product. Ranking is
-       * the use case's, so the same domain rule orders this list and the one
-       * the browser narrows while the request is in flight.
-       */
-      for (const token of searchTokens(search)) {
-        conditions.push(sql`${products.searchText} LIKE ${`%${token}%`}`);
-      }
-    }
+    for (const token of tokens) conditions.push(sql`${products.searchText} LIKE ${'%' + token + '%'}`);
     if (filter.categoryId !== null) conditions.push(eq(products.categoryId, filter.categoryId));
     if (filter.brandId !== null) conditions.push(eq(products.brandId, filter.brandId));
-    if (filter.cursor !== null) conditions.push(sql`${products.id} > ${filter.cursor}`);
+    if (!ranked && filter.cursor !== null) conditions.push(sql`${products.id} > ${filter.cursor}`);
+    if (ranked && filter.anchorId !== null && filter.anchorId !== undefined) conditions.push(eq(products.id, filter.anchorId));
 
-    const groupPrice =
-      filter.customerGroupId === null
-        ? sql<number | null>`NULL::bigint`
-        : sql<number | null>`(
-            SELECT pgp.price_minor FROM product_group_prices pgp
-             WHERE pgp.tenant_id = ${ctx.tenantId}
-               AND pgp.product_id = ${products.id}
-               AND pgp.customer_group_id = ${filter.customerGroupId}
-             LIMIT 1
-          )`;
+    const groupPrice = filter.customerGroupId === null
+      ? sql<number | null>`NULL::bigint`
+      : sql<number | null>`(
+          SELECT pgp.price_minor FROM product_group_prices pgp
+           WHERE pgp.tenant_id = ${ctx.tenantId}
+             AND pgp.product_id = ${products.id}
+             AND pgp.customer_group_id = ${filter.customerGroupId}
+           LIMIT 1
+        )`;
+
+    const qtyOnHand = filter.expiredOn === null
+      ? sql<number>`COALESCE((
+          SELECT SUM(pcs.qty_on_hand) FROM product_cost_state pcs
+           WHERE pcs.tenant_id = ${ctx.tenantId} AND pcs.product_id = ${products.id}
+             AND pcs.deleted_at IS NULL
+        ), 0)::bigint`
+      : sql<number>`COALESCE((
+          SELECT SUM(il.qty_remaining) FROM inventory_lots il
+           WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
+             AND il.deleted_at IS NULL AND il.qty_remaining > 0
+             AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
+             AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})
+        ), 0)::bigint`;
+    const sellableOwnedQty = sql<number>`COALESCE((
+      SELECT SUM(il.qty_remaining) FROM inventory_lots il
+       WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
+         AND il.deleted_at IS NULL AND il.qty_remaining > 0
+         AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
+         ${filter.expiredOn === null
+           ? sql``
+           : sql`AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})`}
+    ), 0)::bigint`;
+
+    // Matches core-domain stockStatus: negative, zero, positive <= minimum, in stock.
+    const statusExpr = sql<string>`CASE
+      WHEN (${qtyOnHand}) < 0 THEN 'NEGATIVE_STOCK'
+      WHEN (${qtyOnHand}) = 0 THEN 'ZERO_STOCK'
+      WHEN (${qtyOnHand}) <= ${products.minStockQty} THEN 'LOW_STOCK'
+      ELSE 'IN_STOCK'
+    END`;
+    if (ranked && filter.stockStatus !== null && filter.stockStatus !== undefined) {
+      conditions.push(sql`(${statusExpr}) = ${filter.stockStatus}`);
+    }
+
+    // PostgreSQL 16 Unicode NFC, case fold, Bengali digits, zero-width-joiner
+    // removal and word separators for the name/SKU/barcode rank predicates.
+    const normalized = (column: SQL | typeof products.name | typeof products.sku | typeof products.barcode): SQL<string> =>
+      sql<string>`btrim(regexp_replace(
+        replace(replace(
+          translate(lower(normalize(coalesce(${column}, ''), NFC)),
+            '০১২৩৪৫৬৭৮৯', '0123456789'),
+          '‌', ''), '‍', ''),
+        '[^[:alnum:]ঀ-৿]+', ' ', 'g'))`;
+    const queryText = tokens.join(' ');
+    const wordPrefix: SQL = tokens.length === 0 ? sql`FALSE` :
+      sql.join(tokens.map((token) => sql`EXISTS (
+        SELECT 1 FROM unnest(string_to_array(${products.searchText}, ' ')) AS pos_word(word)
+         WHERE pos_word.word LIKE ${token + '%'}
+      )`), sql` AND `);
+    const rankExpr = !ranked || tokens.length === 0 ? sql<number>`0` : sql<number>`(
+      CASE
+        WHEN ${products.barcode} IS NOT NULL AND ${normalized(products.barcode)} = ${queryText} THEN 1000
+        WHEN ${products.sku} IS NOT NULL AND ${normalized(products.sku)} = ${queryText} THEN 900
+        WHEN ${normalized(products.name)} = ${queryText} THEN 800
+        WHEN ${normalized(products.name)} LIKE ${queryText + '%'} THEN 700
+        WHEN (${wordPrefix}) THEN 600
+        ELSE 500
+      END
+      + CASE WHEN (${qtyOnHand}) > 0 THEN 10 ELSE 0 END
+    )`;
+    if (ranked && filter.rankAfter !== null && filter.rankAfter !== undefined) {
+      conditions.push(sql`((${rankExpr}) < ${filter.rankAfter.rank}
+        OR ((${rankExpr}) = ${filter.rankAfter.rank}
+          AND ${products.id} > ${filter.rankAfter.id}))`);
+    }
 
     const rows = await txOf(tx)
       .select({
@@ -1324,49 +1387,17 @@ export class PostgresSaleRepository implements SaleRepository {
         tracksSerial: products.tracksSerial,
         hasImage: sql<boolean>`(${products.imageMime} IS NOT NULL)`,
         searchText: products.searchText,
-        /*
-         * What the cashier can actually sell.
-         *
-         * Normally the moving-average cache, which is what every other stock
-         * figure reads. Under BLOCK it is the open lots with the expired ones
-         * left out instead (Phase 7.2): three of five expired has to show two,
-         * because a cashier promising five must not find out at the cart. An
-         * undated lot never expires, so it always counts.
-         */
-        qtyOnHand:
-          filter.expiredOn === null
-            ? sql<number>`COALESCE((
-                SELECT SUM(pcs.qty_on_hand) FROM product_cost_state pcs
-                 WHERE pcs.tenant_id = ${ctx.tenantId} AND pcs.product_id = ${products.id}
-                   AND pcs.deleted_at IS NULL
-              ), 0)::bigint`
-            : sql<number>`COALESCE((
-                SELECT SUM(il.qty_remaining) FROM inventory_lots il
-                 WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
-                   AND il.deleted_at IS NULL AND il.qty_remaining > 0
-                   AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
-                   AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})
-              ), 0)::bigint`,
-        sellableOwnedQty: sql<number>`COALESCE((
-          SELECT SUM(il.qty_remaining) FROM inventory_lots il
-           WHERE il.tenant_id = ${ctx.tenantId} AND il.product_id = ${products.id}
-             AND il.deleted_at IS NULL AND il.qty_remaining > 0
-             AND il.owner_type = 'OWNED' AND il.status = 'OPEN'
-             ${filter.expiredOn === null
-               ? sql``
-               : sql`AND (il.expiry_date IS NULL OR il.expiry_date >= ${filter.expiredOn})`}
-        ), 0)::bigint`,
+        qtyOnHand,
+        sellableOwnedQty,
         groupPriceMinor: groupPrice,
+        searchRank: ranked ? rankExpr : sql<number | null>`NULL::integer`,
       })
       .from(products)
       .innerJoin(units, and(eq(units.tenantId, ctx.tenantId), eq(units.id, products.baseUnitId)))
       .leftJoin(brands, and(eq(brands.tenantId, ctx.tenantId), eq(brands.id, products.brandId)))
-      .leftJoin(
-        categories,
-        and(eq(categories.tenantId, ctx.tenantId), eq(categories.id, products.categoryId)),
-      )
+      .leftJoin(categories, and(eq(categories.tenantId, ctx.tenantId), eq(categories.id, products.categoryId)))
       .where(and(...conditions))
-      .orderBy(asc(products.id))
+      .orderBy(...(ranked ? [desc(rankExpr), asc(products.id)] : [asc(products.id)]))
       .limit(filter.limit);
 
     return rows.map((row) => ({
@@ -1387,6 +1418,7 @@ export class PostgresSaleRepository implements SaleRepository {
       searchText: row.searchText,
       tracksExpiry: row.tracksExpiry,
       tracksSerial: row.tracksSerial,
+      ...(ranked ? { searchRank: Number(row.searchRank) } : {}),
     }));
   }
 
