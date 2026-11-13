@@ -320,3 +320,99 @@ describe('the shop sends goods back to its supplier (§5.11)', () => {
     expect(refused.status).toBe(403);
   });
 });
+
+/**
+ * P0 #36: posted monetary history, rather than a rounded estimate of returned
+ * quantity, is authoritative. These tests use the disposable PostgreSQL test
+ * database and the real HTTP/UOW/journal/stock paths.
+ */
+describe('multi-document tiny-money returns and Option A stock-only posting', () => {
+  it('conserves 3 poisha across five customer returns while returning zero-value stock', async () => {
+    await buyTen();
+    const sold = must(await auth(api().post('/api/v1/sales')).send({
+      partyId: customerId, customerName: null, customerPhone: null,
+      lines: [{ productId, qty: 5_000, unitPriceMinor: 1, lineDiscountMinor: 2 }],
+      payments: [], discountMinor: 0,
+    }), 'tiny sale');
+    const saleId = sold.body.data.id as string;
+    const sourceLineId = sold.body.data.lines[0].id as string;
+
+    for (let i = 0; i < 5; i += 1) {
+      const returned = await auth(api().post('/api/v1/sales-returns')).send({
+        saleId, lines: [{ sourceLineId, qty: 1_000 }],
+        reason: 'CHANGED_MIND', note: null, refundMinor: 0, refundAccountCode: null,
+      });
+      expect(returned.status, JSON.stringify(returned.body)).toBe(201);
+    }
+
+    const summary = await asTenant(pool, tenant.tenantId, async (db) => db.query<{
+      total_minor: string; qty: string; zero_value_count: string;
+    }>(`
+      SELECT COALESCE(SUM(l.value_minor),0)::text AS total_minor,
+             COALESCE(SUM(l.qty),0)::text AS qty,
+             COUNT(*) FILTER (WHERE l.value_minor=0)::text AS zero_value_count
+      FROM sales_return_lines l
+      JOIN sales_returns r ON r.tenant_id=l.tenant_id AND r.id=l.return_id
+      WHERE l.sale_line_id=$1 AND r.status='POSTED'
+    `, [sourceLineId]));
+    expect(Number(summary.rows[0]?.total_minor)).toBe(3);
+    expect(Number(summary.rows[0]?.qty)).toBe(5_000);
+    expect(Number(summary.rows[0]?.zero_value_count)).toBe(2);
+    expect(await onHand()).toBe(10_000);
+    const accounts = await ledger();
+    expect(accounts['AR'] ?? 0).toBe(0);
+    expect(accounts['COGS'] ?? 0).toBe(0);
+  });
+
+  it('returns supplier stock even when a particular partial credit rounds to zero', async () => {
+    const purchased = must(await auth(api().post('/api/v1/purchases')).send({
+      supplierPartyId: supplierId,
+      lines: [{ productId, qty: 5_000, unitPriceMinor: 1 }],
+      discountMinor: 2, paidMinor: 0, paidAccountCode: null,
+    }), 'tiny purchase');
+    const purchaseId = purchased.body.data.id as string;
+    const sourceLineId = purchased.body.data.lines[0].id as string;
+
+    for (let i = 0; i < 5; i += 1) {
+      const returned = await auth(api().post('/api/v1/purchase-returns')).send({
+        purchaseId, lines: [{ sourceLineId, qty: 1_000 }],
+        reason: 'DAMAGED', note: null, receivedMinor: 0, receiptAccountCode: null,
+      });
+      expect(returned.status, JSON.stringify(returned.body)).toBe(201);
+    }
+
+    const summary = await asTenant(pool, tenant.tenantId, async (db) => db.query<{
+      total_minor: string; qty: string; zero_value_count: string;
+    }>(`
+      SELECT COALESCE(SUM(l.value_minor),0)::text AS total_minor,
+             COALESCE(SUM(l.qty),0)::text AS qty,
+             COUNT(*) FILTER (WHERE l.value_minor=0)::text AS zero_value_count
+      FROM purchase_return_lines l
+      JOIN purchase_returns r ON r.tenant_id=l.tenant_id AND r.id=l.return_id
+      WHERE l.purchase_line_id=$1 AND r.status='POSTED'
+    `, [sourceLineId]));
+    expect(Number(summary.rows[0]?.total_minor)).toBe(3);
+    expect(Number(summary.rows[0]?.qty)).toBe(5_000);
+    expect(Number(summary.rows[0]?.zero_value_count)).toBe(2);
+    expect(await onHand()).toBe(0);
+    const accounts = await ledger();
+    expect(accounts['AP'] ?? 0).toBe(0);
+    expect(accounts['INVENTORY'] ?? 0).toBe(0);
+  });
+
+  it('serializes concurrent supplier returns from the same source purchase', async () => {
+    const purchased = await buyTen();
+    const requests = await Promise.all([0, 1].map(() =>
+      auth(api().post('/api/v1/purchase-returns')).send({
+        purchaseId: purchased.purchaseId,
+        lines: [{ sourceLineId: purchased.lineId, qty: 6_000 }],
+        reason: 'DAMAGED', note: null, receivedMinor: 0, receiptAccountCode: null,
+      }),
+    ));
+    const successes = requests.filter((response) => response.status === 201);
+    expect(successes).toHaveLength(1);
+    expect(requests.every((response) => response.status === 201 ||
+      (response.status >= 400 && response.status < 500))).toBe(true);
+    expect(await onHand()).toBe(4_000);
+  });
+});
