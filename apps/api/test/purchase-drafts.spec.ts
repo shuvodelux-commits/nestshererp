@@ -138,7 +138,7 @@ describe('MOD-008 durable purchase drafts, never postings', () => {
     const hidden = await request(app.getHttpServer()).get(`${route}/${id}`).set(authed(tokenB));
     expect(hidden.status).toBe(404);
     expect((await request(app.getHttpServer()).put(`${route}/${id}`).set(authed(tokenB))
-      .send({ ...body(), expectedVersion: 1 })).status).toBe(404);
+      .send({ ...updateBody(), expectedVersion: 1 })).status).toBe(404);
     const raw = await asTenant(pool, tenantB.tenantId, (client) => client.query('SELECT id FROM purchase_drafts'));
     expect(raw.rowCount).toBe(0);
     const real = await asTenant(pool, tenantA.tenantId, (client) => client.query('SELECT id FROM purchase_drafts'));
