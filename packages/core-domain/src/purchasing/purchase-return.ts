@@ -29,6 +29,10 @@ export interface ReturnableBillLine {
   readonly qtyReceived: number;
   /** Scale 3, already sent back on earlier returns. */
   readonly qtyReturned: number;
+  /** Value credited in earlier POSTED, non-deleted returns of this bill line. */
+  readonly valueReturnedMinor: number;
+  /** Inventory cost booked in earlier POSTED, non-deleted returns of this bill line. */
+  readonly costReturnedMinor: number;
   /**
    * Scale 3, still in the lot. Goods already sold cannot be sent back, and this
    * is the cap that says so.
@@ -59,6 +63,8 @@ export type PurchaseReturnRejection =
   | 'RETURN_LINE_NOT_ON_BILL'
   | 'RETURN_EXCEEDS_RECEIVED'
   | 'RETURN_EXCEEDS_STOCK'
+  | 'RETURN_DUPLICATE_LINE'
+  | 'RETURN_SOURCE_HISTORY_INVALID'
   | 'RECEIVED_NEGATIVE'
   | 'RECEIVED_EXCEEDS_RETURN'
   | 'RETURN_HAS_NO_VALUE';
@@ -95,7 +101,10 @@ export function rejectPurchaseReturn(
   if (draft.receivedMinor < 0) return 'RECEIVED_NEGATIVE';
 
   const byId = new Map(billed.map((line) => [line.purchaseLineId, line]));
+  const seen = new Set<string>();
   for (const line of taken) {
+    if (seen.has(line.purchaseLineId)) return 'RETURN_DUPLICATE_LINE';
+    seen.add(line.purchaseLineId);
     if (!Number.isSafeInteger(line.qty)) return 'AMOUNT_NOT_INTEGER_MINOR';
     if (line.qty < 0) return 'RETURN_QUANTITY_NOT_POSITIVE';
     const original = byId.get(line.purchaseLineId);
@@ -104,10 +113,26 @@ export function rejectPurchaseReturn(
     // The goods must still be on the shelf. Anything sold since is somebody
     // else's now, and sending it back would drive the lot negative.
     if (line.qty > original.qtyRemainingInLot) return 'RETURN_EXCEEDS_STOCK';
+    const { qtyReceived, qtyReturned, billedNetMinor, actualUnitCost,
+      valueReturnedMinor, costReturnedMinor } = original;
+    if (
+      ![qtyReceived, qtyReturned, billedNetMinor, actualUnitCost,
+        valueReturnedMinor, costReturnedMinor].every((amount) => Number.isSafeInteger(amount)) ||
+      qtyReceived <= 0 || qtyReturned < 0 || qtyReturned > qtyReceived ||
+      billedNetMinor < 0 || actualUnitCost < 0 ||
+      valueReturnedMinor < 0 || valueReturnedMinor > billedNetMinor ||
+      costReturnedMinor < 0 || costReturnedMinor > lotCost(actualUnitCost, qtyReceived)
+    ) return 'RETURN_SOURCE_HISTORY_INVALID';
+    const newValue = billedShare(original, line.qty);
+    const newCost = cumulativeLotCost(original, line.qty);
+    if (newValue < 0 || newValue > billedNetMinor - valueReturnedMinor ||
+        newCost < 0 || newCost > lotCost(actualUnitCost, qtyReceived) - costReturnedMinor) {
+      return 'RETURN_SOURCE_HISTORY_INVALID';
+    }
   }
 
   const value = purchaseReturnTotalsUnchecked(draft, byId).returnValueMinor;
-  if (value <= 0) return 'RETURN_HAS_NO_VALUE';
+  // Zero-poisha stock returns are genuine inventory operations, not fake money.
   if (draft.receivedMinor > value) return 'RECEIVED_EXCEEDS_RETURN';
 
   return null;
@@ -146,7 +171,7 @@ function purchaseReturnTotalsUnchecked(
           lotId: original.lotId,
           qty: Qty(line.qty).raw,
           valueMinor: billedShare(original, line.qty),
-          costMinor: lotCost(original.actualUnitCost, line.qty),
+          costMinor: cumulativeLotCost(original, line.qty),
         },
       ];
     });
@@ -161,24 +186,28 @@ function purchaseReturnTotalsUnchecked(
     inventoryMinor,
     receivedMinor,
     creditMinor: returnValueMinor - receivedMinor,
-    // Never negative: a lot's cost is the billed value plus its share of the
-    // extra cost, so what leaves stock is always at least what is credited.
-    adjustmentMinor: Math.max(inventoryMinor - returnValueMinor, 0),
+    // Signed expense/valuation difference keeps the journal balanced even when
+    // a tiny returned quantity rounds its billed credit above the lot cost.
+    adjustmentMinor: inventoryMinor - returnValueMinor,
   };
 }
 
 /**
- * This quantity's share of what the supplier billed, with the **last**
- * returnable unit carrying the remainder — so a line sent back in full credits
- * exactly what was charged for it.
+ * This quantity's cumulative billed entitlement, less money **actually** credited
+ * by earlier POSTED returns. No repeated independently rounded fragments.
  */
 function billedShare(line: ReturnableBillLine, qty: number): number {
-  const remaining = returnableBillQty(line);
-  if (remaining <= 0) return 0;
-  if (Qty(qty).raw >= remaining) {
-    return line.billedNetMinor - proportion(line.billedNetMinor, line.qtyReturned, line.qtyReceived);
-  }
-  return proportion(line.billedNetMinor, qty, line.qtyReceived);
+  const cumulativeQty = Qty(line.qtyReturned).add(Qty(qty)).raw;
+  const target = cumulativeQty === line.qtyReceived
+    ? line.billedNetMinor
+    : proportion(line.billedNetMinor, cumulativeQty, line.qtyReceived);
+  return target - line.valueReturnedMinor;
+}
+
+/** Apply the same cumulative accounting to the original lot valuation pool. */
+function cumulativeLotCost(line: ReturnableBillLine, qty: number): number {
+  const cumulativeQty = Qty(line.qtyReturned).add(Qty(qty)).raw;
+  return lotCost(line.actualUnitCost, cumulativeQty) - line.costReturnedMinor;
 }
 
 /**
@@ -225,7 +254,7 @@ export function purchaseReturnPosting(
   totals: PurchaseReturnTotals,
   sides: PurchaseReturnPostingSides,
 ): JournalEntryDraft {
-  if (totals.returnValueMinor <= 0) throw new RangeError('A return must be worth something');
+  if (totals.returnValueMinor < 0) throw new RangeError('A return cannot have negative value');
   if (totals.receivedMinor > 0 && sides.receiptAccount === null) {
     throw new RangeError('Money coming back needs an account to land in');
   }
@@ -265,10 +294,16 @@ export function purchaseReturnPosting(
             partyId: null,
           },
         ]),
-    { account: fixedAccount('INVENTORY'), amountMinor: -totals.inventoryMinor, partyId: null },
+    ...(totals.inventoryMinor === 0
+      ? []
+      : [{ account: fixedAccount('INVENTORY'), amountMinor: -totals.inventoryMinor, partyId: null }]),
   ];
 
   const journal: JournalEntryDraft = { lines };
-  if (rejectEntry(journal) !== null) throw new Error('Purchase return journal is not balanced');
+  // A zero-money, zero-cost stock return has no GL value to post; the stock
+  // movement, source document and audit event remain authoritative.
+  if (lines.length > 0 && rejectEntry(journal) !== null) {
+    throw new Error('Purchase return journal is not balanced');
+  }
   return journal;
 }
