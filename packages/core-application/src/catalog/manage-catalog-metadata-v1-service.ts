@@ -91,7 +91,10 @@ export class ManageCatalogMetadataV1Service {
       entityType: 'unit',
       find: (tx) => this.catalog.findUnit(tx, command.ctx, command.id),
       write: (tx) => this.catalog.compareAndSetUnit(tx, command.ctx, command.id,
-        patch.expectedVersion, { nameBn: patch.nameBn, symbol: patch.symbol }),
+        patch.expectedVersion, {
+          ...(patch.nameBn !== undefined ? { nameBn: patch.nameBn } : {}),
+          ...(patch.symbol !== undefined ? { symbol: patch.symbol } : {}),
+        }),
     });
   }
 
