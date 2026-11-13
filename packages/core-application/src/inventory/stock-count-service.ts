@@ -90,7 +90,12 @@ export class StockCountService {
             'This operation id was already used for a different count',
           );
         }
-        return replay.response as StockCountResponse;
+        // Reproject cached POST under current permissions; never replay cost data.
+        const countId = await this.counts.findCountIdByOperationId(tx, ctx, command.operationId);
+        if (countId === null) {
+          throw new AppError(ErrorCode.INTERNAL_ERROR, 'Stock count replay document is unavailable');
+        }
+        return this.detail(tx, ctx, countId);
       }
       const posted = await this.counts.findCountIdByOperationId(tx, ctx, command.operationId);
       if (posted !== null) return this.detail(tx, ctx, posted);
@@ -164,7 +169,8 @@ export class StockCountService {
           continue;
         }
 
-        const adjustment = await this.adjustments.adjustStockWithin(tx, {
+        const { response: adjustment, bookedValueMinor: valueMinor } =
+          await this.adjustments.adjustStockWithinForCount(tx, {
           ctx,
           // The adjustment's own idempotency is the count's: the sheet is one
           // operation, and its lines are not retried separately.
@@ -177,7 +183,6 @@ export class StockCountService {
           source: 'API',
         });
 
-        const valueMinor = adjustment.valueMinor ?? 0;
         if (line.qtyDelta < 0) shortageValueMinor += Math.abs(valueMinor);
         else surplusValueMinor += Math.abs(valueMinor);
 
@@ -246,6 +251,7 @@ export class StockCountService {
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, Permission.STOCK_COUNT_POST);
       const rows = await this.counts.listCounts(tx, ctx, limit);
+      const showCost = (await this.access.permissionsOf(tx, ctx)).includes(Permission.COST_VIEW);
       return rows.map((row) => ({
         id: row.id,
         number: row.number,
@@ -254,8 +260,10 @@ export class StockCountService {
         businessDate: row.businessDate,
         lineCount: row.lineCount,
         differenceCount: row.differenceCount,
-        shortageValueMinor: row.shortageValueMinor,
-        surplusValueMinor: row.surplusValueMinor,
+        ...(showCost ? {
+          shortageValueMinor: row.shortageValueMinor,
+          surplusValueMinor: row.surplusValueMinor,
+        } : {}),
         createdAt: row.createdAt.toISOString(),
         lines: row.lines.map((line) => ({
           id: line.id,
@@ -265,7 +273,7 @@ export class StockCountService {
           countedQty: line.countedQty,
           systemQty: line.postedSystemQty,
           qtyDelta: line.qtyDelta,
-          valueMinor: line.valueMinor,
+          ...(showCost ? { valueMinor: line.valueMinor } : {}),
         })),
       }));
     });
@@ -304,6 +312,7 @@ export class StockCountService {
   private async detail(tx: Tx, ctx: TenantContext, countId: string): Promise<StockCountResponse> {
     const row = await this.counts.findCountById(tx, ctx, countId);
     if (row === null) throw new AppError(ErrorCode.NOT_FOUND, 'Count not found');
+    const showCost = (await this.access.permissionsOf(tx, ctx)).includes(Permission.COST_VIEW);
     return {
       id: row.id,
       number: row.number,
@@ -312,8 +321,10 @@ export class StockCountService {
       businessDate: row.businessDate,
       lineCount: row.lineCount,
       differenceCount: row.differenceCount,
-      shortageValueMinor: row.shortageValueMinor,
-      surplusValueMinor: row.surplusValueMinor,
+      ...(showCost ? {
+        shortageValueMinor: row.shortageValueMinor,
+        surplusValueMinor: row.surplusValueMinor,
+      } : {}),
       createdAt: row.createdAt.toISOString(),
       lines: row.lines.map((line) => ({
         id: line.id,
@@ -323,7 +334,7 @@ export class StockCountService {
         countedQty: line.countedQty,
         systemQty: line.postedSystemQty,
         qtyDelta: line.qtyDelta,
-        valueMinor: line.valueMinor,
+        ...(showCost ? { valueMinor: line.valueMinor } : {}),
       })),
     };
   }

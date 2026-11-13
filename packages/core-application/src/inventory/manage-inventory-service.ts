@@ -396,6 +396,27 @@ export class ManageInventoryService {
    * count is idempotent on the whole sheet.
    */
   async adjustStockWithin(tx: Tx, command: AdjustStockCommand): Promise<StockAdjustmentResponse> {
+    // Public callers receive the same COST_VIEW-redacted contract as before.
+    return (await this.adjustStockWithinPosted(tx, command)).response;
+  }
+
+  /**
+   * Internal stock-count posting needs the *booked* cost from the same UOW.
+   * Never derive accounting metadata from the caller-visible, redacted DTO.
+   * This application-service method has no HTTP route; its response still
+   * exposes only the normal permission-filtered adjustment view.
+   */
+  async adjustStockWithinForCount(
+    tx: Tx,
+    command: AdjustStockCommand,
+  ): Promise<{ readonly response: StockAdjustmentResponse; readonly bookedValueMinor: number }> {
+    return this.adjustStockWithinPosted(tx, command);
+  }
+
+  private async adjustStockWithinPosted(
+    tx: Tx,
+    command: AdjustStockCommand,
+  ): Promise<{ readonly response: StockAdjustmentResponse; readonly bookedValueMinor: number }> {
       const today = this.clock.businessDate(command.ctx.timezone);
       const businessDate = command.businessDate ?? today;
       await this.periods.assertOpen(tx, command.ctx, businessDate);
@@ -460,7 +481,10 @@ export class ManageInventoryService {
         payload: { productId: adjustment.productId, movementId: adjustment.movementId },
       });
 
-      return this.adjustmentResponse(tx, command.ctx, adjustment);
+      return {
+        response: await this.adjustmentResponse(tx, command.ctx, adjustment),
+        bookedValueMinor: adjustment.valueMinor,
+      };
   }
 
   /**
