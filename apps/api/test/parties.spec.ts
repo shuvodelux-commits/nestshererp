@@ -1733,4 +1733,86 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
       supplierAmount: -125_000,
     });
   });
+
+
+  it('denies Supplier and Vendor delete rights when only the shared Customer journal has posted', async () => {
+    const date = clock.businessDate('Asia/Dhaka');
+    await setSetting(SettingKey.VENDOR_MANAGEMENT_ENABLED, 'on');
+
+    const records: { id: string; role: 'SUPPLIER' | 'VENDOR'; amount: number }[] = [];
+    for (const [role, phone, amount] of [
+      ['SUPPLIER', '01799112233', 72_000],
+      ['VENDOR', '01799112244', 83_000],
+    ] as const) {
+      const created = await createParty(minimalCustomer({
+        name: 'T09C Customer with ' + role,
+        phone,
+        roles: ['CUSTOMER', role],
+        opening: {
+          role: 'CUSTOMER',
+          direction: 'RECEIVABLE',
+          amountMinor: amount,
+          businessDate: date,
+        },
+      })).expect(201);
+      records.push({ id: (created.body.data as PartyBody).id, role, amount });
+    }
+
+    // Grant just the other relationship's view/deactivate rights, replacing
+    // the grants on each iteration to model a current signed permission set.
+    for (const record of records) {
+      const view = record.role === 'SUPPLIER' ? Permission.SUPPLIER_VIEW : Permission.VENDOR_VIEW;
+      const deactivate = record.role === 'SUPPLIER'
+        ? Permission.SUPPLIER_DEACTIVATE
+        : Permission.VENDOR_DEACTIVATE;
+      await asTenant(pool, tenant.tenantId, async (client) => {
+        await client.query('DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2',
+          [tenant.tenantId, tenant.roleId]);
+        const now = clock.now();
+        for (const code of [view, deactivate]) {
+          await client.query(
+            'INSERT INTO role_permissions (id, tenant_id, role_id, permission_code, created_at, updated_at, created_by, updated_by, version) ' +
+            'VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)',
+            [Ulid.generate(clock), tenant.tenantId, tenant.roleId, code, now, tenant.userId],
+          );
+        }
+      });
+
+      const otherRole = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + record.id + '?role=' + record.role)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(otherRole.body.data.roles).toEqual([record.role]);
+      expect(otherRole.body.data.balance.netMinor).toBe(0);
+      const opening = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + record.id + '/opening?role=' + record.role)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(opening.body.data).toBeNull();
+      await request(app.getHttpServer())
+        .get('/api/v1/parties/' + record.id + '/opening?role=CUSTOMER')
+        .set('Authorization', 'Bearer ' + token)
+        .expect(403);
+
+      const rejected = await request(app.getHttpServer())
+        .delete('/api/v1/parties/' + record.id)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(400);
+      expect(rejected.body.error.code).toBe('VALIDATION_FAILED');
+
+      const intact = await asTenant(pool, tenant.tenantId, (client) => client.query<{
+        parties: number; customerLines: number; customerAmount: number;
+      }>(
+        'SELECT (SELECT count(*)::int FROM parties WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL) AS parties, ' +
+        '(SELECT count(*)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = $3) AS "customerLines", ' +
+        '(SELECT coalesce(sum(amount_minor),0)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = $3) AS "customerAmount"',
+        [tenant.tenantId, record.id, 'AR'],
+      ));
+      expect(intact.rows[0]).toEqual({
+        parties: 1,
+        customerLines: 1,
+        customerAmount: record.amount,
+      });
+    }
+  });
 });
