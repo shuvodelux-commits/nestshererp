@@ -362,6 +362,8 @@ export interface PosProductFilter {
   readonly rankingMode?: 'GLOBAL_V2';
   readonly stockStatus?: 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK' | 'NEGATIVE_STOCK' | null;
   readonly rankAfter?: { readonly rank: number; readonly id: string } | null;
+  /** Validate a v2 continuation anchor within the same query scope. */
+  readonly anchorId?: string | null;
   readonly limit: number;
 }
 
