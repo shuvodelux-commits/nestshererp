@@ -233,9 +233,9 @@ async function setCostView(enabled: boolean): Promise<void> {
     );
     if (enabled) {
       await db.query(
-        \`INSERT INTO role_permissions
+        `INSERT INTO role_permissions
           (id, tenant_id, role_id, permission_code, created_at, updated_at, created_by, updated_by, version)
-         VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)\`,
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)`,
         [Ulid.generate(clock), tenant.tenantId, tenant.roleId, Permission.COST_VIEW,
           clock.now(), tenant.userId],
       );
@@ -248,7 +248,7 @@ describe('MOD-003 C003-07 stock count valuation and cost permissions', () => {
     await setCostView(false);
     const op = Ulid.generate(clock);
     const posted = await api().post('/api/v1/stock-counts')
-      .set('Authorization', \`Bearer \${token}\`)
+      .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', op)
       .send({ scopeLabel: 'Blind recount', note: null,
         lines: [{ productId, countedQty: 18_000, systemQty: 20_000 }] });
@@ -266,12 +266,12 @@ describe('MOD-003 C003-07 stock count valuation and cost permissions', () => {
 
     const stored = await asTenant(pool, tenant.tenantId, async (db) => {
       const result = await db.query<{shortage: string; surplus: string; line: string}>(
-        \`SELECT sc.shortage_value_minor::text AS shortage,
+        `SELECT sc.shortage_value_minor::text AS shortage,
                 sc.surplus_value_minor::text AS surplus,
                 cl.value_minor::text AS line
            FROM stock_counts sc
            JOIN stock_count_lines cl ON cl.count_id = sc.id AND cl.tenant_id = sc.tenant_id
-          WHERE sc.operation_id = $1\`, [op]);
+          WHERE sc.operation_id = $1`, [op]);
       return result.rows[0];
     });
     expect(stored?.shortage).toBe('20000');
@@ -309,7 +309,7 @@ describe('MOD-003 C003-07 stock count valuation and cost permissions', () => {
     const body = { scopeLabel: 'Recheck', note: null,
       lines: [{ productId, countedQty: 18_000, systemQty: 20_000 }] };
     const send = () => api().post('/api/v1/stock-counts')
-      .set('Authorization', \`Bearer \${token}\`).set('Idempotency-Key', operationId).send(body);
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', operationId).send(body);
     const privileged = await send();
     expect(privileged.status, JSON.stringify(privileged.body)).toBeLessThan(300);
     expect(privileged.body.data.shortageValueMinor).toBe(200_00);
@@ -326,7 +326,7 @@ describe('MOD-003 C003-07 stock count valuation and cost permissions', () => {
     expect(await onHand()).toBe(18_000);
     expect((await ledger())['STOCK_ADJUSTMENT']).toBe(200_00);
     const mismatched = await api().post('/api/v1/stock-counts')
-      .set('Authorization', \`Bearer \${token}\`).set('Idempotency-Key', operationId)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', operationId)
       .send({ ...body, lines: [{ productId, countedQty: 19_000, systemQty: 20_000 }] });
     expect(mismatched.status).toBeGreaterThanOrEqual(400);
 
