@@ -71,6 +71,8 @@ const DUE_MINOR = sql<number>`(${purchases.grandTotalMinor} - ${purchases.paidMi
 function purchaseDraftRow(row: typeof purchaseDrafts.$inferSelect): PurchaseDraftRow {
   return {
     id: row.id.trim(),
+    operationId: row.operationId?.trim() ?? null,
+    createFingerprint: row.createFingerprint,
     label: row.label,
     supplierName: row.supplierName,
     itemCount: row.itemCount,
@@ -107,8 +109,23 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     return row ? purchaseDraftRow(row) : null;
   }
 
-  async insertPurchaseDraft(tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput): Promise<PurchaseDraftRow> {
+  async findPurchaseDraftByOperationId(
+    tx: Tx, ctx: TenantContext, operationId: string,
+  ): Promise<PurchaseDraftRow | null> {
+    const [row] = await txOf(tx).select().from(purchaseDrafts)
+      .where(and(eq(purchaseDrafts.tenantId, ctx.tenantId),
+        eq(purchaseDrafts.operationId, operationId)))
+      .limit(1);
+    return row ? purchaseDraftRow(row) : null;
+  }
+
+  async insertPurchaseDraft(
+    tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput,
+  ): Promise<PurchaseDraftRow | null> {
     const now = this.clock.now();
+    // The unique tenant+operation index serializes concurrent creates.
+    // ON CONFLICT DO NOTHING leaves the transaction valid for the read of the
+    // winner; catching a unique_violation would leave PostgreSQL TX aborted.
     const [row] = await txOf(tx).insert(purchaseDrafts).values({
       ...draft,
       tenantId: ctx.tenantId,
@@ -119,9 +136,10 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
       version: 1,
       deletedAt: null,
       deletedBy: null,
+    }).onConflictDoNothing({
+      target: [purchaseDrafts.tenantId, purchaseDrafts.operationId],
     }).returning();
-    if (!row) throw new Error('Database did not return inserted purchase draft');
-    return purchaseDraftRow(row);
+    return row ? purchaseDraftRow(row) : null;
   }
 
   async updatePurchaseDraft(
