@@ -340,6 +340,10 @@ export class CashSessionService {
 
     return this.uow.run(ctx, async (tx) => {
       await this.accessControl.require(tx, ctx, Permission.CASH_SESSION_CLOSE);
+      // Serialize the physical count with money postings, account edits and
+      // mode transitions. Without this lock, a posting can commit between
+      // reading sessionTotals and persisting the counted close (INV-07b).
+      await this.settings.lockTenant(tx, ctx);
       await this.requireSessionsEnabled(tx, ctx);
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
