@@ -8,6 +8,9 @@ import type {
   PurchaseFilter,
   PurchaseListRowData,
   PurchaseRepository,
+  PurchaseDraftInput,
+  PurchaseDraftPayload,
+  PurchaseDraftRow,
   PurchaseSummary,
   SupplierPaymentDetail,
   TenantContext,
@@ -15,7 +18,7 @@ import type {
   RepostSupplierPayment,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import {
@@ -29,6 +32,7 @@ import {
   productCostState,
   products,
   purchaseLines,
+  purchaseDrafts,
   purchaseLandedCostAllocations,
   purchaseLandedCosts,
   purchases,
@@ -63,8 +67,97 @@ function allocatedMinor(purchaseId: SQL): SQL<number> {
 
 const DUE_MINOR = sql<number>`(${purchases.grandTotalMinor} - ${purchases.paidMinor} - ${allocatedMinor(sql`${purchases.id}`)})`;
 
+/** Database rows are tenant-owned; no draft metadata is financial authority. */
+function purchaseDraftRow(row: typeof purchaseDrafts.$inferSelect): PurchaseDraftRow {
+  return {
+    id: row.id.trim(),
+    label: row.label,
+    supplierName: row.supplierName,
+    itemCount: row.itemCount,
+    grandTotalMinor: row.grandTotalMinor,
+    cart: (row.cart ?? {}) as Record<string, unknown>,
+    businessDate: row.businessDate,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    version: row.version,
+    deletedAt: row.deletedAt,
+  };
+}
+
 export class PostgresPurchaseRepository implements PurchaseRepository {
   constructor(private readonly clock: Clock) {}
+
+  async listPurchaseDrafts(
+    tx: Tx, ctx: TenantContext, state: 'active' | 'deleted', limit: number,
+  ): Promise<readonly PurchaseDraftRow[]> {
+    const rows = await txOf(tx).select().from(purchaseDrafts)
+      .where(and(
+        eq(purchaseDrafts.tenantId, ctx.tenantId),
+        state === 'active' ? isNull(purchaseDrafts.deletedAt) : isNotNull(purchaseDrafts.deletedAt),
+      ))
+      .orderBy(desc(purchaseDrafts.updatedAt), desc(purchaseDrafts.id))
+      .limit(limit);
+    return rows.map(purchaseDraftRow);
+  }
+
+  async findPurchaseDraft(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDraftRow | null> {
+    const [row] = await txOf(tx).select().from(purchaseDrafts)
+      .where(and(eq(purchaseDrafts.tenantId, ctx.tenantId), eq(purchaseDrafts.id, id)))
+      .limit(1);
+    return row ? purchaseDraftRow(row) : null;
+  }
+
+  async insertPurchaseDraft(tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput): Promise<PurchaseDraftRow> {
+    const now = this.clock.now();
+    const [row] = await txOf(tx).insert(purchaseDrafts).values({
+      ...draft,
+      tenantId: ctx.tenantId,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: ctx.userId,
+      updatedBy: ctx.userId,
+      version: 1,
+      deletedAt: null,
+      deletedBy: null,
+    }).returning();
+    if (!row) throw new Error('Database did not return inserted purchase draft');
+    return purchaseDraftRow(row);
+  }
+
+  async updatePurchaseDraft(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, patch: PurchaseDraftPayload,
+  ): Promise<PurchaseDraftRow | null> {
+    const [row] = await txOf(tx).update(purchaseDrafts).set({
+      ...patch,
+      updatedAt: this.clock.now(),
+      updatedBy: ctx.userId,
+      version: sql`${purchaseDrafts.version} + 1`,
+    }).where(and(
+      eq(purchaseDrafts.tenantId, ctx.tenantId),
+      eq(purchaseDrafts.id, id),
+      eq(purchaseDrafts.version, expectedVersion),
+      isNull(purchaseDrafts.deletedAt),
+    )).returning();
+    return row ? purchaseDraftRow(row) : null;
+  }
+
+  async setPurchaseDraftDeletion(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, deletedAt: Date | null,
+  ): Promise<PurchaseDraftRow | null> {
+    const [row] = await txOf(tx).update(purchaseDrafts).set({
+      deletedAt,
+      deletedBy: deletedAt ? ctx.userId : null,
+      updatedAt: this.clock.now(),
+      updatedBy: ctx.userId,
+      version: sql`${purchaseDrafts.version} + 1`,
+    }).where(and(
+      eq(purchaseDrafts.tenantId, ctx.tenantId),
+      eq(purchaseDrafts.id, id),
+      eq(purchaseDrafts.version, expectedVersion),
+      deletedAt ? isNull(purchaseDrafts.deletedAt) : isNotNull(purchaseDrafts.deletedAt),
+    )).returning();
+    return row ? purchaseDraftRow(row) : null;
+  }
 
   async insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void> {
     const db = txOf(tx);

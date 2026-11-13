@@ -950,3 +950,17 @@ export type {
   GlobalSearchQuery,
   GlobalSearchResponse,
 } from './search';
+
+// MOD-008: persistent, non-posting supplier purchase drafts.
+export {
+  createPurchaseDraftRequestSchema,
+  updatePurchaseDraftRequestSchema,
+  purchaseDraftVersionRequestSchema,
+  purchaseDraftListQuerySchema,
+  purchaseDraftResponseSchema,
+} from './purchase-drafts';
+export type {
+  CreatePurchaseDraftRequest,
+  UpdatePurchaseDraftRequest,
+  PurchaseDraftResponse,
+} from './purchase-drafts';

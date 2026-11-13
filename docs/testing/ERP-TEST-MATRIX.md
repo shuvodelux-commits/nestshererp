@@ -17,7 +17,7 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 229 |
+| HTTP endpoints | 235 |
 | Permission codes | 119 |
 | Cross-module workflows | 17 |
 
@@ -3518,6 +3518,12 @@
 | DELETE | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
 | GET | `/api/v1/periods` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
 | POST | `/api/v1/periods/close` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
+| GET | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
+| GET | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
+| POST | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
+| PUT | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
+| DELETE | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
+| POST | `/api/v1/purchases/drafts/:id/restore` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
 | GET | `/api/v1/purchase-plans/suggestions` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
 | GET | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
 | GET | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |

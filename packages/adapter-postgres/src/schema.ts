@@ -1003,6 +1003,25 @@ export const salesOrderLines = pgTable('sales_order_lines', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
 });
 
+/** MOD-008 — unfinished purchase editor snapshots, never posted financial documents. */
+export const purchaseDrafts = pgTable('purchase_drafts', {
+  id: char('id', { length: 26 }).primaryKey(),
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  label: text('label').notNull(),
+  supplierName: text('supplier_name'),
+  itemCount: integer('item_count').notNull(),
+  grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
+  cart: jsonb('cart').notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: char('deleted_by', { length: 26 }),
+});
+
 export const saleDrafts = pgTable('sale_drafts', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   label: text('label').notNull(), customerName: text('customer_name'),

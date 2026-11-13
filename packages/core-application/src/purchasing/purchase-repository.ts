@@ -269,7 +269,38 @@ export interface RepostSupplierPayment {
   }[];
 }
 
+/** Snapshot fields are descriptive only; the server never posts a draft. */
+export interface PurchaseDraftPayload {
+  readonly label: string;
+  readonly supplierName: string | null;
+  readonly itemCount: number;
+  readonly grandTotalMinor: number;
+  readonly cart: Record<string, unknown>;
+}
+export interface PurchaseDraftInput extends PurchaseDraftPayload {
+  readonly id: string;
+  readonly businessDate: string;
+}
+export interface PurchaseDraftRow extends PurchaseDraftInput {
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly version: number;
+  readonly deletedAt: Date | null;
+}
+
 export interface PurchaseRepository {
+  insertPurchaseDraft(tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput): Promise<PurchaseDraftRow>;
+  findPurchaseDraft(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDraftRow | null>;
+  listPurchaseDrafts(
+    tx: Tx, ctx: TenantContext, state: 'active' | 'deleted', limit: number,
+  ): Promise<readonly PurchaseDraftRow[]>;
+  updatePurchaseDraft(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, patch: PurchaseDraftPayload,
+  ): Promise<PurchaseDraftRow | null>;
+  /** null means restore; nonnull means recycle. Both use conditional version updates. */
+  setPurchaseDraftDeletion(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, deletedAt: Date | null,
+  ): Promise<PurchaseDraftRow | null>;
   insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void>;
   /** C10: the permanent unique index is the guarantee, not the 30-day cache. */
   findPurchaseIdByOperationId(
