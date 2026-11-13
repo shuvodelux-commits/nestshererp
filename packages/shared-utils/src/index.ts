@@ -1,6 +1,6 @@
 // The shared primitives every other package depends on (SRS 3.3, 3.5).
 // This package depends on nothing.
-export { Money, MONEY_SCALE, parseMoney } from './money';
+export { Money, MONEY_SCALE, POISHA_PER_TAKA, parseMoney, isWholeTakaMinor, roundWholeTakaMinor, remainingWholeTakaReturnMinor } from './money';
 export { parseQty, Qty, QTY_SCALE } from './qty';
 // The integer arithmetic `core-domain` needs for unit conversion (D-10). Exported
 // rather than reimplemented: D-31's rounding rule lives in scaled.ts and nowhere
