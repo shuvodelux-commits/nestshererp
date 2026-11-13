@@ -5,3 +5,4 @@ export const VOID_PURCHASE_SERVICE = Symbol('VoidPurchaseService');
 export const PLANNER_SERVICE = Symbol('PlannerService');
 export const PURCHASE_PLAN_SERVICE = Symbol('PurchasePlanService');
 export const ADD_LANDED_COST_SERVICE = Symbol('AddLandedCostService');
+export const PURCHASE_DRAFT_SERVICE = Symbol('PurchaseDraftService');
