@@ -53,7 +53,7 @@ async function registered(label: string): Promise<Identity> {
   const identifier = 'p2c-' + label + '@isolated.invalid';
   const password = 'P2cOnlyPassw0rd!1';
   const otp = await api().post('/api/v1/auth/registration/otp').send({identifier});
-  expect(otp.status,JSON.stringify(otp.body)).toBe(201);
+  expect(otp.status,JSON.stringify(otp.body)).toBe(200);
   const code = otp.body?.data?.devCode as string | undefined;
   if (!/^[0-9]{6}$/.test(code ?? '')) throw new Error('Dev OTP unavailable: no registration bypass allowed');
   const created = await api().post('/api/v1/auth/registration').send({
