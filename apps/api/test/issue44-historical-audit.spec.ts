@@ -315,6 +315,13 @@ async function auditedRead(
   }
 }
 
+const isExplicitlyEnabled = process.env['ISSUE44_ALLOW_SYNTHETIC_SQL'] === EXECUTION_GATE;
+
+// Normal CI MUST skip the fixture before any hook can create a pool or touch SQL.
+// The owner must approve the exact synthetic-only command in a separate turn.
+describe.skipIf(!isExplicitlyEnabled)(
+  'Issue #44 historical return audit — explicit SQL execution approval required',
+  () => {
 beforeAll(async () => {
   // MUST precede any new Pool, query, migration, role operation or fixture setup.
   const cfg = verifyGates();
@@ -354,7 +361,6 @@ afterAll(async () => {
   await admin?.end();
 });
 
-describe('Issue #44 historical return audit — explicit owner execution gate required', () => {
   it('uses a non-superuser, non-BYPASSRLS, read-only role', async () => {
     if (audit === undefined) throw new Error('Audit role unavailable');
     const role = await audit.query<{
@@ -417,4 +423,5 @@ describe('Issue #44 historical return audit — explicit owner execution gate re
     expect(Number(a.unresolved_parent_return_rows)).toBe(0);
     expect(Number(b.unresolved_parent_return_rows)).toBe(0);
   });
-});
+  },
+);
