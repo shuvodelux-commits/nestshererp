@@ -3420,7 +3420,7 @@
 | POST | `/api/v1/catalog/units/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
 | POST | `/api/v1/catalog/brands` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | PATCH | `/api/v1/catalog/brands/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
-| POST | `/api/v1/catalog/brands/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
+| POST | `/api/v1/catalog/brands/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/categories` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | PATCH | `/api/v1/catalog/categories/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
 | POST | `/api/v1/catalog/categories/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
