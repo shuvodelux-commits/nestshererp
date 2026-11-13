@@ -25,6 +25,7 @@ import {
   PlannerService,
   PurchasePlanService,
   PurchaseQueryService,
+  PurchaseDraftService,
   VoidPurchaseService,
 } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
@@ -55,6 +56,7 @@ import {
   SupplierOrdersController,
 } from './purchase-plans.controller';
 import { PurchasesController } from './purchases.controller';
+import { PurchaseDraftsController } from './purchase-drafts.controller';
 import { SupplierPaymentsController } from './supplier-payments.controller';
 import {
   ADD_LANDED_COST_SERVICE,
@@ -64,11 +66,14 @@ import {
   PLANNER_SERVICE,
   PURCHASE_PLAN_SERVICE,
   PURCHASE_QUERY_SERVICE,
+  PURCHASE_DRAFT_SERVICE,
 } from './tokens';
 
 /** Phase 5 — buying goods, and paying the supplier for them (§5.9). */
 @Module({
   controllers: [
+    // Keep the static /drafts route above the dynamic /purchases/:id route.
+    PurchaseDraftsController,
     PurchasesController,
     SupplierPaymentsController,
     PurchasePlansController,
@@ -76,6 +81,17 @@ import {
     LandedCostsController,
   ],
   providers: [
+    {
+      provide: PURCHASE_DRAFT_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        purchases: PurchaseRepository,
+        clock: Clock,
+      ): PurchaseDraftService =>
+        new PurchaseDraftService(uow, accessControl, purchases, clock),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PURCHASE_REPOSITORY, CLOCK],
+    },
     {
       provide: CREATE_PURCHASE_SERVICE,
       useFactory: (
