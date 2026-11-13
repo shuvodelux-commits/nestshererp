@@ -258,4 +258,61 @@ describe('GLOBAL_V2 SQL-wide product order / cursor', () => {
     const denied = await search({ rankingMode: 'GLOBAL_V2', search: 'wire' }, signToken(deniedTenant, TEST_JWT_SECRET));
     expect(denied.status).toBe(403);
   });
+  it('normalizes Bangla numerals and searches word fragments in either order', async () => {
+    const bengali = await createProduct('মরিচ ২০০');
+    await createProduct('মরিচ ১০০');
+    const answer = await search({
+      rankingMode: 'GLOBAL_V2', search: 'মরিচ 200', limit: 1,
+    });
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect((answer.body as PosResult).items.map((x) => x.id)).toEqual([bengali]);
+
+    const phone = await createProduct('Samsung A15');
+    const reversed = await search({
+      rankingMode: 'GLOBAL_V2', search: 'a15 sam', limit: 1,
+    });
+    expect(reversed.status, JSON.stringify(reversed.body)).toBe(200);
+    expect((reversed.body as PosResult).items.map((x) => x.id)).toEqual([phone]);
+  });
+
+  it('distinguishes NEGATIVE_STOCK from ZERO_STOCK in SQL using effective quantity', async () => {
+    const negative = await createProduct('Wire negative balance');
+    await stockOpening(negative, 1000);
+    await asTenant(pool, tenant.tenantId, async (db) => {
+      await db.query('UPDATE product_cost_state SET qty_on_hand = -1000 WHERE product_id = $1', [negative]);
+    });
+    const policy = await authorized(api().post('/api/v1/settings/value'))
+      .send({ key: SettingKey.EXPIRED_STOCK_SALE_POLICY, value: 'WARN' });
+    assertGood(policy, 'Expiry policy');
+    const neg = await search({
+      rankingMode: 'GLOBAL_V2', search: 'negative',
+      stockStatus: 'NEGATIVE_STOCK', limit: 1,
+    });
+    expect(neg.status, JSON.stringify(neg.body)).toBe(200);
+    expect((neg.body as PosResult).items.map((x) => x.id)).toEqual([negative]);
+    expect((neg.body as PosResult).items[0]?.qtyOnHand).toBe(-1000);
+    const zero = await search({
+      rankingMode: 'GLOBAL_V2', search: 'negative',
+      stockStatus: 'ZERO_STOCK', limit: 1,
+    });
+    expect(zero.status, JSON.stringify(zero.body)).toBe(200);
+    expect((zero.body as PosResult).items).toHaveLength(0);
+  });
+
+  it('rejects a syntactically valid but altered continuation rank', async () => {
+    await createProduct('Wire first');
+    await createProduct('Wire second');
+    const first = await search({ rankingMode: 'GLOBAL_V2', search: 'wire', limit: 1 });
+    expect(first.status).toBe(200);
+    const original = (first.body as PosResult).nextCursor;
+    expect(original).not.toBeNull();
+    const parts = (original as string).split('.');
+    const rank = Number(parts[1]);
+    const altered = ['v2', String(rank === 1010 ? 1000 : rank + 1), parts[2], parts[3]].join('.');
+    const response = await search({
+      rankingMode: 'GLOBAL_V2', search: 'wire', limit: 1, cursor: altered,
+    });
+    expect(response.status, JSON.stringify(response.body)).toBe(400);
+  });
+
 });
