@@ -12,7 +12,7 @@ import type { ProductSort } from '@sher/core-contracts';
 import { buildProductSearchText, searchTokens } from '@sher/core-domain';
 import type { DiscountType, ProductStatus } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
@@ -219,6 +219,25 @@ export class PostgresProductRepository implements ProductRepository {
       .orderBy(orderBy(column, filter.direction, sql`${products.id}`))
       .limit(filter.limit);
 
+    return rows.map(toRow);
+  }
+
+  /**
+   * FZ-03A: candidate discovery only, after exact search has no hits.
+   * Uses the existing pg_trgm name index; SKU/barcode/cost are never fuzzy.
+   * Transaction RLS + explicit tenant predicate both apply before LIMIT.
+   */
+  async fuzzyByName(tx: Tx, ctx: TenantContext, query: string, limit: number): Promise<readonly ProductRow[]> {
+    const tokens = searchTokens(query);
+    if (!tokens.length || tokens.length > 3 ||
+      tokens.some((token) => Array.from(token).length < 4 || /\p{N}/u.test(token))) return [];
+    await txOf(tx).execute(sql`SELECT set_config('pg_trgm.word_similarity_threshold', '0.40', true)`);
+    const score = sql<number>`(${sql.join(tokens.map((token) =>
+      sql`word_similarity(${token}, ${products.name})`), sql` + `)})`;
+    const rows = await this.selectProducts(tx, ctx)
+      .where(and(this.liveInTenant(ctx), ...tokens.map((token) => sql`${token} <% ${products.name}`)))
+      .orderBy(desc(score), asc(products.id))
+      .limit(Math.min(limit, 10));
     return rows.map(toRow);
   }
 
