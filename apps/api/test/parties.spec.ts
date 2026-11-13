@@ -538,6 +538,64 @@ describe('D08 P0-L03 — exact-role opening authorization', () => {
     expect(persisted.rows[0]!.version).toBe(version);
     expect(persisted.rows[0]!.amount_minor).toBe(190_000);
   });
+  it('rejects an old Supplier idempotency replay after Supplier edit permission is revoked', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(minimalCustomer({ roles: ['CUSTOMER', 'SUPPLIER'] })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    const operationId = Ulid.generate(clock);
+    const opening = { role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 170_000, businessDate };
+    const initial = await request(app.getHttpServer())
+      .post(`/api/v1/parties/${id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', operationId)
+      .send(opening)
+      .expect(201);
+    expect(initial.body.data.amountMinor).toBe(170_000);
+
+    await revoke(Permission.SUPPLIER_EDIT);
+    const before = await financialSnapshot();
+    const denied = await request(app.getHttpServer())
+      .post(`/api/v1/parties/${id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', operationId)
+      .send(opening)
+      .expect(403);
+    expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+    expect(await financialSnapshot()).toEqual(before);
+  });
+
+  it('preserves a legitimately authorized Supplier correction and journal reconciliation', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(minimalCustomer({ roles: ['CUSTOMER', 'SUPPLIER'] })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    const opening = await request(app.getHttpServer())
+      .post(`/api/v1/parties/${id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 190_000, businessDate })
+      .expect(201);
+    const version = opening.body.data.version as number;
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/v1/parties/${id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 220_000, businessDate, version })
+      .expect(200);
+    expect(updated.body.data.amountMinor).toBe(220_000);
+    expect(updated.body.data.version).toBe(version + 1);
+    const supplier = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${id}/ledger?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supplier.body.closingBalance.netMinor).toBe(-220_000);
+    expect(supplier.body.rows).toHaveLength(3);
+    const customer = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${id}/ledger?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(customer.body.rows).toHaveLength(0);
+    expect(customer.body.closingBalance.netMinor).toBe(0);
+  });
 });
 
 describe('editing', () => {
