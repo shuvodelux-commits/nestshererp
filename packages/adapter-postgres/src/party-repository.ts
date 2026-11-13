@@ -79,13 +79,13 @@ const BALANCE_ACCOUNTS = sql.join(
  * "settled" the shopkeeper needs to see. It is also what keeps a never-traded
  * party from vanishing after the first page when the list is sorted by balance.
  */
-function balanceNetMinorOf(tenantId: SQL, partyId: SQL): SQL<number> {
+function balanceNetMinorOf(tenantId: SQL, partyId: SQL, accounts: SQL = BALANCE_ACCOUNTS): SQL<number> {
   return sql<number>`COALESCE((
   SELECT SUM(jl.amount_minor)
   FROM journal_lines jl
   WHERE jl.tenant_id = ${tenantId}
     AND jl.party_id = ${partyId}
-    AND jl.account_code IN (${BALANCE_ACCOUNTS})
+    AND jl.account_code IN (${accounts})
 ), 0)::bigint`;
 }
 
@@ -101,6 +101,11 @@ const LEDGER_ACCOUNTS_BY_ROLE: Record<PartyRole, readonly string[]> = {
 
 function ledgerAccountList(role: PartyRole): SQL {
   return sql.join(LEDGER_ACCOUNTS_BY_ROLE[role].map((account) => sql`${account}`), sql`, `);
+}
+
+/** One trading relationship: identical control-account selection as its ledger. */
+function roleBalanceNetMinorOf(tenantId: SQL, partyId: SQL, role: PartyRole): SQL<number> {
+  return balanceNetMinorOf(tenantId, partyId, ledgerAccountList(role));
 }
 
 /**
@@ -204,11 +209,11 @@ export class PostgresPartyRepository implements PartyRepository {
   constructor(private readonly clock: Clock) {}
 
   async list(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<readonly PartyRow[]> {
-    const rows = await this.selectParties(tx)
+    const rows = await this.selectParties(tx, filter.role)
       .where(and(this.liveInTenant(ctx), ...this.filters(ctx, filter), ...this.after(ctx, filter)))
       // Whichever header was tapped, then id in the same direction as the
       // tiebreak (§3.9, UI-46 — keyset only, `OFFSET` is banned).
-      .orderBy(orderBy(PARTY_SORTS[filter.sort], filter.direction, sql`${parties.id}`))
+      .orderBy(orderBy(this.roleSort(filter), filter.direction, sql`${parties.id}`))
       .limit(filter.limit);
 
     return this.withRoles(tx, ctx, rows);
@@ -219,6 +224,9 @@ export class PostgresPartyRepository implements PartyRepository {
    * round trip. Four counts taken at four moments could disagree with each other.
    */
   async count(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<PartyCounts> {
+    const roleBalance = roleBalanceNetMinorOf(
+      sql`${parties.tenantId}`, sql`${parties.id}`, filter.role,
+    );
     const rows = await txOf(tx)
       .select({
         total: sql<number>`count(*)::int`,
@@ -231,18 +239,20 @@ export class PostgresPartyRepository implements PartyRepository {
          * netting would hide a shop carrying large receivables *and* large
          * advances behind a small-looking difference.
          */
-        totalOutstandingMinor: sql<number>`COALESCE(SUM(GREATEST(${BALANCE_NET_MINOR}, 0)), 0)::bigint`,
-        totalAdvanceMinor: sql<number>`COALESCE(SUM(GREATEST(-${BALANCE_NET_MINOR}, 0)), 0)::bigint`,
+        totalOutstandingMinor: sql<number>`COALESCE(SUM(GREATEST(${roleBalance}, 0)), 0)::bigint`,
+        totalAdvanceMinor: sql<number>`COALESCE(SUM(GREATEST(-${roleBalance}, 0)), 0)::bigint`,
         /*
          * `exceedsCreditLimit` in SQL. A NULL limit is no limit, not zero, so
          * the FILTER's NULL comparison correctly excludes those rows; `>` and
          * not `>=` lets a customer sit exactly on their limit, matching the
          * domain function the sale path will call.
          */
-        overCreditLimit: sql<number>`count(*) FILTER (
-          WHERE ${parties.creditLimitMinor} IS NOT NULL
-            AND GREATEST(${BALANCE_NET_MINOR}, 0) > ${parties.creditLimitMinor}
-        )::int`,
+        overCreditLimit: filter.role === 'CUSTOMER'
+          ? sql<number>`count(*) FILTER (
+              WHERE ${parties.creditLimitMinor} IS NOT NULL
+                AND GREATEST(${roleBalance}, 0) > ${parties.creditLimitMinor}
+            )::int`
+          : sql<number>`0::int`,
       })
       .from(parties)
       .where(and(this.liveInTenant(ctx), ...this.filters(ctx, filter)));
@@ -257,6 +267,20 @@ export class PostgresPartyRepository implements PartyRepository {
       totalAdvanceMinor: counts?.totalAdvanceMinor ?? 0,
       overCreditLimit: counts?.overCreditLimit ?? 0,
     };
+  }
+
+  async getRoleBalance(
+    tx: Tx,
+    ctx: TenantContext,
+    partyId: string,
+    role: PartyRole,
+  ): Promise<number> {
+    const rows = await txOf(tx)
+      .select({ balance: roleBalanceNetMinorOf(sql`${parties.tenantId}`, sql`${parties.id}`, role) })
+      .from(parties)
+      .where(and(this.liveInTenant(ctx), eq(parties.id, partyId)))
+      .limit(1);
+    return rows[0]?.balance ?? 0;
   }
 
   async findById(tx: Tx, ctx: TenantContext, id: string): Promise<PartyRow | null> {
@@ -771,6 +795,15 @@ export class PostgresPartyRepository implements PartyRepository {
     return conditions;
   }
 
+  /** The balance sort and its cursor anchor must both use the selected role. */
+  private roleSort(filter: PartyFilter): SortableColumn {
+    if (filter.sort !== 'balance') return PARTY_SORTS[filter.sort];
+    return ownColumn(
+      roleBalanceNetMinorOf(sql`${parties.tenantId}`, sql`${parties.id}`, filter.role),
+      roleBalanceNetMinorOf(sql`anchor.tenant_id`, sql`anchor.id`, filter.role),
+    );
+  }
+
   /** Keyset paging on the same triple the ordering uses (§3.9 — no `OFFSET`). */
   private ledgerAfter(ctx: TenantContext, filter: PartyLedgerFilter) {
     if (filter.cursor === null) return [];
@@ -789,9 +822,17 @@ export class PostgresPartyRepository implements PartyRepository {
 
   /* ------------------------------------------------------------- mechanics */
 
-  private selectParties(tx: Tx) {
+  private selectParties(tx: Tx, role?: PartyRole) {
+    // Only list/selected-role reads receive a scoped projection. Writers and
+    // internal guards retain their existing full-historical view.
+    const columns = {
+      ...PARTY_COLUMNS,
+      balanceNetMinor: role === undefined
+        ? BALANCE_NET_MINOR
+        : roleBalanceNetMinorOf(sql`${parties.tenantId}`, sql`${parties.id}`, role),
+    };
     return txOf(tx)
-      .select(PARTY_COLUMNS)
+      .select(columns)
       .from(parties)
       .leftJoin(customerGroups, eq(customerGroups.id, parties.customerGroupId));
   }
@@ -844,7 +885,7 @@ export class PostgresPartyRepository implements PartyRepository {
 
     return [
       afterCursor(
-        PARTY_SORTS[filter.sort],
+        this.roleSort(filter),
         filter.direction,
         sql`${parties.id}`,
         sql`anchor.id`,
