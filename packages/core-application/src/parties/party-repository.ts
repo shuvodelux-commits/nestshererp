@@ -213,6 +213,8 @@ export interface CustomerGroupEntry {
  */
 export interface PartyRepository {
   list(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<readonly PartyRow[]>;
+  /** Optional role- and tenant-scoped name-only discovery, never fuzzy phone/identifier lookup. */
+  fuzzyByName?(tx: Tx, ctx: TenantContext, role: PartyRole, query: string, limit: number): Promise<readonly PartyRow[]>;
   /** Counts over the same filter, minus paging, so a tile matches its table. */
   count(tx: Tx, ctx: TenantContext, filter: PartyFilter): Promise<PartyCounts>;
 
