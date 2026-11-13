@@ -1,9 +1,5 @@
 /*
  * MOD-006 P2-C real Nest + disposable PostgreSQL16 acceptance.
- * @covers endpoint:GET /api/v1/money/accounts
- * @covers endpoint:GET /api/v1/money/accounts/:id/statement
- * @covers endpoint:POST /api/v1/auth/login
- * @covers endpoint:GET /api/v1/me
  * Mandatory hard gate BEFORE migration or table reset. No retained database.
  * All account/settings/movement POSTs here provision synthetic test fixtures;
  * the real React Money Accounts read journey itself must never make such writes.
@@ -114,6 +110,11 @@ async function restrict(actor: Identity, codes: readonly string[]): Promise<void
     }
   });
 }
+// Ordinary CI cannot access the one named disposable Postgres instance.
+// It skips this isolated suite; the explicit test env opts in and keeps the hard guard.
+const p2cSuite = process.env['MOD006_P2C_TEST_ONLY'] ===
+  'MOD006_P2C_DISPOSABLE_DB_ONLY_20261113' ? describe : describe.skip;
+p2cSuite('P2-C actual authenticated PostgreSQL16 Money Accounts reads',() => {
 beforeAll(async () => {
   assertDisposable();
   pool = testPool();
@@ -128,7 +129,7 @@ afterAll(async () => {
   await pool?.end();
 });
 
-describe('P2-C actual authenticated PostgreSQL16 Money Accounts reads',() => {
+
   it('protects identity, tenant, account family and role-dependent balance totals',async () => {
     await resetDatabase(pool);
     const a=await registered('a');
