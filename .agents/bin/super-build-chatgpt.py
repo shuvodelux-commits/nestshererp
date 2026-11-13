@@ -252,8 +252,15 @@ def finalize(args: argparse.Namespace) -> None:
     ensure_checked_out(data)
     checks = data.get("checks", [])
     require(bool(checks), "No verification command has been executed")
-    require(all(check["exit_code"] == 0 and check["clean_after"] for check in checks),
-            "One or more verification checks failed; cannot finalize")
+    # Keep the entire failed history, but permit a successful retry for the
+    # same named verification check. A passing different check never hides an
+    # unresolved failure, and every attempt remains in the receipt.
+    latest = {check["name"]: check for check in checks}
+    require(all(check["exit_code"] == 0 and check["clean_after"] for check in latest.values()),
+            "One or more verification checks still fail; cannot finalize")
+    failed_attempts = sum(
+        1 for check in checks if check["exit_code"] != 0 or not check["clean_after"]
+    )
     result = {
         "state": "verified",
         "issue": data["issue"],
@@ -261,7 +268,9 @@ def finalize(args: argparse.Namespace) -> None:
         "base": data["base"],
         "head": data["head"],
         "changed_files": data["changed_files"],
-        "passed_checks": [check["name"] for check in checks],
+        "passed_checks": list(latest),
+        "verification_attempts": len(checks),
+        "failed_attempts": failed_attempts,
         "native_launcher_ran": False,
         "merge_authorized": False,
         "draft_pr_required": True,
