@@ -280,8 +280,16 @@ export interface PurchaseDraftPayload {
 export interface PurchaseDraftInput extends PurchaseDraftPayload {
   readonly id: string;
   readonly businessDate: string;
+  readonly operationId: string;
+  /** Canonical immutable content of original create request, excludes operationId. */
+  readonly createFingerprint: string;
 }
-export interface PurchaseDraftRow extends PurchaseDraftInput {
+export interface PurchaseDraftRow extends PurchaseDraftPayload {
+  readonly id: string;
+  readonly businessDate: string;
+  /** Null only for rows created before migration 0054. */
+  readonly operationId: string | null;
+  readonly createFingerprint: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly version: number;
@@ -289,8 +297,12 @@ export interface PurchaseDraftRow extends PurchaseDraftInput {
 }
 
 export interface PurchaseRepository {
-  insertPurchaseDraft(tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput): Promise<PurchaseDraftRow>;
+  /** Returns null if another request has already inserted this operation ID. */
+  insertPurchaseDraft(tx: Tx, ctx: TenantContext, draft: PurchaseDraftInput): Promise<PurchaseDraftRow | null>;
   findPurchaseDraft(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDraftRow | null>;
+  findPurchaseDraftByOperationId(
+    tx: Tx, ctx: TenantContext, operationId: string,
+  ): Promise<PurchaseDraftRow | null>;
   listPurchaseDrafts(
     tx: Tx, ctx: TenantContext, state: 'active' | 'deleted', limit: number,
   ): Promise<readonly PurchaseDraftRow[]>;

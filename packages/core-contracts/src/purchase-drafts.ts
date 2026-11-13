@@ -21,8 +21,17 @@ function boundedCart(value: z.infer<typeof draftPayload>): boolean {
 
 const draftLimitMessage = 'Draft is too large or contains inline attachments. Stage attachments separately.';
 
+/**
+ * Durable create operation ID, retained even after recycle/restore or an
+ * uncertain HTTP response. Never send a fresh key for a retry of the same
+ * user intent. Separate from the server-generated draft document ID.
+ */
+export const purchaseDraftCreateOperationIdSchema =
+  z.string().regex(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+
 export const createPurchaseDraftRequestSchema =
-  draftPayload.refine(boundedCart, draftLimitMessage);
+  draftPayload.extend({ operationId: purchaseDraftCreateOperationIdSchema })
+    .refine(boundedCart, draftLimitMessage);
 export const updatePurchaseDraftRequestSchema =
   draftPayload.extend({ expectedVersion: z.number().int().positive() })
     .refine(boundedCart, draftLimitMessage);
