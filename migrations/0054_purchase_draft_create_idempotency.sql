@@ -3,7 +3,7 @@
 -- These columns are immutable creation evidence, NOT the mutable draft payload.
 ALTER TABLE purchase_drafts
   ADD COLUMN create_operation_id CHAR(26),
-  ADD COLUMN create_fingerprint TEXT;
+  ADD COLUMN create_fingerprint CHAR(64);
 
 ALTER TABLE purchase_drafts
   ADD CONSTRAINT purchase_drafts_create_idempotency_pair CHECK (
