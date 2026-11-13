@@ -1,4 +1,4 @@
-import { searchProducts } from '@sher/core-domain';
+import { searchProducts, searchTokens } from '@sher/core-domain';
 import type { GlobalSearchGroup, GlobalSearchHit } from '@sher/core-contracts';
 import { Permission, SettingKey } from '@sher/core-contracts';
 
@@ -16,10 +16,19 @@ export interface GlobalSearchCommand {
   readonly ctx: TenantContext;
   readonly q: string;
   readonly limit?: number | undefined;
+  /** Optional name-only fuzzy fallback; omitted preserves strict behavior. */
+  readonly mode?: 'FUZZY_V1' | undefined;
 }
 
 /** Enough to recognise the row you meant, few enough to read without scrolling. */
 const DEFAULT_LIMIT = 5;
+
+/** Never expand numeric identifiers, scanner codes or short ambiguous inputs. */
+function eligibleForFuzzyName(query: string): boolean {
+  const tokens = searchTokens(query);
+  return tokens.length > 0 && tokens.length <= 3 &&
+    tokens.every((token) => Array.from(token).length >= 4 && !/\p{N}/u.test(token));
+}
 
 /**
  * Global Search (Phase 18.1, §5.5 · §5.6 · §5.7 · §5.9).
@@ -60,6 +69,7 @@ export class GlobalSearchService {
     const { ctx } = command;
     const query = command.q.trim();
     const limit = command.limit ?? DEFAULT_LIMIT;
+    const fuzzy = command.mode === 'FUZZY_V1' && eligibleForFuzzyName(query);
     if (query === '') return { groups: [] };
 
     return this.uow.run(ctx, async (tx) => {
@@ -73,10 +83,10 @@ export class GlobalSearchService {
         : false;
 
       const groups = await Promise.all([
-        may(Permission.PRODUCT_VIEW) ? this.productGroup(tx, ctx, query, limit) : null,
-        may(Permission.CUSTOMER_VIEW) ? this.partyGroup(tx, ctx, 'CUSTOMER', 'Customers', query, limit) : null,
-        may(Permission.SUPPLIER_VIEW) ? this.partyGroup(tx, ctx, 'SUPPLIER', 'Suppliers', query, limit) : null,
-        vendorsOn ? this.partyGroup(tx, ctx, 'VENDOR', 'Vendors', query, limit) : null,
+        may(Permission.PRODUCT_VIEW) ? this.productGroup(tx, ctx, query, limit, fuzzy) : null,
+        may(Permission.CUSTOMER_VIEW) ? this.partyGroup(tx, ctx, 'CUSTOMER', 'Customers', query, limit, fuzzy) : null,
+        may(Permission.SUPPLIER_VIEW) ? this.partyGroup(tx, ctx, 'SUPPLIER', 'Suppliers', query, limit, fuzzy) : null,
+        vendorsOn ? this.partyGroup(tx, ctx, 'VENDOR', 'Vendors', query, limit, fuzzy) : null,
         may(Permission.SALE_VIEW) ? this.saleGroup(tx, ctx, query, limit) : null,
         may(Permission.PURCHASE_VIEW) ? this.purchaseGroup(tx, ctx, query, limit) : null,
       ]);
@@ -99,6 +109,7 @@ export class GlobalSearchService {
     ctx: TenantContext,
     query: string,
     limit: number,
+    fuzzy: boolean,
   ): Promise<GlobalSearchGroup> {
     const rows = await this.products.list(tx, ctx, {
       search: query,
@@ -111,9 +122,12 @@ export class GlobalSearchService {
       limit: limit * 6,
     });
 
-    const hits = searchProducts(query, rows)
-      .slice(0, limit)
-      .map((row): GlobalSearchHit => ({
+    const exact = searchProducts(query, rows).slice(0, limit);
+    // Strict matches outrank approximations; expand only when no strict hit exists.
+    const selected = fuzzy && exact.length === 0 && this.products.fuzzyByName
+      ? await this.products.fuzzyByName(tx, ctx, query, limit)
+      : exact;
+    const hits = selected.map((row): GlobalSearchHit => ({
         kind: 'PRODUCT',
         id: row.id,
         title: row.name,
@@ -134,6 +148,7 @@ export class GlobalSearchService {
     label: string,
     query: string,
     limit: number,
+    fuzzy: boolean,
   ): Promise<GlobalSearchGroup> {
     const rows = await this.parties.list(tx, ctx, {
       role,
@@ -146,10 +161,13 @@ export class GlobalSearchService {
       limit,
     });
 
+    const selected = fuzzy && rows.length === 0 && this.parties.fuzzyByName
+      ? await this.parties.fuzzyByName(tx, ctx, role, query, limit)
+      : rows;
     return {
       kind: role,
       label,
-      hits: rows.map((row): GlobalSearchHit => ({
+      hits: selected.map((row): GlobalSearchHit => ({
         kind: role,
         id: row.id,
         title: row.name,
