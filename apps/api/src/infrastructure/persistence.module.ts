@@ -8,6 +8,7 @@ import {
   PostgresAuditWriter,
   PostgresBusinessProfileRepository,
   PostgresCatalogRepository,
+  PostgresCatalogMetadataV1Repository,
   PostgresIdempotencyStore,
   PostgresInventoryRepository,
   PostgresNoteRepository,
@@ -89,6 +90,7 @@ import {
   AUDIT_WRITER,
   BUSINESS_PROFILE_REPOSITORY,
   CATALOG_REPOSITORY,
+  CATALOG_METADATA_V1_REPOSITORY,
   CLOCK,
   DATABASE_POOL,
   IDEMPOTENCY_STORE,
@@ -347,6 +349,12 @@ function selectEntitlementProvider(
       inject: [CLOCK],
     },
     {
+      provide: CATALOG_METADATA_V1_REPOSITORY,
+      useFactory: (clock: Clock): PostgresCatalogMetadataV1Repository =>
+        new PostgresCatalogMetadataV1Repository(clock),
+      inject: [CLOCK],
+    },
+    {
       provide: PRODUCT_REPOSITORY,
       useFactory: (clock: Clock): PostgresProductRepository => new PostgresProductRepository(clock),
       inject: [CLOCK],
@@ -560,6 +568,7 @@ function selectEntitlementProvider(
     LICENSE_KEY_STORE,
     LICENSE_MACHINE_STATE,
     CATALOG_REPOSITORY,
+    CATALOG_METADATA_V1_REPOSITORY,
     PRODUCT_REPOSITORY,
     PARTY_REPOSITORY,
     MONEY_REPOSITORY,
