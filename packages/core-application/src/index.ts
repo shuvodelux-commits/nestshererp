@@ -143,6 +143,18 @@ export type {
   CatalogRepository,
   CategoryEntry,
 } from './catalog/catalog-repository';
+export type {
+  CatalogMetadataV1Repository,
+  NameMetadataPatch,
+  UnitMetadataPatch,
+} from './catalog/catalog-metadata-v1-repository';
+export { ManageCatalogMetadataV1Service } from './catalog/manage-catalog-metadata-v1-service';
+export type {
+  ListCatalogMetadataV1Command,
+  PatchCatalogMetadataV1UnitCommand,
+  PatchCatalogMetadataV1BrandCommand,
+  PatchCatalogMetadataV1CategoryCommand,
+} from './catalog/manage-catalog-metadata-v1-service';
 export { ManageCatalogService } from './catalog/manage-catalog-service';
 export type {
   CreateCategoryCommand,
