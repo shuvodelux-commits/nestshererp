@@ -78,6 +78,8 @@ const billedLines = computed(() =>
     lotId: line.lotId,
     qtyReceived: line.qtyReceived,
     qtyReturned: line.qtyReturned,
+    valueReturnedMinor: line.valueReturnedMinor,
+    costReturnedMinor: line.costReturnedMinor,
     qtyRemainingInLot: line.qtyRemainingInLot,
     billedNetMinor: line.billedNetMinor,
     actualUnitCost: line.actualUnitCost,
@@ -120,7 +122,7 @@ const accountOptions = computed(() =>
 
 const ready = computed(
   () =>
-    returnValueMinor.value > 0 &&
+    totals.value !== null && totals.value.lines.length > 0 &&
     receivedMinor.value <= returnValueMinor.value &&
     (receivedMinor.value === 0 || accountId.value !== ''),
 );
@@ -396,7 +398,9 @@ onMounted(load);
     :message="
       receivedMinor > 0
         ? `${taka(receivedMinor)} comes back from the supplier`
-        : 'The value comes off what the shop owes them'
+        : returnValueMinor === 0
+          ? 'No money changes hands; the stock return will be recorded'
+          : 'The value comes off what the shop owes them'
     "
     confirm-label="Send Back"
     @cancel="confirming = false"
