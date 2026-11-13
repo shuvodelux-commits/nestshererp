@@ -17,8 +17,8 @@ import type { PartyLedgerFilter, PartyRepository } from './party-repository';
  * screen is recomputed from the lines each time it is asked for, so there is no
  * cached total that can fall out of step with the postings under it.
  *
- * The closing balance this returns is the same number `ManagePartiesService`
- * puts on the list row, because both are `partyBalanceOf` over the same sum.
+ * The closing balance is the current balance of the requested trading role;
+ * the legacy list can still expose a party-wide net and must be adapted separately.
  */
 export interface PartyLedgerCommand {
   readonly ctx: TenantContext;
@@ -113,11 +113,8 @@ export class PartyLedgerService {
         openingBalance: ledger.openingBalance,
         rows: [...ledger.rows],
         /*
-         * The closing balance of the *party*, not of the page. When a date
-         * filter or a page boundary leaves later lines out, the running total
-         * of what is shown is not what the customer owes — and the header of a
-         * statement has to say what they owe, or someone will collect the
-         * wrong amount. The rows still carry their own running balances.
+         * Current balance of this requested trading relationship, not merely
+         * the page or selected date range. Other role controls are excluded.
          */
         closingBalance: partyBalanceOf(currentNetMinor),
         totalDebitMinor: ledger.totalDebitMinor,
