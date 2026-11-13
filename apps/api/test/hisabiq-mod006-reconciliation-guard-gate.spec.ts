@@ -8,8 +8,6 @@
  * @covers endpoint:GET /api/v1/money/reconciliations/:id/statement/:fileId/file
  * @covers endpoint:POST /api/v1/money/reconciliations
  * @covers endpoint:POST /api/v1/money/reconciliations/:id/statement
- * @covers permission:reconciliation.view
- * @covers permission:reconciliation.perform
  */
 import 'reflect-metadata';
 
