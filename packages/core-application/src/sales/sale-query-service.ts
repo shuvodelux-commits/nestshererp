@@ -270,6 +270,30 @@ export class SaleQueryService {
         ? parseRankedPosCursor(query.cursor, fingerprint as string)
         : null;
 
+      // A syntactically valid cursor is not proof the ranked row is still
+      // eligible or its rank is unchanged. Verify it within the same tenant
+      // and effective filters before advancing, so edited/stale or tampered
+      // rank anchors fail closed instead of skipping valid products.
+      if (rankedMode && rankAfter !== null) {
+        const anchors = await this.sales.listPosProducts(tx, ctx, {
+          expiredOn,
+          search: query.search ?? null,
+          barcode: query.barcode ?? null,
+          categoryId: query.categoryId ?? null,
+          brandId: query.brandId ?? null,
+          customerGroupId,
+          cursor: null,
+          rankingMode: 'GLOBAL_V2',
+          stockStatus: query.stockStatus ?? null,
+          rankAfter: null,
+          anchorId: rankAfter.id,
+          limit: 1,
+        });
+        if (anchors.length !== 1 || anchors[0]?.searchRank !== rankAfter.rank) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Stale or invalid POS search cursor');
+        }
+      }
+
       const rows = await this.sales.listPosProducts(tx, ctx, {
         expiredOn,
         search: query.search ?? null,
