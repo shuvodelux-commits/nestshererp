@@ -324,6 +324,113 @@ describe('D-04 — one identity, several roles', () => {
   });
 });
 
+describe('D08 P0-L02 — trading-role balance isolation for Party list and detail', () => {
+  it('uses the list role for balance cells, summary tiles, credit guard and keyset balance sort', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const mixedCreated = await createParty(
+      minimalCustomer({
+        name: 'Dual Role Shop',
+        roles: ['CUSTOMER', 'SUPPLIER'],
+        creditLimitMinor: 200_000,
+        opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 250_000, businessDate },
+      }),
+    ).expect(201);
+    const mixed = mixedCreated.body.data as PartyBody;
+    await request(app.getHttpServer())
+      .post(`/api/v1/parties/${mixed.id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 900_000, businessDate })
+      .expect(201);
+    const otherCreated = await createParty(
+      minimalCustomer({
+        name: 'Customer Only',
+        phone: '01799999999',
+        opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 100_000, businessDate },
+      }),
+    ).expect(201);
+    const other = otherCreated.body.data as PartyBody;
+
+    const first = await listParties('?role=CUSTOMER&sort=balance&direction=desc&limit=1').expect(200);
+    expect(first.body.data).toHaveLength(1);
+    expect(first.body.data[0].id).toBe(mixed.id);
+    expect(first.body.data[0].balance.netMinor).toBe(250_000);
+    expect(first.body.summary.totalOutstandingMinor).toBe(350_000);
+    expect(first.body.summary.totalAdvanceMinor).toBe(0);
+    expect(first.body.summary.overCreditLimit).toBe(1);
+    expect(first.body.page.hasMore).toBe(true);
+    const next = await listParties(
+      `?role=CUSTOMER&sort=balance&direction=desc&limit=1&cursor=${first.body.page.nextCursor}`,
+    ).expect(200);
+    expect(next.body.data[0].id).toBe(other.id);
+    expect(next.body.data[0].balance.netMinor).toBe(100_000);
+    expect(next.body.page.hasMore).toBe(false);
+
+    const suppliers = await listParties('?role=SUPPLIER').expect(200);
+    expect(suppliers.body.data).toHaveLength(1);
+    expect(suppliers.body.data[0].id).toBe(mixed.id);
+    expect(suppliers.body.data[0].balance.netMinor).toBe(-900_000);
+    expect(suppliers.body.summary.totalOutstandingMinor).toBe(0);
+    expect(suppliers.body.summary.totalAdvanceMinor).toBe(900_000);
+  });
+
+  it('requires role-specific Party details and redacts relationships without view permission', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(minimalCustomer({
+      roles: ['CUSTOMER', 'SUPPLIER'],
+      opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 200_000, businessDate },
+    })).expect(201);
+    const party = created.body.data as PartyBody;
+    await request(app.getHttpServer())
+      .post(`/api/v1/parties/${party.id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 130_000, businessDate })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    const customer = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(customer.body.data.balance.netMinor).toBe(200_000);
+    const supplier = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supplier.body.data.balance.netMinor).toBe(-130_000);
+    await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}?role=VENDOR`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.SUPPLIER_VIEW],
+      );
+    });
+    const denied = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+    expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+    const visible = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(visible.body.data.balance.netMinor).toBe(200_000);
+    expect(visible.body.data.roles).toEqual(['CUSTOMER']);
+    const tab = await listParties('?role=CUSTOMER').expect(200);
+    const row = tab.body.data.find((item: { id: string }) => item.id === party.id);
+    expect(row.roles).toEqual(['CUSTOMER']);
+    expect(row.balance.netMinor).toBe(200_000);
+  });
+});
+
 describe('editing', () => {
   it('refuses the second of two simultaneous saves (D-32)', async () => {
     const created = await createParty(minimalCustomer());
