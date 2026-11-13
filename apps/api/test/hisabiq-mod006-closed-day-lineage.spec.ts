@@ -371,6 +371,7 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
         spy.mockRestore();
       }
 
+      if (following === undefined) throw new Error('Concurrent follower did not start');
       const winner = await leading;
       const second = await following;
       if (first === 'close-first') {
