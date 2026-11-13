@@ -30,8 +30,6 @@ export interface ReturnableBillLineRow {
 
 export interface ReturnableBillRow {
   readonly purchaseId: string;
-  readonly returnValueMinor: number;
-  readonly inventoryMinor: number;
   readonly number: string;
   readonly businessDate: string;
   readonly status: string;
@@ -139,6 +137,8 @@ export interface PurchaseReturnFilter {
 export interface PurchaseReturnForReversal {
   readonly id: string;
   readonly purchaseId: string;
+  readonly returnValueMinor: number;
+  readonly inventoryMinor: number;
   readonly number: string;
   readonly status: string;
   readonly businessDate: string;
