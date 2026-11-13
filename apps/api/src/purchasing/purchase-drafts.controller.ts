@@ -11,7 +11,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { PurchaseDraftResponse, PurchaseDraftService, TenantContext } from '@sher/core-application';
+import type { PurchaseDraftService, TenantContext } from '@sher/core-application';
+import type { PurchaseDraftResponse } from '@sher/core-contracts';
 import {
   AppError,
   ErrorCode,
