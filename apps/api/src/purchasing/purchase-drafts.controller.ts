@@ -80,6 +80,7 @@ export class PurchaseDraftsController {
   }
 
   @Post('drafts/:id/restore')
+  @HttpCode(200)
   async restore(
     @Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext,
   ): Promise<{ data: PurchaseDraftResponse }> {
