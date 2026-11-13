@@ -4,7 +4,6 @@
  *
  * @covers endpoint:GET /api/v1/sales/pos-products
  * @covers permission:sale.invoice.create
- * @covers workflow:pos-global-product-search
  */
 import 'reflect-metadata';
 
