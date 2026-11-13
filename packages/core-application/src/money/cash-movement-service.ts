@@ -162,6 +162,10 @@ export class CashMovementService {
       }
       await this.periods.assertOpen(tx, ctx, command.businessDate);
 
+      // Account isDrawer/type are editable master data. The account writer
+      // acquires this exact tenant lock before editing; acquire it BEFORE
+      // reading either side or a drawer reassignment could race this posting.
+      await this.settings.lockTenant(tx, ctx);
       const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
       const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
 
@@ -292,6 +296,7 @@ export class CashMovementService {
        * document by id alone.
        */
       await this.accessControl.require(tx, ctx, Permission.CASH_MOVEMENT_VOID);
+      await this.settings.lockTenant(tx, ctx);
       await this.requireKindPermission(tx, ctx, command.movementId);
       await this.assertDrawerOpenFor(tx, ctx, command.movementId);
 
@@ -337,6 +342,7 @@ export class CashMovementService {
        * allowed to touch.
        */
       await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[command.kind]);
+      await this.settings.lockTenant(tx, ctx);
       await this.requireKindPermission(tx, ctx, command.movementId);
       // Reversing the original drawer movement is also a real cash movement.
       // It must not be used to bypass ON mode when a correction changes accounts.

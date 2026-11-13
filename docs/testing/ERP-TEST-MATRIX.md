@@ -3486,7 +3486,7 @@
 | GET | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
 | GET | `/api/v1/money/accounts/:id/statement` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
 | POST | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
-| PATCH | `/api/v1/money/accounts/:id` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
+| PATCH | `/api/v1/money/accounts/:id` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/accounts/:id/deactivate` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
 | GET | `/api/v1/money/day` | CashSessionsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | GET | `/api/v1/money/daily-cash` | CashSessionsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
@@ -3685,7 +3685,7 @@
 | `party.group.manage` | party | ❌ NOT TESTED |
 | `data.import.run` | data | ❌ NOT TESTED |
 | `cash.account.view` | cash | ❌ NOT TESTED |
-| `cash.account.manage` | cash | ❌ NOT TESTED |
+| `cash.account.manage` | cash | ✅ TESTED |
 | `cash.session.start` | cash | ✅ TESTED |
 | `cash.session.close` | cash | ✅ TESTED |
 | `cash.session.reopen` | cash | ❌ NOT TESTED |

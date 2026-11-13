@@ -215,6 +215,16 @@ export class ManageAccountsService {
       }
 
       this.validate(input);
+      if (input.isDrawer) {
+        // Account creation and cash posting must agree on the active drawer.
+        // A session cannot silently be inherited by a newly designated box.
+        await this.settings.lockTenant(tx, ctx);
+        const open = await this.money.findOpenSession(tx, ctx);
+        if (open !== null) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED,
+            'Close the current cash day before changing its designated drawer');
+        }
+      }
       await this.requireNoOtherDrawer(tx, ctx, input, null);
 
       const id = Ulid.generate(this.clock);
@@ -269,6 +279,9 @@ export class ManageAccountsService {
     const { ctx, input } = command;
 
     return this.uow.run(ctx, async (tx) => {
+      // The session and movement writers hold the same tenant lock before
+      // resolving the drawer. Never read editable isDrawer ahead of that lock.
+      await this.settings.lockTenant(tx, ctx);
       const existing = await this.requireAccount(tx, ctx, command.accountId);
 
       // Both sides: you may not move an account out of a kind you cannot
@@ -277,6 +290,10 @@ export class ManageAccountsService {
       await this.accessControl.require(tx, ctx, managePermissionFor(input.type));
 
       this.validate(input);
+      if (existing.isDrawer !== input.isDrawer ||
+          (existing.isDrawer && existing.type !== input.type)) {
+        await this.assertNoOpenDrawerChange(tx, ctx, existing.id, input.isDrawer);
+      }
       await this.requireNoOtherDrawer(tx, ctx, input, existing.id);
 
       const updated = await this.money.updateAccount(tx, ctx, {
@@ -323,8 +340,11 @@ export class ManageAccountsService {
     const { ctx } = command;
 
     return this.uow.run(ctx, async (tx) => {
+      // Deactivation also clears isDrawer; protect a live counted day.
+      await this.settings.lockTenant(tx, ctx);
       const existing = await this.requireAccount(tx, ctx, command.accountId);
       await this.accessControl.require(tx, ctx, managePermissionFor(existing.type));
+      await this.assertNoOpenDrawerChange(tx, ctx, existing.id, false);
 
       if (!canDeactivate(existing.balanceMinor)) {
         throw new AppError(
@@ -362,6 +382,24 @@ export class ManageAccountsService {
 
       return toResponse(await this.requireAccount(tx, ctx, existing.id));
     });
+  }
+
+  /**
+   * Called under the same tenant lock as Start/Close Day and money movements.
+   * A drawer swap is legitimate between counted days, never while a
+   * physical session is open. A simple name/reference edit is unaffected.
+   */
+  private async assertNoOpenDrawerChange(
+    tx: Tx,
+    ctx: TenantContext,
+    accountId: string,
+    becomingDrawer: boolean,
+  ): Promise<void> {
+    const open = await this.money.findOpenSession(tx, ctx);
+    if (open !== null && (open.accountId === accountId || becomingDrawer)) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED,
+        'Close the current cash day before changing its designated drawer');
+    }
   }
 
   /* ------------------------------------------------------------- internals */
