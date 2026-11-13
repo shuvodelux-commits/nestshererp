@@ -1293,7 +1293,7 @@ export class PostgresSaleRepository implements SaleRepository {
     if (filter.categoryId !== null) conditions.push(eq(products.categoryId, filter.categoryId));
     if (filter.brandId !== null) conditions.push(eq(products.brandId, filter.brandId));
     if (!ranked && filter.cursor !== null) conditions.push(sql`${products.id} > ${filter.cursor}`);
-    if (ranked && filter.anchorId != null) conditions.push(eq(products.id, filter.anchorId));
+    if (ranked && filter.anchorId !== null && filter.anchorId !== undefined) conditions.push(eq(products.id, filter.anchorId));
 
     const groupPrice = filter.customerGroupId === null
       ? sql<number | null>`NULL::bigint`
@@ -1335,7 +1335,7 @@ export class PostgresSaleRepository implements SaleRepository {
       WHEN (${qtyOnHand}) <= ${products.minStockQty} THEN 'LOW_STOCK'
       ELSE 'IN_STOCK'
     END`;
-    if (ranked && filter.stockStatus != null) {
+    if (ranked && filter.stockStatus !== null && filter.stockStatus !== undefined) {
       conditions.push(sql`(${statusExpr}) = ${filter.stockStatus}`);
     }
 
@@ -1365,7 +1365,7 @@ export class PostgresSaleRepository implements SaleRepository {
       END
       + CASE WHEN (${qtyOnHand}) > 0 THEN 10 ELSE 0 END
     )`;
-    if (ranked && filter.rankAfter != null) {
+    if (ranked && filter.rankAfter !== null && filter.rankAfter !== undefined) {
       conditions.push(sql`((${rankExpr}) < ${filter.rankAfter.rank}
         OR ((${rankExpr}) = ${filter.rankAfter.rank}
           AND ${products.id} > ${filter.rankAfter.id}))`);
