@@ -422,18 +422,27 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
       });
 
-      await db
+      // The earlier source/lot read can become stale when a sale consumes this
+      // lot concurrently. This guarded update locks and checks the current row
+      // atomically, matching the existing sale-repository owned-stock guard.
+      const moved = await db
         .update(inventoryLots)
         .set({
           qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${line.qty}`,
-          // A lot emptied by the return closes; the service has already refused
-          // any quantity larger than what it holds, so this cannot go negative.
           status: sql`CASE WHEN ${inventoryLots.qtyRemaining} - ${line.qty} <= 0 THEN 'CLOSED' ELSE 'OPEN' END`,
           updatedAt: now,
           updatedBy: ctx.userId,
           version: sql`${inventoryLots.version} + 1`,
         })
-        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, line.lotId)));
+        .where(and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, line.lotId),
+          sql`${inventoryLots.qtyRemaining} >= ${line.qty}`,
+        ))
+        .returning({ id: inventoryLots.id });
+      if (moved.length !== 1) {
+        throw new Error('Lot stock changed while this supplier return was being posted');
+      }
 
       await db.insert(purchaseReturnLines).values({
         id: line.id,
