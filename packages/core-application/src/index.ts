@@ -148,6 +148,9 @@ export type {
   NameMetadataPatch,
   UnitMetadataPatch,
 } from './catalog/catalog-metadata-v1-repository';
+export type { CatalogMetadataV1CreationRepository } from './catalog/catalog-metadata-v1-creation-repository';
+export { CreateCatalogMetadataV1Service } from './catalog/create-catalog-metadata-v1-service';
+export type { CreateCatalogMetadataV1Command } from './catalog/create-catalog-metadata-v1-service';
 export { ManageCatalogMetadataV1Service } from './catalog/manage-catalog-metadata-v1-service';
 export type {
   ListCatalogMetadataV1Command,
