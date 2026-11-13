@@ -91,3 +91,74 @@ export function Money(minor: number): Money {
 export function parseMoney(text: string): number | null {
   return parseScaled(text, MONEY_SCALE);
 }
+
+/** Whole-taka settlement boundary: 100 integer poisha = ৳1.
+ *
+ * This helper is preparatory. It does NOT rewrite stored money, round unit costs,
+ * change the posted sale/purchase journal, or enable whole-taka posting by itself.
+ * Signed amounts round half away from zero symmetrically; no floats are used.
+ */
+export const POISHA_PER_TAKA = 100;
+
+export function isWholeTakaMinor(valueMinor: number): boolean {
+  return Number.isSafeInteger(valueMinor) && valueMinor % POISHA_PER_TAKA === 0;
+}
+
+export function roundWholeTakaMinor(valueMinor: number): number {
+  assertSafeInteger(valueMinor, 'Whole-taka source poisha');
+  const magnitude = BigInt(valueMinor < 0 ? -valueMinor : valueMinor);
+  const rounded = ((magnitude + 50n) / 100n) * 100n;
+  const result = Number(valueMinor < 0 ? -rounded : rounded);
+  assertSafeInteger(result, 'Whole-taka rounded poisha');
+  return result;
+}
+
+/** Proposed allocation for a NEW whole-taka source line, not for legacy lines.
+ *
+ * Absolute cumulative entitlement is computed from the frozen source amount;
+ * the next credit subtracts the *actual posted* prior credit, not an estimate
+ * of what prior returns should have posted. Never over-credit the source.
+ *
+ * q values use the existing scale-3 integer Qty units; frozen and prior money
+ * must already be whole-taka. Zero-valued positive-quantity returns are valid.
+ * Callers must validate tenant, source identity and returnable inventory first.
+ */
+export function remainingWholeTakaReturnMinor(
+  frozenSourceMinor: number,
+  qtyTotal: number,
+  qtyAlreadyReturned: number,
+  qtyNowReturning: number,
+  priorPostedMinor: number,
+): number {
+  for (const [label, n] of [
+    ['Frozen source', frozenSourceMinor],
+    ['Original quantity', qtyTotal],
+    ['Prior quantity', qtyAlreadyReturned],
+    ['Current return quantity', qtyNowReturning],
+    ['Prior posted credit', priorPostedMinor],
+  ] as const) {
+    assertSafeInteger(n, label);
+    if (n < 0) throw new RangeError(label + ' cannot be negative');
+  }
+  if (!isWholeTakaMinor(frozenSourceMinor) || !isWholeTakaMinor(priorPostedMinor)) {
+    throw new RangeError('Whole-taka returns require a frozen whole-taka source and prior credit');
+  }
+  if (qtyTotal <= 0 || qtyNowReturning <= 0) {
+    throw new RangeError('A return requires positive original and returned quantities');
+  }
+  if (BigInt(qtyAlreadyReturned) + BigInt(qtyNowReturning) > BigInt(qtyTotal)) {
+    throw new RangeError('Return quantity exceeds its frozen source');
+  }
+  if (priorPostedMinor > frozenSourceMinor) {
+    throw new RangeError('Source already has overcredited history; reconcile it first');
+  }
+  // Round cumulative original taka to nearest whole taka, half-up.
+  const numerator = BigInt(frozenSourceMinor / POISHA_PER_TAKA) *
+    (BigInt(qtyAlreadyReturned) + BigInt(qtyNowReturning));
+  const denominator = BigInt(qtyTotal);
+  const cumulativeTaka = (2n * numerator + denominator) / (2n * denominator);
+  const cumulativeMinor = cumulativeTaka * BigInt(POISHA_PER_TAKA);
+  const difference = cumulativeMinor - BigInt(priorPostedMinor);
+  const remaining = BigInt(frozenSourceMinor - priorPostedMinor);
+  return Number(difference <= 0n ? 0n : difference > remaining ? remaining : difference);
+}
