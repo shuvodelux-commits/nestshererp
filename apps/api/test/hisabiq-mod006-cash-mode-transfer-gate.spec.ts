@@ -46,7 +46,7 @@ const permissions = [
   Permission.CASH_ACCOUNT_VIEW, Permission.CASH_ACCOUNT_MANAGE,
   Permission.BANK_ACCOUNT_VIEW, Permission.BANK_ACCOUNT_MANAGE,
   Permission.CASH_SESSION_START, Permission.CASH_DAILY_VIEW,
-  Permission.CASH_MOVEMENT_RECORD,
+  Permission.CASH_MOVEMENT_RECORD, Permission.CASH_MOVEMENT_VOID,
   Permission.SETTING_VIEW, Permission.SETTING_TOGGLE,
 ];
 
@@ -197,4 +197,71 @@ suite('MOD-006 T03: designated drawer money transfers in ON and OFF modes', () =
     expect(after.sessionCount).toBe(0);
     expect(after.journalCount).toBe(before.journalCount + 1);
   });
+
+  it('OFF: preserves balanced correction then void without any physical session', async () => {
+    await toggle('off');
+    const before = await snapshot();
+    const original = await movement(cash, bank);
+    expectCreated(original);
+    const id = original.body.data.id as string;
+    const currentVersion = async (): Promise<number> => asTenant(pool, tenant.tenantId, async (db) => {
+      const row = await db.query<{version: number}>(
+        'SELECT version FROM cash_movements WHERE id=$1', [id],
+      );
+      expect(row.rows).toHaveLength(1);
+      return row.rows[0]!.version;
+    });
+    const corrected = await authenticated(api().patch('/api/v1/money/movements/' + id)).send({
+      kind: 'TRANSFER', fromAccountCode: cash, toAccountCode: bank,
+      amountMinor: 10_000, businessDate: day, reference: null,
+      note: 'Corrected OFF mode amount', version: await currentVersion(),
+      reason: 'Wrong transfer amount',
+    });
+    expect(corrected.status, JSON.stringify(corrected.body)).toBe(200);
+    const updated = await snapshot();
+    expect(updated.totals[cash]).toBe(90_000);
+    expect(updated.totals[bank]).toBe(70_000);
+    expect(updated.sessionCount).toBe(0);
+    expect(updated.movementCount).toBe(1);
+    expect(updated.journalCount).toBe(before.journalCount + 3);
+
+    const cancelled = await authenticated(api().post('/api/v1/money/movements/' + id + '/void'))
+      .send({version: await currentVersion(), reason: 'Cancel incorrect transfer'});
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(201);
+    const after = await snapshot();
+    expect(after.totals[cash]).toBe(100_000);
+    expect(after.totals[bank]).toBe(60_000);
+    expect(after.sessionCount).toBe(0);
+    expect(after.movementCount).toBe(1);
+    expect(after.journalCount).toBe(before.journalCount + 4);
+    const linked = await asTenant(pool, tenant.tenantId, (db) =>
+      db.query<{session_id: string | null}>(
+        'SELECT session_id FROM cash_movements WHERE id=$1', [id],
+      ));
+    expect(linked.rows).toEqual([{session_id: null}]);
+  });
+
+  it('ON: a verified non-drawer CASH transfer and its void never require Start Day', async () => {
+    const reserve = 'CASH:' + await createAccount('Reserve box', 'CASH', false, 30_000);
+    const before = await snapshot();
+    const posted = await movement(reserve, bank);
+    expectCreated(posted);
+    const id = posted.body.data.id as string;
+    const version = await asTenant(pool, tenant.tenantId, async (db) => {
+      const found = await db.query<{version: number}>(
+        'SELECT version FROM cash_movements WHERE id=$1', [id],
+      );
+      return found.rows[0]!.version;
+    });
+    const cancelled = await authenticated(api().post('/api/v1/money/movements/' + id + '/void'))
+      .send({version, reason: 'Cancel reserve box transfer'});
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(201);
+    const after = await snapshot();
+    expect(after.totals[reserve]).toBe(30_000);
+    expect(after.totals[bank]).toBe(60_000);
+    expect(after.sessionCount).toBe(0);
+    expect(after.movementCount).toBe(1);
+    expect(after.journalCount).toBe(before.journalCount + 2);
+  });
+
 });
