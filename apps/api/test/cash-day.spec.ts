@@ -382,6 +382,128 @@ describe('opening and closing the day (§5.16)', () => {
   });
 });
 
+/**
+ * M5 P0: cash-day replay identity is an accounting invariant. These are
+ * genuine Nest HTTP + PostgreSQL assertions, not mocked service responses.
+ */
+describe('cash-session idempotency and immutable close/reopen audit', () => {
+  const start = (operationId: string, note: string | null): request.Test =>
+    bearer(api().post('/api/v1/money/day/start')).send({
+      businessDate: today, openingAmountMinor: 5000_00,
+      counterpartAccountCode: null, note, operationId,
+    });
+  const close = (id: string, operationId: string, reason: string): request.Test =>
+    bearer(api().post(`/api/v1/money/day/${id}/close`)).send({
+      countedClosingMinor: 4950_00, reason, operationId,
+    });
+  const reopen = (id: string, operationId: string, reason: string): request.Test =>
+    bearer(api().post(`/api/v1/money/day/${id}/reopen`)).send({
+      reason, operationId,
+    });
+  const ledgerState = (): Promise<{ journal: number; lines: number; closes: number; audit: number }> =>
+    asTenant(pool, tenant.tenantId, async (db) => {
+      const r = await db.query(
+        `SELECT (SELECT count(*)::int FROM journal_entries) AS journal,
+                (SELECT count(*)::int FROM journal_lines) AS lines,
+                (SELECT count(*)::int FROM cash_session_closes) AS closes,
+                (SELECT count(*)::int FROM audit_events) AS audit`,
+      );
+      return r.rows[0] as { journal: number; lines: number; closes: number; audit: number };
+    });
+
+  it('Start returns its original response for an identical operationId and payload', async () => {
+    const op = Ulid.generate(clock);
+    const first = await start(op, 'Opening count verified');
+    expect(first.status).toBe(201);
+    const before = await ledgerState();
+    const replay = await start(op, 'Opening count verified');
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('Start refuses a different note for the same operationId without changing state', async () => {
+    const op = Ulid.generate(clock);
+    const first = await start(op, 'Original note');
+    expect(first.status).toBe(201);
+    const before = await ledgerState();
+    const changed = await start(op, 'Changed after acknowledgement loss');
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('Close refuses an altered shortage reason after the same operationId was committed', async () => {
+    const id = await startDay();
+    const op = Ulid.generate(clock);
+    const first = await close(id, op, 'Cashier counted fifty short');
+    expect(first.status).toBe(201);
+    const before = await ledgerState();
+    const changed = await close(id, op, 'Replaced explanation');
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    const original = first.body.data.closes[0];
+    const latest = (await bearer(api().get('/api/v1/money/day'))).body.todaySession.closes[0];
+    expect(latest.id).toBe(original.id);
+    expect(latest.differenceReason).toBe('Cashier counted fifty short');
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('Close returns its immutable first response without a second adjustment', async () => {
+    const id = await startDay();
+    const op = Ulid.generate(clock);
+    const first = await close(id, op, 'Exact same shortage reason');
+    expect(first.status).toBe(201);
+    const before = await ledgerState();
+    const replay = await close(id, op, 'Exact same shortage reason');
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('Reopen replays the same committed operationId and response once, even after session is OPEN', async () => {
+    const id = await startDay();
+    expect((await close(id, Ulid.generate(clock), 'Close entered incorrectly')).status).toBe(201);
+    const op = Ulid.generate(clock);
+    const first = await reopen(id, op, 'Correcting the counted close');
+    expect(first.status).toBe(201);
+    expect(first.body.data.status).toBe('OPEN');
+    expect(first.body.data.closes[0].status).toBe('SUPERSEDED');
+    const before = await ledgerState();
+    const replay = await reopen(id, op, 'Correcting the counted close');
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await ledgerState()).toEqual(before);
+    expect((await ledger())['CASH_SHORT_OVER'] ?? 0).toBe(0);
+  });
+
+  it('Reopen refuses changing its reason with the original operationId', async () => {
+    const id = await startDay();
+    expect((await close(id, Ulid.generate(clock), 'Miscounted')).status).toBe(201);
+    const op = Ulid.generate(clock);
+    expect((await reopen(id, op, 'Mistaken close')).status).toBe(201);
+    const before = await ledgerState();
+    const changed = await reopen(id, op, 'Entirely different reason');
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('Reopen rejects the same operationId against a foreign tenant session without disclosure', async () => {
+    const id = await startDay();
+    expect((await close(id, Ulid.generate(clock), 'Wrong count')).status).toBe(201);
+    const foreign = await seedTenant(pool, {
+      name: 'Unrelated tenant', permissions: [Permission.CASH_DAILY_VIEW, Permission.CASH_SESSION_REOPEN],
+    });
+    const before = await ledgerState();
+    const denied = await bearer(
+      api().post(`/api/v1/money/day/${id}/reopen`), signToken(foreign, TEST_JWT_SECRET),
+    ).send({ reason: 'Foreign replay', operationId: Ulid.generate(clock) });
+    expect(denied.status).toBe(404);
+    expect(await ledgerState()).toEqual(before);
+  });
+});
+
 describe('recording an expense (§5.12)', () => {
   it('takes the money from the account named and charges it to its category', async () => {
     await startDay();
