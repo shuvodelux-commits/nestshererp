@@ -46,6 +46,14 @@ describe('whole-taka boundary — pure and not yet wired into posting', () => {
     expect(() => remainingWholeTakaReturnMinor(300, 5000, 0, 1000, 400)).toThrow(RangeError);
   });
 
+  it('rejects zero quantities and negative or unsafe source amounts', () => {
+    expect(() => remainingWholeTakaReturnMinor(300, 0, 0, 1000, 0)).toThrow(RangeError);
+    expect(() => remainingWholeTakaReturnMinor(300, 5000, 0, 0, 0)).toThrow(RangeError);
+    expect(() => remainingWholeTakaReturnMinor(300, 5000, -1000, 1000, 0)).toThrow(RangeError);
+    expect(() => remainingWholeTakaReturnMinor(300, 5000, 0, 1000, -100)).toThrow(RangeError);
+    expect(() => remainingWholeTakaReturnMinor(Number.NaN, 5000, 0, 1000, 0)).toThrow(TypeError);
+  });
+
   it('does not silently reinterpret legacy fractional source values as whole taka', () => {
     expect(() => remainingWholeTakaReturnMinor(349, 5000, 0, 1000, 0)).toThrow(RangeError);
     expect(() => remainingWholeTakaReturnMinor(300, 5000, 1000, 1000, 50)).toThrow(RangeError);
