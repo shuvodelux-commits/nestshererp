@@ -1898,14 +1898,14 @@ describe('QA120 — customer-group lifecycle and adversarial workflows', () => {
     expect(detail.body.data.customerGroupName).toBe('Customer Tier');
 
     const persisted = await asTenant(pool, tenant.tenantId, (client) =>
-      client.query<{ id: string; archived_at: string | null }>(
-        'SELECT id, archived_at FROM customer_groups WHERE tenant_id = $1 AND id = ANY($2::text[]) ORDER BY id',
+      client.query<{ id: string; deleted_at: string | null }>(
+        'SELECT id, deleted_at FROM customer_groups WHERE tenant_id = $1 AND id = ANY($2::text[]) ORDER BY id',
         [tenant.tenantId, [usedId, unusedId]],
       ),
     );
     expect(persisted.rows).toHaveLength(1);
     expect(persisted.rows[0]?.id).toBe(usedId);
-    expect(persisted.rows[0]?.archived_at).not.toBeNull();
+    expect(persisted.rows[0]?.deleted_at).not.toBeNull();
   });
 
   it('rejects duplicate or invalid names and preserves the existing catalog', async () => {
