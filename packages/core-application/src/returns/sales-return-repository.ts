@@ -32,6 +32,7 @@ export interface ReturnableLineRow {
 
 export interface ReturnableInvoiceRow {
   readonly saleId: string;
+  readonly returnValueMinor: number;
   readonly number: string;
   readonly businessDate: string;
   readonly status: 'POSTED' | 'VOIDED';
