@@ -38,12 +38,16 @@ import { txOf } from './unit-of-work';
  * read straight off `inventory_lots.qty_remaining` — the same number every stock
  * screen reads, so "already sold" means the same thing everywhere.
  */
-function returnedQty(purchaseLineId: SQL): SQL<number> {
+function returnedSum(purchaseLineId: SQL, column: 'qty' | 'value_minor' | 'cost_minor'): SQL<number> {
+  const selected = column === 'qty' ? sql`prl.qty`
+    : column === 'value_minor' ? sql`prl.value_minor` : sql`prl.cost_minor`;
   return sql<number>`COALESCE((
-    SELECT SUM(prl.qty)
+    SELECT SUM(${selected})
       FROM purchase_return_lines prl
-      JOIN purchase_returns pr ON pr.id = prl.return_id
+      JOIN purchase_returns pr ON pr.tenant_id = prl.tenant_id AND pr.id = prl.return_id
      WHERE prl.purchase_line_id = ${purchaseLineId}
+       AND prl.tenant_id = ${purchases.tenantId}
+       AND pr.purchase_id = ${purchases.id}
        AND pr.status = 'POSTED'
        AND pr.deleted_at IS NULL
   ), 0)::bigint`;
@@ -64,6 +68,16 @@ const BILL_OUTSTANDING_MINOR = sql<number>`(
 
 export class PostgresPurchaseReturnRepository implements PurchaseReturnRepository {
   constructor(private readonly clock: Clock) {}
+
+  async lockPurchase(tx: Tx, ctx: TenantContext, purchaseId: string): Promise<boolean> {
+    const rows = await txOf(tx)
+      .select({ id: purchases.id })
+      .from(purchases)
+      .where(and(eq(purchases.tenantId, ctx.tenantId), eq(purchases.id, purchaseId)))
+      .for('update')
+      .limit(1);
+    return rows.length === 1;
+  }
 
   async findReturnableBill(
     tx: Tx,
@@ -107,7 +121,9 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         lotId: purchaseLines.lotId,
         locationId: purchases.locationId,
         qtyReceived: purchaseLines.qty,
-        qtyReturned: returnedQty(sql`${purchaseLines.id}`),
+        qtyReturned: returnedSum(sql`${purchaseLines.id}`, 'qty'),
+        valueReturnedMinor: returnedSum(sql`${purchaseLines.id}`, 'value_minor'),
+        costReturnedMinor: returnedSum(sql`${purchaseLines.id}`, 'cost_minor'),
         qtyRemainingInLot: inventoryLots.qtyRemaining,
         lineTotalMinor: purchaseLines.lineTotalMinor,
         discountShareMinor: purchaseLines.discountShareMinor,
@@ -142,6 +158,8 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         locationId: line.locationId.trim(),
         qtyReceived: Number(line.qtyReceived),
         qtyReturned: Number(line.qtyReturned),
+        valueReturnedMinor: Number(line.valueReturnedMinor),
+        costReturnedMinor: Number(line.costReturnedMinor),
         qtyRemainingInLot: Number(line.qtyRemainingInLot),
         /*
          * What the supplier actually charged for the line: its total less the
@@ -163,9 +181,12 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
     const db = txOf(tx);
 
     const head = await db.execute<{
-      id: string; number: string; status: string; business_date: string; version: number;
+      id: string; purchase_id: string; return_value_minor: string; inventory_minor: string;
+      number: string; status: string; business_date: string; version: number;
     }>(sql`
-      SELECT r.id, r.return_number AS number, r.status, r.business_date::text AS business_date,
+      SELECT r.id, r.purchase_id, r.return_value_minor::text AS return_value_minor,
+             r.inventory_minor::text AS inventory_minor,
+             r.return_number AS number, r.status, r.business_date::text AS business_date,
              r.version
         FROM purchase_returns r
        WHERE r.tenant_id = ${ctx.tenantId} AND r.id = ${returnId}
@@ -213,6 +234,9 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
 
     return {
       id: row.id.trim(),
+      purchaseId: row.purchase_id.trim(),
+      returnValueMinor: Number(row.return_value_minor),
+      inventoryMinor: Number(row.inventory_minor),
       number: row.number,
       status: row.status,
       businessDate: row.business_date,
@@ -318,7 +342,7 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         .where(and(eq(productCostState.tenantId, ctx.tenantId), eq(productCostState.id, state.id)));
     }
 
-    await db.insert(journalEntries).values({
+    if (reversal.journalLines.length > 0) await db.insert(journalEntries).values({
       id: reversal.journalEntryId,
       tenantId: ctx.tenantId,
       createdAt: now,
@@ -329,7 +353,7 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
       sourceNumber: saved.number,
       entryMode: reversal.entryMode,
     });
-    await db.insert(journalLines).values(
+    if (reversal.journalLines.length > 0) await db.insert(journalLines).values(
       reversal.journalLines.map((line) => ({
         id: line.id,
         tenantId: ctx.tenantId,
@@ -398,18 +422,27 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
         unitCost: line.qty === 0 ? 0 : Math.round((line.costMinor * 100_000) / line.qty),
       });
 
-      await db
+      // The earlier source/lot read can become stale when a sale consumes this
+      // lot concurrently. This guarded update locks and checks the current row
+      // atomically, matching the existing sale-repository owned-stock guard.
+      const moved = await db
         .update(inventoryLots)
         .set({
           qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${line.qty}`,
-          // A lot emptied by the return closes; the service has already refused
-          // any quantity larger than what it holds, so this cannot go negative.
           status: sql`CASE WHEN ${inventoryLots.qtyRemaining} - ${line.qty} <= 0 THEN 'CLOSED' ELSE 'OPEN' END`,
           updatedAt: now,
           updatedBy: ctx.userId,
           version: sql`${inventoryLots.version} + 1`,
         })
-        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, line.lotId)));
+        .where(and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, line.lotId),
+          sql`${inventoryLots.qtyRemaining} >= ${line.qty}`,
+        ))
+        .returning({ id: inventoryLots.id });
+      if (moved.length !== 1) {
+        throw new Error('Lot stock changed while this supplier return was being posted');
+      }
 
       await db.insert(purchaseReturnLines).values({
         id: line.id,
@@ -459,7 +492,9 @@ export class PostgresPurchaseReturnRepository implements PurchaseReturnRepositor
       }
     }
 
-    await db.insert(journalEntries).values({
+    // A zero-value, zero-cost stock return has no financial journal. Do not
+    // manufacture zero-amount ledger rows; retain the return, stock and audit.
+    if (draft.journalLines.length > 0) await db.insert(journalEntries).values({
       id: draft.journalEntryId,
       tenantId: ctx.tenantId,
       createdAt: now,

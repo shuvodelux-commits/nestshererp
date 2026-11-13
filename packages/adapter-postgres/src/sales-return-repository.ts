@@ -51,12 +51,16 @@ import { txOf } from './unit-of-work';
  * outstanding — a stored counter is a second answer, and the first path that
  * forgets to bump it lets a shop take back four of three.
  */
-function returnedQty(saleLineId: SQL): SQL<number> {
+function returnedSum(saleLineId: SQL, column: 'qty' | 'value_minor' | 'cost_minor'): SQL<number> {
+  const selected = column === 'qty' ? sql`srl.qty`
+    : column === 'value_minor' ? sql`srl.value_minor` : sql`srl.cost_minor`;
   return sql<number>`COALESCE((
-    SELECT SUM(srl.qty)
+    SELECT SUM(${selected})
       FROM sales_return_lines srl
-      JOIN sales_returns sr ON sr.id = srl.return_id
+      JOIN sales_returns sr ON sr.tenant_id = srl.tenant_id AND sr.id = srl.return_id
      WHERE srl.sale_line_id = ${saleLineId}
+       AND srl.tenant_id = ${sales.tenantId}
+       AND sr.sale_id = ${sales.id}
        AND sr.status = 'POSTED'
        AND sr.deleted_at IS NULL
   ), 0)::bigint`;
@@ -140,7 +144,9 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         unitName: units.name,
         locationId: sales.locationId,
         qtySold: saleLines.qty,
-        qtyReturned: returnedQty(sql`${saleLines.id}`),
+        qtyReturned: returnedSum(sql`${saleLines.id}`, 'qty'),
+        valueReturnedMinor: returnedSum(sql`${saleLines.id}`, 'value_minor'),
+        costReturnedMinor: returnedSum(sql`${saleLines.id}`, 'cost_minor'),
         unitPriceMinor: saleLines.unitPriceMinor,
         netAmountMinor: saleLines.netAmountMinor,
         costMinor: saleLines.costMinor,
@@ -175,6 +181,8 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         locationId: line.locationId.trim(),
         qtySold: Number(line.qtySold),
         qtyReturned: Number(line.qtyReturned),
+        valueReturnedMinor: Number(line.valueReturnedMinor),
+        costReturnedMinor: Number(line.costReturnedMinor),
         unitPriceMinor: Number(line.unitPriceMinor),
         netAmountMinor: Number(line.netAmountMinor),
         costMinor: Number(line.costMinor),
@@ -424,10 +432,11 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
     const db = txOf(tx);
 
     const head = await db.execute<{
-      id: string; number: string; status: string; business_date: string; version: number;
-      cogs_minor: string;
+      id: string; sale_id: string; return_value_minor: string;
+      number: string; status: string; business_date: string; version: number; cogs_minor: string;
     }>(sql`
-      SELECT r.id, r.return_number AS number, r.status, r.business_date::text AS business_date,
+      SELECT r.id, r.sale_id, r.return_value_minor::text AS return_value_minor,
+             r.return_number AS number, r.status, r.business_date::text AS business_date,
              r.version, r.cogs_minor::text AS cogs_minor
         FROM sales_returns r
        WHERE r.tenant_id = ${ctx.tenantId} AND r.id = ${returnId}
@@ -518,6 +527,8 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
 
     return {
       id: row.id.trim(),
+      saleId: row.sale_id.trim(),
+      returnValueMinor: Number(row.return_value_minor),
       number: row.number,
       status: row.status,
       businessDate: row.business_date,
@@ -723,7 +734,7 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
         );
     }
 
-    await db.insert(journalEntries).values({
+    if (reversal.journalLines.length > 0) await db.insert(journalEntries).values({
       id: reversal.journalEntryId,
       tenantId: ctx.tenantId,
       createdAt: now,
@@ -734,7 +745,7 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
       sourceNumber: saved.number,
       entryMode: reversal.entryMode,
     });
-    await db.insert(journalLines).values(
+    if (reversal.journalLines.length > 0) await db.insert(journalLines).values(
       reversal.journalLines.map((line) => ({
         id: line.id,
         tenantId: ctx.tenantId,
@@ -982,7 +993,9 @@ export class PostgresSalesReturnRepository implements SalesReturnRepository {
       }
     }
 
-    await db.insert(journalEntries).values({
+    // Zero-refund, zero-cost returns still post stock and audit. A GL entry with
+    // no monetary lines would misrepresent the accounting ledger.
+    if (draft.journalLines.length > 0) await db.insert(journalEntries).values({
       id: draft.journalEntryId,
       tenantId: ctx.tenantId,
       createdAt: now,

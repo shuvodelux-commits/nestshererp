@@ -19,6 +19,8 @@ export interface ReturnableBillLineRow {
   readonly locationId: string;
   readonly qtyReceived: number;
   readonly qtyReturned: number;
+  readonly valueReturnedMinor: number;
+  readonly costReturnedMinor: number;
   readonly qtyRemainingInLot: number;
   /** What the supplier billed for the line, after the bill discount. */
   readonly billedNetMinor: number;
@@ -134,6 +136,9 @@ export interface PurchaseReturnFilter {
  */
 export interface PurchaseReturnForReversal {
   readonly id: string;
+  readonly purchaseId: string;
+  readonly returnValueMinor: number;
+  readonly inventoryMinor: number;
   readonly number: string;
   readonly status: string;
   readonly businessDate: string;
@@ -192,6 +197,8 @@ export interface PurchaseReturnReversal {
 }
 
 export interface PurchaseReturnRepository {
+  /** Lock the source purchase before reading prior booked value and inventory. */
+  lockPurchase(tx: Tx, ctx: TenantContext, purchaseId: string): Promise<boolean>;
   findReturnableBill(tx: Tx, ctx: TenantContext, purchaseId: string): Promise<ReturnableBillRow | null>;
   postPurchaseReturn(tx: Tx, ctx: TenantContext, draft: NewPurchaseReturn): Promise<void>;
   findReturnForReversal(

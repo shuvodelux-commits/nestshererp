@@ -65,6 +65,8 @@ const REFUSALS: Record<PurchaseReturnRejection, string> = {
   RETURN_LINE_NOT_ON_BILL: 'That item is not on this bill',
   RETURN_EXCEEDS_RECEIVED: 'More is going back than this bill brought in',
   RETURN_EXCEEDS_STOCK: 'Those goods are not on the shelf any more — they have been sold',
+  RETURN_DUPLICATE_LINE: 'The same purchase line was selected twice',
+  RETURN_SOURCE_HISTORY_INVALID: 'This purchase return has an accounting difference; review its history first',
   RECEIVED_NEGATIVE: 'Money taken back cannot be less than zero',
   RECEIVED_EXCEEDS_RETURN: 'More money is coming back than the goods are worth',
   RETURN_HAS_NO_VALUE: 'These goods are worth nothing to return',
@@ -114,10 +116,19 @@ export class CreatePurchaseReturnService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say why this is being cancelled');
       }
 
-      const original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      let original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
       if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That return was not found');
       if (original.status !== 'POSTED') {
         throw new AppError(ErrorCode.VALIDATION_FAILED, 'This return has already been cancelled');
+      }
+      // The source bill lock is also used by return create. Re-read the return
+      // after locking so a concurrent create/void cannot use stale credits.
+      if (!(await this.returns.lockPurchase(tx, ctx, original.purchaseId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Purchase not found');
+      }
+      original = await this.returns.findReturnForReversal(tx, ctx, command.returnId);
+      if (original === null || original.status !== 'POSTED') {
+        throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'This return changed; reload and retry');
       }
 
       const today = this.clock.businessDate(ctx.timezone);
@@ -131,7 +142,11 @@ export class CreatePurchaseReturnService {
         amountMinor: -line.amountMinor,
         partyId: line.partyId,
       }));
-      if (rejectEntry({ lines: reversalLines }) !== null) {
+      if (
+        (reversalLines.length === 0 &&
+          (original.returnValueMinor !== 0 || original.inventoryMinor !== 0)) ||
+        (reversalLines.length > 0 && rejectEntry({ lines: reversalLines }) !== null)
+      ) {
         throw new AppError(ErrorCode.INTERNAL_ERROR, 'This return cannot be reversed cleanly');
       }
 
@@ -227,6 +242,9 @@ export class CreatePurchaseReturnService {
       const posted = await this.returns.findReturnIdByOperationId(tx, ctx, command.operationId);
       if (posted !== null) return this.detail(tx, ctx, posted);
 
+      if (!(await this.returns.lockPurchase(tx, ctx, command.purchaseId))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Purchase not found');
+      }
       const bill = await this.returns.findReturnableBill(tx, ctx, command.purchaseId);
       if (bill === null) throw new AppError(ErrorCode.NOT_FOUND, 'Purchase not found');
       if (bill.status !== 'POSTED') {
@@ -252,6 +270,8 @@ export class CreatePurchaseReturnService {
         lotId: line.lotId,
         qtyReceived: line.qtyReceived,
         qtyReturned: line.qtyReturned,
+        valueReturnedMinor: line.valueReturnedMinor,
+        costReturnedMinor: line.costReturnedMinor,
         qtyRemainingInLot: line.qtyRemainingInLot,
         billedNetMinor: line.billedNetMinor,
         actualUnitCost: line.actualUnitCost,

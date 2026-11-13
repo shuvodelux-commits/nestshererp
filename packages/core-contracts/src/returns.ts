@@ -83,6 +83,8 @@ export const returnableLineSchema = z
     unitName: z.string(),
     qtySold: z.number().int(),
     qtyReturned: z.number().int(),
+    /** Actual previously POSTED return money for source-correct refund preview. */
+    valueReturnedMinor: z.number().int().nonnegative(),
     qtyReturnable: z.number().int(),
     unitPriceMinor: z.number().int(),
     /** What the customer paid for the whole line, after both discounts. */
@@ -216,6 +218,9 @@ export const returnableBillLineSchema = z
     lotId: ULID,
     qtyReceived: z.number().int(),
     qtyReturned: z.number().int(),
+    /** Previously posted original supplier credit and stock valuation. */
+    valueReturnedMinor: z.number().int().nonnegative(),
+    costReturnedMinor: z.number().int().nonnegative(),
     qtyReturnable: z.number().int(),
     /** Still in the lot: goods already sold cannot go back to the supplier. */
     qtyRemainingInLot: z.number().int(),

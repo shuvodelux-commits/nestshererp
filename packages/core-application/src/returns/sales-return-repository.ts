@@ -21,6 +21,8 @@ export interface ReturnableLineRow {
   readonly locationId: string;
   readonly qtySold: number;
   readonly qtyReturned: number;
+  readonly valueReturnedMinor: number;
+  readonly costReturnedMinor: number;
   readonly unitPriceMinor: number;
   readonly netAmountMinor: number;
   readonly costMinor: number;
@@ -202,6 +204,9 @@ export interface ApprovalCandidate {
  */
 export interface SalesReturnForReversal {
   readonly id: string;
+  /** Source sale whose return history must remain serialized during void. */
+  readonly saleId: string;
+  readonly returnValueMinor: number;
   readonly number: string;
   readonly status: string;
   readonly businessDate: string;
