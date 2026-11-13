@@ -416,3 +416,77 @@ describe('multi-document tiny-money returns and Option A stock-only posting', ()
     expect(await onHand()).toBe(4_000);
   });
 });
+
+
+describe('source-locked zero-poisha return cancellations', () => {
+  it('voids a zero-refund customer return and reverses its actual inventory cost only', async () => {
+    await buyTen();
+    const sale = must(await auth(api().post('/api/v1/sales')).send({
+      partyId: customerId, customerName: null, customerPhone: null,
+      lines: [{ productId, qty: 5_000, unitPriceMinor: 1, lineDiscountMinor: 2 }],
+      payments: [], discountMinor: 0,
+    }), 'source sale');
+    const saleId = sale.body.data.id as string;
+    const sourceLineId = sale.body.data.lines[0].id as string;
+    const post = () => auth(api().post('/api/v1/sales-returns')).send({
+      saleId, lines: [{ sourceLineId, qty: 1_000 }],
+      reason: 'CHANGED_MIND', note: null, refundMinor: 0, refundAccountCode: null,
+    });
+    must(await post(), 'first return');
+    const second = must(await post(), 'zero-poisha second return');
+    expect(await onHand()).toBe(7_000);
+    const voided = await auth(api().post(`/api/v1/sales-returns/${second.body.data.id as string}/void`))
+      .send({ version: 1, reason: 'Entered twice' });
+    expect(voided.status, JSON.stringify(voided.body)).toBeLessThan(300);
+    expect(await onHand()).toBe(6_000);
+    const remainingMoney = await asTenant(pool, tenant.tenantId, async (db) => db.query<{
+      value: string; qty: string;
+    }>(`
+      SELECT COALESCE(SUM(l.value_minor),0)::text AS value,
+             COALESCE(SUM(l.qty),0)::text AS qty
+      FROM sales_return_lines l
+      JOIN sales_returns r ON r.tenant_id=l.tenant_id AND r.id=l.return_id
+      WHERE l.sale_line_id=$1 AND r.status='POSTED'
+    `, [sourceLineId]));
+    expect(Number(remainingMoney.rows[0]?.value)).toBe(1);
+    expect(Number(remainingMoney.rows[0]?.qty)).toBe(1_000);
+  });
+
+  it('voids a zero-money and zero-cost supplier return without inserting a fake journal', async () => {
+    const purchased = must(await auth(api().post('/api/v1/purchases')).send({
+      supplierPartyId: supplierId,
+      lines: [{ productId, qty: 5_000, unitPriceMinor: 1 }],
+      discountMinor: 2, paidMinor: 0, paidAccountCode: null,
+    }), 'tiny purchase');
+    const purchaseId = purchased.body.data.id as string;
+    const sourceLineId = purchased.body.data.lines[0].id as string;
+    const post = () => auth(api().post('/api/v1/purchase-returns')).send({
+      purchaseId, lines: [{ sourceLineId, qty: 1_000 }],
+      reason: 'DAMAGED', note: null, receivedMinor: 0, receiptAccountCode: null,
+    });
+    must(await post(), 'first supplier return');
+    const second = must(await post(), 'zero-poisha supplier return');
+    const returnId = second.body.data.id as string;
+    const before = await asTenant(pool, tenant.tenantId, async (db) => db.query<{
+      count: string; amount: string;
+    }>(`
+      SELECT COUNT(*)::text AS count,
+             COALESCE(SUM(jl.amount_minor),0)::text AS amount
+      FROM journal_entries je
+      LEFT JOIN journal_lines jl ON jl.tenant_id=je.tenant_id AND jl.journal_entry_id=je.id
+      WHERE je.source_document_type='PURCHASE_RETURN' AND je.source_document_id=$1
+    `, [returnId]));
+    expect(Number(before.rows[0]?.count)).toBe(0);
+    const voided = await auth(api().post(`/api/v1/purchase-returns/${returnId}/void`))
+      .send({ version: 1, reason: 'Goods were not returned' });
+    expect(voided.status, JSON.stringify(voided.body)).toBeLessThan(300);
+    expect(await onHand()).toBe(4_000);
+    const after = await asTenant(pool, tenant.tenantId, async (db) => db.query<{
+      count: string;
+    }>(`
+      SELECT COUNT(*)::text AS count FROM journal_entries
+      WHERE source_document_type='PURCHASE_RETURN_REVERSAL' AND source_document_id=$1
+    `, [returnId]));
+    expect(Number(after.rows[0]?.count)).toBe(0);
+  });
+});
