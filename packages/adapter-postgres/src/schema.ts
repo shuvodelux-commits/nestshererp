@@ -298,6 +298,10 @@ export const units = pgTable('units', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   name: text('name').notNull(),
+  /** Optional bilingual display metadata; English name remains canonical. */
+  nameBn: text('name_bn'),
+  /** Display shorthand only; not a unique key or conversion factor. */
+  symbol: text('symbol'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -312,6 +316,8 @@ export const brands = pgTable('brands', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   name: text('name').notNull(),
+  /** Optional bilingual display metadata; English name remains canonical. */
+  nameBn: text('name_bn'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -477,6 +483,8 @@ export const categories = pgTable('categories', {
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   parentId: char('parent_id', { length: 26 }),
   name: text('name').notNull(),
+  /** Optional bilingual display metadata; English name remains canonical. */
+  nameBn: text('name_bn'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
