@@ -231,6 +231,12 @@ export class ManagePartiesService {
     return this.uow.run(ctx, async (tx) => {
       await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].view);
       if (role === 'VENDOR') await this.assertVendorsOn(tx, ctx);
+      // Permission first, then deny Customer-only queries; neither group filters
+      // nor group/credit-limit sort order can be an information side-channel.
+      if (role !== 'CUSTOMER' && (command.groupId !== undefined ||
+        command.sort === 'groupName' || command.sort === 'creditLimit')) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Customer-only filter or sort');
+      }
 
       const limit = command.limit ?? DEFAULT_LIMIT;
       const filter: PartyFilter = {
@@ -261,7 +267,7 @@ export class ManagePartiesService {
         data: page.map((row) => toResponse({
           ...row,
           roles: row.roles.filter((itemRole) => held.includes(ROLE_PERMISSIONS[itemRole].view)),
-        })),
+        }, role)),
         page: { nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null, hasMore },
         summary: counts,
       };
@@ -295,7 +301,7 @@ export class ManagePartiesService {
         throw new AppError(ErrorCode.NOT_FOUND, 'That relationship does not exist');
       }
       const balanceNetMinor = await this.parties.getRoleBalance(tx, ctx, party.id, role);
-      return toResponse({ ...party, roles: visibleRoles, balanceNetMinor });
+      return toResponse({ ...party, roles: visibleRoles, balanceNetMinor }, role);
     });
   }
 
@@ -1151,7 +1157,10 @@ function auditValues(party: PartyEdit | PartyRow): Record<string, string | numbe
   };
 }
 
-function toResponse(row: PartyRow): PartyResponse {
+function toResponse(row: PartyRow, selectedReadRole?: PartyRole): PartyResponse {
+  // Preserve full internal/edit responses; only selected-role READs mask
+  // Customer-only metadata. No source Party values are modified.
+  const customerFieldsVisible = selectedReadRole === undefined || selectedReadRole === 'CUSTOMER';
   return {
     id: row.id,
     name: row.name,
@@ -1162,9 +1171,9 @@ function toResponse(row: PartyRow): PartyResponse {
     nid: row.nid,
     email: row.email,
     notes: row.notes,
-    customerGroupId: row.customerGroupId,
-    customerGroupName: row.customerGroupName,
-    creditLimitMinor: row.creditLimitMinor,
+    customerGroupId: customerFieldsVisible ? row.customerGroupId : null,
+    customerGroupName: customerFieldsVisible ? row.customerGroupName : null,
+    creditLimitMinor: customerFieldsVisible ? row.creditLimitMinor : null,
     status: row.status,
     isSystemReserved: row.isSystemReserved,
     version: row.version,

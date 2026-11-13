@@ -312,6 +312,12 @@ onMounted(async () => {
 
 watch(role, () => {
   groupId.value = ANY;
+  // The Customer-only columns cannot be requested on Supplier/Vendor tabs.
+  // Preserve the user's ability to switch tabs after sorting either column.
+  if (role.value !== 'CUSTOMER' && (sort.value === 'groupName' || sort.value === 'creditLimit')) {
+    sort.value = 'name';
+    direction.value = defaultDirectionFor('name');
+  }
   void load();
 });
 
