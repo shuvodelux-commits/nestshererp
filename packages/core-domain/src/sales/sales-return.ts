@@ -118,9 +118,9 @@ export function rejectSalesReturn(
       costReturnedMinor < 0 || costReturnedMinor > costMinor
     ) return 'RETURN_SOURCE_HISTORY_INVALID';
     const newValue = shareOf(netAmountMinor, line.qty, original, valueReturnedMinor);
-    const newCost = shareOf(costMinor, line.qty, original, costReturnedMinor);
-    if (newValue < 0 || newValue > netAmountMinor - valueReturnedMinor ||
-        newCost < 0 || newCost > costMinor - costReturnedMinor) {
+    // Actual COGS comes from the original source-lot allocations in the service.
+    // It is NOT necessarily proportional to qty when a line consumed mixed lots.
+    if (newValue < 0 || newValue > netAmountMinor - valueReturnedMinor) {
       return 'RETURN_SOURCE_HISTORY_INVALID';
     }
   }
@@ -168,7 +168,12 @@ function salesReturnTotalsUnchecked(
           productId: original.productId,
           qty: Qty(line.qty).raw,
           valueMinor: shareOf(original.netAmountMinor, line.qty, original, original.valueReturnedMinor),
-          costMinor: shareOf(original.costMinor, line.qty, original, original.costReturnedMinor),
+          // Cost here is preview-only; the posting service reverses exact original
+          // lot/vendor cost and independently checks its remaining booked cap.
+          costMinor: Math.min(
+            original.costMinor - original.costReturnedMinor,
+            Math.max(0, shareOf(original.costMinor, line.qty, original, original.costReturnedMinor)),
+          ),
         },
       ];
     });
