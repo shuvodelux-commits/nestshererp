@@ -1293,6 +1293,112 @@ describe('T08-QA — five-endpoint Party read and tenant isolation', () => {
 
 
 /**
+ * T09A — Customer metadata has a different read authority from trading net.
+ * Only disposable PostgreSQL16 test fixtures are written, never production data.
+ * The party-global deletion guard is intentionally unchanged.
+ */
+describe('T09A — Customer-only Party READ metadata and query isolation', () => {
+  it('masks Supplier/Vendor group and credit attributes and rejects customer-only query probes', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    await setSetting(SettingKey.VENDOR_MANAGEMENT_ENABLED, 'on');
+    const group = await request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Customer Only Retail Tier' })
+      .expect(201);
+    const groupId = group.body.data.groups[0].id as string;
+
+    const created = await createParty(minimalCustomer({
+      name: 'Multi Role Partner',
+      roles: ['CUSTOMER', 'SUPPLIER', 'VENDOR'],
+      customerGroupId: groupId,
+      creditLimitMinor: 700_000,
+    })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    expect(created.body.data.customerGroupId).toBe(groupId);
+    expect(created.body.data.creditLimitMinor).toBe(700_000);
+
+    await createParty(minimalCustomer({
+      name: 'Ungrouped Customer', phone: '01998887766',
+    })).expect(201);
+
+    // Customer projection retains all customer-specific fields and real counts.
+    const customerList = await listParties('?role=CUSTOMER').expect(200);
+    expect(customerList.body.summary.total).toBe(2);
+    expect(customerList.body.summary.ungrouped).toBe(1);
+    const customerRow = customerList.body.data.find((v: { id: string }) => v.id === id);
+    expect(customerRow.customerGroupId).toBe(groupId);
+    expect(customerRow.customerGroupName).toBe('Customer Only Retail Tier');
+    expect(customerRow.creditLimitMinor).toBe(700_000);
+    const customerDetail = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(customerDetail.body.data.customerGroupId).toBe(groupId);
+    expect(customerDetail.body.data.creditLimitMinor).toBe(700_000);
+    const groupFiltered = await listParties('?role=CUSTOMER&groupId=' + groupId).expect(200);
+    expect(groupFiltered.body.data).toHaveLength(1);
+    expect(groupFiltered.body.data[0].id).toBe(id);
+    await listParties('?role=CUSTOMER&sort=groupName').expect(200);
+    await listParties('?role=CUSTOMER&sort=creditLimit').expect(200);
+
+    for (const role of ['SUPPLIER', 'VENDOR'] as const) {
+      const list = await listParties('?role=' + role).expect(200);
+      expect(list.body.data).toHaveLength(1);
+      expect(list.body.summary.total).toBe(1);
+      expect(list.body.summary.ungrouped).toBeNull();
+      expect(list.body.data[0].customerGroupId).toBeNull();
+      expect(list.body.data[0].customerGroupName).toBeNull();
+      expect(list.body.data[0].creditLimitMinor).toBeNull();
+      const detail = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + id + '?role=' + role)
+        .set('Authorization', 'Bearer ' + token).expect(200);
+      expect(detail.body.data.customerGroupId).toBeNull();
+      expect(detail.body.data.customerGroupName).toBeNull();
+      expect(detail.body.data.creditLimitMinor).toBeNull();
+
+      for (const query of [
+        '&groupId=' + groupId,
+        '&sort=groupName',
+        '&sort=creditLimit',
+      ]) {
+        const denied = await listParties('?role=' + role + query).expect(400);
+        expect(denied.body.error.code).toBe('VALIDATION_FAILED');
+        expect(JSON.stringify(denied.body)).not.toContain(groupId);
+      }
+    }
+
+    // Revoked Customer VIEW does not grant Customer profile data through
+    // another trading role, even on a Party sharing the same identity.
+    await asTenant(pool, tenant.tenantId, (client) => client.query(
+      'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+      [tenant.tenantId, tenant.roleId, Permission.CUSTOMER_VIEW],
+    ).then(() => undefined));
+    await listParties('?role=CUSTOMER').expect(403);
+    const supplierOnly = await listParties('?role=SUPPLIER').expect(200);
+    expect(supplierOnly.body.data[0].roles).toEqual(['SUPPLIER', 'VENDOR']);
+    expect(supplierOnly.body.data[0].customerGroupId).toBeNull();
+    expect(supplierOnly.body.summary.ungrouped).toBeNull();
+    const restricted = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(restricted.body.data.roles).toEqual(['SUPPLIER', 'VENDOR']);
+    expect(restricted.body.data.customerGroupName).toBeNull();
+    expect(restricted.body.data.creditLimitMinor).toBeNull();
+
+    // Even fully authorized tenant B cannot infer tenant A's group or Party.
+    const tenantB = await seedTenant(pool, { name: 'T09A Tenant B', permissions: ALL_PARTIES });
+    const tenantBToken = signToken(tenantB, TEST_JWT_SECRET);
+    const empty = await listParties('?role=SUPPLIER', tenantBToken).expect(200);
+    expect(empty.body.data).toHaveLength(0);
+    expect(empty.body.summary.ungrouped).toBeNull();
+    await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + tenantBToken).expect(404);
+  });
+});
+
+
+/**
  * MOD-004 T09B: setup is needed by all trading-role screens, but only explicit
  * Customer-facing or group-management permissions can read customer group IDs.
  * Exercises signed tokens and tenant RLS against disposable PostgreSQL 16.

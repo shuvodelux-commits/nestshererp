@@ -186,7 +186,8 @@ export interface PartyCounts {
   readonly total: number;
   readonly active: number;
   readonly inactive: number;
-  readonly ungrouped: number;
+  /** Non-Customer role summaries have no customer-group count. */
+  readonly ungrouped: number | null;
   /** Unsigned money totals over the same filter — see `partySummarySchema`. */
   readonly totalOutstandingMinor: number;
   readonly totalAdvanceMinor: number;
