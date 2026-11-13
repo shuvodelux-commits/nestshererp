@@ -233,10 +233,6 @@ export const partyQuerySchema = z
 
 export type PartyQuery = z.infer<typeof partyQuerySchema>;
 
-/** A detail balance must identify which trading relationship is being read. */
-export const partyDetailQuerySchema = z.object({ role: partyRoleSchema.optional() }).strict();
-export type PartyDetailQuery = z.infer<typeof partyDetailQuerySchema>;
-
 /**
  * §5.6's field set. Name and at least one role are always required; a phone is
  * required only when CUSTOMER is among the roles (D-02). Everything else is
