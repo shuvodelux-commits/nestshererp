@@ -59,6 +59,15 @@ const PARTY_VIEW_PERMISSIONS = [
   Permission.CUSTOMER_CREATE,
   Permission.SUPPLIER_CREATE,
   Permission.VENDOR_CREATE,
+  // Group managers need setup even without a trading Party view permission:
+  // the create/rename group handlers return this same setup response.
+  Permission.PARTY_GROUP_MANAGE,
+];
+
+const CUSTOMER_GROUP_READ_PERMISSIONS = [
+  Permission.CUSTOMER_VIEW,
+  Permission.CUSTOMER_CREATE,
+  Permission.PARTY_GROUP_MANAGE,
 ];
 
 export class ManagePartyGroupsService {
@@ -85,12 +94,17 @@ export class ManagePartyGroupsService {
 
       const values = settingValuesOf(await this.settings.listStored(tx, ctx));
       const customerGroups = isFeatureOn(values, SettingKey.CUSTOMER_GROUPS_ENABLED);
+      // Tenant-scoped setup must stay available to Supplier/Vendor-only users,
+      // but their Party permissions do not authorize Customer group catalog data.
+      const mayReadGroups = CUSTOMER_GROUP_READ_PERMISSIONS.some((code) => held.includes(code));
 
       return {
         // No groups while the feature is off: the screen must not offer a
         // control the server would refuse (UI-09). The rows stay in the table,
         // because §5.21 preserves historical data when a feature is switched off.
-        groups: customerGroups ? [...(await this.parties.listGroups(tx, ctx))] : [],
+        groups: customerGroups && mayReadGroups
+          ? [...(await this.parties.listGroups(tx, ctx))]
+          : [],
         features: {
           customerGroups,
           vendors: isFeatureOn(values, SettingKey.VENDOR_MANAGEMENT_ENABLED),
