@@ -30,6 +30,7 @@ export {
 export { PostgresAuditQueryRepository } from './audit-query-repository';
 export { PostgresCatalogRepository } from './catalog-repository';
 export { PostgresCatalogMetadataV1Repository } from './catalog-metadata-v1-repository';
+export { PostgresCatalogMetadataV1CreationRepository } from './catalog-metadata-v1-creation-repository';
 export { PostgresProductRepository } from './product-repository';
 export { PostgresPartyRepository } from './party-repository';
 export { PostgresInventoryRepository } from './inventory-repository';
