@@ -270,7 +270,8 @@ export const stockCountLineSchema = z
     countedQty: z.number().int(),
     systemQty: z.number().int(),
     qtyDelta: z.number().int(),
-    valueMinor: z.number().int(),
+    /** Omit entirely when COST_VIEW is absent; zero is a real cost. */
+    valueMinor: z.number().int().optional(),
   })
   .strict();
 
@@ -283,8 +284,9 @@ export const stockCountSchema = z
     businessDate: BUSINESS_DATE,
     lineCount: z.number().int(),
     differenceCount: z.number().int(),
-    shortageValueMinor: z.number().int(),
-    surplusValueMinor: z.number().int(),
+    /** Permission-filtered; backend keeps authoritative values internally. */
+    shortageValueMinor: z.number().int().optional(),
+    surplusValueMinor: z.number().int().optional(),
     createdAt: z.string(),
     lines: z.array(stockCountLineSchema),
   })
