@@ -83,6 +83,8 @@ export interface ListPartiesCommand {
 export interface PartyIdCommand {
   readonly ctx: TenantContext;
   readonly partyId: string;
+  /** Optional only for detail reads; multi-role identities must select a role. */
+  readonly role?: PartyRole | undefined;
 }
 
 /** The fields §5.6 defines, as they arrive from the form or a CSV row. */
@@ -252,8 +254,14 @@ export class ManagePartiesService {
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
 
+      // The row balance belongs to the selected tab; role badges also must not
+      // reveal other trading relationships to a role-limited viewer.
+      const held = await this.accessControl.permissionsOf(tx, ctx);
       return {
-        data: page.map(toResponse),
+        data: page.map((row) => toResponse({
+          ...row,
+          roles: row.roles.filter((itemRole) => held.includes(ROLE_PERMISSIONS[itemRole].view)),
+        })),
         page: { nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null, hasMore },
         summary: counts,
       };
@@ -265,11 +273,29 @@ export class ManagePartiesService {
 
     return this.uow.run(ctx, async (tx) => {
       const party = await this.requireParty(tx, ctx, command.partyId);
-      // Read it under whichever of its roles the caller is allowed to see. A
-      // supplier who is also a customer is readable by someone who may see
-      // either; someone who may see neither gets the 404 a stranger gets.
-      await this.requireAnyRole(tx, ctx, party.roles, 'view');
-      return toResponse(party);
+      // Identity may be shared, but a Customer, Supplier and Vendor balance
+      // is not one obligation. Require an unambiguous selected relationship.
+      const held = await this.accessControl.permissionsOf(tx, ctx);
+      const visibleRoles = party.roles.filter((role) => held.includes(ROLE_PERMISSIONS[role].view));
+      if (visibleRoles.length === 0) {
+        await this.requireAnyRole(tx, ctx, party.roles, 'view');
+        throw new AppError(ErrorCode.PERMISSION_DENIED, 'No permission to view this party');
+      }
+      const role = command.role ?? (party.roles.length === 1 ? party.roles[0] : undefined);
+      if (role === undefined) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this party');
+      }
+      // Permission first, then relationship membership: avoid revealing private
+      // supplier/vendor role membership to a Customer-only caller.
+      if (!held.includes(ROLE_PERMISSIONS[role].view)) {
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].view);
+        throw new AppError(ErrorCode.PERMISSION_DENIED, 'No permission to view this relationship');
+      }
+      if (!party.roles.includes(role)) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'That relationship does not exist');
+      }
+      const balanceNetMinor = await this.parties.getRoleBalance(tx, ctx, party.id, role);
+      return toResponse({ ...party, roles: visibleRoles, balanceNetMinor });
     });
   }
 
