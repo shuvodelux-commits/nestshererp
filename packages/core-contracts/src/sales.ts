@@ -452,6 +452,9 @@ export const posProductQuerySchema = z
       ])
       .optional(),
     customerPartyId: ULID.optional(),
+    /** Optional globally-ranked, stock-filtered pagination; absent is legacy ID paging. */
+    rankingMode: z.literal('GLOBAL_V2').optional(),
+    /** V1 raw product ULID; V2 versioned, query-bound opaque continuation. */
     cursor: z.string().max(120).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
