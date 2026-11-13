@@ -691,3 +691,11 @@ export type {
 /* --------------------------------------------------- Phase 18.1: Global Search */
 export { GlobalSearchService } from './search/global-search-service';
 export type { GlobalSearchCommand } from './search/global-search-service';
+
+// MOD-008: tenant-scoped, cost-protected, non-posting draft lifecycle.
+export { PurchaseDraftService } from './purchasing/purchase-draft-service';
+export type {
+  PurchaseDraftInput,
+  PurchaseDraftPayload,
+  PurchaseDraftRow,
+} from './purchasing/purchase-repository';
