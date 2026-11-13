@@ -13,15 +13,17 @@
  */
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
+import type { SettingsRepository } from '@sher/core-application';
 import { Test } from '@nestjs/testing';
 import { Permission } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { SETTINGS_REPOSITORY } from '../src/infrastructure/tokens';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import {
@@ -303,4 +305,92 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
     })).toBe(400);
     expect(await snapshot()).toEqual(before);
   });
+
+  it.each(['close-first', 'movement-first'] as const)(
+    'serializes %s: no movement may race a physical cash-day close',
+    async (first) => {
+      // The regular fixture has a physical close. Reopen only today's day,
+      // retaining the superseded historical close for audit.
+      const reopened = await signed(api().post('/api/v1/money/day/' + sessionId + '/reopen'))
+        .send({
+          reason: 'Correctly re-count before concurrent activity',
+          operationId: Ulid.generate(clock),
+        });
+      expectStatus(reopened, 201);
+      expect(reopened.body.data.status).toBe('OPEN');
+
+      const settings = app.get<SettingsRepository>(SETTINGS_REPOSITORY);
+      const actualLock = settings.lockTenant.bind(settings);
+      let lockAcquired = false;
+      let unlock = (): void => {};
+      const gate = new Promise<void>((resolve) => { unlock = resolve; });
+      const spy = vi.spyOn(settings, 'lockTenant').mockImplementation(async (...args) => {
+        const result = await actualLock(...args);
+        if (!lockAcquired) {
+          lockAcquired = true;
+          await gate; // lock remains held by the first Nest UoW
+        }
+        return result;
+      });
+
+      const postMove = (): Promise<request.Response> =>
+        signed(api().post('/api/v1/money/movements')).send({
+          kind: 'TRANSFER',
+          fromAccountCode: 'CASH:' + cashId,
+          toAccountCode: 'BANK:' + bankId,
+          amountMinor: 5_000,
+          businessDate: day,
+          reference: null,
+          note: 'Concurrent transfer vs physical close',
+          operationId: Ulid.generate(clock),
+        }).then((r) => r);
+      const postClose = (): Promise<request.Response> =>
+        signed(api().post('/api/v1/money/day/' + sessionId + '/close')).send({
+          countedClosingMinor: first === 'close-first' ? 75_000 : 70_000,
+          reason: null,
+          operationId: Ulid.generate(clock),
+        }).then((r) => r);
+
+      const leading = first === 'close-first' ? postClose() : postMove();
+      let following: Promise<request.Response> | undefined;
+      try {
+        await vi.waitFor(() => expect(lockAcquired).toBe(true), { timeout: 10_000 });
+        following = first === 'close-first' ? postMove() : postClose();
+        // Prove the second UoW actually waits for the same tenant-row lock,
+        // instead of merely assuming request ordering from Promise creation.
+        await vi.waitFor(async () => {
+          const waiting = await pool.query<{n: number}>(
+            "SELECT COUNT(*)::int AS n FROM pg_stat_activity " +
+            "WHERE wait_event_type = 'Lock' AND query ILIKE '%for update%'",
+          );
+          expect(waiting.rows[0]?.n ?? 0).toBeGreaterThan(0);
+        }, { timeout: 10_000 });
+      } finally {
+        unlock();
+        await Promise.allSettled([leading, following]);
+        spy.mockRestore();
+      }
+
+      const winner = await leading;
+      const second = await following;
+      if (first === 'close-first') {
+        expectStatus(winner, 201);
+        expectStatus(second, 400);
+      } else {
+        expectStatus(winner, 201);
+        expectStatus(second, 201);
+      }
+
+      const close = await asTenant(pool, tenant.tenantId, (db) =>
+        db.query<{ counted_closing_minor: string; status: string }>(
+          "SELECT counted_closing_minor::text, status FROM cash_session_closes " +
+          "WHERE session_id = $1 AND status = 'ACTIVE'",
+          [sessionId],
+        ));
+      expect(close.rows).toHaveLength(1);
+      expect(Number(close.rows[0]?.counted_closing_minor))
+        .toBe(first === 'close-first' ? 75_000 : 70_000);
+    },
+  );
+
 });
