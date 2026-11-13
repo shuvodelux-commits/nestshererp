@@ -613,6 +613,135 @@ describe('opening balances and ledgers', () => {
     expect(lines.rows.reduce((sum, row) => sum + row.amount_minor, 0)).toBe(0);
   });
 
+  it('isolates trading ledgers by requested role for a multi-role party', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(
+      minimalCustomer({
+        name: 'Rahim Trading',
+        roles: ['CUSTOMER', 'SUPPLIER'],
+        opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 250_000, businessDate },
+      }),
+    ).expect(201);
+    const party = created.body.data as PartyBody;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/parties/${party.id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 150_000, businessDate })
+      .expect(201);
+
+    // A multi-role party must not silently combine AR and AP or let one
+    // role's permission authorize the other role's journal source details.
+    const ambiguous = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(ambiguous.status).toBe(400);
+
+    const customer = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(customer.body.rows.map((row: { account: string }) => row.account)).toEqual(['AR']);
+    expect(customer.body.closingBalance.netMinor).toBe(250_000);
+
+    const supplier = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supplier.body.rows.map((row: { account: string }) => row.account)).toEqual(['AP']);
+    expect(supplier.body.closingBalance.netMinor).toBe(-150_000);
+
+    const customerCursor = customer.body.rows[0].journalLineId as string;
+    await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=SUPPLIER&cursor=${customerCursor}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+  });
+
+  it('paginates corrected opening balances without losing the cursor amount', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    const created = await createParty(
+      minimalCustomer({
+        opening: { role: 'CUSTOMER', direction: 'RECEIVABLE', amountMinor: 250_000, businessDate },
+      }),
+    ).expect(201);
+    const party = created.body.data as PartyBody;
+
+    const previousOpening = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/opening?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const version = previousOpening.body.data.version as number;
+    await request(app.getHttpServer())
+      .patch(`/api/v1/parties/${party.id}/opening`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        role: 'CUSTOMER',
+        direction: 'RECEIVABLE',
+        amountMinor: 310_000,
+        businessDate,
+        version,
+      })
+      .expect(200);
+
+    const url = `/api/v1/parties/${party.id}/ledger?role=CUSTOMER&fromDate=${businessDate}&toDate=${businessDate}`;
+    const full = await request(app.getHttpServer())
+      .get(`${url}&limit=10`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(full.body.rows).toHaveLength(3); // Opening + reversal + repost.
+    expect(full.body.closingBalance.netMinor).toBe(310_000);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let priorRunningMinor = 0;
+    for (let page = 0; page < 3; page += 1) {
+      const response = await request(app.getHttpServer())
+        .get(`${url}&limit=1${cursor === null ? '' : `&cursor=${cursor}`}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const body = response.body as {
+        openingBalance: { netMinor: number };
+        closingBalance: { netMinor: number };
+        rows: { journalLineId: string; runningBalanceMinor: number }[];
+        page: { hasMore: boolean; nextCursor: string | null };
+      };
+      expect(body.rows).toHaveLength(1);
+      expect(body.openingBalance.netMinor).toBe(priorRunningMinor);
+      expect(body.closingBalance.netMinor).toBe(310_000);
+      seen.push(body.rows[0]!.journalLineId);
+      priorRunningMinor = body.rows[0]!.runningBalanceMinor;
+      expect(body.page.hasMore).toBe(page < 2);
+      cursor = body.page.nextCursor;
+    }
+    expect(seen).toEqual(full.body.rows.map((row: { journalLineId: string }) => row.journalLineId));
+    expect(priorRunningMinor).toBe(310_000);
+  });
+
+  it('denies another relationship when only the customer view permission remains', async () => {
+    const created = await createParty(
+      minimalCustomer({ roles: ['CUSTOMER', 'SUPPLIER'] }),
+    ).expect(201);
+    const party = created.body.data as PartyBody;
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.SUPPLIER_VIEW],
+      );
+    });
+    await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=CUSTOMER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const denied = await request(app.getHttpServer())
+      .get(`/api/v1/parties/${party.id}/ledger?role=SUPPLIER`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+    expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+  });
+
   it('shows the same figure on the list and in the ledger', async () => {
     const created = await createParty(
       minimalCustomer({

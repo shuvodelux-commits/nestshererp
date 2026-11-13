@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { balanceSchema } from './parties';
+import { balanceSchema, partyRoleSchema } from './parties';
 
 /**
  * A party's ledger over the wire (§2.4, INV-06, INV-10).
@@ -54,7 +54,7 @@ export const partyLedgerResponseSchema = z
      */
     openingBalance: balanceSchema,
     rows: z.array(partyLedgerRowSchema),
-    /** The same figure the parties list shows for this party. */
+    /** Current balance for only the requested trading role, not the legacy combined list total. */
     closingBalance: balanceSchema,
     totalDebitMinor: z.number().int().min(0),
     totalCreditMinor: z.number().int().min(0),
@@ -73,6 +73,8 @@ export type PartyLedgerResponse = z.infer<typeof partyLedgerResponseSchema>;
  */
 export const partyLedgerQuerySchema = z
   .object({
+    /** Explicit role prevents cross-role statement disclosure on a multi-role identity. */
+    role: partyRoleSchema.optional(),
     fromDate: z.string().date().optional(),
     toDate: z.string().date().optional(),
     /** Keyset cursor: the journal line id of the last row of the previous page. */

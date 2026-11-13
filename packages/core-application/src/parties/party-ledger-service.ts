@@ -17,12 +17,13 @@ import type { PartyLedgerFilter, PartyRepository } from './party-repository';
  * screen is recomputed from the lines each time it is asked for, so there is no
  * cached total that can fall out of step with the postings under it.
  *
- * The closing balance this returns is the same number `ManagePartiesService`
- * puts on the list row, because both are `partyBalanceOf` over the same sum.
+ * The closing balance is the current balance of the requested trading role;
+ * the legacy list can still expose a party-wide net and must be adapted separately.
  */
 export interface PartyLedgerCommand {
   readonly ctx: TenantContext;
   readonly partyId: string;
+  readonly role?: PartyRole | undefined;
   readonly fromDate?: string | undefined;
   readonly toDate?: string | undefined;
   readonly cursor?: string | undefined;
@@ -59,24 +60,30 @@ export class PartyLedgerService {
         throw new AppError(ErrorCode.NOT_FOUND, 'That party no longer exists');
       }
 
-      /*
-       * A party may hold several roles (D-04), and one statement covers all of
-       * them — the money is owed by one person regardless of which hat they
-       * were wearing. So any role the caller may view is enough to open it; a
-       * caller trusted with none of this party's roles is not.
-       */
+      // Identity is shared, but Customer, Supplier and Vendor are different
+      // accounting relationships. Viewing any one does not grant the others.
       const held = await this.accessControl.permissionsOf(tx, ctx);
-      const permitted = party.roles.some((role) => held.includes(VIEW_PERMISSIONS[role]));
-      if (!permitted) {
-        throw new AppError(
-          ErrorCode.PERMISSION_DENIED,
-          'You do not have permission to view this party',
-        );
+      if (!party.roles.some((role) => held.includes(VIEW_PERMISSIONS[role]))) {
+        throw new AppError(ErrorCode.PERMISSION_DENIED, 'You do not have permission to view this party');
+      }
+
+      const role = command.role ?? (party.roles.length === 1 ? party.roles[0] : undefined);
+      if (role === undefined) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this ledger');
+      }
+      // Permission check precedes membership so an unauthorized caller cannot
+      // enumerate which private relationships the party holds.
+      if (!held.includes(VIEW_PERMISSIONS[role])) {
+        throw new AppError(ErrorCode.PERMISSION_DENIED, 'You do not have permission to view this relationship');
+      }
+      if (!party.roles.includes(role)) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'That relationship does not exist');
       }
 
       const limit = command.limit ?? DEFAULT_LIMIT;
       const filter: PartyLedgerFilter = {
         partyId: command.partyId,
+        role,
         fromDate: command.fromDate ?? null,
         toDate: command.toDate ?? null,
         cursor: command.cursor ?? null,
@@ -85,9 +92,14 @@ export class PartyLedgerService {
         limit: limit + 1,
       };
 
-      const [lines, openingNetMinor] = await Promise.all([
+      if (filter.cursor !== null && !(await this.parties.isLedgerCursorInScope(tx, ctx, filter))) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Ledger cursor is not valid for this relationship');
+      }
+
+      const [lines, openingNetMinor, currentNetMinor] = await Promise.all([
         this.parties.listLedgerLines(tx, ctx, filter),
         this.parties.sumLedgerBefore(tx, ctx, filter),
+        this.parties.sumLedgerTotal(tx, ctx, filter),
       ]);
 
       const hasMore = lines.length > limit;
@@ -101,13 +113,10 @@ export class PartyLedgerService {
         openingBalance: ledger.openingBalance,
         rows: [...ledger.rows],
         /*
-         * The closing balance of the *party*, not of the page. When a date
-         * filter or a page boundary leaves later lines out, the running total
-         * of what is shown is not what the customer owes — and the header of a
-         * statement has to say what they owe, or someone will collect the
-         * wrong amount. The rows still carry their own running balances.
+         * Current balance of this requested trading relationship, not merely
+         * the page or selected date range. Other role controls are excluded.
          */
-        closingBalance: partyBalanceOf(party.balanceNetMinor),
+        closingBalance: partyBalanceOf(currentNetMinor),
         totalDebitMinor: ledger.totalDebitMinor,
         totalCreditMinor: ledger.totalCreditMinor,
         page: {

@@ -91,6 +91,18 @@ function balanceNetMinorOf(tenantId: SQL, partyId: SQL): SQL<number> {
 
 const BALANCE_NET_MINOR = balanceNetMinorOf(sql`${parties.tenantId}`, sql`${parties.id}`);
 
+/** Per-relationship journal controls; never use a party-wide six-account set
+ * for a viewer who is authorized to inspect only one of this party's roles. */
+const LEDGER_ACCOUNTS_BY_ROLE: Record<PartyRole, readonly string[]> = {
+  CUSTOMER: ['AR', 'CUSTOMER_ADVANCE'],
+  SUPPLIER: ['AP', 'SUPPLIER_ADVANCE'],
+  VENDOR: ['VENDOR_PAYABLE', 'VENDOR_ADVANCE'],
+};
+
+function ledgerAccountList(role: PartyRole): SQL {
+  return sql.join(LEDGER_ACCOUNTS_BY_ROLE[role].map((account) => sql`${account}`), sql`, `);
+}
+
 /**
  * Whether anything has ever posted against this party (§3.6's "never used").
  *
@@ -671,43 +683,30 @@ export class PostgresPartyRepository implements PartyRepository {
     ctx: TenantContext,
     filter: PartyLedgerFilter,
   ): Promise<number> {
-    /*
-     * With neither a date floor nor a cursor there is nothing before the
-     * window — the statement starts at the beginning of history, so it opens at
-     * zero.
-     *
-     * This is not an optimisation. Without it the conditions below reduce to
-     * "every line this party has", the opening balance comes back equal to the
-     * closing one, and every running total on an unfiltered first page is
-     * doubled — a statement that is wrong and still adds up internally.
-     */
+    // A continuation page opens at all lines THROUGH its validated cursor:
+    // page one already includes the cursor's amount in its final running balance.
+    // Include pre-fromDate lines too, so page two has the exact prior closing balance.
     if (filter.fromDate === null && filter.cursor === null) return 0;
 
-    /*
-     * Everything before the window, whatever "before" means for this request:
-     * with a `fromDate`, every line dated earlier; with a cursor, every line
-     * that sorts ahead of it. Both can apply at once on page two of a filtered
-     * statement, which is why they are separate conditions rather than a
-     * single one.
-     */
     const conditions: (SQL<unknown> | undefined)[] = [
       eq(journalLines.tenantId, ctx.tenantId),
       eq(journalLines.partyId, filter.partyId),
-      sql`${journalLines.accountCode} IN (${BALANCE_ACCOUNTS})`,
+      sql`${journalLines.accountCode} IN (${ledgerAccountList(filter.role)})`,
     ];
-
-    if (filter.fromDate !== null) {
-      conditions.push(sql`${journalEntries.businessDate} < ${filter.fromDate}`);
-    }
 
     if (filter.cursor !== null) {
       conditions.push(
-        sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) <
+        sql`(${journalEntries.businessDate}, ${journalLines.createdAt}, ${journalLines.id}) <=
             (SELECT e.business_date, l.created_at, l.id
              FROM journal_lines l
              JOIN journal_entries e ON e.id = l.journal_entry_id
-             WHERE l.tenant_id = ${ctx.tenantId} AND l.id = ${filter.cursor})`,
+             WHERE l.tenant_id = ${ctx.tenantId}
+               AND l.party_id = ${filter.partyId}
+               AND l.account_code IN (${ledgerAccountList(filter.role)})
+               AND l.id = ${filter.cursor})`,
       );
+    } else if (filter.fromDate !== null) {
+      conditions.push(sql`${journalEntries.businessDate} < ${filter.fromDate}`);
     }
 
     const rows = await txOf(tx)
@@ -719,13 +718,46 @@ export class PostgresPartyRepository implements PartyRepository {
     return rows[0]?.net ?? 0;
   }
 
+  async sumLedgerTotal(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PartyLedgerFilter,
+  ): Promise<number> {
+    const rows = await txOf(tx)
+      .select({ net: sql<number>`COALESCE(SUM(${journalLines.amountMinor}), 0)::bigint` })
+      .from(journalLines)
+      .where(and(
+        eq(journalLines.tenantId, ctx.tenantId),
+        eq(journalLines.partyId, filter.partyId),
+        sql`${journalLines.accountCode} IN (${ledgerAccountList(filter.role)})`,
+      ));
+    return rows[0]?.net ?? 0;
+  }
+
+  async isLedgerCursorInScope(
+    tx: Tx,
+    ctx: TenantContext,
+    filter: PartyLedgerFilter,
+  ): Promise<boolean> {
+    if (filter.cursor === null) return true;
+    const rows = await txOf(tx)
+      .select({ id: journalLines.id })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+      .where(and(
+        ...this.ledgerFilters(ctx, filter),
+        eq(journalLines.id, filter.cursor),
+      ))
+      .limit(1);
+    return rows.length === 1;
+  }
+
   private ledgerFilters(ctx: TenantContext, filter: PartyLedgerFilter) {
     const conditions: (SQL<unknown> | undefined)[] = [
       eq(journalLines.tenantId, ctx.tenantId),
       eq(journalLines.partyId, filter.partyId),
-      // The same account set the balance is summed over, so the rows on the
-      // statement are exactly the rows behind the figure in its header.
-      sql`${journalLines.accountCode} IN (${BALANCE_ACCOUNTS})`,
+      // Exact role controls: never combine customer, supplier and vendor lines.
+      sql`${journalLines.accountCode} IN (${ledgerAccountList(filter.role)})`,
     ];
 
     // Inclusive both ends — what someone asking for "January" means.
@@ -748,7 +780,10 @@ export class PostgresPartyRepository implements PartyRepository {
           (SELECT e.business_date, l.created_at, l.id
            FROM journal_lines l
            JOIN journal_entries e ON e.id = l.journal_entry_id
-           WHERE l.tenant_id = ${ctx.tenantId} AND l.id = ${filter.cursor})`,
+           WHERE l.tenant_id = ${ctx.tenantId}
+             AND l.party_id = ${filter.partyId}
+             AND l.account_code IN (${ledgerAccountList(filter.role)})
+             AND l.id = ${filter.cursor})`,
     ];
   }
 

@@ -132,6 +132,8 @@ export interface PartyLedgerLineRow {
 
 export interface PartyLedgerFilter {
   readonly partyId: string;
+  /** Fixed requested trading role. All ledger queries must use this same scope. */
+  readonly role: PartyRole;
   /** Inclusive. `null` means unbounded on that end. */
   readonly fromDate: string | null;
   readonly toDate: string | null;
@@ -290,6 +292,10 @@ export interface PartyRepository {
    * statement that began at zero would be wrong and still look right.
    */
   sumLedgerBefore(tx: Tx, ctx: TenantContext, filter: PartyLedgerFilter): Promise<number>;
+  /** Full current amount of this requested relationship (no date/page limits). */
+  sumLedgerTotal(tx: Tx, ctx: TenantContext, filter: PartyLedgerFilter): Promise<number>;
+  /** Cursors must belong to the same tenant, party, role and date window. */
+  isLedgerCursorInScope(tx: Tx, ctx: TenantContext, filter: PartyLedgerFilter): Promise<boolean>;
 
   listGroups(tx: Tx, ctx: TenantContext): Promise<readonly CustomerGroupEntry[]>;
   findGroup(tx: Tx, ctx: TenantContext, id: string): Promise<CustomerGroupEntry | null>;
