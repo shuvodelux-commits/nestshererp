@@ -338,6 +338,8 @@ export interface PosProductRow {
   readonly searchText: string;
   readonly tracksExpiry: boolean;
   readonly tracksSerial: boolean;
+  /** Internal SQL rank for GLOBAL_V2 only, never exposed on the public DTO. */
+  readonly searchRank?: number;
 }
 
 export interface PosProductFilter {
@@ -355,7 +357,11 @@ export interface PosProductFilter {
   readonly categoryId: string | null;
   readonly brandId: string | null;
   readonly customerGroupId: string | null;
+  /** Legacy v1 keyset only; opaque v2 tokens are decoded in the application. */
   readonly cursor: string | null;
+  readonly rankingMode?: 'GLOBAL_V2';
+  readonly stockStatus?: 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK' | 'NEGATIVE_STOCK' | null;
+  readonly rankAfter?: { readonly rank: number; readonly id: string } | null;
   readonly limit: number;
 }
 
