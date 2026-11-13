@@ -140,7 +140,11 @@ export class SaleQueryService {
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, Permission.CUSTOMER_VIEW);
       const party = await this.parties.findById(tx, ctx, partyId);
-      if (party === null) throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
+      // A tenant may also have Supplier/Vendor-only parties. Their ledgers are
+      // not customer standing, even when the actor can view customer ledgers.
+      if (party === null || !party.roles.includes('CUSTOMER')) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
+      }
 
       const [standing, invoices] = await Promise.all([
         this.sales.customerStanding(tx, ctx, partyId),
@@ -196,7 +200,13 @@ export class SaleQueryService {
       let customerGroupId: string | null = null;
       if (dealerPricingOn && query.customerPartyId !== undefined) {
         const party = await this.parties.findById(tx, ctx, query.customerPartyId);
-        customerGroupId = party?.customerGroupId ?? null;
+        // A vendor may legitimately be selected for a vendor-credit sale, but
+        // vendor-only and supplier-only relationships are not customer groups.
+        if (party === null ||
+            (!party.roles.includes('CUSTOMER') && !party.roles.includes('VENDOR'))) {
+          throw new AppError(ErrorCode.NOT_FOUND, 'Sale party not found');
+        }
+        customerGroupId = party.roles.includes('CUSTOMER') ? party.customerGroupId : null;
       }
 
       const rows = await this.sales.listPosProducts(tx, ctx, {
@@ -217,9 +227,14 @@ export class SaleQueryService {
        * first, then code, name, name prefix, word prefix, anywhere; stock
        * breaks ties only.
        */
-      const ranked = searchProducts(query.search ?? '', rows);
-      const hasMore = ranked.length > limit;
-      const page = hasMore ? ranked.slice(0, limit) : ranked;
+      // The repository keysets by product ID, so consume the *ID-ordered*
+      // prefix before applying the display-only relevance ranking. Otherwise
+      // using the last ranked item as the cursor skips or repeats product IDs.
+      // Global relevance ordering and stock-status filtering before the SQL
+      // limit require a separate versioned query contract.
+      const hasMore = rows.length > limit;
+      const consumed = hasMore ? rows.slice(0, limit) : rows;
+      const page = searchProducts(query.search ?? '', consumed);
       const wanted = query.stockStatus;
 
       const items = page
@@ -249,7 +264,7 @@ export class SaleQueryService {
 
       return {
         items,
-        nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+        nextCursor: hasMore ? (consumed[consumed.length - 1]?.id ?? null) : null,
         negativeStockPolicy: String(
           values.get(SettingKey.NEGATIVE_STOCK_POLICY) ?? 'BLOCK',
         ) as PosProductList['negativeStockPolicy'],
