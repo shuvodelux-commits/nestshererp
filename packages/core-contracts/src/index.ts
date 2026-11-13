@@ -135,6 +135,35 @@ export type {
   SaveUnitRequest,
   UnitResponse,
 } from './catalog';
+/** HisabIQ T02A optional bilingual catalog DTOs. No registered live endpoint. */
+export {
+  catalogMetadataNameBnSchema,
+  catalogMetadataUnitSymbolSchema,
+  catalogMetadataV1BrandSchema,
+  catalogMetadataV1CategorySchema,
+  catalogMetadataV1EnvelopeSchema,
+  catalogMetadataV1ResponseSchema,
+  catalogMetadataV1UnitSchema,
+  createCatalogMetadataV1BrandRequestSchema,
+  createCatalogMetadataV1CategoryRequestSchema,
+  createCatalogMetadataV1UnitRequestSchema,
+  patchCatalogMetadataV1BrandRequestSchema,
+  patchCatalogMetadataV1CategoryRequestSchema,
+  patchCatalogMetadataV1UnitRequestSchema,
+} from './catalog-metadata-v1';
+export type {
+  CatalogMetadataV1Brand,
+  CatalogMetadataV1Category,
+  CatalogMetadataV1Envelope,
+  CatalogMetadataV1Response,
+  CatalogMetadataV1Unit,
+  CreateCatalogMetadataV1BrandRequest,
+  CreateCatalogMetadataV1CategoryRequest,
+  CreateCatalogMetadataV1UnitRequest,
+  PatchCatalogMetadataV1BrandRequest,
+  PatchCatalogMetadataV1CategoryRequest,
+  PatchCatalogMetadataV1UnitRequest,
+} from './catalog-metadata-v1';
 export {
   discountTypeSchema,
   generatedBarcodeResponseSchema,
