@@ -24,10 +24,10 @@ const MAX_LIST_ROWS = 100;
  * JSONB loses object key order; retries of semantically identical bodies
  * must compare equal regardless of serialized property order.
  *
- * This immutable fingerprint is not a financial checksum and must never
+ * This immutable SHA-256 content digest is not a financial checksum and must never
  * be recomputed after a draft has been edited or recycled.
  */
-function draftCreateFingerprint(input: CreatePurchaseDraftRequest): string {
+async function draftCreateFingerprint(input: CreatePurchaseDraftRequest): Promise<string> {
   let nodes = 0;
   function ordered(value: unknown, depth: number): string {
     nodes += 1;
@@ -57,7 +57,12 @@ function draftCreateFingerprint(input: CreatePurchaseDraftRequest): string {
   if (fingerprint.length > 125_000) {
     throw new AppError(ErrorCode.VALIDATION_FAILED, 'Draft create payload is too large');
   }
-  return fingerprint;
+  // Store only a fixed-size digest, never a duplicate copy of the entire
+  // supplier/serial/payment snapshot. Web Crypto works in Node 20 and browsers.
+  const bytes = new TextEncoder().encode(fingerprint);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), value =>
+    value.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -119,7 +124,7 @@ export class PurchaseDraftService {
   async create(ctx: TenantContext, input: CreatePurchaseDraftRequest): Promise<PurchaseDraftResponse> {
     return this.uow.run(ctx, async (tx) => {
       await this.authorize(tx, ctx);
-      const fingerprint = draftCreateFingerprint(input);
+      const fingerprint = await draftCreateFingerprint(input);
       const replay = (row: PurchaseDraftRow): PurchaseDraftResponse => {
         if (row.createFingerprint !== fingerprint) {
           throw new AppError(ErrorCode.IDEMPOTENCY_KEY_REUSED,
