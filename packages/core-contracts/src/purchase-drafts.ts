@@ -38,7 +38,8 @@ export const purchaseDraftResponseSchema = draftPayload.extend({
   createdAt: z.string(),
   version: z.number().int().positive(),
   deletedAt: z.string().nullable(),
-  recoverableUntil: z.string().nullable(),
+  /** Exact recovery deadline, epoch milliseconds; no ambient clock construction. */
+  recoverableUntilEpochMs: z.number().int().nullable(),
 }).strict();
 
 export type CreatePurchaseDraftRequest = z.infer<typeof createPurchaseDraftRequestSchema>;
