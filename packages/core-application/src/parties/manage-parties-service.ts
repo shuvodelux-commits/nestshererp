@@ -639,7 +639,7 @@ export class ManagePartiesService {
 
     return this.uow.run(ctx, async (tx) => {
       const party = await this.requireParty(tx, ctx, command.partyId);
-      await this.requireAnyRole(tx, ctx, party.roles, 'view');
+      await this.requireOpeningRole(tx, ctx, party.roles, command.role, 'view');
       return this.parties.findOpening(tx, ctx, command.partyId, command.role);
     });
   }
@@ -668,7 +668,9 @@ export class ManagePartiesService {
       // paid guest sale points at it, and an opening on it would be a balance
       // belonging to no one.
       this.assertNotSystemReserved(party, 'change');
-      await this.requireAnyRole(tx, ctx, party.roles, 'edit');
+      // Authorize the requested journal relationship before any idempotent
+      // replay lookup: a Customer editor must never post a Supplier opening.
+      await this.requireOpeningRole(tx, ctx, party.roles, command.opening.role, 'edit');
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
@@ -724,7 +726,9 @@ export class ManagePartiesService {
     return this.uow.run(ctx, async (tx) => {
       const party = await this.requireParty(tx, ctx, command.partyId);
       this.assertNotSystemReserved(party, 'change');
-      await this.requireAnyRole(tx, ctx, party.roles, 'edit');
+      // No Supplier/Vendor correction or replay via Customer-edit privilege.
+      // Deny before inspecting the requested role's historical opening.
+      await this.requireOpeningRole(tx, ctx, party.roles, opening.role, 'edit');
 
       const existing = await this.parties.findOpening(tx, ctx, command.partyId, opening.role);
       if (existing === null) {
@@ -1033,9 +1037,33 @@ export class ManagePartiesService {
   }
 
   /**
-   * Admits a caller who holds the named right for **any** role the party has.
-   * A person who is both a customer and a supplier is one record; someone
-   * trusted with either side of them may read and correct that record.
+   * Opening balances are separate accounting obligations even when Customer,
+   * Supplier and Vendor share one Party identity. Check the requested role
+   * before reading a source document, checking an idempotency replay, or
+   * reversing/reposting any journal lines. Permission denial comes first so
+   * users cannot enumerate private roles by comparing error responses.
+   */
+  private async requireOpeningRole(
+    tx: Tx,
+    ctx: TenantContext,
+    roles: readonly PartyRole[],
+    role: PartyRole,
+    action: 'view' | 'edit',
+  ): Promise<void> {
+    await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role][action]);
+    if (!roles.includes(role)) {
+      throw new AppError(
+        action === 'view' ? ErrorCode.NOT_FOUND : ErrorCode.VALIDATION_FAILED,
+        action === 'view'
+          ? 'Record not found'
+          : 'The opening balance is for a role this party does not have',
+      );
+    }
+  }
+
+  /**
+   * Any-role authorization is only for identity-level Party edits/status.
+   * Opening documents are relationship-specific and must never use this.
    */
   private async requireAnyRole(
     tx: Tx,
