@@ -47,8 +47,14 @@ const body = (operationId = OPERATION_ID) => ({
 
 /** Update and recycle contracts do NOT accept the create-only operationId. */
 const updateBody = () => {
-  const { operationId: _operationId, ...editable } = body();
-  return editable;
+  const original = body();
+  return {
+    label: original.label,
+    supplierName: original.supplierName,
+    itemCount: original.itemCount,
+    grandTotalMinor: original.grandTotalMinor,
+    cart: original.cart,
+  };
 };
 const route = '/api/v1/purchases/drafts';
 const authed = (token: string) => ({ Authorization: `Bearer ${token}` });
