@@ -270,6 +270,26 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it('RED: denies a NEW same-day transfer from the former drawer after close', async () => {
+    await removeDrawerFlag();
+    const before = await snapshot();
+    const response = await signed(api().post('/api/v1/money/movements')).send({
+      kind: 'TRANSFER',
+      fromAccountCode: 'CASH:' + cashId,
+      toAccountCode: 'BANK:' + bankId,
+      amountMinor: 5_000, businessDate: day,
+      reference: null, note: 'After physical day counted; must not restate',
+      operationId: Ulid.generate(clock),
+    });
+    // No new same-day drawer journal may be created behind a CLOSED count.
+    expect(response.status, JSON.stringify({
+      response: response.body,
+      journalCountBefore: before.entries.length,
+      journalCountAfter: (await snapshot()).entries.length,
+    })).toBe(400);
+    expect(await snapshot()).toEqual(before);
+  });
+
   it('RED: denies same-date correction after removing the OLD drawer designation', async () => {
     await removeDrawerFlag();
     const before = await snapshot();
