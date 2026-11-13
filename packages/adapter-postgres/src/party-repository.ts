@@ -16,11 +16,11 @@ import type {
 } from '@sher/core-application';
 import type { PartySort } from '@sher/core-contracts';
 import type { PartyRole, PartyStatus } from '@sher/core-domain';
-import { customerPhoneKey, PARTY_BALANCE_ACCOUNTS } from '@sher/core-domain';
+import { customerPhoneKey, PARTY_BALANCE_ACCOUNTS, searchTokens } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
 import { Ulid } from '@sher/shared-utils';
 import type { SQL } from 'drizzle-orm';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { afterCursor, joinedName, orderBy, ownColumn, type SortableColumn } from './keyset-sort';
 import {
@@ -216,6 +216,30 @@ export class PostgresPartyRepository implements PartyRepository {
       .orderBy(orderBy(this.roleSort(filter), filter.direction, sql`${parties.id}`))
       .limit(filter.limit);
 
+    return this.withRoles(tx, ctx, rows);
+  }
+
+  /**
+   * FZ-03A: name-only fuzzy candidates. Preserve party-role scoping and RLS
+   * before LIMIT; phone, NID, document references and balances are exact-only.
+   */
+  async fuzzyByName(
+    tx: Tx, ctx: TenantContext, role: PartyRole, query: string, limit: number,
+  ): Promise<readonly PartyRow[]> {
+    const tokens = searchTokens(query);
+    if (!tokens.length || tokens.length > 3 ||
+      tokens.some((token) => Array.from(token).length < 4 || /\p{N}/u.test(token))) return [];
+    await txOf(tx).execute(sql`SELECT set_config('pg_trgm.word_similarity_threshold', '0.40', true)`);
+    const score = sql<number>`(${sql.join(tokens.map((token) =>
+      sql`word_similarity(${token}, ${parties.name})`), sql` + `)})`;
+    const rows = await this.selectParties(tx, role)
+      .where(and(
+        this.liveInTenant(ctx),
+        this.holdsRole(ctx, role),
+        ...tokens.map((token) => sql`${token} <% ${parties.name}`),
+      ))
+      .orderBy(desc(score), asc(parties.id))
+      .limit(Math.min(limit, 10));
     return this.withRoles(tx, ctx, rows);
   }
 
