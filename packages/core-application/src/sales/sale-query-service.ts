@@ -1,4 +1,5 @@
-import { searchProducts, stockStatus } from '@sher/core-domain';
+import { createHash } from 'node:crypto';
+import { normalizeSearchText, searchProducts, stockStatus } from '@sher/core-domain';
 import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type {
   CustomerStandingResponse,
@@ -23,6 +24,55 @@ import type { SaleRepository } from './sale-repository';
 import { toSaleListItem, toSaleResponse } from './sale-view';
 
 const DEFAULT_LIMIT = 50;
+
+const RANKED_POS_CURSOR = /^v2\.([0-9]{1,4})\.([0-7][0-9A-HJKMNP-TV-Z]{25})\.([a-f0-9]{24})$/;
+
+/** Bind ranked pagination to the authenticated tenant/user and effective query. */
+function posQueryFingerprint(
+  ctx: TenantContext,
+  query: PosProductQuery,
+  expiredOn: string | null,
+  dealerPricingOn: boolean,
+  customerGroupId: string | null,
+): string {
+  const scope = JSON.stringify([
+    'POS_GLOBAL_V2', ctx.tenantId, ctx.userId,
+    normalizeSearchText(query.search ?? ''),
+    query.barcode?.trim() ?? null,
+    query.categoryId ?? null,
+    query.brandId ?? null,
+    query.stockStatus ?? null,
+    query.customerPartyId ?? null,
+    customerGroupId, dealerPricingOn, expiredOn,
+  ]);
+  return createHash('sha256').update(scope).digest('hex').slice(0, 24);
+}
+
+function parseRankedPosCursor(
+  cursor: string | undefined,
+  fingerprint: string,
+): { readonly rank: number; readonly id: string } | null {
+  if (cursor === undefined) return null;
+  const match = RANKED_POS_CURSOR.exec(cursor);
+  if (match === null || match[3] !== fingerprint) {
+    throw new AppError(ErrorCode.VALIDATION_FAILED, 'POS search cursor does not match the query');
+  }
+  const rank = Number(match[1]);
+  if (!Number.isSafeInteger(rank) || rank < 0 || rank > 1010) {
+    throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid POS search cursor');
+  }
+  return { rank, id: match[2] as string };
+}
+
+function rankedPosCursor(
+  row: { readonly id: string; readonly searchRank?: number },
+  fingerprint: string,
+): string {
+  if (row.searchRank === undefined || !Number.isSafeInteger(row.searchRank)) {
+    throw new AppError(ErrorCode.INTERNAL_ERROR, 'POS search ranking is unavailable');
+  }
+  return `v2.${row.searchRank}.${row.id}.${fingerprint}`;
+}
 
 /** The invoice-design defaults a shop that has never opened the screen gets. */
 const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
@@ -209,6 +259,17 @@ export class SaleQueryService {
         customerGroupId = party.roles.includes('CUSTOMER') ? party.customerGroupId : null;
       }
 
+      const rankedMode = query.rankingMode === 'GLOBAL_V2';
+      if (!rankedMode && query.cursor?.startsWith('v2.')) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Ranked POS cursor requires GLOBAL_V2');
+      }
+      const fingerprint = rankedMode
+        ? posQueryFingerprint(ctx, query, expiredOn, dealerPricingOn, customerGroupId)
+        : null;
+      const rankAfter = rankedMode
+        ? parseRankedPosCursor(query.cursor, fingerprint as string)
+        : null;
+
       const rows = await this.sales.listPosProducts(tx, ctx, {
         expiredOn,
         search: query.search ?? null,
@@ -216,7 +277,8 @@ export class SaleQueryService {
         categoryId: query.categoryId ?? null,
         brandId: query.brandId ?? null,
         customerGroupId,
-        cursor: query.cursor ?? null,
+        cursor: rankedMode ? null : (query.cursor ?? null),
+        ...(rankedMode ? { rankingMode: 'GLOBAL_V2' as const, stockStatus: query.stockStatus ?? null, rankAfter } : {}),
         limit: limit + 1,
       });
 
@@ -234,7 +296,8 @@ export class SaleQueryService {
       // limit require a separate versioned query contract.
       const hasMore = rows.length > limit;
       const consumed = hasMore ? rows.slice(0, limit) : rows;
-      const page = searchProducts(query.search ?? '', consumed);
+      // GLOBAL_V2 rows already follow one globally ordered SQL rank/keyset.
+      const page = rankedMode ? consumed : searchProducts(query.search ?? '', consumed);
       const wanted = query.stockStatus;
 
       const items = page
@@ -260,11 +323,15 @@ export class SaleQueryService {
           };
           return showCost ? { ...base, purchasePriceMinor: row.purchasePriceMinor } : base;
         })
-        .filter((item) => wanted === undefined || item.stockStatus === wanted);
+        .filter((item) => rankedMode || wanted === undefined || item.stockStatus === wanted);
 
       return {
         items,
-        nextCursor: hasMore ? (consumed[consumed.length - 1]?.id ?? null) : null,
+        nextCursor: hasMore
+          ? (rankedMode
+              ? rankedPosCursor(consumed[consumed.length - 1]!, fingerprint as string)
+              : (consumed[consumed.length - 1]?.id ?? null))
+          : null,
         negativeStockPolicy: String(
           values.get(SettingKey.NEGATIVE_STOCK_POLICY) ?? 'BLOCK',
         ) as PosProductList['negativeStockPolicy'],
