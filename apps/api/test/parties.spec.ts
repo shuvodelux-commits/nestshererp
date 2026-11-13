@@ -351,7 +351,7 @@ describe('D08 P0-L02 — trading-role balance isolation for Party list and detai
     ).expect(201);
     const other = otherCreated.body.data as PartyBody;
 
-    const first = await listParties('?role=CUSTOMER&sort=balance&direction=desc&limit=1').expect(200);
+    const first = await listParties('?role=CUSTOMER&sort=balance&direction=DESC&limit=1').expect(200);
     expect(first.body.data).toHaveLength(1);
     expect(first.body.data[0].id).toBe(mixed.id);
     expect(first.body.data[0].balance.netMinor).toBe(250_000);
@@ -360,7 +360,7 @@ describe('D08 P0-L02 — trading-role balance isolation for Party list and detai
     expect(first.body.summary.overCreditLimit).toBe(1);
     expect(first.body.page.hasMore).toBe(true);
     const next = await listParties(
-      `?role=CUSTOMER&sort=balance&direction=desc&limit=1&cursor=${first.body.page.nextCursor}`,
+      `?role=CUSTOMER&sort=balance&direction=DESC&limit=1&cursor=${first.body.page.nextCursor}`,
     ).expect(200);
     expect(next.body.data[0].id).toBe(other.id);
     expect(next.body.data[0].balance.netMinor).toBe(100_000);
