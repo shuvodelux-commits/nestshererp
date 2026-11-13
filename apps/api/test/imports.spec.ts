@@ -26,7 +26,7 @@ import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
-import { prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
+import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
 import { assertGoldenInvariants } from './support/invariants';
 
 /**
@@ -300,11 +300,14 @@ describe('importing products', () => {
     const operationId = Ulid.generate(clock);
     expect((await commit('PRODUCTS', file, operationId)).status).toBe(201);
     const legacyFingerprint = JSON.stringify(['PRODUCTS', file.length]);
-    const updated = await pool.query(
-      'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE tenant_id = $2 AND operation_id = $3',
-      [legacyFingerprint, tenant.tenantId, operationId],
-    );
-    expect(updated.rowCount).toBe(1);
+    const updatedCount = await asTenant(pool, tenant.tenantId, async (client) => {
+      const updated = await client.query(
+        'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE tenant_id = $2 AND operation_id = $3',
+        [legacyFingerprint, tenant.tenantId, operationId],
+      );
+      return updated.rowCount;
+    });
+    expect(updatedCount).toBe(1);
 
     const replay = await commit('PRODUCTS', file, operationId);
     expect(replay.status).toBe(409);
