@@ -233,4 +233,55 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     expect(excess.status, JSON.stringify(excess.body)).toBe(400);
     expect(await state()).toEqual(before);
   });
+
+  it('RED: rejects loan-receipt reversal even if a real liability would still remain', async () => {
+    const first = await movement('LOAN_RECEIVED', loan, bank, 20_000);
+    expect(first.status).toBe(201);
+    const before = await state();
+    const reversed = await movement('LOAN_RECEIVED', bank, loan, 5_000);
+    expect(reversed.status, JSON.stringify(reversed.body)).toBe(400);
+    expect(await state()).toEqual(before);
+  });
+
+  it('RED: refuses correction of a 10000 principal repayment to 21000 on a 20000 loan', async () => {
+    const borrowed = await movement('LOAN_RECEIVED', loan, bank, 20_000);
+    expect(borrowed.status).toBe(201);
+    const paid = await movement('LOAN_REPAYMENT', bank, loan, 10_000);
+    expect(paid.status).toBe(201);
+    const id = paid.body.data.id as string;
+    const version = await asTenant(pool, tenant.tenantId, async (db) => {
+      const row = await db.query<{ version: number }>(
+        'SELECT version FROM cash_movements WHERE id=$1', [id],
+      );
+      return row.rows[0]!.version;
+    });
+    const before = await state();
+    const corrected = await signed(api().patch('/api/v1/money/movements/' + id)).send({
+      kind: 'LOAN_REPAYMENT', fromAccountCode: bank, toAccountCode: loan,
+      amountMinor: 21_000, businessDate: day, reference: null,
+      note: 'Invalid principal correction', version,
+      reason: 'Correction must not create lender receivable',
+    });
+    expect(corrected.status, JSON.stringify(corrected.body)).toBe(400);
+    expect(await state()).toEqual(before);
+  });
+
+  it('RED: void cannot remove the original loan receipt after principal was repaid', async () => {
+    const borrowed = await movement('LOAN_RECEIVED', loan, bank, 20_000);
+    expect(borrowed.status).toBe(201);
+    const repaid = await movement('LOAN_REPAYMENT', bank, loan, 15_000);
+    expect(repaid.status).toBe(201);
+    const id = borrowed.body.data.id as string;
+    const version = await asTenant(pool, tenant.tenantId, async (db) => {
+      const row = await db.query<{ version: number }>(
+        'SELECT version FROM cash_movements WHERE id=$1', [id],
+      );
+      return row.rows[0]!.version;
+    });
+    const before = await state();
+    const cancelled = await signed(api().post('/api/v1/money/movements/' + id + '/void'))
+      .send({ version, reason: 'Cannot erase debt already partly repaid' });
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(400);
+    expect(await state()).toEqual(before);
+  });
 });
