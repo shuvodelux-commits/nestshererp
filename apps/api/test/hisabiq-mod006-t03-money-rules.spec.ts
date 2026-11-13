@@ -75,7 +75,8 @@ async function create(name: string, type: 'BANK' | 'MFS' | 'LOAN', amount: numbe
     operationId: op(),
   });
   expect(r.status, JSON.stringify(r.body)).toBe(201);
-  return (type + ':' + r.body.data.id) as string;
+  // The v1 chart maps MFS into the BANK:{id} ledger family (money-account contract).
+  return (type === 'MFS' ? 'BANK' : type) + ':' + r.body.data.id;
 }
 async function state(): Promise<{
   totals: Record<string, number>; movementCount: number; journalCount: number;
