@@ -294,6 +294,39 @@ describe('importing products', () => {
     expect(await products()).toHaveLength(2);
   });
 
+  // Before C003-01, imports stored only [type, csv.length]. Such legacy
+  // records cannot prove what bytes the original request actually contained.
+  it('fails closed when a stored import fingerprint uses the legacy length format', async () => {
+    const operationId = Ulid.generate(clock);
+    expect((await commit('PRODUCTS', file, operationId)).status).toBe(201);
+    const legacyFingerprint = JSON.stringify(['PRODUCTS', file.length]);
+    const updated = await pool.query(
+      'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE tenant_id = $2 AND operation_id = $3',
+      [legacyFingerprint, tenant.tenantId, operationId],
+    );
+    expect(updated.rowCount).toBe(1);
+
+    const replay = await commit('PRODUCTS', file, operationId);
+    expect(replay.status).toBe(409);
+    expect(replay.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(2);
+  });
+
+  it('keeps the same import operation id tenant scoped', async () => {
+    const operationId = Ulid.generate(clock);
+    expect((await commit('PRODUCTS', file, operationId)).status).toBe(201);
+
+    const other = await seedTenant(pool, { name: 'Second Import Shop', permissions: PERMISSIONS });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    await addUnit('Piece', otherToken);
+    const otherFile = file.replace('PVC Pipe 1 inch', 'PVC Tube 1 inch');
+    expect((await commit('PRODUCTS', otherFile, operationId, otherToken)).status).toBe(201);
+    expect((await products()).some((row) => row.name === 'PVC Pipe 1 inch')).toBe(true);
+    expect((await products(otherToken)).some((row) => row.name === 'PVC Tube 1 inch')).toBe(true);
+    expect(await products()).toHaveLength(2);
+    expect(await products(otherToken)).toHaveLength(2);
+  });
+
   it('refuses a caller who may not create products, before reading the file', async () => {
     const readOnly = await seedTenant(pool, {
       name: 'Onboarding Shop Reader',
