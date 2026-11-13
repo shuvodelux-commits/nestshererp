@@ -1647,4 +1647,90 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
       .expect(200);
     expect(stillHere.body.data.id).toBe(sharedId);
   });
+
+
+  it('enforces Customer deactivate authority before deleting even an unused Party', async () => {
+    const created = await createParty(minimalCustomer({
+      name: 'T09C No Permission Customer',
+      phone: '01987654321',
+    })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    await asTenant(pool, tenant.tenantId, (client) => client.query(
+      'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+      [tenant.tenantId, tenant.roleId, Permission.CUSTOMER_DEACTIVATE],
+    ));
+
+    // A Customer VIEW grant does not imply delete authority. The record has
+    // never posted a journal, so this refusal proves permissions, not history.
+    const refused = await request(app.getHttpServer())
+      .delete('/api/v1/parties/' + id)
+      .set('Authorization', 'Bearer ' + token)
+      .expect(403);
+    expect(refused.body.error.code).toBe('PERMISSION_DENIED');
+
+    const intact = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(intact.body.data.id).toBe(id);
+
+    const unchanged = await asTenant(pool, tenant.tenantId, (client) => client.query<{
+      parties: number; lines: number;
+    }>(
+      'SELECT (SELECT count(*)::int FROM parties WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL) AS parties, ' +
+      '(SELECT count(*)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2) AS lines',
+      [tenant.tenantId, id],
+    ));
+    expect(unchanged.rows[0]).toEqual({ parties: 1, lines: 0 });
+  });
+
+  it('returns 404 and retains posted history when a different tenant tries to read or delete the Party', async () => {
+    const dual = await createParty(minimalCustomer({
+      name: 'T09C Tenant A Shared Customer Supplier',
+      roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const id = (dual.body.data as PartyBody).id;
+    await request(app.getHttpServer())
+      .post('/api/v1/parties/' + id + '/opening')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        role: 'SUPPLIER',
+        direction: 'PAYABLE',
+        amountMinor: 125_000,
+        businessDate: clock.businessDate('Asia/Dhaka'),
+      })
+      .expect(201);
+
+    const other = await seedTenant(pool, {
+      name: 'T09C Unrelated Tenant B',
+      permissions: [Permission.CUSTOMER_VIEW, Permission.CUSTOMER_DEACTIVATE],
+    });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/v1/parties/' + id)
+      .set('Authorization', 'Bearer ' + otherToken)
+      .expect(404);
+    const tenantBList = await listParties('?role=CUSTOMER', otherToken).expect(200);
+    expect(tenantBList.body.data).toEqual([]);
+
+    const retained = await asTenant(pool, tenant.tenantId, (client) => client.query<{
+      parties: number; supplierLines: number; supplierAmount: number;
+    }>(
+      'SELECT (SELECT count(*)::int FROM parties WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL) AS parties, ' +
+      '(SELECT count(*)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = $3) AS "supplierLines", ' +
+      '(SELECT coalesce(sum(amount_minor),0)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = $3) AS "supplierAmount"',
+      [tenant.tenantId, id, 'AP'],
+    ));
+    expect(retained.rows[0]).toEqual({
+      parties: 1,
+      supplierLines: 1,
+      supplierAmount: -125_000,
+    });
+  });
 });
