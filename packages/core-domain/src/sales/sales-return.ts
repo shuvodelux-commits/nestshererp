@@ -29,6 +29,10 @@ export interface ReturnableLine {
   readonly qtySold: number;
   /** Scale 3, the total already returned across earlier returns. */
   readonly qtyReturned: number;
+  /** Value already booked in POSTED, non-deleted returns against this source line. */
+  readonly valueReturnedMinor: number;
+  /** Cost already booked in POSTED, non-deleted returns against this source line. */
+  readonly costReturnedMinor: number;
   /** What the customer paid for the whole line, after line and bill discount. */
   readonly netAmountMinor: number;
   /** What the whole line cost the shop when it left. */
@@ -54,6 +58,8 @@ export type SalesReturnRejection =
   | 'RETURN_QUANTITY_NOT_POSITIVE'
   | 'RETURN_LINE_NOT_ON_INVOICE'
   | 'RETURN_EXCEEDS_SOLD'
+  | 'RETURN_DUPLICATE_LINE'
+  | 'RETURN_SOURCE_HISTORY_INVALID'
   | 'REFUND_NEGATIVE'
   | 'REFUND_EXCEEDS_RETURN'
   | 'RETURN_HAS_NO_VALUE';
@@ -93,18 +99,34 @@ export function rejectSalesReturn(
   if (draft.refundMinor < 0) return 'REFUND_NEGATIVE';
 
   const byId = new Map(sold.map((line) => [line.saleLineId, line]));
+  const seen = new Set<string>();
   for (const line of taken) {
+    if (seen.has(line.saleLineId)) return 'RETURN_DUPLICATE_LINE';
+    seen.add(line.saleLineId);
     if (!Number.isSafeInteger(line.qty)) return 'AMOUNT_NOT_INTEGER_MINOR';
     if (line.qty < 0) return 'RETURN_QUANTITY_NOT_POSITIVE';
     const original = byId.get(line.saleLineId);
     if (original === undefined) return 'RETURN_LINE_NOT_ON_INVOICE';
     if (line.qty > returnableQty(original)) return 'RETURN_EXCEEDS_SOLD';
+    const { qtySold, qtyReturned, netAmountMinor, costMinor, valueReturnedMinor, costReturnedMinor } = original;
+    if (
+      ![qtySold, qtyReturned, netAmountMinor, costMinor, valueReturnedMinor, costReturnedMinor]
+        .every((amount) => Number.isSafeInteger(amount)) ||
+      qtySold <= 0 || qtyReturned < 0 || qtyReturned > qtySold ||
+      netAmountMinor < 0 || costMinor < 0 ||
+      valueReturnedMinor < 0 || valueReturnedMinor > netAmountMinor ||
+      costReturnedMinor < 0 || costReturnedMinor > costMinor
+    ) return 'RETURN_SOURCE_HISTORY_INVALID';
+    const newValue = shareOf(netAmountMinor, line.qty, original, valueReturnedMinor);
+    const newCost = shareOf(costMinor, line.qty, original, costReturnedMinor);
+    if (newValue < 0 || newValue > netAmountMinor - valueReturnedMinor ||
+        newCost < 0 || newCost > costMinor - costReturnedMinor) {
+      return 'RETURN_SOURCE_HISTORY_INVALID';
+    }
   }
 
   const value = salesReturnTotalsUnchecked(draft, byId).returnValueMinor;
-  // Nothing to post: the journal would be empty and the document would say a
-  // return happened that moved nothing.
-  if (value <= 0) return 'RETURN_HAS_NO_VALUE';
+  // A valid stock return may have zero monetary value. Never invent a poisha.
   if (draft.refundMinor > value) return 'REFUND_EXCEEDS_RETURN';
 
   return null;
@@ -118,11 +140,9 @@ export function returnableQty(line: ReturnableLine): number {
 /**
  * The return, totalled. Safe on every keystroke.
  *
- * Value and cost are apportioned **by quantity** against the sold line, and the
- * last returnable unit carries the remainder: returning 1 of 3 at ৳100.00 twice
- * refunds 33.33 and 33.33, and the final unit takes 33.34, so a fully returned
- * line always gives back exactly what was paid for it. Splitting any other way
- * leaves a poisha stranded on the invoice for ever.
+ * Value and cost use cumulative proportional entitlement minus the exact amount
+ * **already posted**, not a second rounded estimate of previously returned qty.
+ * This conserves the original source line across arbitrarily split returns.
  */
 export function salesReturnTotals(
   draft: SalesReturnDraft,
@@ -147,8 +167,8 @@ function salesReturnTotalsUnchecked(
           saleLineId: line.saleLineId,
           productId: original.productId,
           qty: Qty(line.qty).raw,
-          valueMinor: shareOf(original.netAmountMinor, line.qty, original),
-          costMinor: shareOf(original.costMinor, line.qty, original),
+          valueMinor: shareOf(original.netAmountMinor, line.qty, original, original.valueReturnedMinor),
+          costMinor: shareOf(original.costMinor, line.qty, original, original.costReturnedMinor),
         },
       ];
     });
@@ -167,21 +187,17 @@ function salesReturnTotalsUnchecked(
 }
 
 /**
- * One line's share of a sold amount, by quantity — with the **last** unit
- * carrying the rounding remainder.
- *
- * Whatever is left unreturned keeps the difference until the line is fully back,
- * at which point the shop has given back exactly the sold amount.
+ * Cumulative monetary entitlement minus the actual already-booked source amount.
+ * A zero-valued return is valid when the original money is already fully allocated.
  */
-function shareOf(amountMinor: number, qty: number, line: ReturnableLine): number {
-  const remaining = returnableQty(line);
-  if (remaining <= 0) return 0;
-
-  if (Qty(qty).raw >= remaining) {
-    // The rest of the line: everything not already given back.
-    return amountMinor - proportion(amountMinor, line.qtyReturned, line.qtySold);
-  }
-  return proportion(amountMinor, qty, line.qtySold);
+function shareOf(
+  amountMinor: number, qty: number, line: ReturnableLine, previouslyBookedMinor: number,
+): number {
+  const cumulativeQty = Qty(line.qtyReturned).add(Qty(qty)).raw;
+  const cumulativeTarget = cumulativeQty === line.qtySold
+    ? amountMinor
+    : proportion(amountMinor, cumulativeQty, line.qtySold);
+  return cumulativeTarget - previouslyBookedMinor;
 }
 
 /** `amountMinor × qty ÷ qtySold`, rounded half-up once, in poisha. */
@@ -227,7 +243,7 @@ export function salesReturnPosting(
   totals: SalesReturnTotals,
   sides: SalesReturnPostingSides,
 ): JournalEntryDraft {
-  if (totals.returnValueMinor <= 0) throw new RangeError('A return must be worth something');
+  if (totals.returnValueMinor < 0) throw new RangeError('A return cannot have negative value');
   if (totals.returnCostMinor < 0) throw new RangeError('Goods cannot cost less than nothing');
   if (totals.refundMinor > 0 && sides.refundAccount === null) {
     throw new RangeError('A refund needs an account to come out of');
@@ -244,7 +260,9 @@ export function salesReturnPosting(
   }
 
   const lines = [
-    { account: fixedAccount('SALES'), amountMinor: totals.returnValueMinor, partyId: null },
+    ...(totals.returnValueMinor === 0
+      ? []
+      : [{ account: fixedAccount('SALES'), amountMinor: totals.returnValueMinor, partyId: null }]),
     ...(totals.refundMinor === 0 || sides.refundAccount === null
       ? []
       : [{ account: sides.refundAccount, amountMinor: -totals.refundMinor, partyId: null }]),
@@ -276,7 +294,11 @@ export function salesReturnPosting(
   ];
 
   const journal: JournalEntryDraft = { lines };
-  if (rejectEntry(journal) !== null) throw new Error('Sales return journal is not balanced');
+  // No ledger entry exists when the returned goods have both zero value and zero
+  // source cost. The return document, inventory movement and audit still post.
+  if (lines.length > 0 && rejectEntry(journal) !== null) {
+    throw new Error('Sales return journal is not balanced');
+  }
   return journal;
 }
 
