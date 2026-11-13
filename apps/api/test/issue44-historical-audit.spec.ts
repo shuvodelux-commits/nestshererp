@@ -249,6 +249,10 @@ async function seedSyntheticHistory(db: Client): Promise<void> {
 
     const bSale = await saleSource(db, b, 3);
     const bPurchase = await purchaseSource(db, b, 3);
+    // Separate clean source for a B parent used by the A cross-tenant-link probe.
+    // Do NOT over-return B's ordinary five-piece control line.
+    const bParentSaleSource = await saleSource(db, b, 1, 1_000);
+    const bParentPurchaseSource = await purchaseSource(db, b, 1, 1_000);
 
     const good = [1, 0, 1, 0, 1];
     for (let index = 0; index < 5; index += 1) {
@@ -274,8 +278,8 @@ async function seedSyntheticHistory(db: Client): Promise<void> {
 
     // Explicitly synthetic cross-tenant parent references. The schema's FK is
     // global-by-ID, but RLS on the audit role must hide the other tenant parent.
-    const bParentSale = await saleReturn(db, b, bSale, 1_000, 0);
-    const bParentPurchase = await purchaseReturn(db, b, bPurchase, 1_000, 0);
+    const bParentSale = await saleReturn(db, b, bParentSaleSource, 1_000, 0);
+    const bParentPurchase = await purchaseReturn(db, b, bParentPurchaseSource, 1_000, 0);
     await saleReturn(db, a, saleGood, 1_000, 0, { parentReturnId: bParentSale });
     await purchaseReturn(db, a, purchasedGood, 1_000, 0,
       { parentReturnId: bParentPurchase });
@@ -399,8 +403,10 @@ describe('Issue #44 historical return audit — explicit owner execution gate re
     expect(Number(b.max_excess_poisha)).toBe(0);
     expect(Number(a.unresolved_parent_return_rows)).toBe(0);
     expect(Number(b.unresolved_parent_return_rows)).toBe(0);
-    expect(Number(a.source_lines_checked)).toBe(1);
-    expect(Number(b.source_lines_checked)).toBe(1);
+    expect(Number(a.source_lines_checked)).toBe(2);
+    expect(Number(b.source_lines_checked)).toBe(2);
+    expect(Number(a.out_of_bounds_qty_count)).toBe(0);
+    expect(Number(b.out_of_bounds_qty_count)).toBe(0);
   });
 
   it('cannot bypass RLS by changing only the bound query tenant', async () => {
