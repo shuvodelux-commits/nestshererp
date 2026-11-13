@@ -180,8 +180,8 @@ export const partySummarySchema = z
     total: z.number().int(),
     active: z.number().int(),
     inactive: z.number().int(),
-    /** Customers with no group yet, while customer groups are switched on. */
-    ungrouped: z.number().int(),
+    /** Customer-only group count; null means not applicable for Supplier/Vendor. */
+    ungrouped: z.number().int().min(0).nullable(),
     /**
      * What the whole filtered set is worth, so the tiles answer "how much is
      * out there?" without anyone exporting the list and summing a column.
