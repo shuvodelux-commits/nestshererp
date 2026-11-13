@@ -8,6 +8,12 @@
  * @covers endpoint:PATCH /api/v1/catalog/metadata-v1/units/:id
  * @covers endpoint:PATCH /api/v1/catalog/metadata-v1/brands/:id
  * @covers endpoint:PATCH /api/v1/catalog/metadata-v1/categories/:id
+ * @covers endpoint:POST /api/v1/catalog/units
+ * @covers endpoint:POST /api/v1/catalog/brands
+ * @covers endpoint:POST /api/v1/catalog/categories
+ * @covers endpoint:PATCH /api/v1/catalog/units/:id
+ * @covers endpoint:PATCH /api/v1/catalog/brands/:id
+ * @covers endpoint:PATCH /api/v1/catalog/categories/:id
  */
 import 'reflect-metadata';
 
@@ -237,15 +243,70 @@ describe('MOD-002 transaction, permission and isolation gate', () => {
     }
   });
 
-  it('concurrent duplicate CREATE has one persisted record and no uncaught HTTP 500', async () => {
-    const attempts = await Promise.all([create('brands'), create('brands')]);
-    const statuses = attempts.map(result => result.status).sort();
-    expect(statuses).toEqual([201, 400]);
-    expect(await countTable(a, 'brands')).toBe(1);
-    const succeeded = attempts.find(r => r.status === 201);
-    const id = getId(succeeded as request.Response, 'brands');
-    const effects = await auditAndOutbox(a, 'brands', id);
-    expect(effects.audits.map(r => r.action)).toEqual(['CREATE']);
-    expect(effects.events.map(r => r.event_type)).toEqual(['brand.created']);
+  it('concurrent bilingual CREATE gives one 201 + one 400 for every kind, never an internal 500', async () => {
+    for (const kind of ['units', 'brands', 'categories'] as const) {
+      const attempts = await Promise.all([create(kind), create(kind)]);
+      expect(attempts.map(result => result.status).sort(), kind).toEqual([201, 400]);
+      expect(await countTable(a, kind)).toBe(1);
+      const winner = attempts.find(r => r.status === 201);
+      const id = getId(winner as request.Response, kind);
+      const effects = await auditAndOutbox(a, kind, id);
+      expect(effects.audits.map(r => r.action)).toEqual(['CREATE']);
+      expect(effects.events.map(r => r.event_type)).toEqual([`${types[kind]}.created`]);
+    }
+  });
+
+  it('concurrent legacy name-only CREATE also returns controlled duplicate validation for each kind', async () => {
+    for (const kind of ['units', 'brands', 'categories'] as const) {
+      const name = `Legacy ${kind}`;
+      const payload = kind === 'categories' ? { name, parentId: null } : { name };
+      const createLegacy = () => request(app.getHttpServer())
+        .post(`/api/v1/catalog/${kind}`)
+        .set('Authorization', `Bearer ${tokenA}`).send(payload);
+      const attempts = await Promise.all([createLegacy(), createLegacy()]);
+      expect(attempts.map(r => r.status).sort(), kind).toEqual([201, 400]);
+      expect(await countTable(a, kind)).toBe(1);
+      const winner = attempts.find(r => r.status === 201);
+      const id = (winner?.body.data[kind] as Array<{ id: string; name: string }>)
+        .find(row => row.name === name)?.id;
+      expect(id).toHaveLength(26);
+      const effects = await auditAndOutbox(a, kind, id as string);
+      expect(effects.audits.map(r => r.action)).toEqual(['CREATE']);
+      expect(effects.events.map(r => r.event_type)).toEqual([`${types[kind]}.created`]);
+    }
+  });
+
+  it('concurrent legacy RENAME to an existing sibling/name has only one accepted writer', async () => {
+    for (const kind of ['units', 'brands', 'categories'] as const) {
+      const body = (name: string) => kind === 'categories' ? { name, parentId: null } : { name };
+      const firstName = `First ${kind}`;
+      const secondName = `Second ${kind}`;
+      const aCreated = await create(kind, tokenA, app, body(firstName));
+      const bCreated = await create(kind, tokenA, app, body(secondName));
+      expect(aCreated.status).toBe(201);
+      expect(bCreated.status).toBe(201);
+      const getRow = (r: request.Response, name: string): string =>
+        (r.body.data[kind] as Array<{ id: string; name: string }>)
+          .find(item => item.name === name)?.id as string;
+      const idA = getRow(aCreated, firstName);
+      const idB = getRow(bCreated, secondName);
+      expect(idA).toHaveLength(26);
+      expect(idB).toHaveLength(26);
+      const destination = `Shared ${kind}`;
+      const rename = (id: string) => request(app.getHttpServer())
+        .patch(`/api/v1/catalog/${kind}/${id}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ name: destination });
+      const attempts = await Promise.all([rename(idA), rename(idB)]);
+      expect(attempts.map(r => r.status).sort(), kind).toEqual([200, 400]);
+      const current = await request(app.getHttpServer())
+        .get('/api/v1/catalog').set('Authorization', `Bearer ${tokenA}`);
+      expect((current.body.data[kind] as Array<{ name: string }>)
+        .filter(item => item.name === destination)).toHaveLength(1);
+      const eventsA = await auditAndOutbox(a, kind, idA);
+      const eventsB = await auditAndOutbox(a, kind, idB);
+      expect(eventsA.audits.length + eventsB.audits.length).toBe(3);
+      expect(eventsA.events.length + eventsB.events.length).toBe(3);
+    }
   });
 });
