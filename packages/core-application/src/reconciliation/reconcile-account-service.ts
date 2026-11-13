@@ -152,6 +152,14 @@ export class ReconcileAccountService {
           'Cash is reconciled in Daily Cash, by counting the drawer against what the day expected',
         );
       }
+      // Loan balances are liabilities, not funds held at a bank or MFS.
+      // Never classify them as a bank statement or a BANK journal account.
+      if (account.type !== 'BANK' && account.type !== 'MFS') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Only bank and mobile financial service accounts can be reconciled',
+        );
+      }
 
       const openDraft = await this.reconciliations.findDraftForAccount(tx, ctx, account.id);
       if (openDraft !== null) {
