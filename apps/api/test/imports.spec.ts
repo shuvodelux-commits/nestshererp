@@ -283,6 +283,13 @@ describe('importing products', () => {
     const rejected = await commit('PRODUCTS', changedFile, operationId);
     expect(rejected.status).toBe(409);
     expect(rejected.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
+    // Reusing the same key for another import type must also refuse before
+    // parsing or posting that new type's rows.
+    const changedType = await commit('CUSTOMERS', file, operationId);
+    expect(changedType.status).toBe(409);
+    expect(changedType.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
     expect((await products()).map((row) => row.name)).toEqual(
       expect.arrayContaining(['PVC Pipe 1 inch', 'Cement Bag']),
     );
