@@ -152,9 +152,30 @@ export class ReconcileAccountService {
           'Cash is reconciled in Daily Cash, by counting the drawer against what the day expected',
         );
       }
+      // Loan balances are liabilities, not funds held at a bank or MFS.
+      // Never classify them as a bank statement or a BANK journal account.
+      if (account.type !== 'BANK' && account.type !== 'MFS') {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'Only bank and mobile financial service accounts can be reconciled',
+        );
+      }
 
       const openDraft = await this.reconciliations.findDraftForAccount(tx, ctx, account.id);
       if (openDraft !== null) {
+        // The account-row lock above may have waited for a concurrent start
+        // using this SAME operation id. Re-read its committed fingerprint
+        // before treating an identical retry as a competing new draft.
+        const awaitedReplay = await this.idempotency.find(tx, ctx, command.operationId);
+        if (awaitedReplay !== null) {
+          if (awaitedReplay.requestFingerprint !== fingerprint) {
+            throw new AppError(
+              ErrorCode.IDEMPOTENCY_KEY_REUSED,
+              'This operation id was already used for a different reconciliation',
+            );
+          }
+          return awaitedReplay.response as ReconciliationWorkspaceResponse;
+        }
         throw new AppError(
           ErrorCode.VALIDATION_FAILED,
           'This account already has a reconciliation in progress — finish or reopen that one',
