@@ -109,7 +109,7 @@ describe('MOD-008 durable purchase drafts, never postings', () => {
 
     const restored = await request(app.getHttpServer()).post(`${route}/${id}/restore`)
       .set(authed(tokenA)).send({ expectedVersion: 3 });
-    expect(restored.status).toBe(201 === 200 ? 201 : 201); // replaced after actual route policy verification
+    expect(restored.status).toBe(200);
     expect(restored.body.data).toMatchObject({ id, deletedAt: null, version: 4 });
 
     const count = await asTenant(pool, tenantA.tenantId, async (client) => ({
