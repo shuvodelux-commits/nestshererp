@@ -128,6 +128,9 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     });
     token = signToken(tenant, TEST_JWT_SECRET);
     day = todayIn(tenant.timezone);
+    const enabled = await signed(api().post('/api/v1/settings/value'))
+      .send({ key: 'bank_accounts_enabled', value: 'on' });
+    expect(enabled.status, JSON.stringify(enabled.body)).toBe(201);
     bank = await create('Operating bank', 'BANK', 200_000);
     mfs = await create('Mobile wallet', 'MFS', 20_000);
     loan = await create('Loan from lender', 'LOAN', 0);
