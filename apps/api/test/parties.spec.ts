@@ -1290,3 +1290,155 @@ describe('T08-QA — five-endpoint Party read and tenant isolation', () => {
     expect(cash.rows[0]).toEqual({ sessions: 0, movements: 0 });
   });
 });
+
+
+/**
+ * MOD-004 T09B: setup is needed by all trading-role screens, but only explicit
+ * Customer-facing or group-management permissions can read customer group IDs.
+ * Exercises signed tokens and tenant RLS against disposable PostgreSQL 16.
+ */
+describe('T09B — Party setup Customer-group catalog authority', () => {
+  async function setOnePermission(code: string | null): Promise<void> {
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2',
+        [tenant.tenantId, tenant.roleId],
+      );
+      if (code !== null) {
+        const now = clock.now();
+        await client.query(
+          'INSERT INTO role_permissions (id, tenant_id, role_id, permission_code, created_at, updated_at, created_by, updated_by, version) VALUES ($1, $2, $3, $4, $5, $5, $6, $6, 1)',
+          [Ulid.generate(clock), tenant.tenantId, tenant.roleId, code, now, tenant.userId],
+        );
+      }
+    });
+  }
+
+  function getSetup(as = token): request.Test {
+    return request(app.getHttpServer())
+      .get('/api/v1/party-setup')
+      .set('Authorization', 'Bearer ' + as);
+  }
+
+  it('retains Supplier/Vendor setup without leaking Customer groups and permits authorized catalog readers', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    await setSetting(SettingKey.VENDOR_MANAGEMENT_ENABLED, 'on');
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'T09B Private Customer Tier' })
+      .expect(201);
+    const group = created.body.data.groups[0] as { id: string; name: string };
+    expect(group.name).toBe('T09B Private Customer Tier');
+
+    const party = await createParty(minimalCustomer({
+      name: 'T09B Shared Partner',
+      roles: ['CUSTOMER', 'SUPPLIER'],
+      customerGroupId: group.id,
+    })).expect(201);
+    const partyId = (party.body.data as PartyBody).id;
+
+    const ownerSetup = await getSetup().expect(200);
+    expect(ownerSetup.body.data.groups).toContainEqual(group);
+    expect(ownerSetup.body.data.features).toEqual({ customerGroups: true, vendors: true });
+
+    // On a single existing tenant/identity, replace the signed user's role
+    // permissions. A new HTTP request must evaluate current grants every time.
+    for (const [permission, canReadGroups] of [
+      [Permission.SUPPLIER_VIEW, false],
+      [Permission.VENDOR_VIEW, false],
+      [Permission.SUPPLIER_CREATE, false],
+      [Permission.VENDOR_CREATE, false],
+      [Permission.CUSTOMER_VIEW, true],
+      [Permission.CUSTOMER_CREATE, true],
+      [Permission.PARTY_GROUP_MANAGE, true],
+    ] as const) {
+      await setOnePermission(permission);
+      const response = await getSetup().expect(200);
+      expect(response.body.data.features).toEqual({ customerGroups: true, vendors: true });
+      expect(Object.keys(response.body.data.fields).sort()).toEqual([
+        'address', 'email', 'guardianName', 'nid', 'notes',
+      ]);
+      if (canReadGroups) {
+        expect(response.body.data.groups).toContainEqual(group);
+      } else {
+        expect(response.body.data.groups).toEqual([]);
+        expect(JSON.stringify(response.body)).not.toContain(group.id);
+        expect(JSON.stringify(response.body)).not.toContain(group.name);
+      }
+
+      if (permission === Permission.SUPPLIER_VIEW) {
+        const supplierList = await listParties('?role=SUPPLIER').expect(200);
+        expect(supplierList.body.data.some((item: { id: string }) => item.id === partyId)).toBe(true);
+        const supplierLedger = await request(app.getHttpServer())
+          .get('/api/v1/parties/' + partyId + '/ledger?role=SUPPLIER')
+          .set('Authorization', 'Bearer ' + token)
+          .expect(200);
+        expect(supplierLedger.body.partyId).toBe(partyId);
+      }
+
+      if (permission === Permission.PARTY_GROUP_MANAGE) {
+        // A group manager without Customer/other Party VIEW must still be able
+        // to read setup: create/rename-group return its response after commit.
+        const newlyManaged = await request(app.getHttpServer())
+          .post('/api/v1/party-setup/groups')
+          .set('Authorization', 'Bearer ' + token)
+          .send({ name: 'T09B Managed Group' })
+          .expect(201);
+        expect(newlyManaged.body.data.groups).toContainEqual(group);
+        expect(newlyManaged.body.data.groups.some((g: { name: string }) =>
+          g.name === 'T09B Managed Group')).toBe(true);
+      }
+    }
+
+    await setOnePermission(null);
+    const denied = await getSetup().expect(403);
+    expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+  });
+
+  it('keeps enabled Customer groups tenant-private and hides them when feature is off', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const createdA = await request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Tenant A Secret Customer Group' })
+      .expect(201);
+    const groupA = createdA.body.data.groups[0] as { id: string; name: string };
+
+    const other = await seedTenant(pool, { name: 'T09B Tenant B', permissions: ALL_PARTIES });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    await request(app.getHttpServer())
+      .post('/api/v1/settings/value')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .send({ key: SettingKey.CUSTOMER_GROUPS_ENABLED, value: 'on' })
+      .expect(201);
+
+    const emptyB = await getSetup(otherToken).expect(200);
+    expect(emptyB.body.data.features.customerGroups).toBe(true);
+    expect(emptyB.body.data.groups).toEqual([]);
+
+    const createdB = await request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .send({ name: 'Tenant B Own Customer Group' })
+      .expect(201);
+    const groupB = createdB.body.data.groups[0] as { id: string; name: string };
+    expect(groupB).not.toEqual(groupA);
+    expect(createdB.body.data.groups).toEqual([groupB]);
+    expect(JSON.stringify(createdB.body)).not.toContain(groupA.id);
+    expect(JSON.stringify(createdB.body)).not.toContain(groupA.name);
+
+    const sameA = await getSetup().expect(200);
+    expect(sameA.body.data.groups).toEqual([groupA]);
+    expect(JSON.stringify(sameA.body)).not.toContain(groupB.id);
+
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'off');
+    const offA = await getSetup().expect(200);
+    expect(offA.body.data.features.customerGroups).toBe(false);
+    expect(offA.body.data.groups).toEqual([]);
+    const unchangedB = await getSetup(otherToken).expect(200);
+    expect(unchangedB.body.data.features.customerGroups).toBe(true);
+    expect(unchangedB.body.data.groups).toEqual([groupB]);
+  });
+});
