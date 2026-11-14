@@ -3487,7 +3487,7 @@
 | POST | `/api/v1/management/feature-flags` | ManagementController | — | ❌ NOT TESTED |
 | POST | `/api/v1/management/support-session` | ManagementController | — | ❌ NOT TESTED |
 | GET | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
-| GET | `/api/v1/money/accounts/:id/statement` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
+| GET | `/api/v1/money/accounts/:id/statement` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | PATCH | `/api/v1/money/accounts/:id` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/accounts/:id/deactivate` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
