@@ -192,6 +192,7 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
         Permission.CASH_SESSION_START, Permission.CASH_SESSION_CLOSE,
         Permission.CASH_DAILY_VIEW, Permission.CASH_MOVEMENT_RECORD,
         Permission.CASH_MOVEMENT_VOID,
+        Permission.EXPENSE_RECORD, Permission.EXPENSE_VIEW, Permission.EXPENSE_VOID,
       ],
     });
     token = signToken(tenant, TEST_JWT_SECRET);
@@ -255,6 +256,44 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
   it('control: denies same-day cancellation while the closed day still owns its drawer', async () => {
     const before = await snapshot();
     const response = await voidOriginal();
+    expectStatus(response, 400);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('RED #84 reversal: refuses a same-date expense void after its drawer day is counted and CLOSED', async () => {
+    const reopened = await signed(api().post('/api/v1/money/day/' + sessionId + '/reopen'))
+      .send({ reason: 'Correct expense before final physical count', operationId: Ulid.generate(clock) });
+    expectStatus(reopened, 201);
+    expect(reopened.body.data.status).toBe('OPEN');
+
+    const category = await signed(api().post('/api/v1/expenses/categories'))
+      .send({ name: 'Expense to test closed-day reversal' });
+    expectStatus(category, 201);
+    const recorded = await signed(api().post('/api/v1/expenses'))
+      .set('Idempotency-Key', Ulid.generate(clock)).send({
+        categoryId: category.body.data.id,
+        amountMinor: 5_000,
+        accountCode: 'CASH:' + cashId,
+        payeePartyId: null,
+        note: 'Legitimate drawer expense before closing physical cash',
+      });
+    expectStatus(recorded, 201);
+    const counted = await signed(api().post('/api/v1/money/day/' + sessionId + '/close'))
+      .send({
+        countedClosingMinor: openingCashMinor - originalAmountMinor - 5_000,
+        reason: null,
+        operationId: Ulid.generate(clock),
+      });
+    expectStatus(counted, 201);
+    await removeDrawerFlag();
+    const before = await snapshot();
+
+    const response = await signed(api().post('/api/v1/expenses/' + recorded.body.data.id + '/void'))
+      .send({
+        version: recorded.body.data.version,
+        reason: 'Trying to reverse an already-counted physical cash day',
+      });
+    // Void must not silently credit CASH on a CLOSED physical day.
     expectStatus(response, 400);
     expect(await snapshot()).toEqual(before);
   });
