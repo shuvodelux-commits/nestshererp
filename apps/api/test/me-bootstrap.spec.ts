@@ -364,6 +364,15 @@ describe('F0-01 readiness: previously blocked live-role and profile-commit cases
     expect(created.status).toBe(201);
     const cashierId = created.body.data.id as string;
 
+    // A seeded Cashier has legitimate POS grants. Revoke via the actual owner
+    // role-management API before testing a cashier with *zero* grants.
+    const revoked = await request(app.getHttpServer())
+      .patch('/api/v1/roles/' + cashier!.id)
+      .set('Authorization', 'Bearer ' + owner.accessToken)
+      .send({ name: 'Cashier', permissions: [], confirmPassword: 'Passw0rd23' });
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.data.permissions).toEqual([]);
+
     // Use the real OTP password-set and login path; do not forge an owner token.
     const otp = await request(app.getHttpServer())
       .post('/api/v1/auth/password/otp')
