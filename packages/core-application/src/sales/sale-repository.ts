@@ -518,6 +518,8 @@ export interface NewSaleDraft {
 
 export interface SaleDraftRow extends NewSaleDraft {
   readonly savedAt: Date;
+  readonly updatedAt: Date;
+  readonly version: number;
 }
 
 /**
@@ -613,6 +615,15 @@ export interface SaleRepository {
 
   /** A parked cart — not a document, and deletable outright (§5.7). */
   listDrafts(tx: Tx, ctx: TenantContext, limit: number): Promise<readonly SaleDraftRow[]>;
+  findDraftById(tx: Tx, ctx: TenantContext, id: string): Promise<SaleDraftRow | null>;
+  /** One atomic version-checked UPDATE; null means missing or stale. */
+  updateDraft(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+    expectedVersion: number,
+    draft: Omit<NewSaleDraft, 'id' | 'businessDate'>,
+  ): Promise<SaleDraftRow | null>;
   saveDraft(tx: Tx, ctx: TenantContext, draft: NewSaleDraft): Promise<void>;
   deleteDraft(tx: Tx, ctx: TenantContext, id: string): Promise<void>;
 

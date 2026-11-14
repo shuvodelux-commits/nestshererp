@@ -628,3 +628,18 @@ export const saleDraftResponseSchema = z
   })
   .strict();
 export type SaleDraftResponse = z.infer<typeof saleDraftResponseSchema>;
+
+/** A full detail read, separate from the frozen eight-key GET-list response. */
+export const saleDraftDetailResponseSchema = saleDraftResponseSchema.extend({
+  version: z.number().int().positive(),
+  updatedAt: z.string(),
+}).strict();
+export type SaleDraftDetailResponse = z.infer<typeof saleDraftDetailResponseSchema>;
+
+/** Replace the same parked cart only if it is still at the version we read. */
+export const updateSaleDraftRequestSchema = saveSaleDraftRequestSchema.extend({
+  expectedVersion: z.number().int().min(1).max(2_147_483_646),
+  // PostgreSQL bigint can be exact only while the API's JS number is safe.
+  grandTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+}).strict();
+export type UpdateSaleDraftRequest = z.infer<typeof updateSaleDraftRequestSchema>;
