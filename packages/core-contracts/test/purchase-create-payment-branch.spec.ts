@@ -104,7 +104,8 @@ describe('MOD-008 D06C1-B0 standalone strict purchase paymentLegs contract', () 
   });
 
   it('rejects omission of paymentLegs rather than silently treating it as unpaid', () => {
-    const { paymentLegs: _omitted, ...input } = valid();
+    const input: Record<string, unknown> = valid();
+    delete input.paymentLegs;
     expect(parse(input).success).toBe(false);
   });
 
