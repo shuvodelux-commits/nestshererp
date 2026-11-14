@@ -4,7 +4,7 @@ import { fetchPartiesV2, fetchParty, fetchPartyOpening } from '../src/api/partie
 import { useSession } from '../src/auth/session';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), local: vi.fn(), snapshot: vi.fn(), users: vi.fn() }));
-vi.mock('../src/api/client', async (original) => ({ ...await original<typeof import('../src/api/client')>(), request: mocks.request }));
+vi.mock('../src/api/client', async (original) => ({ ...await original<Record<string, unknown>>(), request: mocks.request }));
 vi.mock('@sher/adapter-sqlite-wasm', () => ({ localParties: mocks.local, readStoredSnapshot: mocks.snapshot, localUsers: mocks.users }));
 vi.mock('../src/offline/snapshot', () => ({ storedTenantId: () => localStorage.getItem('sher.tenantId') }));
 

@@ -5,7 +5,7 @@ import PartyLedgerPage from '../src/pages/PartyLedgerPage.vue';
 
 const mocks = vi.hoisted(() => ({ party: vi.fn(), ledger: vi.fn(), opening: vi.fn(), push: vi.fn() }));
 vi.mock('../src/api/parties', async (original) => ({
-  ...await original<typeof import('../src/api/parties')>(),
+  ...await original<Record<string, unknown>>(),
   fetchParty: mocks.party, fetchPartyLedger: mocks.ledger, fetchPartyOpening: mocks.opening,
 }));
 vi.mock('vue-router', () => ({
