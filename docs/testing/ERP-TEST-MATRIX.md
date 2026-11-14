@@ -3605,7 +3605,7 @@
 | POST | `/api/v1/sales/drafts` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | GET | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | PUT | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
-| DELETE | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
+| DELETE | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | GET | `/api/v1/sales` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | GET | `/api/v1/sales/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | POST | `/api/v1/sales` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |

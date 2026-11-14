@@ -13,6 +13,7 @@ import type {
   NewSaleDraft,
   SaleDetail,
   SaleDraftRow,
+  SaleDraftCreateOperation,
   SaleFilter,
   SaleRepository,
   SaleReversal,
@@ -48,6 +49,7 @@ import {
   receiptAllocations,
   salesReturns,
   saleDrafts,
+  saleDraftCreateOperations,
   saleLineSourceAllocations,
   saleSourceAllocationReversals,
   saleLines,
@@ -1757,8 +1759,48 @@ export class PostgresSaleRepository implements SaleRepository {
     return row === undefined ? null : this.toDraftRow(row);
   }
 
+  async tryClaimDraftCreation(
+    tx: Tx, ctx: TenantContext, operation: SaleDraftCreateOperation,
+  ): Promise<boolean> {
+    // Unique tenant/key index is the concurrency arbiter, never preflight
+    // SELECT then INSERT. PG waits for any uncommitted competing claim.
+    const [claimed] = await txOf(tx).insert(saleDraftCreateOperations).values({
+      tenantId: ctx.tenantId,
+      operationId: operation.operationId,
+      fingerprintVersion: operation.fingerprintVersion,
+      requestFingerprint: operation.requestFingerprint,
+      draftId: operation.draftId,
+      businessDate: operation.businessDate,
+      savedAt: operation.savedAt,
+      createdAt: this.clock.now(),
+      createdBy: ctx.userId,
+    }).onConflictDoNothing({
+      target: [saleDraftCreateOperations.tenantId, saleDraftCreateOperations.operationId],
+    }).returning({ operationId: saleDraftCreateOperations.operationId });
+    return claimed !== undefined;
+  }
+
+  async findDraftCreation(
+    tx: Tx, ctx: TenantContext, operationId: string,
+  ): Promise<SaleDraftCreateOperation | null> {
+    const [found] = await txOf(tx).select().from(saleDraftCreateOperations)
+      .where(and(
+        eq(saleDraftCreateOperations.tenantId, ctx.tenantId),
+        eq(saleDraftCreateOperations.operationId, operationId),
+      )).limit(1);
+    if (found === undefined) return null;
+    return {
+      operationId: found.operationId.trim(),
+      fingerprintVersion: found.fingerprintVersion,
+      requestFingerprint: found.requestFingerprint.trim(),
+      draftId: found.draftId.trim(),
+      businessDate: found.businessDate,
+      savedAt: found.savedAt,
+    };
+  }
+
   async saveDraft(tx: Tx, ctx: TenantContext, draft: NewSaleDraft): Promise<void> {
-    const now = this.clock.now();
+    const now = draft.savedAt ?? this.clock.now();
     await txOf(tx).insert(saleDrafts).values({
       id: draft.id,
       tenantId: ctx.tenantId,

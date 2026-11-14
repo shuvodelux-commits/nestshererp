@@ -25,6 +25,37 @@ import type { SaleDraftRow, SaleRepository } from './sale-repository';
 import { toSaleListItem, toSaleResponse } from './sale-view';
 
 const DEFAULT_LIMIT = 50;
+const SALE_DRAFT_CREATE_FINGERPRINT_VERSION = 'sale.draft.create/v1' as const;
+const SALE_DRAFT_OPERATION_ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+
+/** Canonical JSON identity, never a price/calculation projection of the cart. */
+function canonicalDraftJson(value: unknown, depth = 0): unknown {
+  if (depth > 64) {
+    throw new AppError(ErrorCode.VALIDATION_FAILED, 'Sales Draft cart nesting is too deep');
+  }
+  if (Array.isArray(value)) return value.map((entry) => canonicalDraftJson(entry, depth + 1));
+  if (value !== null && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(object).sort().map((key) => [key, canonicalDraftJson(object[key], depth + 1)]),
+    );
+  }
+  return value;
+}
+
+async function saleDraftCreateFingerprint(
+  draft: Omit<SaleDraftResponse, 'id' | 'businessDate' | 'savedAt'>,
+): Promise<string> {
+  const canonical = JSON.stringify([
+    SALE_DRAFT_CREATE_FINGERPRINT_VERSION, canonicalDraftJson(draft),
+  ]);
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256', new TextEncoder().encode(canonical),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 function draftDetailResponse(row: SaleDraftRow): SaleDraftDetailResponse {
   return {
@@ -436,21 +467,69 @@ export class SaleQueryService {
   async saveDraft(
     ctx: TenantContext,
     draft: Omit<SaleDraftResponse, 'id' | 'businessDate' | 'savedAt'>,
+    operationId?: string,
   ): Promise<SaleDraftResponse> {
     return this.uow.run(ctx, async (tx) => {
+      // Authorize before looking up operation identity; unauthorized replays
+      // must not reveal the original draft or its immutable source metadata.
       await this.access.require(tx, ctx, Permission.SALE_CREATE);
-      const id = Ulid.generate(this.clock);
+
+      if (operationId === undefined) {
+        // Backwards-compatible legacy path until HisabIQ POS cutover.
+        const id = Ulid.generate(this.clock);
+        const businessDate = this.clock.businessDate(ctx.timezone);
+        await this.sales.saveDraft(tx, ctx, { ...draft, id, businessDate });
+        return { ...draft, id, businessDate, savedAt: this.clock.now().toISOString() };
+      }
+      if (!SALE_DRAFT_OPERATION_ULID.test(operationId)) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid Sales Draft operation key');
+      }
+      const requestFingerprint = await saleDraftCreateFingerprint(draft);
+      const draftId = Ulid.generate(this.clock);
       const businessDate = this.clock.businessDate(ctx.timezone);
-      await this.sales.saveDraft(tx, ctx, {
-        id,
-        label: draft.label,
-        customerName: draft.customerName,
-        itemCount: draft.itemCount,
-        grandTotalMinor: draft.grandTotalMinor,
-        cart: draft.cart,
+      const savedAt = this.clock.now();
+      const identity = {
+        operationId,
+        fingerprintVersion: SALE_DRAFT_CREATE_FINGERPRINT_VERSION,
+        requestFingerprint,
+        draftId,
         businessDate,
-      });
-      return { ...draft, id, businessDate, savedAt: this.clock.now().toISOString() };
+        savedAt,
+      };
+
+      // Insert operation claim + cart together in the same tenant transaction.
+      // Concurrent same-key POSTs contend on the permanent unique key.
+      const claimed = await this.sales.tryClaimDraftCreation(tx, ctx, identity);
+      if (claimed) {
+        await this.sales.saveDraft(tx, ctx, { ...draft, id: draftId, businessDate, savedAt });
+        return { ...draft, id: draftId, businessDate, savedAt: savedAt.toISOString() };
+      }
+
+      const prior = await this.sales.findDraftCreation(tx, ctx, operationId);
+      if (prior === null) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'Sales Draft operation cannot be resolved');
+      }
+      if (prior.fingerprintVersion !== SALE_DRAFT_CREATE_FINGERPRINT_VERSION ||
+          prior.requestFingerprint !== requestFingerprint) {
+        throw new AppError(ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'Sales Draft operation key was used for a different cart');
+      }
+
+      // The identity survives DELETE, but the cart does not. Never revive it.
+      const active = await this.sales.findDraftById(tx, ctx, prior.draftId);
+      if (active === null) {
+        throw new AppError(ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'Sales Draft was deleted; reuse of its original operation key is refused');
+      }
+      // Immutable creation response, NOT edited live draft state. Authenticated
+      // and same-fingerprint request supplies the original JSON without keeping
+      // another permanent PII copy in the operation-identity row.
+      return {
+        ...draft,
+        id: prior.draftId,
+        businessDate: prior.businessDate,
+        savedAt: prior.savedAt.toISOString(),
+      };
     });
   }
 
