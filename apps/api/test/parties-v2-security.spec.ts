@@ -259,6 +259,8 @@ describe('MOD-004 T09C-P2 — versioned Party read authorization', () => {
     expect(hidden.status).toBe(404);
     expect(absent.status).toBe(404);
     expect(hidden.body.error.code).toBe(absent.body.error.code);
+    expect(hidden.body.error.message).toBe(absent.body.error.message);
+    expect(hidden.body.error.details).toEqual(absent.body.error.details);
     await v2Get(hiddenId, 'SUPPLIER').expect(403);
   });
 
