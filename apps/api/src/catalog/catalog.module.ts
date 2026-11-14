@@ -6,6 +6,7 @@ import type {
   CatalogMetadataV1Repository,
   CatalogMetadataV1CreationRepository,
   CatalogMetadataV1FullEditRepository,
+  CatalogSettingsUsageV1Repository,
   IdempotencyStore,
   InventoryRepository,
   NumberingService,
@@ -14,7 +15,7 @@ import type {
   SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
-import { CreateCatalogMetadataV1Service, EditCatalogMetadataV1Service, ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService } from '@sher/core-application';
+import { CreateCatalogMetadataV1Service, EditCatalogMetadataV1Service, ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService, ReadCatalogSettingsUsageV1Service } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
 
 import {
@@ -24,6 +25,7 @@ import {
   CATALOG_METADATA_V1_REPOSITORY,
   CATALOG_METADATA_V1_CREATION_REPOSITORY,
   CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
+  CATALOG_SETTINGS_USAGE_V1_REPOSITORY,
   CLOCK,
   IDEMPOTENCY_STORE,
   INVENTORY_REPOSITORY,
@@ -35,12 +37,23 @@ import {
 } from '../infrastructure/tokens';
 import { CatalogController } from './catalog.controller';
 import { CatalogMetadataV1Controller } from './catalog-metadata-v1.controller';
+import { CatalogSettingsUsageV1Controller } from './catalog-settings-usage-v1.controller';
 import { ProductsController } from './products.controller';
-import { CREATE_CATALOG_METADATA_V1_SERVICE, EDIT_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE } from './tokens';
+import { CREATE_CATALOG_METADATA_V1_SERVICE, EDIT_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE, READ_CATALOG_SETTINGS_USAGE_V1_SERVICE } from './tokens';
 
 @Module({
-  controllers: [CatalogController, CatalogMetadataV1Controller, ProductsController],
+  controllers: [CatalogController, CatalogMetadataV1Controller, CatalogSettingsUsageV1Controller, ProductsController],
   providers: [
+    {
+      provide: READ_CATALOG_SETTINGS_USAGE_V1_SERVICE,
+      useFactory: (
+        uow: UnitOfWork,
+        accessControl: AccessControl,
+        repository: CatalogSettingsUsageV1Repository,
+      ): ReadCatalogSettingsUsageV1Service =>
+        new ReadCatalogSettingsUsageV1Service(uow, accessControl, repository),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, CATALOG_SETTINGS_USAGE_V1_REPOSITORY],
+    },
     {
       provide: CREATE_CATALOG_METADATA_V1_SERVICE,
       useFactory: (

@@ -10090,6 +10090,24 @@
       ]
     },
     {
+      "id": "endpoint:GET /api/v1/catalog/settings-usage-v1",
+      "method": "GET",
+      "path": "/api/v1/catalog/settings-usage-v1",
+      "controller": "CatalogSettingsUsageV1Controller",
+      "file": "apps/api/src/catalog/catalog-settings-usage-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
       "id": "endpoint:GET /api/v1/catalog",
       "method": "GET",
       "path": "/api/v1/catalog",
