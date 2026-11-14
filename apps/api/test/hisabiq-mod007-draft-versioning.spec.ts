@@ -70,7 +70,7 @@ async function newDraft(overrides: Record<string, unknown> = {}): Promise<string
 
 async function originalRow(id: string): Promise<{
   id: string; version: number; savedAt: Date; updatedAt: Date;
-  updatedBy: string; businessDate: string; cart: unknown; label: string;
+  updatedBy: string; businessDate: string | Date; cart: unknown; label: string;
 }> {
   return asTenant(pool, tenant.tenantId, async (client) => {
     const { rows } = await client.query(
@@ -79,7 +79,7 @@ async function originalRow(id: string): Promise<{
     );
     return rows[0] as {
       id: string; version: number; savedAt: Date; updatedAt: Date;
-      updatedBy: string; businessDate: string; cart: unknown; label: string;
+      updatedBy: string; businessDate: string | Date; cart: unknown; label: string;
     };
   });
 }
