@@ -260,6 +260,8 @@ export class ManageExpensesService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,
@@ -329,6 +331,8 @@ export class ManageExpensesService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,
