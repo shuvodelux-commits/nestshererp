@@ -72,6 +72,16 @@ export class AppErrorFilter implements ExceptionFilter {
       return;
     }
 
+    // body-parser (Express) throws a typed Error before a controller runs, not
+    // a Nest HttpException. Preserve its verified 400/413 refusal instead of
+    // turning an oversized/malformed request into a misleading 500.
+    const parserStatus = bodyParserRefusalStatus(exception);
+    if (parserStatus !== null) {
+      this.send(response, parserStatus, ErrorCode.VALIDATION_FAILED,
+        parserStatus === 413 ? 'Request body too large' : 'The request could not be read', traceId);
+      return;
+    }
+
     // Server-side only. `no-console` is a lint error, so this uses the same
     // stream-writing style as the migration runner. No timestamp: `new Date()`
     // is banned outside the Clock implementation (R-C8) and the log collector
@@ -115,6 +125,19 @@ const MESSAGE_FOR_STATUS: Readonly<Record<number, string>> = {
 };
 
 /**
+ * Recognize Express body-parser errors by both its public type and status
+ * fields. Never trust a random Error's status property to change a 500 to a
+ * client refusal, and never forward parser messages that may contain input.
+ */
+function bodyParserRefusalStatus(exception: unknown): 400 | 413 | null {
+  if (!(exception instanceof Error)) return null;
+  const parser = exception as Error & { type?: unknown; status?: unknown; statusCode?: unknown };
+  if (parser.type === 'entity.too.large' && parser.status === 413 && parser.statusCode === 413) return 413;
+  if (parser.type === 'entity.parse.failed' && parser.status === 400 && parser.statusCode === 400) return 400;
+  return null;
+}
+
+/**
  * One diagnostic event, carrying only what identifies the bug.
  *
  * The route is the *pattern* where Nest knows one — `/api/v1/purchases/:id`
@@ -134,13 +157,15 @@ function recordDiagnostic(
       ? exception.code
       : exception instanceof HttpException
         ? (CODE_FOR_STATUS[exception.getStatus()] ?? ErrorCode.INTERNAL_ERROR)
-        : ErrorCode.INTERNAL_ERROR;
+        : bodyParserRefusalStatus(exception) !== null
+          ? ErrorCode.VALIDATION_FAILED
+          : ErrorCode.INTERNAL_ERROR;
   const status =
     exception instanceof AppError
       ? httpStatusFor(exception.code)
       : exception instanceof HttpException
         ? exception.getStatus()
-        : 500;
+        : bodyParserRefusalStatus(exception) ?? 500;
 
   // Validation and permission refusals are the shop using the software, not the
   // software failing. Reporting them would drown the signal the vendor needs in
