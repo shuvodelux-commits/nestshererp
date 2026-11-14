@@ -409,4 +409,30 @@ gated('MOD-008 P6D approved supplier-order conversion source invariants (real si
     const order = await get('/api/v1/supplier-orders/' + source.orderId);
     expect(order.body.data.purchaseId).toBe(linked.body.data.id);
   });
+  it('does not silently detach an approved supplier order when correcting its posted purchase', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const original = await post('/api/v1/purchases', purchaseBody(source));
+    expect(original.status, JSON.stringify(original.body)).toBe(201);
+    const before = await snapshot();
+    const attempt = await post('/api/v1/purchases', purchaseBody(source, {
+      correctionOf: original.body.data.id,
+      supplierOrderId: null,
+      notes: 'Try to detach order during correction',
+      lines: [{
+        productId: source.productId, qty: 1000,
+        unitPriceMinor: 9800, planLineId: source.planLineId,
+      }],
+    }));
+    expect(attempt.status, JSON.stringify(attempt.body)).toBeGreaterThanOrEqual(400);
+    expect(attempt.status, JSON.stringify(attempt.body)).toBeLessThan(500);
+    expect(await snapshot()).toEqual(before);
+    const order = await get('/api/v1/supplier-orders/' + source.orderId);
+    expect(order.status).toBe(200);
+    expect(order.body.data.status).toBe('CONVERTED');
+    expect(order.body.data.purchaseId).toBe(original.body.data.id);
+    const stillOriginal = await get('/api/v1/purchases/' + original.body.data.id);
+    expect(stillOriginal.status).toBe(200);
+    expect(stillOriginal.body.data.status).toBe('POSTED');
+  });
+
 });
