@@ -231,8 +231,18 @@ describe('MOD-004 T09C-P2 — versioned Party read authorization', () => {
     await restrict([Permission.CUSTOMER_VIEW, Permission.CUSTOMER_DEACTIVATE]);
     const masked = (await v2Get(usedId).expect(200)).body.data;
     expect(masked.globalHistory).toEqual({ state: 'WITHHELD' });
-    await request(app.getHttpServer()).delete('/api/v1/parties/' + usedId)
+    const denied = await request(app.getHttpServer()).delete('/api/v1/parties/' + usedId)
+      .set(auth()).expect(403);
+    expect(denied.body.error.code).toBe('PERMISSION_DENIED');
+    // Only once every affected role grants DEACTIVATE may the caller learn
+    // that global posted history makes even an authorized deletion impossible.
+    await restrict([
+      Permission.CUSTOMER_VIEW, Permission.CUSTOMER_DEACTIVATE,
+      Permission.SUPPLIER_DEACTIVATE,
+    ]);
+    const posted = await request(app.getHttpServer()).delete('/api/v1/parties/' + usedId)
       .set(auth()).expect(400);
+    expect(posted.body.error.code).toBe('VALIDATION_FAILED');
     await request(app.getHttpServer()).delete('/api/v1/parties/' + unusedId)
       .set(auth()).expect(204);
     const retained = await asTenant(pool, tenant.tenantId, (client) => client.query(

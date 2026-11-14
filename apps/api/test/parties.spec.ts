@@ -1613,13 +1613,14 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
       .expect(403);
     await listParties('?role=SUPPLIER').expect(403);
 
-    // The global delete guard must *not* use the selected Customer's zero
-    // balance or its absent opening as proof the shared Party is unused.
+    // This caller cannot deactivate the hidden Supplier relationship.
+    // Permission denial comes before any party-global history disclosure.
+    // The separately authorized P2 suite asserts the global posted-history guard.
     const refused = await request(app.getHttpServer())
       .delete('/api/v1/parties/' + sharedId)
       .set('Authorization', 'Bearer ' + token)
-      .expect(400);
-    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+      .expect(403);
+    expect(refused.body.error.code).toBe('PERMISSION_DENIED');
 
     const rows = await asTenant(pool, tenant.tenantId, (client) => client.query<{
       parties: number; supplierLines: number;
@@ -1630,8 +1631,8 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
     ));
     expect(rows.rows[0]).toEqual({ parties: 1, supplierLines: 1 });
 
-    // The same limited permission *does* allow removal of a truly unused,
-    // non-reserved Customer. Refusal above was about history, not blanket auth.
+    // This limited permission still allows deletion of a genuinely unused,
+    // single-role Customer; the shared-Party refusal required more authority.
     await request(app.getHttpServer())
       .delete('/api/v1/parties/' + unusedId)
       .set('Authorization', 'Bearer ' + token)
@@ -1794,11 +1795,13 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
         .set('Authorization', 'Bearer ' + token)
         .expect(403);
 
+      // One role's DEACTIVATE cannot delete a shared identity, even if its
+      // own role shows no opening. The denial must not reveal global history.
       const rejected = await request(app.getHttpServer())
         .delete('/api/v1/parties/' + record.id)
         .set('Authorization', 'Bearer ' + token)
-        .expect(400);
-      expect(rejected.body.error.code).toBe('VALIDATION_FAILED');
+        .expect(403);
+      expect(rejected.body.error.code).toBe('PERMISSION_DENIED');
 
       const intact = await asTenant(pool, tenant.tenantId, (client) => client.query<{
         parties: number; customerLines: number; customerAmount: number;
