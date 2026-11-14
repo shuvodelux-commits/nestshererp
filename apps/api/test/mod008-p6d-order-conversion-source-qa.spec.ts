@@ -302,4 +302,111 @@ gated('MOD-008 P6D approved supplier-order conversion source invariants (real si
     const inaccessible = await get('/api/v1/supplier-orders/' + source.orderId, tokenB);
     expect([403, 404]).toContain(inaccessible.status);
   });
+
+  it('refuses missing source IDs without financial, stock or order side effects', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const before = await snapshot();
+    const response = await post('/api/v1/purchases', purchaseBody(source, {
+      supplierOrderId: Ulid.generate(clock),
+    }));
+    expect(response.status, JSON.stringify(response.body)).toBe(404);
+    await assertSourceUnchanged(source, before);
+  });
+
+  it('refuses partial receipts and over-receipts against the same OPEN order', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const before = await snapshot();
+    for (const qty of [999, 1001]) {
+      const response = await post('/api/v1/purchases', purchaseBody(source, {
+        lines: [{
+          productId: source.productId, qty, unitPriceMinor: 10000,
+          planLineId: source.planLineId,
+        }],
+      }));
+      expect(response.status, JSON.stringify(response.body)).toBeGreaterThanOrEqual(400);
+      expect(response.status, JSON.stringify(response.body)).toBeLessThan(500);
+      await assertSourceUnchanged(source, before);
+    }
+  });
+
+  it('refuses a missing or forged plan line on a product that belongs to the order', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const before = await snapshot();
+    for (const planLineId of [null, Ulid.generate(clock)]) {
+      const response = await post('/api/v1/purchases', purchaseBody(source, {
+        lines: [{
+          productId: source.productId, qty: 1000, unitPriceMinor: 10000,
+          planLineId,
+        }],
+      }));
+      expect(response.status, JSON.stringify(response.body)).toBeGreaterThanOrEqual(400);
+      expect(response.status, JSON.stringify(response.body)).toBeLessThan(500);
+      await assertSourceUnchanged(source, before);
+    }
+  });
+
+  it('accepts two separately priced lots whose quantities sum to the exact ordered amount', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const response = await post('/api/v1/purchases', purchaseBody(source, {
+      lines: [
+        { productId: source.productId, qty: 400, unitPriceMinor: 10000, planLineId: source.planLineId },
+        { productId: source.productId, qty: 600, unitPriceMinor: 11000, planLineId: source.planLineId },
+      ],
+    }));
+    expect(response.status, JSON.stringify(response.body)).toBe(201);
+    const counts = await snapshot();
+    expect(counts.purchases).toBe(1);
+    expect(counts.purchase_lines).toBe(2);
+    expect(counts.stock_movements).toBe(2);
+    expect(counts.inventory_lots).toBe(2);
+    expect(counts.journal_entries).toBe(1);
+    const order = await get('/api/v1/supplier-orders/' + source.orderId);
+    expect(order.status).toBe(200);
+    expect(order.body.data.status).toBe('CONVERTED');
+    expect(order.body.data.purchaseId).toBe(response.body.data.id);
+  });
+
+  it('relinks its own converted order when correcting the original purchase in the same Class-T transaction', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const initial = await post('/api/v1/purchases', purchaseBody(source));
+    expect(initial.status, JSON.stringify(initial.body)).toBe(201);
+    const corrected = await post('/api/v1/purchases', purchaseBody(source, {
+      correctionOf: initial.body.data.id,
+      notes: 'Corrected unit price, original supplier order',
+      lines: [{
+        productId: source.productId, qty: 1000, unitPriceMinor: 9900,
+        planLineId: source.planLineId,
+      }],
+    }));
+    expect(corrected.status, JSON.stringify(corrected.body)).toBe(201);
+    expect(corrected.body.data.id).not.toBe(initial.body.data.id);
+    const order = await get('/api/v1/supplier-orders/' + source.orderId);
+    expect(order.status).toBe(200);
+    expect(order.body.data.status).toBe('CONVERTED');
+    expect(order.body.data.purchaseId).toBe(corrected.body.data.id);
+    const original = await get('/api/v1/purchases/' + initial.body.data.id);
+    expect(original.status).toBe(200);
+    expect(original.body.data.status).toBe('VOIDED');
+    const after = await snapshot();
+    expect(after.purchases).toBe(2);
+  });
+
+  it('prevents a correction of an unrelated bill from stealing another converted order', async () => {
+    const source = await approvedOrder({ supplierId, productId });
+    const linked = await post('/api/v1/purchases', purchaseBody(source));
+    expect(linked.status, JSON.stringify(linked.body)).toBe(201);
+    const unrelated = await post('/api/v1/purchases', purchaseBody(source, {
+      supplierOrderId: null,
+      lines: [{ productId: source.productId, qty: 1000, unitPriceMinor: 10000 }],
+    }));
+    expect(unrelated.status, JSON.stringify(unrelated.body)).toBe(201);
+    const before = await snapshot();
+    const invalid = await post('/api/v1/purchases', purchaseBody(source, {
+      correctionOf: unrelated.body.data.id,
+    }));
+    expect(invalid.status, JSON.stringify(invalid.body)).toBe(409);
+    expect(await snapshot()).toEqual(before);
+    const order = await get('/api/v1/supplier-orders/' + source.orderId);
+    expect(order.body.data.purchaseId).toBe(linked.body.data.id);
+  });
 });
