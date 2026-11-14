@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type {
-  PartyResponse,
+  PartyReadV2,
   PartyRoleValue,
   PartySetupResponse,
   PartySort,
@@ -21,7 +21,7 @@ import {
   createCustomerGroup,
   deleteParty,
   EMPTY_PARTY_SETUP,
-  fetchParties,
+  fetchPartiesV2,
   fetchPartySetup,
   removeCustomerGroup,
   renameCustomerGroup,
@@ -37,6 +37,7 @@ import OfflineBar from '../components/offline/OfflineBar.vue';
 import { NEEDS_INTERNET, NEEDS_INTERNET_BN } from '../components/offline/offline-text';
 import AppShell from '../components/shell/AppShell.vue';
 import { useConnectivity } from '../offline/connectivity';
+import { storedTenantId } from '../offline/snapshot';
 import PartyOpeningDialog from '../components/parties/PartyOpeningDialog.vue';
 import PartyFormPage from './PartyFormPage.vue';
 
@@ -56,7 +57,7 @@ const router = useRouter();
 const route = useRoute();
 
 /*
- * Phase 12.3. The list needs no branch: `fetchParties` reads the local copy
+ * Phase 12.3. The list needs no branch: `fetchPartiesV2` reads the local copy
  * when the server cannot be reached and answers in the same shape. The page
  * only has to say that it is offline and stop offering what cannot be saved.
  */
@@ -105,13 +106,23 @@ const accessibleRoles = computed(() =>
 
 const canCreate = computed(() => session.can(RIGHTS[role.value].create));
 const canEdit = computed(() => session.can(RIGHTS[role.value].edit));
-const canDeactivate = computed(() => session.can(RIGHTS[role.value].deactivate));
+// V2 roles are filtered by VIEW; only all three VIEW grants establish that
+// this is the full identity. A visible history flag alone proves no such thing.
+function canDeactivateIdentity(party: PartyReadV2): boolean {
+  return !isOffline.value && party.roles.length > 0 &&
+    (['CUSTOMER', 'SUPPLIER', 'VENDOR'] as const).every((held) => session.can(RIGHTS[held].view)) &&
+    party.roles.every((held) => session.can(RIGHTS[held].deactivate));
+}
+function canDeleteIdentity(party: PartyReadV2): boolean {
+  return canDeactivateIdentity(party) && party.globalHistory.state === 'VISIBLE' && !party.globalHistory.hasLedgerEntries;
+}
 const canManageGroups = computed(() => session.can('party.group.manage'));
 
 const loading = ref(true);
 const loadError = ref<{ code: string; message: string } | null>(null);
-const parties = ref<PartyResponse[]>([]);
-const summary = ref<PartySummary>({
+const parties = ref<PartyReadV2[]>([]);
+function emptySummary(): PartySummary {
+  return {
   total: 0,
   active: 0,
   inactive: 0,
@@ -119,7 +130,9 @@ const summary = ref<PartySummary>({
   totalOutstandingMinor: 0,
   totalAdvanceMinor: 0,
   overCreditLimit: 0,
-});
+  };
+}
+const summary = ref<PartySummary>(emptySummary());
 const nextCursor = ref<string | null>(null);
 
 /**
@@ -145,7 +158,7 @@ const notice = ref<string | null>(null);
 /* --------------------------------------------------------- row action menu */
 
 const rowMenu = ref<InstanceType<typeof Menu> | null>(null);
-const actionParty = ref<PartyResponse | null>(null);
+const actionParty = ref<PartyReadV2 | null>(null);
 /**
  * §5.6's row menu: "only permitted contextual actions such as `View Ledger`,
  * `Edit`, `Delete/Deactivate` and other source-module actions that are actually
@@ -169,11 +182,11 @@ const rowMenuItems = computed<MenuItem[]>(() => {
       command: () => { editing.value = party; },
     }] : []),
     ...(canEdit.value ? [{
-      label: party.hasLedgerEntries ? 'Correct opening balance' : 'Set opening balance',
+      label: 'Manage opening balance',
       icon: 'pi pi-wallet',
       command: () => { openingFor.value = party; },
     }] : []),
-    ...(canDeactivate.value ? [{
+    ...(canDeactivateIdentity(party) ? [{
       label: party.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
       icon: party.status === 'ACTIVE' ? 'pi pi-ban' : 'pi pi-check-circle',
       command: () => { confirming.value = party; },
@@ -184,7 +197,7 @@ const rowMenuItems = computed<MenuItem[]>(() => {
      * deleting it would leave its journal lines pointing at nothing. The server
      * refuses either way — this only keeps the menu from offering it.
      */
-    ...(canDeactivate.value && !party.hasLedgerEntries ? [{
+    ...(canDeleteIdentity(party) ? [{
       label: 'Delete',
       icon: 'pi pi-trash',
       command: () => { deleting.value = party; },
@@ -192,7 +205,7 @@ const rowMenuItems = computed<MenuItem[]>(() => {
   ];
 });
 
-function openRowMenu(event: Event, party: PartyResponse): void {
+function openRowMenu(event: Event, party: PartyReadV2): void {
   actionParty.value = party;
   rowMenu.value?.toggle(event);
 }
@@ -268,31 +281,64 @@ function sortBy(column: string): void {
   void load();
 }
 
+// Revoking a role, signing into a different shop, or changing the selected
+// relationship invalidates ALL pending pages and summary tiles. Late HTTP
+// completions must never publish an old identity's Party data.
+let directoryEpoch = 0;
+function readContext() {
+  return {
+    token: session.accessToken.value,
+    offlineUser: session.offlineUser.value,
+    permissions: session.permissions.value,
+    tenant: storedTenantId(),
+    selectedRole: role.value,
+  };
+}
+function sameContext(ctx: ReturnType<typeof readContext>, epoch: number): boolean {
+  return epoch === directoryEpoch && ctx.token === session.accessToken.value &&
+    ctx.offlineUser === session.offlineUser.value &&
+    ctx.permissions === session.permissions.value &&
+    ctx.tenant === storedTenantId() &&
+    ctx.selectedRole === role.value && session.can(RIGHTS[ctx.selectedRole].view);
+}
+
 async function load(): Promise<void> {
+  const epoch = ++directoryEpoch;
+  const ctx = readContext();
   loading.value = true;
   loadError.value = null;
+  parties.value = [];
+  actionParty.value = null;
+  summary.value = emptySummary();
+  nextCursor.value = null;
   try {
-    const page = await fetchParties(session.accessToken.value ?? '', currentQuery());
+    const query = currentQuery();
+    const page = await fetchPartiesV2(ctx.token ?? '', query);
+    if (!sameContext(ctx, epoch) || query.role !== ctx.selectedRole) return;
     parties.value = [...page.data];
     summary.value = page.summary;
     nextCursor.value = page.page.nextCursor;
   } catch (cause) {
-    loadError.value = describe(cause);
+    if (sameContext(ctx, epoch)) loadError.value = describe(cause);
   } finally {
-    loading.value = false;
+    if (epoch === directoryEpoch) loading.value = false;
   }
 }
 
 /** Keyset paging: the next page is appended, never re-fetched from an offset. */
 async function showMore(): Promise<void> {
   if (nextCursor.value === null || busy.value) return;
+  const epoch = directoryEpoch;
+  const ctx = readContext();
   busy.value = true;
   try {
-    const page = await fetchParties(session.accessToken.value ?? '', currentQuery(nextCursor.value));
+    const query = currentQuery(nextCursor.value);
+    const page = await fetchPartiesV2(ctx.token ?? '', query);
+    if (!sameContext(ctx, epoch) || query.role !== ctx.selectedRole) return;
     parties.value = [...parties.value, ...page.data];
     nextCursor.value = page.page.nextCursor;
   } catch (cause) {
-    loadError.value = describe(cause);
+    if (sameContext(ctx, epoch)) loadError.value = describe(cause);
   } finally {
     busy.value = false;
   }
@@ -308,6 +354,12 @@ onMounted(async () => {
   const first = accessibleRoles.value[0];
   if (first !== undefined && !accessibleRoles.value.includes(role.value)) role.value = first;
   await load();
+});
+
+watch([session.permissions, session.accessToken, session.offlineUser], () => {
+  // Do not retain old Party rows, totals or action targets after identity
+  // change, even when the new session has the same selected relationship.
+  void load();
 });
 
 watch(role, () => {
@@ -340,13 +392,13 @@ function clearFilters(): void {
  * asking — someone tapping a customer wants to know what they owe and what
  * happened, not to rename them. Editing is on the `⋯` menu and on the hub.
  */
-function openParty(party: PartyResponse): void {
+function openParty(party: PartyReadV2): void {
   void router.push(`/parties/${party.id}/ledger?role=${role.value}`);
 }
 
 /* ------------------------------------------------------------------ balance */
 
-function openLedger(party: PartyResponse): void {
+function openLedger(party: PartyReadV2): void {
   void router.push(`/parties/${party.id}/ledger?role=${role.value}`);
 }
 
@@ -357,7 +409,7 @@ function openLedger(party: PartyResponse): void {
  * second look for the missing amount, and the whole point of this column is
  * that a glance is enough.
  */
-function balanceText(party: PartyResponse): string {
+function balanceText(party: PartyReadV2): string {
   const { direction, outstandingMinor, advanceMinor } = party.balance;
   if (direction === 'SETTLED') return 'Settled';
   return direction === 'RECEIVABLE'
@@ -380,7 +432,7 @@ function isOutstanding(direction: string): boolean {
   return role.value === 'CUSTOMER' ? direction === 'RECEIVABLE' : direction === 'PAYABLE';
 }
 
-function balanceClass(party: PartyResponse): string {
+function balanceClass(party: PartyReadV2): string {
   const { direction } = party.balance;
   if (direction === 'SETTLED') return 'balance-settled';
   return isOutstanding(direction) ? 'balance-due' : 'balance-advance';
@@ -395,14 +447,14 @@ function balanceClass(party: PartyResponse): string {
  * and nothing else. Showing "Due 7,420" beside "Advance 250" would invite
  * collecting a figure that is not owed.
  */
-function balanceLabelFor(party: PartyResponse): string {
+function balanceLabelFor(party: PartyReadV2): string {
   const { direction } = party.balance;
   if (direction === 'SETTLED') return 'Settled';
   if (direction === 'RECEIVABLE') return role.value === 'CUSTOMER' ? 'Current Due' : 'Advance paid';
   return role.value === 'CUSTOMER' ? 'Advance' : 'Payable';
 }
 
-function balanceAmountText(party: PartyResponse): string {
+function balanceAmountText(party: PartyReadV2): string {
   const { direction, outstandingMinor, advanceMinor } = party.balance;
   if (direction === 'SETTLED') return '৳0.00';
   return `৳${Money(direction === 'RECEIVABLE' ? outstandingMinor : advanceMinor).format()}`;
@@ -426,7 +478,7 @@ function initials(name: string): string {
  * "hide the control **and** enforce", and a client that got this wrong would
  * show a missing badge, never let an over-limit sale through.
  */
-function overLimit(party: PartyResponse): boolean {
+function overLimit(party: PartyReadV2): boolean {
   return (
     party.creditLimitMinor !== null &&
     party.balance.outstandingMinor > party.creditLimitMinor
@@ -435,7 +487,7 @@ function overLimit(party: PartyResponse): boolean {
 
 /* --------------------------------------------------- deactivate / reactivate */
 
-const confirming = ref<PartyResponse | null>(null);
+const confirming = ref<PartyReadV2 | null>(null);
 
 /* ------------------------------------------------------- add / edit dialog */
 
@@ -446,9 +498,9 @@ const confirming = ref<PartyResponse | null>(null);
  * embedded rather than copied, so both have one write path.
  */
 const adding = ref(false);
-const editing = ref<PartyResponse | null>(null);
-const deleting = ref<PartyResponse | null>(null);
-const openingFor = ref<PartyResponse | null>(null);
+const editing = ref<PartyReadV2 | null>(null);
+const deleting = ref<PartyReadV2 | null>(null);
+const openingFor = ref<PartyReadV2 | null>(null);
 
 const formOpen = computed({
   get: () => adding.value || editing.value !== null,
@@ -463,7 +515,7 @@ function closeForm(): void {
 }
 
 /** The row is behind the dialog, so it has to be the saved one when it closes. */
-async function onFormSaved(party: PartyResponse): Promise<void> {
+async function onFormSaved(party: { id: string; name: string }): Promise<void> {
   const added = adding.value;
   closeForm();
   notice.value = added ? `${party.name} added.` : `${party.name} saved.`;
@@ -478,7 +530,7 @@ async function onOpeningSaved(): Promise<void> {
 
 async function removeParty(): Promise<void> {
   const party = deleting.value;
-  if (party === null) return;
+  if (party === null || !canDeleteIdentity(party)) return;
 
   busy.value = true;
   try {
@@ -496,7 +548,7 @@ async function removeParty(): Promise<void> {
 
 async function toggleStatus(): Promise<void> {
   const party = confirming.value;
-  if (party === null) return;
+  if (party === null || !canDeactivateIdentity(party)) return;
 
   busy.value = true;
   try {
@@ -742,8 +794,8 @@ async function removeGroup(id: string, name: string): Promise<void> {
               <p v-if="party.phone !== null" class="card-line mono">
                 <i class="pi pi-phone" aria-hidden="true" /> {{ party.phone }}
               </p>
-              <p v-if="party.address !== null" class="card-line">
-                <i class="pi pi-map-marker" aria-hidden="true" /> {{ party.address }}
+              <p v-if="party.profile.state === 'VISIBLE' && party.profile.data.address !== null" class="card-line">
+                <i class="pi pi-map-marker" aria-hidden="true" /> {{ party.profile.state === 'VISIBLE' ? party.profile.data.address : '' }}
               </p>
             </div>
 
@@ -764,7 +816,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
             </div>
 
             <button
-              v-if="!party.isSystemReserved && (canEdit || canDeactivate)"
+              v-if="!party.isSystemReserved && (canEdit || canDeactivateIdentity(party))"
               type="button"
               class="row-menu-trigger card-menu"
               :aria-label="`Actions for ${party.name}`"
@@ -860,7 +912,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
                   </span>
                 </td>
                 <td class="mono">{{ party.phone ?? '—' }}</td>
-                <td class="address">{{ party.address ?? '—' }}</td>
+                <td class="address">{{ party.profile.state === 'VISIBLE' ? party.profile.data.address ?? '—' : '—' }}</td>
                 <td class="num">
                   <button
                     type="button"
@@ -879,7 +931,7 @@ async function removeGroup(id: string, name: string): Promise<void> {
                 </td>
                 <td class="actions">
                   <button
-                    v-if="!party.isSystemReserved && (canEdit || canDeactivate)"
+                    v-if="!party.isSystemReserved && (canEdit || canDeactivateIdentity(party))"
                     type="button"
                     class="row-menu-trigger"
                     :aria-label="`Actions for ${party.name}`"

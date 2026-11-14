@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PartyLedgerResponse, PartyResponse, PartyRoleValue } from '@sher/core-contracts';
+import type { PartyLedgerResponse, PartyReadV2, PartyRoleValue } from '@sher/core-contracts';
 import { Money } from '@sher/shared-utils';
 import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
@@ -168,7 +168,7 @@ function goBack(): void {
 /* ------------------------------------------------------------- the hub bits */
 
 /** The party themselves, for the header, the actions and the edit dialog. */
-const party = ref<PartyResponse | null>(null);
+const party = ref<PartyReadV2 | null>(null);
 const editing = ref(false);
 const openingOpen = ref(false);
 const hasOpening = ref(false);
@@ -263,8 +263,14 @@ async function onSupplierPaid(): Promise<void> {
 async function loadParty(): Promise<void> {
   const token = session.accessToken.value;
   if (token === null || partyId.value === '') return;
+  party.value = null;
+  hasOpening.value = false;
+  const id = partyId.value;
+  const readRole = role.value;
   try {
-    party.value = await fetchParty(token, partyId.value);
+    const result = await fetchParty(token, id, readRole);
+    if (partyId.value !== id || role.value !== readRole) return;
+    party.value = result;
     hasOpening.value =
       (await fetchPartyOpening(token, partyId.value, role.value)) !== null;
   } catch (cause) {
@@ -305,7 +311,7 @@ onDataChanged(() => {
 });
 
 // A new party id means a different ledger, not another page of this one.
-watch(partyId, () => {
+watch([partyId, role], () => {
   ledger.value = null;
   party.value = null;
   void load();
@@ -341,7 +347,7 @@ watch(partyId, () => {
           <h1>{{ ledger?.partyName ?? party?.name ?? 'Ledger' }}</h1>
           <p v-if="party !== null" class="party-contact">
             <span v-if="party.phone !== null" class="mono">{{ party.phone }}</span>
-            <span v-if="party.address !== null">{{ party.address }}</span>
+            <span v-if="party.profile.state === 'VISIBLE' && party.profile.data.address !== null">{{ party.profile.state === 'VISIBLE' ? party.profile.data.address : '' }}</span>
           </p>
           <!--
             Print only: a statement leaves the building, so it has to say which

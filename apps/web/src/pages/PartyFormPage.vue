@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PartyResponse, PartyRoleValue, PartySetupResponse, SavePartyRequest } from '@sher/core-contracts';
+import type { PartyReadV2, PartyResponse, PartyRoleValue, PartySetupResponse, SavePartyRequest } from '@sher/core-contracts';
 import { Money, parseMoney, SystemClock, Ulid } from '@sher/shared-utils';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -14,6 +14,7 @@ import {
   fetchPartySetup,
   updateParty,
 } from '../api/parties';
+import { useConnectivity } from '../offline/connectivity';
 import { useSession } from '../auth/session';
 import AppCard from '../components/AppCard.vue';
 import ErrorNotice from '../components/ErrorNotice.vue';
@@ -64,12 +65,20 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   /** A save landed. The host closes and refreshes its list from the server. */
-  (event: 'saved', party: PartyResponse): void;
+  (event: 'saved', party: Pick<PartyResponse, 'id' | 'name'>): void;
   (event: 'close'): void;
 }>();
 
 const clock = new SystemClock();
 const session = useSession();
+const { isOffline } = useConnectivity();
+const selectedRole = computed<PartyRoleValue>(() => {
+  const value = props.embedded ? props.embeddedRole : route.query['role'];
+  return value === 'SUPPLIER' || value === 'VENDOR' ? value : 'CUSTOMER';
+});
+const loadedParty = ref<PartyReadV2 | null>(null);
+const profileVisible = computed(() => isNew.value || loadedParty.value?.profile.state === 'VISIBLE');
+const customerFieldsVisible = computed(() => isCustomer.value && (isNew.value || selectedRole.value === 'CUSTOMER'));
 const route = useRoute();
 const router = useRouter();
 
@@ -174,14 +183,24 @@ const offerableRoles = computed(() =>
   }),
 );
 
+// A V2 role list is permission-filtered, while the V1 PATCH replaces the full
+// role array. Without all-role visibility a full-form save could remove a
+// hidden relationship. There is no safe partial directory PATCH in this API.
+const rolesAuthoritative = computed(() =>
+  (['CUSTOMER', 'SUPPLIER', 'VENDOR'] as const).every((role) => session.can(`party.${role.toLowerCase()}.view`)),
+);
 const canSave = computed(() =>
   isNew.value
     ? roles.value.every((role) => session.can(RIGHTS[role].create))
-    : roles.value.some((role) => session.can(RIGHTS[role].edit)),
+    : loadedParty.value !== null && rolesAuthoritative.value && roles.value.some((role) => session.can(RIGHTS[role].edit)),
 );
-const canDelete = computed(
-  () => !isNew.value && roles.value.some((role) => session.can(RIGHTS[role].deactivate)),
-);
+const canDelete = computed(() => {
+  const party = loadedParty.value;
+  return !isNew.value && !isOffline.value && party !== null && party.roles.length > 0 &&
+    (['CUSTOMER', 'SUPPLIER', 'VENDOR'] as const).every((role) => session.can(`party.${role.toLowerCase()}.view`)) &&
+    party.roles.every((role) => session.can(RIGHTS[role].deactivate)) &&
+    party.globalHistory.state === 'VISIBLE' && !party.globalHistory.hasLedgerEntries;
+});
 const isEditing = computed(() =>
   props.embedded ? props.embeddedEditing : isNew.value || route.query['mode'] === 'edit',
 );
@@ -214,19 +233,36 @@ function moneyText(minor: number | null): string {
   return minor === null ? '' : Money(minor).format().replace(/,/g, '');
 }
 
-function fill(party: PartyResponse): void {
+function fill(party: PartyReadV2): void {
+  loadedParty.value = party;
+  const profile = party.profile.state === 'VISIBLE' ? party.profile.data : null;
   roles.value = [...party.roles];
   name.value = party.name;
   phone.value = party.phone ?? '';
-  address.value = party.address ?? '';
-  guardianName.value = party.guardianName ?? '';
-  nid.value = party.nid ?? '';
-  email.value = party.email ?? '';
-  notes.value = party.notes ?? '';
+  address.value = profile?.address ?? '';
+  guardianName.value = profile?.guardianName ?? '';
+  nid.value = profile?.nid ?? '';
+  email.value = profile?.email ?? '';
+  notes.value = profile?.notes ?? '';
   customerGroupId.value = party.customerGroupId ?? '';
   creditLimit.value = moneyText(party.creditLimitMinor);
   version.value = party.version;
   isSystemReserved.value = party.isSystemReserved;
+}
+
+async function fillRead(party: PartyReadV2): Promise<void> {
+  loadedParty.value = null;
+  // A Supplier/Vendor read has no Customer credit/group. Preserve those
+  // values through the full-form writer with a separate CUSTOMER-scoped read.
+  if (selectedRole.value !== 'CUSTOMER' && party.roles.includes('CUSTOMER') &&
+      session.can('party.customer.view') && session.can('party.customer.edit')) {
+    const customer = await fetchParty(session.accessToken.value ?? '', party.id, 'CUSTOMER');
+    fill(party);
+    customerGroupId.value = customer.customerGroupId ?? '';
+    creditLimit.value = moneyText(customer.creditLimitMinor);
+  } else {
+    fill(party);
+  }
 }
 
 onMounted(async () => {
@@ -235,7 +271,8 @@ onMounted(async () => {
     setup.value = await fetchPartySetup(session.accessToken.value ?? '');
 
     if (partyId.value !== null) {
-      fill(await fetchParty(session.accessToken.value ?? '', partyId.value));
+      await fillRead(await fetchParty(session.accessToken.value ?? '', partyId.value, selectedRole.value));
+
     } else {
       // The tab the person came from decides what they are adding (§5.6).
       const wanted = props.embedded ? props.embeddedRole : route.query['role'];
@@ -361,23 +398,24 @@ async function save(): Promise<void> {
         // UI-50: the dialog closes and the row appears behind it, which is the
         // confirmation. Navigating away would be the thing the modal exists to
         // avoid.
-        emit('saved', created);
+        emit('saved', { id: created.id, name: payload.name });
         return;
       }
       // UI-36: land on the saved record, showing what the server actually stored.
-      await router.push(`/parties/${created.id}`);
+      await router.push({ path: `/parties/${created.id}`, query: { role: selectedRole.value } });
     } else {
       // An edit never carries an opening (§2.5 — a posted document is corrected
       // by reversing and reposting, not by rewriting). The edit form does not
       // offer the fields, and the request schema refuses them outright.
       const { opening: _opening, ...editable } = payload;
-      const saved = await updateParty(session.accessToken.value ?? '', partyId.value, {
+      await updateParty(session.accessToken.value ?? '', partyId.value, {
         ...editable,
         version: version.value,
       });
-      fill(saved);
+      const saved = await fetchParty(session.accessToken.value ?? '', partyId.value, selectedRole.value);
+      await fillRead(saved);
       if (props.embedded) {
-        emit('saved', saved);
+        emit('saved', { id: saved.id, name: saved.name });
         return;
       }
       notice.value = 'Changes saved.';
@@ -392,7 +430,7 @@ async function save(): Promise<void> {
 const confirmingDelete = ref(false);
 
 async function remove(): Promise<void> {
-  if (partyId.value === null) return;
+  if (partyId.value === null || !canDelete.value || isSystemReserved.value) return;
   busy.value = true;
   formError.value = null;
   try {
@@ -401,7 +439,7 @@ async function remove(): Promise<void> {
       emit('close');
       return;
     }
-    await router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
+    await router.push({ path: '/parties', query: { role: selectedRole.value } });
   } catch (cause) {
     formError.value = describe(cause);
     confirmingDelete.value = false;
@@ -415,11 +453,11 @@ function backToList(): void {
     emit('close');
     return;
   }
-  void router.push({ path: '/parties', query: { role: roles.value[0] ?? 'CUSTOMER' } });
+  void router.push({ path: '/parties', query: { role: selectedRole.value } });
 }
 
 function editProfile(): void {
-  if (partyId.value !== null) void router.push({ path: `/parties/${partyId.value}`, query: { role: roles.value[0] ?? 'CUSTOMER', mode: 'edit' } });
+  if (partyId.value !== null) void router.push({ path: `/parties/${partyId.value}`, query: { role: selectedRole.value, mode: 'edit' } });
 }
 </script>
 
@@ -492,7 +530,7 @@ function editProfile(): void {
 
 
           <div class="row">
-            <div v-if="setup.fields.guardianName" class="field">
+            <div v-if="profileVisible && setup.fields.guardianName" class="field">
               <label for="party-guardian">
                 Father&apos;s or guardian&apos;s name
                 <span class="label-bn">বাবার বা অভিভাবকের নাম</span>
@@ -529,7 +567,7 @@ function editProfile(): void {
   
           </div>
 
-          <div v-if="setup.fields.address" class="field">
+          <div v-if="profileVisible && setup.fields.address" class="field">
             <label for="party-address">
               Address
               <span class="label-bn">ঠিকানা</span>
@@ -566,7 +604,7 @@ function editProfile(): void {
             </fieldset>
   
 
-            <div v-if="setup.fields.nid" class="field">
+            <div v-if="profileVisible && setup.fields.nid" class="field">
               <label for="party-nid">
                 NID number
                 <span class="label-bn">জাতীয় পরিচয়পত্র নম্বর</span>
@@ -579,7 +617,7 @@ function editProfile(): void {
               <input id="party-nid" v-model="nid" type="text" :disabled="fieldsDisabled" />
             </div>
   
-            <div v-if="setup.fields.email" class="field">
+            <div v-if="profileVisible && setup.fields.email" class="field">
               <label for="party-email">
                 Email
                 <span class="label-bn">ইমেইল</span>
@@ -587,7 +625,7 @@ function editProfile(): void {
               <input id="party-email" v-model="email" type="email" :disabled="fieldsDisabled" />
             </div>
   
-            <template v-if="isCustomer">
+            <template v-if="customerFieldsVisible">
               <!-- D-39 / UI-45: file them into a new group without leaving the form. -->
               <QuickAddSelect
                 v-if="setup.features.customerGroups"
@@ -628,7 +666,7 @@ function editProfile(): void {
               </div>
             </template>
   
-            <div v-if="setup.fields.notes" class="field">
+            <div v-if="profileVisible && setup.fields.notes" class="field">
               <label for="party-notes">
                 Description
                 <span class="label-bn">এই পক্ষ সম্পর্কে কোনো তথ্য</span>
@@ -730,7 +768,10 @@ function editProfile(): void {
             </button>
           </div>
 
-          <p v-if="!canSave" class="fine">
+          <p v-if="!isNew && !rolesAuthoritative" class="fine">
+            Editing needs visibility of all party relationships to preserve this record safely.
+          </p>
+          <p v-else-if="!canSave" class="fine">
             Your role cannot save this record. Ask the owner if you need to.
           </p>
         </form>
