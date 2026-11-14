@@ -114,7 +114,9 @@ export async function prepareTestDatabase(): Promise<void> {
     const draftSource = await admin.query<{ present: boolean }>(
       "SELECT to_regclass('public.sale_draft_create_operations') IS NOT NULL AS present",
     );
-    if (draftSource.rows[0].present) {
+    const draftSourcePresent = draftSource.rows[0];
+    if (!draftSourcePresent) throw new Error('Unable to inspect draft operation table');
+    if (draftSourcePresent.present) {
       await admin.query(
         'REVOKE UPDATE, DELETE ON TABLE public.sale_draft_create_operations FROM sher_app',
       );
