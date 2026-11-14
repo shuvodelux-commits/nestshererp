@@ -22,6 +22,7 @@ import type {
   Tx,
   RepostCustomerReceipt,
 } from '@sher/core-application';
+import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { searchTokens } from '@sher/core-domain';
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
@@ -283,12 +284,17 @@ export class PostgresSaleRepository implements SaleRepository {
           )
           .returning({ id: inventoryLots.id });
         if (consumed.length === 0) {
-          throw new Error('Owned stock changed while this sale was being posted');
+          throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Owned stock was changed by another checkout — reload and retry');
         }
       }
 
       if (line.costState.exists) {
-        await db
+        // A sale was costed using one specific stock/valuation snapshot.
+        // A competing sale, adjustment, or landed-cost revaluation may have
+        // committed after that snapshot was read. Do not post a sale journal
+        // using stale COGS and silently subtract from a newer position.
+        const expectedQty = line.costState.qtyOnHand + line.costState.qtyChange;
+        const updated = await db
           .update(productCostState)
           .set({
             qtyOnHand: sql`${productCostState.qtyOnHand} - ${line.costState.qtyChange}`,
@@ -301,10 +307,18 @@ export class PostgresSaleRepository implements SaleRepository {
             and(
               eq(productCostState.tenantId, ctx.tenantId),
               eq(productCostState.id, line.costState.id),
+              eq(productCostState.qtyOnHand, expectedQty),
+              eq(productCostState.avgUnitCost, line.costState.avgUnitCost),
             ),
-          );
+          )
+          .returning({ id: productCostState.id });
+        if (updated.length !== 1) {
+          throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock quantity or cost changed while this sale was being posted — retry');
+        }
       } else {
-        await db.insert(productCostState).values({
+        // Two first writers may simultaneously create the cost state. A
+        // duplicate must be a typed stale conflict, never SQL HTTP 500.
+        const inserted = await db.insert(productCostState).values({
           id: line.costState.id,
           tenantId: ctx.tenantId,
           productId: line.productId,
@@ -317,7 +331,12 @@ export class PostgresSaleRepository implements SaleRepository {
           createdBy: ctx.userId,
           updatedBy: ctx.userId,
           version: 1,
-        });
+        }).onConflictDoNothing({
+          target: [productCostState.tenantId, productCostState.productId, productCostState.locationId],
+        }).returning({ id: productCostState.id });
+        if (inserted.length !== 1) {
+          throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock position changed while this sale was being posted — retry');
+        }
       }
 
       await db.insert(saleLines).values({
