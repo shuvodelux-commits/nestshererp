@@ -122,6 +122,23 @@ async function valuation(): Promise<{ totalValueMinor: number; inventoryAccountM
   return response.body.data as { totalValueMinor: number; inventoryAccountMinor: number; reconciled: boolean };
 }
 
+
+/**
+ * Simulate 30-day cache pruning under the same unprivileged tenant RLS policy
+ * the application uses. This is NOT deletion of the permanent business import
+ * operation document; that document must survive this fast-cache cleanup.
+ */
+async function pruneFastImportReplay(operationId: string): Promise<void> {
+  const deleted = await asTenant(pool, tenant.tenantId, async (client) => {
+    const result = await client.query(
+      'DELETE FROM idempotency_keys WHERE tenant_id = $1 AND operation_id = $2',
+      [tenant.tenantId, operationId],
+    );
+    return result.rowCount;
+  });
+  expect(deleted).toBe(1);
+}
+
 async function addUnit(name: string, as = token): Promise<void> {
   const response = await request(app.getHttpServer())
     .post('/api/v1/catalog/units')
@@ -267,6 +284,43 @@ describe('importing products', () => {
     expect(second.status).toBe(201);
     expect(second.body.data).toEqual(first.body.data);
     expect(await products()).toHaveLength(2);
+  });
+
+
+  // C003-02R RED: the 30-day idempotency cache is an optimization, never the
+  // permanent import operation identity. A SKU-less product has no natural
+  // uniqueness constraint to rescue a replay months later.
+  it('replays a pruned SKU-less product import exactly once', async () => {
+    const operationId = Ulid.generate(clock);
+    const noSkuFile = [
+      PRODUCT_HEADER,
+      'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,',
+    ].join('\r\n');
+
+    const first = await commit('PRODUCTS', noSkuFile, operationId);
+    expect(first.status).toBe(201);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+
+    await pruneFastImportReplay(operationId);
+    const replay = await commit('PRODUCTS', noSkuFile, operationId);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+  });
+
+  it('rejects a changed equal-length SKU-less CSV after the fast replay cache is pruned', async () => {
+    const operationId = Ulid.generate(clock);
+    const original = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const changed = [PRODUCT_HEADER, 'Hex Bolt 02,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect(changed.length).toBe(original.length);
+    expect((await commit('PRODUCTS', original, operationId)).status).toBe(201);
+
+    await pruneFastImportReplay(operationId);
+    const refused = await commit('PRODUCTS', changed, operationId);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+    expect((await products()).some((row) => row.name === 'Hex Bolt 02')).toBe(false);
   });
 
   // C003-01: two different files can have identical character counts. The
@@ -427,6 +481,29 @@ describe('importing opening stock', () => {
         reconciled: true,
       }),
     );
+  });
+
+
+  // C003-02R RED: a stored opening prevents duplicate stock, but the import
+  // operation must also retain the original HTTP response after cache pruning.
+  it('replays the original opening-stock CSV result after the fast cache is pruned', async () => {
+    const operationId = Ulid.generate(clock);
+    const file = [OPENING_HEADER, 'Rice,,10,,,', 'Dal,,5,60.00,,'].join('\r\n');
+    const first = await commit('OPENING_STOCK', file, operationId);
+    expect(first.status).toBe(201);
+    const original = await valuation();
+    expect(original).toEqual(expect.objectContaining({
+      totalValueMinor: 130_000,
+      inventoryAccountMinor: 130_000,
+      reconciled: true,
+    }));
+
+    await pruneFastImportReplay(operationId);
+    const replay = await commit('OPENING_STOCK', file, operationId);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await valuation()).toEqual(original);
+    expect((await products()).filter((row) => row.name === 'Rice')[0]?.stockQty).toBe(10_000);
   });
 
   it('posts no stock at all when one row names a product that does not exist', async () => {
