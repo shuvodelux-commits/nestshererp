@@ -130,7 +130,7 @@ async function post(
   body: Record<string, unknown>,
   key = Ulid.generate(clock),
   bearer = token,
-): Promise<{ status: number; data: unknown }> {
+): Promise<{ status: number; data: unknown; error?: unknown }> {
   const response = await fetch('http://127.0.0.1:' + server.port + path, {
     method: 'POST',
     headers: {
@@ -145,7 +145,7 @@ async function post(
   if (response.status >= 500) {
     process.stderr.write('MOD-003 cross-source HTTP ' + response.status + ': ' + JSON.stringify(json.error) + '\n');
   }
-  return { status: response.status, data: json.data };
+  return { status: response.status, data: json.data, error: json.error };
 }
 
 
@@ -305,10 +305,10 @@ function damage(server: ApiProcess, qty: number) {
 }
 
 async function collide(
-  first: () => Promise<{ status: number; data: unknown }>,
-  second: () => Promise<{ status: number; data: unknown }>,
-): Promise<readonly [{ status: number; data: unknown }, { status: number; data: unknown }]> {
-  let pending: Promise<readonly [{ status: number; data: unknown }, { status: number; data: unknown }]> | undefined;
+  first: () => Promise<{ status: number; data: unknown; error?: unknown }>,
+  second: () => Promise<{ status: number; data: unknown; error?: unknown }>,
+): Promise<readonly [{ status: number; data: unknown; error?: unknown }, { status: number; data: unknown; error?: unknown }]> {
+  let pending: Promise<readonly [{ status: number; data: unknown; error?: unknown }, { status: number; data: unknown; error?: unknown }]> | undefined;
   // A real PG row lock makes both independent Nest writers overlap on the
   // existing cost state without mutating inventory/journal test data.
   await asTenant(pool, tenant.tenantId, async (db) => {
@@ -322,6 +322,17 @@ async function collide(
   });
   if (!pending) throw new Error('Independent process race never started');
   return pending;
+}
+
+function expectStockConflict(result: { status: number; error?: unknown } | undefined): void {
+  // The core-contracts map distinguishes stale state (409) from unavailable
+  // owned stock (422; §5.26). Neither response may commit the rejected writer.
+  // Never accept HTTP 500, or a mismatch between status and public error code.
+  expect(result).toBeDefined();
+  expect([409, 422]).toContain(result?.status);
+  expect(result?.error).toMatchObject({
+    code: result?.status === 422 ? 'INSUFFICIENT_STOCK' : 'CONFLICT_STALE_VERSION',
+  });
 }
 
 async function assertOneWriter(winner: 'SALE' | 'DAMAGE'): Promise<void> {
@@ -351,7 +362,7 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
       const outcomes = await collide(() => sale(a, 7_000), () => sale(b, 7_000));
       const statuses = outcomes.map((x) => x.status);
       expect(statuses.filter((x) => x === 201)).toHaveLength(1);
-      expect([400, 409]).toContain(statuses.find((x) => x !== 201));
+      expectStockConflict(outcomes.find((x) => x.status !== 201));
       await assertOneWriter('SALE');
     } finally {
       await Promise.all(servers.map(stopApi));
@@ -367,7 +378,7 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
       const [sold, adjusted] = await collide(() => sale(a, 7_000), () => damage(b, 7_000));
       const accepted = [sold.status, adjusted.status];
       expect(accepted.filter((x) => x === 201)).toHaveLength(1);
-      expect([400, 409]).toContain(accepted.find((x) => x !== 201));
+      expectStockConflict(sold.status === 201 ? adjusted : sold);
       await assertOneWriter(sold.status === 201 ? 'SALE' : 'DAMAGE');
     } finally {
       await Promise.all(servers.map(stopApi));
