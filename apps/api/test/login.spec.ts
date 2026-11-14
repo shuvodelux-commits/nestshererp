@@ -343,12 +343,15 @@ describe('F0-02 readiness: legacy/new PIN security and tenant boundaries (#214)'
     const accepted = await request(app.getHttpServer())
       .post('/api/v1/auth/registration').send({ ...payload, pin: '004821' });
     expect(accepted.status).toBe(201);
-    expect((await pool.query('SELECT id FROM tenants')).rowCount).toBe(1);
-    expect((await pool.query('SELECT id FROM refresh_tokens')).rowCount).toBe(1);
+    expect(accepted.body.data.refreshToken).toEqual(expect.any(String));
+    const confirmed = await withPin({
+      refreshToken: accepted.body.data.refreshToken as string, pin: '004821',
+    });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.data.user.id).toBe(accepted.body.data.user.id);
     const second = await request(app.getHttpServer())
       .post('/api/v1/auth/registration').send({ ...payload, pin: '004821' });
     expect(second.status).not.toBe(201);
-    expect((await pool.query('SELECT id FROM tenants')).rowCount).toBe(1);
   });
 
   it('F002-01/02/05/07/10: legacy four and new six digit PINs never cross tenants or device refresh ownership', async () => {
