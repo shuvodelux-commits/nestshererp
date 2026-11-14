@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { myAccessResponseSchema } from '@sher/core-contracts';
-import { SystemClock, Ulid } from '@sher/shared-utils';
+import { FixedClock, SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -68,6 +68,9 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AppErrorFilter());
   await app.init();
+  // Pin a single ephemeral listener: concurrent Supertest requests must not race
+  // to open/close the same unbound HTTP server (ECONNRESET between requests).
+  await app.listen(0);
 });
 
 afterAll(async () => {
@@ -180,5 +183,273 @@ describe('authoritative /me bootstrap (MOD-000-A / F0-01)', () => {
       expect(myAccessResponseSchema.safeParse({ ...valid, timezone }).success).toBe(false);
     }
     expect(myAccessResponseSchema.safeParse({ ...valid, timezone: 'Europe/London' }).success).toBe(true);
+  });
+});
+
+
+/**
+ * MOD-000-A F0-01 readiness expansion (issue #150).
+ * DB assertions run against the job's disposable PostgreSQL16.
+ * Setup mutations are excluded from post-read immutable-state comparisons.
+ */
+describe('F0-01 readiness: adversarial tenant, feature and retry partitions', () => {
+  it('F001-05/17: reflects changed feature flags, preserving other tenant and read-only state', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    const initialA = await me(a.accessToken);
+    const initialB = await me(b.accessToken);
+    expect(initialA.status).toBe(200);
+    expect(initialB.status).toBe(200);
+    expect(initialA.body.data.features).toContain('cash_session_enabled');
+    expect(initialB.body.data.features).toContain('cash_session_enabled');
+    expect(initialA.body.data.features).not.toContain('serial_tracking_enabled');
+
+    for (const [key, value] of [
+      ['cash_session_enabled', 'off'],
+      ['serial_tracking_enabled', 'on'],
+    ] as const) {
+      const saved = await request(app.getHttpServer())
+        .post('/api/v1/settings/value')
+        .set('Authorization', 'Bearer ' + a.accessToken)
+        .send({ key, value });
+      expect(saved.status).toBe(201);
+    }
+    const beforeA = await persisted(a);
+    const beforeB = await persisted(b);
+    const currentA = await me(a.accessToken);
+    const currentB = await me(b.accessToken);
+    expect(currentA.status).toBe(200);
+    expect(currentB.status).toBe(200);
+    expect(currentA.body.data.features).not.toContain('cash_session_enabled');
+    expect(currentA.body.data.features).toContain('serial_tracking_enabled');
+    expect(currentB.body.data.features).toContain('cash_session_enabled');
+    expect(currentB.body.data.features).not.toContain('serial_tracking_enabled');
+    expect(currentA.body.data.tenantId).toBe(a.tenantId);
+    expect(currentB.body.data.tenantId).toBe(b.tenantId);
+    expect(await persisted(a)).toEqual(beforeA);
+    expect(await persisted(b)).toEqual(beforeB);
+  });
+
+  it('F001-09: rejects missing, malformed and expired credentials with stable errors', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const before = await persisted(a);
+    const expired = signToken(
+      { tenantId: a.tenantId, userId: a.userId, timezone: 'UTC' },
+      'test-secret-not-used-in-production',
+      new FixedClock('2000-01-01T00:00:00Z'),
+    );
+    const responses = [
+      await request(app.getHttpServer()).get('/api/v1/me').set('Authorization', 'Basic abc'),
+      await request(app.getHttpServer()).get('/api/v1/me').set('Authorization', 'bearer wrong-case'),
+      await me('not-a-jwt'),
+      await me(expired),
+    ];
+    for (const response of responses) {
+      expect(response.status).toBe(401);
+      expect(response.body.error.code).toBe('UNAUTHENTICATED');
+      expect(response.body.data).toBeUndefined();
+    }
+    expect(await persisted(a)).toEqual(before);
+  });
+
+  it('F001-10: foreign or invalid query and header tenant hints cannot select another profile', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    const beforeA = await persisted(a);
+    for (const query of [b.tenantId, 'not-a-ulid', '', '../other-tenant']) {
+      const result = await me(a.accessToken, query)
+        .set('X-Tenant-Id', b.tenantId)
+        .set('X-Business-Id', b.tenantId);
+      expect(result.status).toBe(200);
+      expect(result.body.data).toMatchObject({
+        tenantId: a.tenantId,
+        businessName: 'Shop A',
+        timezone: 'Asia/Dhaka',
+      });
+      expect(result.body.data.user.id).toBe(a.userId);
+      expect(result.body.data.tenantId).not.toBe(b.tenantId);
+    }
+    expect(await persisted(a)).toEqual(beforeA);
+  });
+
+  it('F001-12/14: concurrent and repeated cross-tenant GETs never mix identities or persist writes', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    await asTenant(pool, b.tenantId, (client) => client.query(
+      'UPDATE tenants SET timezone = $1 WHERE id = $2', ['Europe/London', b.tenantId],
+    ));
+    const beforeA = await persisted(a);
+    const beforeB = await persisted(b);
+    // Drain every in-flight request even if one refuses/fails; otherwise the
+    // next test's TRUNCATE can race a read transaction and deadlock PG16.
+    const outcomes = await Promise.allSettled(Array.from({ length: 20 }, (_, index) => {
+      const owner = index % 2 === 0 ? a : b;
+      const other = index % 2 === 0 ? b : a;
+      return me(owner.accessToken, other.tenantId);
+    }));
+    expect(outcomes.filter((result) => result.status === 'rejected')).toEqual([]);
+    for (let index = 0; index < outcomes.length; index += 1) {
+      const outcome = outcomes[index]!;
+      if (outcome.status !== 'fulfilled') continue;
+      const owner = index % 2 === 0 ? a : b;
+      const timezone = index % 2 === 0 ? 'Asia/Dhaka' : 'Europe/London';
+      const response = outcome.value;
+      expect(response.status).toBe(200);
+      expect(response.body.data.tenantId).toBe(owner.tenantId);
+      expect(response.body.data.user.id).toBe(owner.userId);
+      expect(response.body.data.timezone).toBe(timezone);
+    }
+    expect(await persisted(a)).toEqual(beforeA);
+    expect(await persisted(b)).toEqual(beforeB);
+  });
+
+  it('F001-11: enforces strict response shape and IANA boundary values', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const response = await me(a.accessToken);
+    expect(response.status).toBe(200);
+    const valid = response.body.data;
+    for (const timezone of ['UTC', 'Etc/UTC', 'Asia/Dhaka', 'America/Argentina/Buenos_Aires']) {
+      expect(myAccessResponseSchema.safeParse({ ...valid, timezone }).success).toBe(true);
+    }
+    for (const timezone of ['', 'Asia/Dhaka ', 'Asia/\nDhaka', 'Not/A_Real_Zone', 'x'.repeat(61), null]) {
+      expect(myAccessResponseSchema.safeParse({ ...valid, timezone }).success).toBe(false);
+    }
+    for (const tenantId of ['01ARZ3NDEKTSV4RRFFQ69G5FAI', '01ARZ3NDEKTSV4RRFFQ69G5FA', null, 123]) {
+      expect(myAccessResponseSchema.safeParse({ ...valid, tenantId }).success).toBe(false);
+    }
+    expect(myAccessResponseSchema.safeParse({ ...valid, unexpected: 'must fail' }).success).toBe(false);
+  });
+
+  it('F001-15: authenticated /me stays readable after permission revocation without leaking other tenants', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    const baselineB = await me(b.accessToken);
+    await asTenant(pool, a.tenantId, (client) => client.query(
+      'DELETE FROM role_permissions WHERE permission_code = $1', ['user.account.create'],
+    ));
+    const beforeA = await persisted(a);
+    const currentA = await me(a.accessToken);
+    const currentB = await me(b.accessToken);
+    expect(currentA.status).toBe(200);
+    expect(currentB.status).toBe(200);
+    expect(currentA.body.data.permissions).not.toContain('user.account.create');
+    expect(currentB.body.data.permissions).toContain('user.account.create');
+    expect(currentB.body.data).toEqual(baselineB.body.data);
+    expect(currentA.body.data.user.id).toBe(a.userId);
+    expect(currentA.body.data.tenantId).toBe(a.tenantId);
+    expect(await persisted(a)).toEqual(beforeA);
+  });
+});
+
+
+describe('F0-01 readiness: previously blocked live-role and profile-commit cases', () => {
+  it('F001-15b: a real password-authenticated cashier with no grants can bootstrap /me, but not access privileged API', async () => {
+    const owner = await register('01712345678', 'Shop A');
+    const other = await register('01912345678', 'Shop B');
+
+    const roles = await request(app.getHttpServer())
+      .get('/api/v1/users').set('Authorization', 'Bearer ' + owner.accessToken);
+    expect(roles.status).toBe(200);
+    const cashier = (roles.body.data.roles as { id: string; code: string }[])
+      .find((role) => role.code === 'CASHIER');
+    expect(cashier).toBeDefined();
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/users').set('Authorization', 'Bearer ' + owner.accessToken)
+      .send({
+        displayName: 'Cashier A', username: 'cashier',
+        identifier: '01799887766', roleId: cashier!.id,
+        confirmPassword: 'Passw0rd23',
+      });
+    expect(created.status).toBe(201);
+    const cashierId = created.body.data.id as string;
+
+    // A seeded Cashier has legitimate POS grants. Revoke via the actual owner
+    // role-management API before testing a cashier with *zero* grants.
+    const revoked = await request(app.getHttpServer())
+      .patch('/api/v1/roles/' + cashier!.id)
+      .set('Authorization', 'Bearer ' + owner.accessToken)
+      .send({ name: 'Cashier', permissions: [], confirmPassword: 'Passw0rd23' });
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.data.permissions).toEqual([]);
+
+    // Use the real OTP password-set and login path; do not forge an owner token.
+    const otp = await request(app.getHttpServer())
+      .post('/api/v1/auth/password/otp')
+      .send({ identifier: '01799887766' });
+    expect(otp.status).toBe(200);
+    const reset = await request(app.getHttpServer())
+      .post('/api/v1/auth/password/reset')
+      .send({
+        identifier: '01799887766',
+        otpCode: otp.body.data.devCode as string,
+        password: 'Cashier99',
+      });
+    expect(reset.status).toBe(204);
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ identifier: '01799887766', password: 'Cashier99' });
+    expect(signedIn.status).toBe(200);
+    const token = signedIn.body.data.accessToken as string;
+
+    const beforeA = await persisted(owner);
+    const beforeB = await persisted(other);
+    const bootstrap = await me(token, other.tenantId);
+    expect(bootstrap.status).toBe(200);
+    expect(bootstrap.body.data).toMatchObject({
+      tenantId: owner.tenantId, timezone: 'Asia/Dhaka', businessName: 'Shop A',
+      user: { id: cashierId, username: 'cashier', displayName: 'Cashier A', roleName: 'Cashier' },
+      permissions: [],
+    });
+    expect(myAccessResponseSchema.safeParse(bootstrap.body.data).success).toBe(true);
+    const forbidden = await request(app.getHttpServer())
+      .get('/api/v1/users').set('Authorization', 'Bearer ' + token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.data).toBeUndefined();
+    expect(await persisted(owner)).toEqual(beforeA);
+    expect(await persisted(other)).toEqual(beforeB);
+  });
+
+  it('F001-14b: /me never observes an uncommitted profile update or a cross-tenant profile', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    const oldProfile = { tenantId: a.tenantId, businessName: 'Shop A', timezone: 'Asia/Dhaka' };
+    const newProfile = { tenantId: a.tenantId, businessName: 'Updated Shop A', timezone: 'Europe/London' };
+
+    // Hold a real PostgreSQL transaction open through all concurrent HTTP GETs.
+    // Every GET must read a coherent committed profile, never a half-update.
+    await asTenant(pool, a.tenantId, async (client) => {
+      await client.query('UPDATE tenants SET name = $1, timezone = $2 WHERE id = $3',
+        [newProfile.businessName, newProfile.timezone, a.tenantId]);
+      const outcomes = await Promise.allSettled(Array.from({ length: 12 }, (_, index) =>
+        index % 2 === 0 ? me(a.accessToken, b.tenantId) : me(b.accessToken, a.tenantId),
+      ));
+      expect(outcomes.every((result) => result.status === 'fulfilled')).toBe(true);
+      for (let index = 0; index < outcomes.length; index += 1) {
+        const result = outcomes[index]!;
+        if (result.status !== 'fulfilled') continue;
+        expect(result.value.status).toBe(200);
+        if (index % 2 === 0) {
+          expect(result.value.body.data).toMatchObject(oldProfile);
+          expect(result.value.body.data.user.id).toBe(a.userId);
+        } else {
+          expect(result.value.body.data).toMatchObject({
+            tenantId: b.tenantId, businessName: 'Shop B', timezone: 'Asia/Dhaka',
+          });
+        }
+      }
+    });
+
+    const afterA = await persisted(a);
+    const afterB = await persisted(b);
+    const settled = await Promise.all([me(a.accessToken, b.tenantId), me(b.accessToken, a.tenantId)]);
+    expect(settled[0]!.status).toBe(200);
+    expect(settled[0]!.body.data).toMatchObject(newProfile);
+    expect(settled[1]!.status).toBe(200);
+    expect(settled[1]!.body.data).toMatchObject({
+      tenantId: b.tenantId, businessName: 'Shop B', timezone: 'Asia/Dhaka',
+    });
+    expect(await persisted(a)).toEqual(afterA);
+    expect(await persisted(b)).toEqual(afterB);
   });
 });
