@@ -10,7 +10,9 @@ import {
   PostgresCatalogRepository,
   PostgresCatalogMetadataV1Repository,
   PostgresCatalogMetadataV1CreationRepository,
+  PostgresCatalogMetadataV1FullEditRepository,
   PostgresIdempotencyStore,
+  PostgresImportOperationStore,
   PostgresInventoryRepository,
   PostgresNoteRepository,
   PostgresNumberingService,
@@ -93,9 +95,11 @@ import {
   CATALOG_REPOSITORY,
   CATALOG_METADATA_V1_REPOSITORY,
   CATALOG_METADATA_V1_CREATION_REPOSITORY,
+  CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
   CLOCK,
   DATABASE_POOL,
   IDEMPOTENCY_STORE,
+  IMPORT_OPERATION_STORE,
   INVENTORY_REPOSITORY,
   IDENTITY_VERIFIER,
   NOTE_REPOSITORY,
@@ -226,6 +230,11 @@ function selectEntitlementProvider(
     {
       provide: IDEMPOTENCY_STORE,
       useFactory: (clock: Clock): PostgresIdempotencyStore => new PostgresIdempotencyStore(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: IMPORT_OPERATION_STORE,
+      useFactory: (clock: Clock): PostgresImportOperationStore => new PostgresImportOperationStore(clock),
       inject: [CLOCK],
     },
     {
@@ -360,6 +369,12 @@ function selectEntitlementProvider(
       provide: CATALOG_METADATA_V1_CREATION_REPOSITORY,
       useFactory: (clock: Clock): PostgresCatalogMetadataV1CreationRepository =>
         new PostgresCatalogMetadataV1CreationRepository(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
+      useFactory: (clock: Clock): PostgresCatalogMetadataV1FullEditRepository =>
+        new PostgresCatalogMetadataV1FullEditRepository(clock),
       inject: [CLOCK],
     },
     {
@@ -553,6 +568,7 @@ function selectEntitlementProvider(
     PERIOD_GUARD,
     AUDIT_WRITER,
     IDEMPOTENCY_STORE,
+  IMPORT_OPERATION_STORE,
     OUTBOX,
     NUMBERING_SERVICE,
     NOTE_REPOSITORY,
@@ -578,6 +594,7 @@ function selectEntitlementProvider(
     CATALOG_REPOSITORY,
     CATALOG_METADATA_V1_REPOSITORY,
     CATALOG_METADATA_V1_CREATION_REPOSITORY,
+    CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
     PRODUCT_REPOSITORY,
     PARTY_REPOSITORY,
     MONEY_REPOSITORY,

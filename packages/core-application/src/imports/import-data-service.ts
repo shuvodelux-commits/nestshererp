@@ -29,6 +29,7 @@ import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { IdempotencyStore } from '../ports/idempotency-store';
+import type { ImportOperationStore } from './import-operation-store';
 import type { Outbox } from '../ports/outbox';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
@@ -103,6 +104,7 @@ export class ImportDataService {
     private readonly uow: UnitOfWork,
     private readonly access: AccessControl,
     private readonly idempotency: IdempotencyStore,
+    private readonly importOperations: ImportOperationStore,
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
@@ -191,24 +193,39 @@ export class ImportDataService {
     return this.uow.run(ctx, async (tx) => {
       await this.access.require(tx, ctx, IMPORT_PERMISSIONS[type]);
 
-      /*
-       * §5.6: "idempotent on the supplied import operation ID". A shop with a
-       * slow connection pressing Import twice must not import twice, and here
-       * the 30-day fast path is the whole guarantee — an import creates many
-       * records and has no single document row to hang a permanent unique index
-       * on. What protects a late replay instead is the data itself: a repeated
-       * product code or customer phone is refused, and a product may hold only
-       * one opening (§5.10).
-       */
-      const replayed = await this.idempotency.find(tx, ctx, command.operationId);
-      if (replayed !== null) {
-        if (replayed.requestFingerprint !== fingerprint) {
+      // Permission precedes all replays. A temporary legacy length-only
+      // cache entry cannot prove request identity, so it still fails closed.
+      const cached = await this.idempotency.find(tx, ctx, command.operationId);
+      if (cached !== null && cached.requestFingerprint !== fingerprint) {
+        throw new AppError(
+          ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'This import id was already used for a different file',
+        );
+      }
+
+      // The UNIQUE (tenant_id, operation_id) durable reservation is claimed
+      // BEFORE posting any product, party or opening-stock row. Concurrent
+      // processes wait for the winner's UoW commit; losers compare its digest.
+      // Even after the fast cache is pruned, a committed import cannot repeat.
+      const claim = await this.importOperations.reserve(
+        tx, ctx, command.operationId, type, fingerprint,
+      );
+      if (claim.state === 'replay') {
+        if (claim.requestFingerprint !== fingerprint) {
           throw new AppError(
             ErrorCode.IDEMPOTENCY_KEY_REUSED,
             'This import id was already used for a different file',
           );
         }
-        return replayed.response as ImportResultResponse;
+        return claim.response;
+      }
+
+      // Pre-migration cryptographically strong cache entries can be
+      // adopted safely without reposting rows. Length-only keys cannot.
+      if (cached !== null) {
+        const response = cached.response as ImportResultResponse;
+        await this.importOperations.complete(tx, ctx, command.operationId, response);
+        return response;
       }
 
       const table = this.readFile(command.csv);
@@ -251,6 +268,7 @@ export class ImportDataService {
         requestFingerprint: fingerprint,
         response,
       });
+      await this.importOperations.complete(tx, ctx, command.operationId, response);
 
       return response;
     });

@@ -122,6 +122,23 @@ async function valuation(): Promise<{ totalValueMinor: number; inventoryAccountM
   return response.body.data as { totalValueMinor: number; inventoryAccountMinor: number; reconciled: boolean };
 }
 
+
+/**
+ * Simulate 30-day cache pruning under the same unprivileged tenant RLS policy
+ * the application uses. This is NOT deletion of the permanent business import
+ * operation document; that document must survive this fast-cache cleanup.
+ */
+async function pruneFastImportReplay(operationId: string): Promise<void> {
+  const deleted = await asTenant(pool, tenant.tenantId, async (client) => {
+    const result = await client.query(
+      'DELETE FROM idempotency_keys WHERE tenant_id = $1 AND operation_id = $2',
+      [tenant.tenantId, operationId],
+    );
+    return result.rowCount;
+  });
+  expect(deleted).toBe(1);
+}
+
 async function addUnit(name: string, as = token): Promise<void> {
   const response = await request(app.getHttpServer())
     .post('/api/v1/catalog/units')
@@ -267,6 +284,169 @@ describe('importing products', () => {
     expect(second.status).toBe(201);
     expect(second.body.data).toEqual(first.body.data);
     expect(await products()).toHaveLength(2);
+  });
+
+
+  // C003-02R RED: the 30-day idempotency cache is an optimization, never the
+  // permanent import operation identity. A SKU-less product has no natural
+  // uniqueness constraint to rescue a replay months later.
+  it('replays a pruned SKU-less product import exactly once', async () => {
+    const operationId = Ulid.generate(clock);
+    const noSkuFile = [
+      PRODUCT_HEADER,
+      'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,',
+    ].join('\r\n');
+
+    const first = await commit('PRODUCTS', noSkuFile, operationId);
+    expect(first.status).toBe(201);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+
+    await pruneFastImportReplay(operationId);
+    const replay = await commit('PRODUCTS', noSkuFile, operationId);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+  });
+
+  it('rejects a changed equal-length SKU-less CSV after the fast replay cache is pruned', async () => {
+    const operationId = Ulid.generate(clock);
+    const original = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const changed = [PRODUCT_HEADER, 'Hex Bolt 02,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect(changed.length).toBe(original.length);
+    expect((await commit('PRODUCTS', original, operationId)).status).toBe(201);
+
+    await pruneFastImportReplay(operationId);
+    const refused = await commit('PRODUCTS', changed, operationId);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+    expect((await products()).some((row) => row.name === 'Hex Bolt 02')).toBe(false);
+  });
+
+
+  // C003-02: two HTTP requests can race on separate Nest connections. The
+  // durable UNIQUE claim is acquired before the owning product writer.
+  it('serializes simultaneous equal-body SKU-less imports across database transactions', async () => {
+    const operationId = Ulid.generate(clock);
+    const csv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+
+    const [left, right] = await Promise.all([
+      commit('PRODUCTS', csv, operationId),
+      commit('PRODUCTS', csv, operationId),
+    ]);
+    expect(left.status).toBe(201);
+    expect(right.status).toBe(201);
+    expect(right.body.data).toEqual(left.body.data);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+
+    const observed = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        'SELECT operation_id, request_fingerprint, response_json FROM import_operations WHERE tenant_id = $1 AND operation_id = $2',
+        [tenant.tenantId, operationId],
+      ),
+    );
+    expect(observed.rows).toHaveLength(1);
+    expect(observed.rows[0]?.response_json).toEqual(left.body.data);
+    expect(observed.rows[0]?.request_fingerprint).toMatch(/^import:sha256:v1:[0-9a-f]{64}$/);
+    expect(JSON.stringify(observed.rows[0])).not.toContain(csv);
+  });
+
+  it('serializes racing changed-body imports as one 201 and one 409', async () => {
+    const operationId = Ulid.generate(clock);
+    const original = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const different = [PRODUCT_HEADER, 'Hex Bolt 02,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const [left, right] = await Promise.all([
+      commit('PRODUCTS', original, operationId),
+      commit('PRODUCTS', different, operationId),
+    ]);
+    expect([left.status, right.status].sort()).toEqual([201, 409]);
+    const refused = left.status === 409 ? left : right;
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+  });
+
+  it('rolls back a durable claim when the CSV validation fails, allowing a corrected retry', async () => {
+    const operationId = Ulid.generate(clock);
+    const bad = [
+      PRODUCT_HEADER,
+      'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,',
+      'Invalid Unit,Peice,10.00,15.00,1,,,,,,',
+    ].join('\r\n');
+    expect((await commit('PRODUCTS', bad, operationId)).status).toBe(400);
+    const saved = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query('SELECT id FROM import_operations WHERE tenant_id = $1 AND operation_id = $2',
+        [tenant.tenantId, operationId]),
+    );
+    expect(saved.rows).toHaveLength(0);
+    expect(await products()).toHaveLength(0);
+
+    const corrected = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const result = await commit('PRODUCTS', corrected, operationId);
+    expect(result.status).toBe(201);
+    expect(await products()).toHaveLength(1);
+  });
+
+  // C003-02 / C02-06: a 2000-row CSV must stay atomic if its last row fails.
+  it('leaves no products or import side effects when row 2000 is invalid', async () => {
+    const operationId = Ulid.generate(clock);
+    const records = Array.from({ length: 2_000 }, (_, index) =>
+      'Bulk Bolt ' + String(index + 1).padStart(4, '0') + ',' +
+        (index === 1_999 ? 'Peice' : 'Piece') + ',10.00,15.00,1,,,,,,',
+    );
+    const csv = [PRODUCT_HEADER, ...records].join('\r\n');
+
+    const refused = await commit('PRODUCTS', csv, operationId);
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+    expect(await products()).toHaveLength(0);
+
+    const counts = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        `SELECT
+          (SELECT count(*)::integer FROM import_operations WHERE tenant_id = $1 AND operation_id = $2) AS claims,
+          (SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = 'data_import' AND entity_id = $2) AS audits,
+          (SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = 'data.imported' AND aggregate_id = $2) AS events`,
+        [tenant.tenantId, operationId],
+      ),
+    );
+    expect(counts.rows[0]).toEqual({ claims: 0, audits: 0, events: 0 });
+  }, 90_000);
+
+  it('never exposes tenant A durable import identity to tenant B under RLS', async () => {
+    const operationId = Ulid.generate(clock);
+    const csv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect((await commit('PRODUCTS', csv, operationId)).status).toBe(201);
+
+    const other = await seedTenant(pool, { name: 'Isolated Import Tenant', permissions: PERMISSIONS });
+    const foreign = await asTenant(pool, other.tenantId, (client) =>
+      client.query('SELECT response_json FROM import_operations WHERE operation_id = $1', [operationId]),
+    );
+    expect(foreign.rows).toHaveLength(0);
+    const own = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        'SELECT current_user AS principal, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS is_superuser, (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass_rls, response_json FROM import_operations WHERE operation_id = $1',
+        [operationId],
+      ),
+    );
+    expect(own.rows).toHaveLength(1);
+    expect(own.rows[0]?.principal).toBe('sher_app');
+    expect(own.rows[0]?.is_superuser).toBe(false);
+    expect(own.rows[0]?.bypass_rls).toBe(false);
+    expect(own.rows[0]?.response_json).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
+  });
+
+
+  it('preserves permanent import type identity after fast cache pruning', async () => {
+    const operationId = Ulid.generate(clock);
+    const productCsv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect((await commit('PRODUCTS', productCsv, operationId)).status).toBe(201);
+
+    await pruneFastImportReplay(operationId);
+    const refused = await commit('CUSTOMERS', productCsv, operationId);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+    expect(await customers()).toHaveLength(0);
   });
 
   // C003-01: two different files can have identical character counts. The
@@ -427,6 +607,51 @@ describe('importing opening stock', () => {
         reconciled: true,
       }),
     );
+  });
+
+
+  // C003-02R RED: a stored opening prevents duplicate stock, but the import
+  // operation must also retain the original HTTP response after cache pruning.
+  it('replays the original opening-stock CSV result after the fast cache is pruned', async () => {
+    const operationId = Ulid.generate(clock);
+    const file = [OPENING_HEADER, 'Rice,,10,,,', 'Dal,,5,60.00,,'].join('\r\n');
+    const first = await commit('OPENING_STOCK', file, operationId);
+    expect(first.status).toBe(201);
+    const original = await valuation();
+    expect(original).toEqual(expect.objectContaining({
+      totalValueMinor: 130_000,
+      inventoryAccountMinor: 130_000,
+      reconciled: true,
+    }));
+
+
+    // Prove that idempotency protects the owning accounting and stock writers,
+    // not only the API response or the cached valuation projection.
+    const sourceCounts = async () => asTenant(pool, tenant.tenantId, async (client) => {
+      const result = await client.query(
+        `SELECT
+          (SELECT count(*)::integer FROM stock_openings WHERE tenant_id = $1) AS openings,
+          (SELECT count(*)::integer FROM inventory_lots WHERE tenant_id = $1) AS lots,
+          (SELECT count(*)::integer FROM stock_movements WHERE tenant_id = $1) AS movements,
+          (SELECT count(*)::integer FROM journal_entries WHERE tenant_id = $1) AS journals,
+          (SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = 'data_import' AND entity_id = $2) AS imports,
+          (SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = 'data.imported' AND aggregate_id = $2) AS events`,
+        [tenant.tenantId, operationId],
+      );
+      return result.rows[0];
+    });
+    const beforeCounts = await sourceCounts();
+    expect(beforeCounts?.openings).toBe(2);
+    expect(beforeCounts?.imports).toBe(1);
+    expect(beforeCounts?.events).toBe(1);
+
+    await pruneFastImportReplay(operationId);
+    const replay = await commit('OPENING_STOCK', file, operationId);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await valuation()).toEqual(original);
+    expect((await products()).filter((row) => row.name === 'Rice')[0]?.stockQty).toBe(10_000);
+    expect(await sourceCounts()).toEqual(beforeCounts);
   });
 
   it('posts no stock at all when one row names a product that does not exist', async () => {

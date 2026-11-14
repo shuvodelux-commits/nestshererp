@@ -7,6 +7,9 @@ import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx } from '../ports/unit-of-work';
 import type { MoneyRepository } from '../money/money-repository';
+import { lockCashSessionPolicy } from '../settings/manage-settings-service';
+import type { SettingsRepository } from '../settings/settings-repository';
+import type { Clock } from '@sher/shared-utils';
 
 /**
  * The account money left, resolved from the code a client sent (§2.4, §5.16).
@@ -18,11 +21,12 @@ import type { MoneyRepository } from '../money/money-repository';
  * physically sits. Without it, `AP` in the paid-account field would settle a
  * bill with the very debt it created.
  *
- * **The drawer rule is here too** (owner decision 2026-08-24, revised the same
- * day): cash may not leave a drawer on a day nobody opened, because that money
- * belongs to a count that will never see it and the day would close short by
- * exactly this amount. Bank and bKash are unaffected — there is nothing to
- * count — so a shop that has not started the day can still pay by transfer.
+ * **The drawer rule is here too** (owner decision 2026-08-24, revised for
+ * optional counting): when Cash Sessions are ON, drawer payments require an
+ * eligible OPEN day or that cash would be missing from the day-end count.
+ * When OFF, the money still leaves the same real account with the same normal
+ * journal, but there is no physical session to assign. Bank and bKash remain
+ * independent of the counted drawer in both modes.
  * The refusal carries `reason: CASH_DAY_NOT_STARTED` so the screen can offer
  * `দিন শুরু করুন` in place, without the shopkeeper losing what they typed.
  *
@@ -44,6 +48,9 @@ export interface ResolvedPaymentAccount {
 export interface PaymentAccountDeps {
   readonly access: AccessControl;
   readonly money: MoneyRepository;
+  /** Always use the same tenant-locked cash policy as Settings and Start Day. */
+  readonly settings: SettingsRepository;
+  readonly clock: Clock;
 }
 
 export async function resolvePaymentAccount(
@@ -107,8 +114,18 @@ export async function resolvePaymentAccount(
     return { code: accountCodeFor(account.type, account.id), name: account.name, sessionId: null };
   }
 
-  const session = await deps.money.findOpenSession(tx, ctx);
-  if (session === null || session.businessDate !== businessDate) {
+  // A drawer is a real cash asset regardless of whether the shop counts
+  // physical sessions. Serialize this policy read against Settings ON/OFF and
+  // Start/Reopen Day under the same tenant row lock. OFF still posts the
+  // caller's normal balanced journal and audit, without a fabricated session.
+  const policy = await lockCashSessionPolicy(tx, ctx, deps.settings, deps.clock);
+  if (!policy.enabled) {
+    return { code: accountCodeFor(account.type, account.id), name: account.name, sessionId: null };
+  }
+
+  const session = await deps.money.findOpenSession(tx, policy.ctx);
+  if (session === null || session.businessDate !== businessDate ||
+      businessDate !== policy.businessDate) {
     throw new AppError(
       ErrorCode.VALIDATION_FAILED,
       'The cash day is not started, so money cannot leave the drawer yet',

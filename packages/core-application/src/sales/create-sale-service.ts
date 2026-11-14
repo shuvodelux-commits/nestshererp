@@ -267,7 +267,7 @@ export class CreateSaleService {
       const resolvedPayments = [];
       for (const payment of command.payments) {
         const account = await resolvePaymentAccount(
-          { access: this.access, money: this.money },
+          { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
           tx,
           ctx,
           payment.accountCode,

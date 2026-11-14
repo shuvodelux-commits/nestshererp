@@ -11,6 +11,7 @@ export { PostgresAccessControl, SUPPORT_FORBIDDEN_PERMISSIONS } from './access-c
 export { PostgresPeriodGuard } from './period-guard';
 export { PostgresAuditWriter } from './audit-writer';
 export { PostgresIdempotencyStore } from './idempotency-store';
+export { PostgresImportOperationStore } from './import-operation-store';
 export { PostgresOutbox } from './outbox';
 export { PostgresNumberingService } from './numbering-service';
 export { PostgresNoteRepository } from './note-repository';
@@ -31,6 +32,7 @@ export { PostgresAuditQueryRepository } from './audit-query-repository';
 export { PostgresCatalogRepository } from './catalog-repository';
 export { PostgresCatalogMetadataV1Repository } from './catalog-metadata-v1-repository';
 export { PostgresCatalogMetadataV1CreationRepository } from './catalog-metadata-v1-creation-repository';
+export { PostgresCatalogMetadataV1FullEditRepository } from './catalog-metadata-v1-full-edit-repository';
 export { PostgresProductRepository } from './product-repository';
 export { PostgresPartyRepository } from './party-repository';
 export { PostgresInventoryRepository } from './inventory-repository';
