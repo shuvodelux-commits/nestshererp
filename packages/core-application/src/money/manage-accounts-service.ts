@@ -319,6 +319,16 @@ export class ManageAccountsService {
             'This account has reconciliation history and its type cannot be changed',
           );
         }
+        // Policy A (#166): the journal is historical evidence, not an
+        // editable account type label. A zero balance or a reversal does not
+        // erase posted CASH/BANK/LOAN lineage; MFS shares the BANK code.
+        // Keep this after the reconciliation guard's account FOR UPDATE lock.
+        if (await this.money.hasPostedAccountJournalHistory(tx, ctx, existing.id)) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This account has posted transactions and its type cannot be changed',
+          );
+        }
       }
       if (existing.isDrawer !== input.isDrawer ||
           (existing.isDrawer && existing.type !== input.type)) {
