@@ -138,6 +138,90 @@ def changed_paths(repo: Path, base: str, head: str, allowed: list[str]) -> list[
     return paths
 
 
+
+def package_manager_for_commit(repo: Path, head: str) -> str:
+    """Require exactly one *committed* root lockfile at the approved source SHA."""
+    candidates = ("pnpm-lock.yaml", "package-lock.json")
+    found: list[str] = []
+    for name in candidates:
+        tree_entry = git_output(repo, "ls-tree", head, "--", name)
+        if tree_entry:
+            require(tree_entry.startswith("100644 blob ") or tree_entry.startswith("100755 blob "),
+                    "Package manager lockfile must be an ordinary committed file: " + name)
+            found.append(name)
+    require(len(found) == 1,
+            "Expected exactly one committed root lockfile (pnpm-lock.yaml or package-lock.json)")
+    if found[0] == "pnpm-lock.yaml":
+        return "pnpm"
+
+    # Verify the npm lock belongs to the same committed root package. npm ci
+    # will additionally enforce direct/transitive dependency freshness offline.
+    package = json.loads(git_output(repo, "show", head + ":package.json"))
+    lock = json.loads(git_output(repo, "show", head + ":package-lock.json"))
+    require(isinstance(package, dict) and isinstance(lock, dict),
+            "npm package.json and lockfile must be JSON objects")
+    root = lock.get("packages", {}).get("") if isinstance(lock.get("packages"), dict) else None
+    require(isinstance(root, dict) and lock.get("lockfileVersion") == 3,
+            "npm requires a committed package-lock.json version 3 with root metadata")
+    require(lock.get("name") == package.get("name")
+            and root.get("name") == package.get("name")
+            and root.get("version") == package.get("version"),
+            "npm package-lock.json root identity is stale relative to package.json")
+    return "npm"
+
+
+def npm_scripts(worktree: Path) -> dict[str, str]:
+    source = json.loads((worktree / "package.json").read_text(encoding="utf-8"))
+    require(isinstance(source, dict) and isinstance(source.get("scripts"), dict),
+            "npm package.json scripts are missing or malformed")
+    scripts = source["scripts"]
+    require(all(isinstance(k, str) and isinstance(v, str) for k, v in scripts.items()),
+            "npm scripts must be named string commands")
+    return scripts
+
+
+def command_for_receipt(worktree: Path, manager: str, check: str) -> list[str]:
+    """Map stable public check names onto immutable repo-specific presets."""
+    require(check in CHECKS, "Check not supported; no arbitrary commands or model dispatch")
+    if check == "python-version":
+        return CHECKS[check]
+    if manager == "pnpm":
+        return command_for(worktree, check)
+
+    require(manager == "npm", "Unsupported package manager")
+    aliases = {
+        "install": "npm-install",
+        "build": "npm-build",
+        "typecheck": "npm-typecheck",
+        "lint": "npm-lint",
+        "boundaries": "npm-ui-contract",
+    }
+    preset = aliases.get(check, check)
+    require(preset.startswith("npm-"), "Unsupported npm check preset")
+    command = command_for(worktree, preset)
+    if preset == "npm-install":
+        return command
+
+    scripts = npm_scripts(worktree)
+    script_for = {
+        "npm-build": "build",
+        "npm-lint": "lint",
+        "npm-ui-contract": "check:ui-contract",
+        "npm-unit": "test",
+    }
+    if preset == "npm-typecheck":
+        if isinstance(scripts.get("typecheck"), str) and scripts["typecheck"].strip():
+            return ["npm", "run", "typecheck"]
+        compiler = worktree / "node_modules" / ".bin" / "tsc"
+        require(compiler.is_file() and os.access(compiler, os.X_OK),
+                "Local TypeScript compiler missing; run the offline npm install first")
+        return ["./node_modules/.bin/tsc", "--noEmit"]
+
+    selected = script_for.get(preset)
+    require(selected is not None and bool(scripts.get(selected, "").strip()),
+            "Required npm package.json script is missing: " + str(selected))
+    return command
+
 def atomic_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=".chatgpt-superbuild-", delete=False, encoding="utf-8") as tmp:
@@ -166,6 +250,9 @@ def ensure_checked_out(data: dict) -> Path:
     require(git_output(worktree, "rev-parse", "HEAD") == data["head"], "Worktree HEAD changed from approved SHA")
     ensure_repo(worktree, data["remote"])
     changed_paths(worktree, data["base"], data["head"], data["allow"])
+    actual_manager = package_manager_for_commit(worktree, data["head"])
+    require(data.get("package_manager", actual_manager) == actual_manager,
+            "Prepared package manager no longer matches the approved source")
     return worktree
 
 
@@ -203,6 +290,7 @@ def prepare(args: argparse.Namespace) -> None:
     require(run_git(repo, "merge-base", "--is-ancestor", args.base, args.head, check=False).returncode == 0,
             "Approved base is not an ancestor of branch")
     paths = changed_paths(repo, args.base, args.head, args.allow)
+    package_manager = package_manager_for_commit(repo, args.head)
 
     worktree.parent.mkdir(parents=True, exist_ok=True)
     run_git(repo, "worktree", "add", "--detach", str(worktree), args.head)
@@ -220,6 +308,7 @@ def prepare(args: argparse.Namespace) -> None:
         "base": args.base,
         "head": args.head,
         "allow": sorted(args.allow),
+        "package_manager": package_manager,
         "changed_files": paths,
         "checks": [],
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -250,14 +339,27 @@ def command_for(worktree: Path, check: str) -> list[str]:
 def verify(args: argparse.Namespace) -> None:
     file, data = read_receipt(args.receipt)
     worktree = ensure_checked_out(data)
-    command = command_for(worktree, args.check)
+    manager = package_manager_for_commit(worktree, data["head"])
     started = time.monotonic()
-    result = subprocess.run(command, cwd=worktree, capture_output=True, text=True, check=False)
+    command_error: Halt | None = None
+    code = 2
+    try:
+        command = command_for_receipt(worktree, manager, args.check)
+        try:
+            result = subprocess.run(command, cwd=worktree, capture_output=True,
+                                    text=True, check=False)
+            code = result.returncode
+        except OSError as exc:
+            command_error = Halt("Selected offline tool executable is unavailable: " + str(exc.filename))
+            code = 127
+    except Halt as exc:
+        command_error = exc
+
     duration = round(time.monotonic() - started, 3)
-    # A local tool may write generated files. Never accept a changed source.
+    # Even pre-execution failures must be in the receipt: no accidental finalize.
     clean = git_output(worktree, "status", "--porcelain") == ""
     check = {
-        "name": args.check, "exit_code": result.returncode,
+        "name": args.check, "exit_code": code,
         "duration_seconds": duration,
         "clean_after": clean,
         "utc": datetime.now(timezone.utc).isoformat(),
@@ -265,7 +367,9 @@ def verify(args: argparse.Namespace) -> None:
     data["checks"].append(check)
     atomic_json(file, data)
     print(json.dumps(check))
-    require(result.returncode == 0, "Verification failed (nonzero exit); check details in the selected command's normal output")
+    if command_error is not None:
+        raise command_error
+    require(code == 0, "Verification failed (nonzero exit); check details in the selected command's normal output")
     require(clean, "Verification dirtied the source checkout; no success claim")
 
 
