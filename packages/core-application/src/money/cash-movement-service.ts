@@ -179,6 +179,12 @@ export class CashMovementService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
       }
 
+      // Session independence must never permit a post on a physical day that
+      // has already been counted, even after its drawer account is reassigned.
+      await this.assertClosedCashDayImmutable(
+        tx, ctx, command.businessDate, [from.code, to.code],
+      );
+
       // Session enforcement is tenant-configured, not a hard requirement of CASH.
       // Resolve from the locked server setting in the same money-posting UoW.
       const sessionId = await this.requireDrawerSession(
@@ -379,6 +385,13 @@ export class CashMovementService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
       }
 
+      // Both the old standing journal and the newly selected sides would be
+      // posted on placement.businessDate. Neither may restate a counted close.
+      await this.assertClosedCashDayImmutable(
+        tx, ctx, placement.businessDate,
+        [...posted.journalLines.map((line) => line.account), from.code, to.code],
+      );
+
       const sessionId = await this.requireDrawerSession(
         tx, ctx, placement.businessDate, from.isDrawer || to.isDrawer,
         'Start the day before correcting cash in or out of the drawer',
@@ -500,6 +513,32 @@ export class CashMovementService {
   }
 
   /**
+   * A counted close is immutable on its business date. The original drawer
+   * identity lives on cash_sessions.account_id, NOT the account's mutable
+   * current isDrawer flag. Journal reversals, corrections and new transfers
+   * must not add cash entries after that session is CLOSED.
+   *
+   * Called only from money-movement transactions after taking the tenant
+   * row lock, which Close Day also acquires before calculating its totals.
+   * Bank-only and unrelated non-drawer cash accounts are unaffected.
+   */
+  private async assertClosedCashDayImmutable(
+    tx: Tx,
+    ctx: TenantContext,
+    businessDate: string,
+    accounts: readonly string[],
+  ): Promise<void> {
+    if (!accounts.some((code) => code.startsWith('CASH:'))) return;
+    const counted = await this.money.findSessionByDate(tx, ctx, businessDate);
+    if (counted?.status !== 'CLOSED') return;
+    if (!accounts.includes(`CASH:${counted.accountId}`)) return;
+    throw new AppError(
+      ErrorCode.VALIDATION_FAILED,
+      'This cash day is already counted and closed; record a separate approved adjustment on an eligible date',
+    );
+  }
+
+  /**
    * Undoing drawer cash needs an eligible open day when the feature is ON.
    * OFF mode preserves the exact reversal journal without a physical day.
    */
@@ -515,6 +554,12 @@ export class CashMovementService {
     const cashCodes = new Set(posted.journalLines
       .map((line) => line.account)
       .filter((code) => code.startsWith('CASH:')));
+    // The cancellation's reversal posts on the current business date. Even
+    // when isDrawer is now false, the original session account cannot receive
+    // another same-date journal after its physical close was counted.
+    await this.assertClosedCashDayImmutable(
+      tx, ctx, this.clock.businessDate(ctx.timezone), [...cashCodes],
+    );
     for (const code of cashCodes) {
       const account = await this.money.findAccountById(tx, ctx, code.slice('CASH:'.length));
       if (account === null) {
