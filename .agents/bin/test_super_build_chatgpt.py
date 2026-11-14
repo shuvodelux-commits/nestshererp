@@ -117,7 +117,7 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
         }
         (self.checkout / "package.json").write_text(json.dumps(package), encoding="utf-8")
         if pnpm:
-            (self.checkout / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\\n", encoding="utf-8")
+            (self.checkout / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
         if npm:
             lock_name = "incorrect" if stale_lock else "fixture"
             (self.checkout / "package-lock.json").write_text(json.dumps({
@@ -129,7 +129,7 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
         self.base = git(self.checkout, "rev-parse", "HEAD")
         self.branch = "feature/package"
         git(self.checkout, "checkout", "-b", self.branch)
-        (self.checkout / "approved.txt").write_text("changed\\n", encoding="utf-8")
+        (self.checkout / "approved.txt").write_text("changed\n", encoding="utf-8")
         git(self.checkout, "add", "approved.txt")
         git(self.checkout, "commit", "-m", "feature after package manager baseline")
         git(self.checkout, "push", "-u", "origin", self.branch)
@@ -142,11 +142,11 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
         bindir.mkdir(exist_ok=True)
         path = bindir / name
         path.write_text(
-            "#!/bin/sh\\n"
-            "printf '%s\\n' \\"$*\\" >> \\"$SUPERBUILD_TEST_COMMAND_LOG\\"\\n"
-            "if [ \\"$SUPERBUILD_TEST_FAIL_INSTALL\\" = 1 ] && "
-            "[ \\"$1\\" = ci ]; then exit 42; fi\\n"
-            "exit 0\\n", encoding="utf-8",
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$*" >> "$SUPERBUILD_TEST_COMMAND_LOG"\n'
+            'if [ "$SUPERBUILD_TEST_FAIL_INSTALL" = 1 ] && '
+            '[ "$1" = ci ]; then exit 42; fi\n'
+            'exit 0\n', encoding="utf-8",
         )
         path.chmod(0o755)
         return {
@@ -327,7 +327,10 @@ class ChatGPTSuperBuildTests(unittest.TestCase):
             self.verify_check(check, environment=env)
         tsc = self.dest / "node_modules" / ".bin" / "tsc"
         tsc.parent.mkdir(parents=True)
-        tsc.write_text("#!/bin/sh\\necho tsc-ok >> \\"$SUPERBUILD_TEST_COMMAND_LOG\\"\\n", encoding="utf-8")
+        tsc.write_text(
+            '#!/bin/sh\necho tsc-ok >> "$SUPERBUILD_TEST_COMMAND_LOG"\n',
+            encoding="utf-8",
+        )
         tsc.chmod(0o755)
         self.verify_check("typecheck", environment=env)
         lines = (self.root / "commands.log").read_text(encoding="utf-8").splitlines()
