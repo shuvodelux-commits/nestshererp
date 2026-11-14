@@ -40,6 +40,16 @@ python3 "$LAUNCHER" verify --receipt /path/outside/repositories/unique-receipt.j
 python3 "$LAUNCHER" finalize --receipt /path/outside/repositories/unique-receipt.json
 ```
 
+## Deterministic npm and pnpm support (TOOLING #177)
+
+The updated assisted adapter chooses the package manager from **exactly one root lockfile committed at the approved HEAD**. `pnpm-lock.yaml` preserves `pnpm install --frozen-lockfile --offline --ignore-scripts` and the original `pnpm build/typecheck/lint/test:boundaries` presets. `package-lock.json` version 3 with matching root package identity enables **npm**, without generating or modifying a lockfile. Missing, ambiguous, symlinked/uncommitted, or stale lockfile states halt before verification. An npm cache miss is an explicit failed check, never an online fallback.
+
+The same public checks `install`, `build`, `typecheck`, `lint`, `boundaries` are automatically routed to npm's fixed commands: `npm ci --offline --ignore-scripts --no-audit --no-fund`; `npm run build`; `npm run typecheck` if declared, otherwise the **installed local** `./node_modules/.bin/tsc --noEmit`; `npm run lint`; and `npm run check:ui-contract`. The older explicit `npm-install/npm-build/npm-typecheck/npm-lint/npm-ui-contract/npm-unit` check names are also retained for compatibility. Check names remain allowlisted; there is no arbitrary shell execution, no `npx` download, no run-scripts install hook, and no build/merge/deploy performed by `prepare`.
+
+Every command preflight and exit is recorded in the external receipt, including a rejected missing script or missing TypeScript binary. An unsuccessful check remains unresolved until that **same check** passes; finalize requires a clean exact-HEAD checkout and only then returns a draft-PR QA handoff. `python-version` remains available for source verification and test fixtures.
+
+This change permits verifiable React UI transport-only builds; it **does not** authorize live Product Settings activation, modifying the UI's npm dependency graph, production migrations or customer data access. Existing HisabIQ UI `package-lock.json` must be left intact.
+
 ## Scope and limitations
 
 - Before `prepare`, **ChatGPT** checks owner approval, exact issue scope/allowlist, active GitHub Project task claims, paired repository SHAs, dependencies, remote computer authorization and exclusive shared-file ownership. The adapter checks the actual git source and execution environment; it is **not** a distributed lock or owner-approval oracle.
