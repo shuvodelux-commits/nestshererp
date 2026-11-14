@@ -241,6 +241,46 @@ describe('MOD-004 T09C-P2 — versioned Party read authorization', () => {
     expect(retained.rows[0].count).toBe(1);
   });
 
+  it('conceals existing Supplier-only identity exactly like an absent ID for a Customer-only caller', async () => {
+    const supplier = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'P2 Private Supplier Only', roles: ['SUPPLIER'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const hiddenId = supplier.body.data.id as string;
+    const absentId = Ulid.generate(clock);
+
+    await restrict([Permission.CUSTOMER_VIEW]);
+    const hidden = await v2Get(hiddenId, 'CUSTOMER');
+    const absent = await v2Get(absentId, 'CUSTOMER');
+    expect(hidden.status).toBe(404);
+    expect(absent.status).toBe(404);
+    expect(hidden.body.error.code).toBe(absent.body.error.code);
+    await v2Get(hiddenId, 'SUPPLIER').expect(403);
+  });
+
+  it('gates Vendor-only V2 detail when Vendor Management is disabled just like V2 list', async () => {
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'on' }).expect(201);
+    const vendor = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'P2 Vendor Feature-Off', roles: ['VENDOR'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const vendorId = vendor.body.data.id as string;
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'off' }).expect(201);
+    await restrict([Permission.VENDOR_VIEW]);
+    const list = await v2List('VENDOR').expect(403);
+    const detail = await v2Get(vendorId, 'VENDOR').expect(403);
+    expect(list.body.error.code).toBe('FEATURE_DISABLED');
+    expect(detail.body.error.code).toBe(list.body.error.code);
+  });
+
   it('reproduces the still-unfixed V1 raw disclosure as an explicit RED release blocker', async () => {
     const id = await createShared();
     await restrict([Permission.CUSTOMER_VIEW]);
