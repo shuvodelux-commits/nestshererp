@@ -82,4 +82,65 @@ describe('the error envelope', () => {
       'traceId',
     ]);
   });
+
+  it('rejects a JSON body just over the default 100 KiB parser limit with HTTP 413 and a redacted envelope', async () => {
+    const secret = 'AUTH_TOKEN_MUST_NOT_LEAK_92AB';
+    const json = JSON.stringify({ password: secret, blob: 'x'.repeat(103000) });
+    expect(Buffer.byteLength(json)).toBeGreaterThan(100 * 1024);
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('content-type', 'application/json')
+      .send(json);
+
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(Object.keys(response.body)).toEqual(['error']);
+    expect(Object.keys(response.body.error).sort()).toEqual([
+      'code', 'details', 'message', 'traceId',
+    ]);
+    expect(response.body.error.message).toBe('Request body too large');
+    expect(JSON.stringify(response.body)).not.toContain(secret);
+    expect(JSON.stringify(response.body)).not.toContain('PayloadTooLargeError');
+    expect(JSON.stringify(response.body)).not.toContain('entity.too.large');
+  });
+
+  it('counts multibyte Bangla JSON by bytes and refuses oversized input without echoing text', async () => {
+    const secret = 'গোপন_পাসওয়ার্ড_একান্ত_নিরাপদ';
+    const json = JSON.stringify({ password: secret, blob: 'অ'.repeat(40000) });
+    expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(100 * 1024);
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('content-type', 'application/json; charset=utf-8')
+      .send(json);
+
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(JSON.stringify(response.body)).not.toContain(secret);
+    expect(JSON.stringify(response.body)).not.toContain('অ'.repeat(12));
+  });
+
+  it('rejects an oversized unauthenticated mutation before its controller or permission guard', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/sales/drafts')
+      .set('content-type', 'application/json')
+      .send(JSON.stringify({ cart: { blob: 'x'.repeat(110000) } }));
+
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(response.body.error.message).toBe('Request body too large');
+  });
+
+  it('preserves valid parser-size boundaries and does not change unrelated 404 handling', async () => {
+    const makeJson = (bytes: number) => '{"blob":"' + 'x'.repeat(bytes - 11) + '"}';
+    for (const bytes of [100 * 1024 - 1, 100 * 1024]) {
+      const json = makeJson(bytes);
+      expect(Buffer.byteLength(json)).toBe(bytes);
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/no-such-operation')
+        .set('content-type', 'application/json')
+        .send(json);
+      expect(response.status, 'payload byte count ' + bytes).toBe(404);
+      expect(response.body.error.code).toBe('NOT_FOUND');
+    }
+  });
 });
