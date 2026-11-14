@@ -124,7 +124,7 @@ export class PostgresCatalogSettingsUsageV1Reader {
       categoryIds: [] as string[], parentIds: [] as string[],
     };
     for (const raw of query.rows) {
-      const row = raw as Row;
+      const row = raw as unknown as Row;
       if (typeof row.id !== 'string' || row.id.length !== 26) {
         throw new Error('Invalid catalog usage reference ID');
       }
