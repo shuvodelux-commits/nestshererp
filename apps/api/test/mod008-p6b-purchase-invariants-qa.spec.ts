@@ -43,6 +43,7 @@ let pool: pg.Pool;
 let a: SeededTenant;
 let tokenA: string;
 let supplierId: string;
+let baseUnitId: string;
 let activeId: string;
 let inactiveCandidateId: string;
 
@@ -107,11 +108,8 @@ async function snapshot() {
 }
 
 async function createProduct(name: string): Promise<string> {
-  const existingUnit = (await api().get('/api/v1/catalog/units').set(bearer(tokenA)));
-  expect(existingUnit.status).toBe(200);
-  const unitId = existingUnit.body.data.units[0].id as string;
   const response = await post('/api/v1/products', {
-    name, baseUnitId: unitId, purchasePriceMinor: 10000,
+    name, baseUnitId, purchasePriceMinor: 10000,
     sellingPriceMinor: 12000, minStockQty: 0,
     brandId: null, categoryId: null, sku: null, barcode: null,
     description: null, defaultDiscountType: null,
@@ -156,6 +154,7 @@ gated('MOD-008 P6B source-locked purchases and rollback', () => {
     tokenA = signToken(a, TEST_JWT_SECRET);
     const unit = await post('/api/v1/catalog/units', { name: 'Piece' });
     expect(unit.status).toBe(201);
+    baseUnitId = unit.body.data.units[0].id as string;
     activeId = await createProduct('P6B Active Item');
     inactiveCandidateId = await createProduct('P6B Other Item');
     const supplier = await post('/api/v1/parties', {
