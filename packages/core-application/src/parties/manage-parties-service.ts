@@ -342,7 +342,13 @@ export class ManagePartiesService {
         throw new AppError(ErrorCode.PERMISSION_DENIED, 'No permission to view this relationship');
       }
       if (!party.roles.includes(role)) {
-        throw new AppError(ErrorCode.NOT_FOUND, 'That relationship does not exist');
+        // V2: hidden role and absent identity must have the *same* HTTP
+        // error envelope, including message (not only status/code).
+        // V1's established error text remains unchanged for compatibility.
+        throw new AppError(
+          ErrorCode.NOT_FOUND,
+          mode === 'SCOPED' ? 'Record not found' : 'That relationship does not exist',
+        );
       }
       const balanceNetMinor = await this.parties.getRoleBalance(tx, ctx, party.id, role);
       return project({ ...party, roles: visibleRoles, balanceNetMinor }, role, held);
