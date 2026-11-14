@@ -21,6 +21,7 @@ import type {
 import type {
   InvoiceSettings,
   SaleDraftResponse,
+  SaleDraftDetailResponse,
   PosProductList,
   SaleListResponse,
   SaleResponse,
@@ -34,6 +35,7 @@ import {
   saleListQuerySchema,
   saveInvoiceLogoRequestSchema,
   saveSaleDraftRequestSchema,
+  updateSaleDraftRequestSchema,
   updateInvoiceSettingsRequestSchema,
 } from '@sher/core-contracts';
 
@@ -130,6 +132,27 @@ export class SalesController {
     const parsed = saveSaleDraftRequestSchema.safeParse(body);
     if (!parsed.success) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid draft');
     return { data: await this.query.saveDraft(ctx, parsed.data) };
+  }
+
+  @Get('drafts/:id')
+  async draftDetail(
+    @Param('id') id: string,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: SaleDraftDetailResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'Draft not found');
+    return { data: await this.query.draftDetail(ctx, id) };
+  }
+
+  @Put('drafts/:id')
+  async updateDraft(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: SaleDraftDetailResponse }> {
+    if (id.length !== 26) throw new AppError(ErrorCode.NOT_FOUND, 'Draft not found');
+    const parsed = updateSaleDraftRequestSchema.safeParse(body);
+    if (!parsed.success) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid draft update');
+    return { data: await this.query.updateDraft(ctx, id, parsed.data) };
   }
 
   @Delete('drafts/:id')
