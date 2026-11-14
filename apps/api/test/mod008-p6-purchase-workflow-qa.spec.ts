@@ -153,7 +153,7 @@ beforeEach(async () => {
   expect(supplier.status).toBe(201);
   supplierId = supplier.body.data.id as string;
   const customer = await post('/api/v1/parties', {
-    name: 'P6 Customer A', roles: ['CUSTOMER'], phone: null, address: null,
+    name: 'P6 Customer A', roles: ['CUSTOMER'], phone: '01790000123', address: null,
     guardianName: null, nid: null, email: null, notes: null,
     customerGroupId: null, creditLimitMinor: null,
   });
