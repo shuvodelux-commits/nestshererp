@@ -67,7 +67,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sher_app') THEN
     GRANT SELECT, INSERT, UPDATE ON TABLE import_operations TO sher_app;
   END IF;
-END
+END;
 $;
 
 -- Never grant DELETE, TRUNCATE, BYPASSRLS or SUPERUSER for durable import
