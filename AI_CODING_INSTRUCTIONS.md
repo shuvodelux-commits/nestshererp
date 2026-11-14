@@ -1,5 +1,15 @@
 # SherERP — AI Coding Agent Instructions
 
+## NEWER OWNER OVERRIDE — HisabIQ Super Build and mandatory tests (2026-11-13)
+
+**Binding for ALL HisabIQ-connected frontend and NestSherERP backend implementation, fixes, and QA-code work.** The owner expressly replaces the older R-0 prohibitions on writing or running tests **for HisabIQ work** with a standing, mandatory test-first instruction. The owner also requires that **every implementation actually use the installed `/super-build` skill**, either via merged ChatGPT-assisted `.agents/bin/super-build-chatgpt.py` (`prepare → verify → finalize` with separately executed real business/database/browser suites), or via a **verified and authorized native Codex Sol 6.1 Medium Super Build**. An ordinary manual build is NOT a substitute. If neither genuine skill path is available, halt the build and report BLOCKED; never forge a host/model, fake CI, reuse an unrelated database, or claim an unrun test passed.
+
+Before implementation, record the approved issue, exact paired GitHub SHA, task worktree, `/super-build` path and **executable test matrix for every affected business rule**, including successes, errors, boundaries, permissions, tenant isolation, versions/concurrency, idempotency/retry, rollback and side-effects. Include real disposable PostgreSQL, API and browser acceptance for behaviors that depend on them; all relevant accounting/cash/stock/unit/relationship paths need balanced/reconciled source-linked assertions. Write, run and report automated tests for all applicable scenarios, not only compilation. Failures, skips or blocked required cases mean NOT MERGE-READY. Test authorization is standing; it does not need to be requested again for each chat. Keep explicit owner approval for code scope, finance activation, migrations, merge and deployment.
+
+**Precedence:** This 2026-11-13 override takes priority over the older 2026-08-24 R-0 statements `NEVER write test files`, `code only`, `never run automated suites` and `bugs need no tests` **only for HisabIQ-related work**. Those older rules remain historical/legacy SherERP guidance outside this integration. The complete procedure lives at [`AGENTS.md`](AGENTS.md), `.agents/skills/super-build/SKILL.md` and `.agents/skills/super-build/references/chatgpt-assisted.md`. A docs-only rules edit is not an application build.
+
+---
+
 ## Current owner approval rule — 2026-11-10
 
 Before each module, present the 10–15 sentence overview and confirm the owner's
@@ -26,9 +36,7 @@ Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading
 > 0. **START THE DEV SERVER for interactive module work in the chosen environment.**
 >    Read-only, documentation/setup and connector-only work needs no local stack.
 >    Never claim UI readiness without a running API, web and isolated database.
-> 1. **NEVER write test files.** Not `*.spec.ts`, not a vitest suite, not a
->    "quick check" — **not for any reason** until the owner says, in that
->    conversation, that he wants tests. He verifies the work himself in the UI.
+> 1. **HisabIQ integration exception (2026-11-13): ALWAYS write and run automated tests** for every affected business rule and scenario. Older no-test wording remains applicable only to legacy SherERP tasks outside the HisabIQ integration.
 > 2. **On a new or cleared chat: do not start work.** Find the last end
 >    position and reconcile GitHub state. **Ask before continuing** unless an
 >    approved issue is already assigned; then proceed only within that approval.
@@ -36,16 +44,14 @@ Requirements and decisions live in `SRS_AND_BUILD_GUIDE.md`, whose first heading
 >    each with 3–4 suggested answers, one marked **(Recommended)**, plus "type
 >    your own". Record each answer, ask the next. Then the Final Module
 >    Specification, then **wait for START**. No code until then.
-> 4. **Then write the code** for that module — implementation only, **no tests**.
-> 5. **Then**: build and start the app and hand over a **step-by-step manual for
->    testing it in the UI**. **Never run automated test suites either** unless
->    asked — the owner finds the bugs by using it, and reports them.
+> 4. **Then implement the approved module and its complete automated test matrix** for HisabIQ; no untested implementation-only handoff.
+> 5. **Then**: run the required automated checks and real integration/DB/browser scenarios through the approved Super Build task, then hand over a manual UI review as an additional gate. For legacy SherERP work, follow its separate owner approval.
 >
 > **And: use the UI design that already exists. Never invent a new design rule,
 > a new component style, or a new layout pattern.** Reuse the shared PrimeVue
 > controls, the design tokens and the patterns the existing screens already use.
 
-These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every interactive module starts at the R-0 step 0 runtime in its approved environment, runs the R-Q question round one question at a time, waits for the owner's `START`, and ends with the app built and running plus a step-by-step manual for the owner to test it in the UI (R-0, R-E). Automated test suites are neither written nor run unless the owner asks. `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
+These rules exist because SherERP is built almost entirely by AI agents for an owner who is not a programmer and cannot reliably spot an architectural violation in a diff. Rules are enforced by CI where practical and by a short owner/reviewer check where automation would be misleading. The delivery target is the online V1 scope (Phases 0–11). A meaningful portion of SherERP may already exist when an agent receives a task. Work remains organised as **module-scale vertical increments**, but an increment may be a new workflow, a completion of an existing module, or an SRS-driven UI migration over working business logic. Every interactive module starts at the R-0 step 0 runtime in its approved environment, runs the R-Q question round one question at a time, waits for the owner's `START`, and ends with the app built and running plus a step-by-step manual for the owner to test it in the UI (R-0, R-E). For HisabIQ integration, automated tests are explicitly mandatory under the newer standing owner rule; the historical no-tests requirement applies only to unrelated legacy SherERP work. `FUNCTION_MAP.md` records what already exists and is read before the codebase is searched (R-T).
 
 ---
 
@@ -53,8 +59,8 @@ These rules exist because SherERP is built almost entirely by AI agents for an o
 
 **Status: BINDING, and above every other rule in this file.** Owner instruction
 of 2026-08-24, written down because it was given verbally and then broken twice
-in the same week — once by writing tests that were not asked for, once by
-starting work in a fresh chat without checking where the last one stopped.
+in the same week — once by writing tests that were not asked for at the time, once by
+starting work in a fresh chat without checking where the last one stopped. **The owner's newer HisabIQ override above now explicitly requires tests and Super Build.**
 
 **This section outranks the Principle Priority list below.** No principle, no
 convention, no "best practice" and no judgement about what would be helpful
@@ -73,12 +79,12 @@ help — it is unrequested work he then has to review, understand and clean up.
 | # | Step | Rule |
 |---|---|---|
 | **0** | **Start the dev server for interactive module work** | **Mandatory for interactive module implementation/verification in the owner-selected environment** (reconciled 2026-11-10). Build and run Postgres, API and web against that session's isolated database before claiming UI readiness. Read-only, documentation/setup and connector-only sessions do not start a local stack. If runtime is unavailable, report the exact blocker and hand off verification; never claim it ran. Local commands below are examples, not cloud prerequisites. |
-| **1** | **No tests** | **NEVER write a test file.** No `*.spec.ts`, no vitest suite, no test helper, no "temporary" test script — **for any module, for any reason**, however useful it seems. The only exception is an explicit instruction from the owner **in the current conversation** saying he wants tests. "It would catch bugs", "it proves the accounting", "the codebase has tests elsewhere" and "it found a real defect" are **not** exceptions; the first two were the exact arguments used when this rule was broken. |
+| **1** | **HisabIQ: mandatory tests; legacy exception** | For HisabIQ development, write and execute regression, scenario and business-logic tests for each approved change without another per-conversation test request; **use `/super-build`**. The historical prohibition on tests remains only for unrelated legacy SherERP work. |
 | **2** | **New chat = orient, then ask** | On a new or cleared conversation, **do not begin work.** First find where the last session stopped — the git log, the working tree, `SRS_AND_BUILD_GUIDE.md`'s changelog, the unfinished module. Then say, briefly, what the last end position is and what would come next, and **wait for the owner to tell you to start.** An already-assigned approved issue may proceed after GitHub reconciliation; do not assume the obvious next task is wanted. |
 | **3** | **One question at a time** | A new module begins with the R-Q round asked **one question per message** — up to about **20** where the module needs them, fewer when it is already well defined. Each question carries **3–4 suggested answers**, the best marked **(Recommended)**, each option short and stated as its practical effect, plus a final **“Type your own answer”**. The owner picks one or writes his own; **record the decision, then ask the next question.** Never ask what the SRS, these instructions, an existing decision or an earlier part of the conversation already answers. Aim the questions at real workflow, permissions, accounting behaviour, edge cases and UI/UX — and remember the users may have **low literacy**, so prefer simple flows, Bangla-friendly labels, few steps and clear actions. When every question is answered, show the **Final Module Specification** (R-Q Q4) and **wait for `START`.** |
-| **4** | **Code only** | Implement **only the confirmed module** — every layer, top to bottom (R-S), reusing existing SherERP components, patterns, APIs, functions and `--sher-*` tokens (R-A10…A15). **Do not invent a new visual style.** No tests (step 1), no unrelated cleanup, no adjacent-module changes, no extra tooling unless required **and approved**. |
-| **5** | **Build it, then write the manual** | When the code is finished: **build and start the app** so the owner can use it, then hand over a **step-by-step manual for testing the module in the UI** — what to click, in what order, what should appear, which refusals to try. **Do not run automated test suites** (`pnpm test`) unless the owner asks. The gates that make the app runnable and enforce architecture — `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:boundaries` — are still run; they are static checks, not test suites. |
-| **6** | **Bugs come from the owner, and are fixed narrowly** | The owner reviews the running UI and reports what is wrong. Then: **inspect only the implementation and dependencies needed to diagnose that bug**, fix it, rebuild so he can verify again. No test written to "prove" the fix, no opportunistic refactor of code the bug did not touch. |
+| **4** | **Implementation and tests** | Implement only the approved module, reusing existing components/contracts. For HisabIQ, author tests for every affected business rule and applicable failure/edge case, using TDD when practical. No unrelated cleanup, UI redesign or adjacent-module changes. |
+| **5** | **Super Build, tests and manual review** | For HisabIQ, execute the real `/super-build` workflow, prescribed build/typecheck/lint/boundaries and the full relevant unit/contract/real-PG/browser test matrix; report actual exit statuses and blockers. Start the app for interactive review in the authorized environment and provide a step-by-step UI manual **in addition** to automated proof. Unrun required tests block merge. |
+| **6** | **Narrow bug fixes with regression tests** | Fix the reported bug narrowly, and for HisabIQ always add/reuse an automated reproduction and regression test, run the affected scenario matrix and Super Build checks, then let the owner verify interactively. Avoid unrelated refactors. |
 
 ### Steps 0 and 5 in practice — the app runs, and the change is reachable
 
