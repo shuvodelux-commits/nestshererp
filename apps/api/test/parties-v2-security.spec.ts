@@ -214,8 +214,7 @@ describe('MOD-004 T09C-P2 — versioned Party read authorization', () => {
     await request(app.getHttpServer()).get('/api/v2/parties?role=INVALID').set(auth()).expect(400);
     await v2List('SUPPLIER').expect(403);
     await v2Get(id, 'INVALID').expect(400);
-    const supplier = await v2List('CUSTOMER');
-    expect(supplier).toBeDefined();
+    await v2List('CUSTOMER').expect(200);
   });
 
   it('keeps global posted-history deletion guard despite withholding it from raw V2', async () => {
