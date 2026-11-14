@@ -89,7 +89,7 @@ async function nonDraftEffects(): Promise<Record<string, number>> {
     const tables = [
       'sales', 'sale_lines', 'sale_payments', 'customer_receipts',
       'journal_entries', 'journal_lines', 'stock_movements',
-      'money_movements', 'outbox_events',
+      'cash_movements', 'outbox',
     ];
     const counts: Record<string, number> = {};
     for (const table of tables) {
