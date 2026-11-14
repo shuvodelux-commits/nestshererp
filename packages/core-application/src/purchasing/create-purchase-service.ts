@@ -457,6 +457,81 @@ export class CreatePurchaseService {
        * purchase deadlocks. Exact-key replays returned above without locking,
        * even if a product was deactivated after the original purchase.
        */
+      /*
+       * P6E: purchase operation keys and supplier-order source identity are
+       * different locks. Check and lock the REAL source BEFORE product rows,
+       * correcting any old bill or allocating any new stock/journal rows.
+       * Exact-key P6C replays have already returned above.
+       */
+      const orderId = command.supplierOrderId ?? null;
+      if (orderId !== null) {
+        if (command.vendorSettlement === true) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'Vendor-owned stock settlement cannot consume a supplier purchase order',
+          );
+        }
+        const order = await this.purchases.lockSupplierOrderForPurchase(tx, ctx, orderId);
+        if (order === null || order.deletedAt !== null) {
+          throw new AppError(ErrorCode.NOT_FOUND, 'Supplier order not found for this shop');
+        }
+        if (order.supplierPartyId !== command.supplierPartyId) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This supplier order belongs to another supplier',
+          );
+        }
+        // A correction may replace ONLY the previously linked bill. No second
+        // operation key can post a separate bill against an already-used order.
+        const fresh = order.status === 'OPEN' && order.purchaseId === null &&
+          command.correctionOf === null;
+        const ownCorrection = order.status === 'CONVERTED' &&
+          command.correctionOf !== null && order.purchaseId === command.correctionOf;
+        if (!fresh && !ownCorrection) {
+          throw new AppError(
+            ErrorCode.CONFLICT_STALE_VERSION,
+            'This supplier order has already been converted or is no longer open',
+          );
+        }
+
+        // Current supplier-order contract is one order → one exact receipt.
+        // Never silently accept partial, substituted, over-received or
+        // differently planned items without an approved split-order contract.
+        const expected = new Map<string, { qty: number; planLineId: string }>();
+        for (const line of order.lines) {
+          if (line.planLineId === null || expected.has(line.productId) || line.qty <= 0) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'Supplier order has incomplete or duplicate approved plan lines',
+            );
+          }
+          expected.set(line.productId, { qty: line.qty, planLineId: line.planLineId });
+        }
+        if (expected.size === 0) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Supplier order has no items to receive');
+        }
+        const totals = new Map<string, number>();
+        for (const line of command.lines) {
+          const sourceLine = expected.get(line.productId);
+          if (sourceLine === undefined || line.planLineId !== sourceLine.planLineId) {
+            throw new AppError(
+              ErrorCode.VALIDATION_FAILED,
+              'Received product and plan line must match the approved supplier order',
+            );
+          }
+          totals.set(line.productId, (totals.get(line.productId) ?? 0) + line.qty);
+        }
+        if (
+          totals.size !== expected.size ||
+          [...expected.entries()].some(([id, line]) => totals.get(id) !== line.qty)
+        ) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'Supplier order must be received in full; partial and excess receipts are not supported',
+          );
+        }
+      }
+
       const productIds = [...new Set(command.lines.map((line) => line.productId))].sort();
       for (const productId of productIds) {
         await this.purchases.lockProductForPosting(tx, ctx, productId);
@@ -691,6 +766,20 @@ export class CreatePurchaseService {
           })),
         })),
       });
+
+      if (orderId !== null) {
+        const converted = await this.purchases.convertSupplierOrderForPurchase(
+          tx, ctx, orderId, supplier.id, purchaseId, command.correctionOf,
+        );
+        if (!converted) {
+          // The purchase rows above are still inside Class-T: this exception
+          // rolls back stock, source, journal, correction, audit and outbox.
+          throw new AppError(
+            ErrorCode.CONFLICT_STALE_VERSION,
+            'Supplier order changed while posting; reload the order before retrying',
+          );
+        }
+      }
 
       /*
        * Money handed over was handed over for this bill number, so it follows
