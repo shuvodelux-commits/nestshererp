@@ -13240,6 +13240,48 @@
       ]
     },
     {
+      "id": "endpoint:GET /api/v1/sales/drafts/:id",
+      "method": "GET",
+      "path": "/api/v1/sales/drafts/:id",
+      "controller": "SalesController",
+      "file": "apps/api/src/sales/sales.controller.ts",
+      "permissions": [
+        "COST_VIEW",
+        "CUSTOMER_VIEW",
+        "RECEIPT_VOID",
+        "SALE_CREATE",
+        "SALE_ORDER_MANAGE",
+        "SALE_PRESENTATION_EDIT",
+        "SALE_QUOTATION_MANAGE",
+        "SALE_RECEIVE_PAYMENT",
+        "SALE_VIEW",
+        "SALE_VOID",
+        "SETTING_EDIT",
+        "VENDOR_RECEIPT_RECORD"
+      ]
+    },
+    {
+      "id": "endpoint:PUT /api/v1/sales/drafts/:id",
+      "method": "PUT",
+      "path": "/api/v1/sales/drafts/:id",
+      "controller": "SalesController",
+      "file": "apps/api/src/sales/sales.controller.ts",
+      "permissions": [
+        "COST_VIEW",
+        "CUSTOMER_VIEW",
+        "RECEIPT_VOID",
+        "SALE_CREATE",
+        "SALE_ORDER_MANAGE",
+        "SALE_PRESENTATION_EDIT",
+        "SALE_QUOTATION_MANAGE",
+        "SALE_RECEIVE_PAYMENT",
+        "SALE_VIEW",
+        "SALE_VOID",
+        "SETTING_EDIT",
+        "VENDOR_RECEIPT_RECORD"
+      ]
+    },
+    {
       "id": "endpoint:DELETE /api/v1/sales/drafts/:id",
       "method": "DELETE",
       "path": "/api/v1/sales/drafts/:id",
