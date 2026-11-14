@@ -4,7 +4,6 @@
  * Test is opt-in and can only touch its own label-checked disposable PG16.
  *
  * @covers endpoint:POST /api/v1/purchases
- * @covers workflow:purchase-idempotency
  */
 import 'reflect-metadata';
 
