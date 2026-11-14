@@ -14,7 +14,7 @@ import {
 type Kind = 'units' | 'brands' | 'categories';
 const kinds: readonly Kind[] = ['units', 'brands', 'categories'];
 const clock = new SystemClock();
-const created = new Date('2026-10-01T08:00:00.000Z');
+const created = clock.now();
 let pool: pg.Pool;
 let a: SeededTenant;
 let b: SeededTenant;
