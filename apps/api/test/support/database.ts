@@ -151,7 +151,10 @@ export async function asPlatform<T>(work: (pool: pg.Pool) => Promise<T>): Promis
  * but fixture reset must be performed as the separate disposable test admin.
  * The real Nest/API queries always continue to use the RLS-restricted pool.
  */
-export async function resetDatabase(_pool: pg.Pool): Promise<void> {
+export async function resetDatabase(pool: pg.Pool): Promise<void> {
+  // Preserve the old signature, while refusing accidental uninitialized calls.
+  // The runtime pool is never used to run the destructive reset query.
+  if (!pool) throw new Error('Test runtime pool is required for fixture reset');
   await asPlatform(async (admin) => {
     await admin.query(`TRUNCATE ${TENANT_SCOPED_TABLES.join(', ')} CASCADE`);
   });
