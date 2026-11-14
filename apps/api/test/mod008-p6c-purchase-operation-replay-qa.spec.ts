@@ -267,7 +267,7 @@ gated('MOD-008 P6C purchase operation replay identity (real signed Nest + RLS PG
       post('/api/v1/purchases', payload, key),
       post('/api/v1/purchases', payload, key),
     ]);
-    expect(results.map(result => result.status), results.map(result => result.body))
+    expect(results.map(result => result.status), JSON.stringify(results.map(result => result.body)))
       .toEqual([201, 201]);
     expect(results[0]?.body.data.id).toBe(results[1]?.body.data.id);
     const after = await snapshot();
@@ -283,7 +283,7 @@ gated('MOD-008 P6C purchase operation replay identity (real signed Nest + RLS PG
       post('/api/v1/purchases', body({ supplierBillRef: 'CONCURRENT-A' }), key),
       post('/api/v1/purchases', body({ supplierBillRef: 'CONCURRENT-B' }), key),
     ]);
-    expect(results.map(result => result.status).sort(), results.map(result => result.body))
+    expect(results.map(result => result.status).sort(), JSON.stringify(results.map(result => result.body)))
       .toEqual([201, 409]);
     const rejected = results.find(result => result.status === 409);
     expect(rejected?.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
