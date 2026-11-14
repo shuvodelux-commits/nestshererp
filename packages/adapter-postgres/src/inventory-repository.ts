@@ -107,7 +107,14 @@ export class PostgresInventoryRepository implements InventoryRepository {
 
   async insertOpening(tx: Tx, ctx: TenantContext, opening: OpeningStockRecord): Promise<void> {
     const db = txOf(tx); const now = this.clock.now();
-    await db.insert(stockOpenings).values({ id: opening.id, tenantId: ctx.tenantId, openingNumber: opening.number, productId: opening.productId, locationId: opening.locationId, qty: opening.qty, unitCost: opening.unitCost, valueMinor: opening.valueMinor, businessDate: opening.businessDate, entryMode: opening.entryMode, status: 'POSTED', operationId: opening.operationId, createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
+    const acceptedOpening = await db.insert(stockOpenings).values({ id: opening.id, tenantId: ctx.tenantId, openingNumber: opening.number, productId: opening.productId, locationId: opening.locationId, qty: opening.qty, unitCost: opening.unitCost, valueMinor: opening.valueMinor, businessDate: opening.businessDate, entryMode: opening.entryMode, status: 'POSTED', operationId: opening.operationId, createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 })
+      .onConflictDoNothing().returning({ id: stockOpenings.id });
+    if (acceptedOpening.length !== 1) {
+      // Two requests can both pass findOpeningByProduct before either commits.
+      // The database unique constraints arbitrate the winner; an unaccepted
+      // insert must abort the owning UoW, never surface as an HTTP 500.
+      throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Opening stock was changed by another operation — retry');
+    }
     await db.insert(inventoryLots).values({ id: opening.lotId, tenantId: ctx.tenantId, productId: opening.productId, locationId: opening.locationId, ownerType: 'OWNED', vendorPartyId: null, supplierPartyId: null, sourceDocumentType: 'OPENING_STOCK', sourceDocumentId: opening.id, sourceNumber: opening.number, qtyReceived: opening.qty, qtyRemaining: opening.qty, purchaseUnitCost: opening.unitCost, landedCostTotal: 0, actualUnitCost: opening.unitCost, businessDate: opening.businessDate, expiryDate: opening.expiryDate, status: 'OPEN', createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
     await db.insert(stockMovements).values({ id: opening.movementId, tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId, productId: opening.productId, locationId: opening.locationId, lotId: opening.lotId, qty: opening.qty, direction: 'IN', businessDate: opening.businessDate, sourceDocumentType: 'OPENING_STOCK', sourceDocumentId: opening.id, sourceNumber: opening.number, unitCost: opening.unitCost });
     const insertedPosition = await db.insert(productCostState).values({
