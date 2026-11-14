@@ -25,11 +25,14 @@ const ACCOUNT_CODE = z.string().min(3).max(40);
  * so a final public request branch must be coordinated with the Class-T writer.
  * An account code that passes syntax is NOT tenant/role/cash-session authorized:
  * every leg must be resolved, locked and checked by the writer before posting.
- * The existing MFS accounts use BANK:<account-id> journal account codes.
+ * MFS:<account-id> remains an accepted legacy input alias. The real
+ * resolver validates tenant ownership and canonicalizes it to BANK:<id>; this
+ * parser intentionally preserves the submitted alias rather than fabricating
+ * a verified account or a journal identity.
  */
 export const purchaseInitialPaymentLegSchema = z
   .object({
-    accountCode: ACCOUNT_CODE.regex(/^(?:CASH|BANK):[A-Za-z0-9_-]{1,35}$/),
+    accountCode: ACCOUNT_CODE.regex(/^(?:CASH|BANK|MFS):[A-Za-z0-9_-]{1,35}$/),
     amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   })
   .strict();
