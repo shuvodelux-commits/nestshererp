@@ -358,6 +358,11 @@ export interface MoneyRepository {
     ctx: TenantContext,
     businessDate: string,
   ): Promise<CashSessionRow | null>;
+  /** A later active counted CLOSE must not be restated by an earlier-dated CASH journal.
+   * Tenant lock must already be held by caller (also used by Close Day). */
+  hasClosedCountedDayOnOrAfter(
+    tx: Tx, ctx: TenantContext, businessDate: string, accountIds: readonly string[],
+  ): Promise<boolean>;
   findOpenSession(tx: Tx, ctx: TenantContext): Promise<CashSessionRow | null>;
   findSessionById(tx: Tx, ctx: TenantContext, sessionId: string): Promise<CashSessionRow | null>;
   /** The most recent closed day before this one, for Start Day's suggestion. */

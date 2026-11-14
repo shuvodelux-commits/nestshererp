@@ -8,10 +8,13 @@ export async function assertCashDayNotClosed(
   money: MoneyRepository, tx: Tx, ctx: TenantContext,
   businessDate: string, accountCodes: readonly string[],
 ): Promise<void> {
-  if (!accountCodes.some((code) => code.startsWith('CASH:'))) return;
-  const counted = await money.findSessionByDate(tx, ctx, businessDate);
-  if (counted?.status !== 'CLOSED') return;
-  if (!accountCodes.includes('CASH:' + counted.accountId)) return;
+  const cashAccountIds = [...new Set(
+    accountCodes.filter((code) => code.startsWith('CASH:')).map((code) => code.slice(5)),
+  )];
+  if (cashAccountIds.length === 0) return;
+  // An earlier-dated journal also changes every later as-of closing balance.
+  // Check ACTIVE counted closes for original drawer identities, not isDrawer now.
+  if (!await money.hasClosedCountedDayOnOrAfter(tx, ctx, businessDate, cashAccountIds)) return;
   throw new AppError(
     ErrorCode.VALIDATION_FAILED,
     'This cash day is already counted and closed; record a separate approved adjustment on an eligible date',

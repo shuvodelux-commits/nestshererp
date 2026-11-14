@@ -355,6 +355,34 @@ export class PostgresMoneyRepository implements MoneyRepository {
     );
   }
 
+  async hasClosedCountedDayOnOrAfter(
+    tx: Tx, ctx: TenantContext, businessDate: string, accountIds: readonly string[],
+  ): Promise<boolean> {
+    if (accountIds.length === 0) return false;
+    // A reopened day has only a SUPERSEDED close, and is no longer immutable.
+    const [row] = await txOf(tx)
+      .select({ id: cashSessions.id })
+      .from(cashSessions)
+      .innerJoin(
+        cashSessionCloses,
+        and(
+          eq(cashSessionCloses.sessionId, cashSessions.id),
+          eq(cashSessionCloses.tenantId, ctx.tenantId),
+          eq(cashSessionCloses.status, 'ACTIVE'),
+          isNull(cashSessionCloses.deletedAt),
+        ),
+      )
+      .where(and(
+        eq(cashSessions.tenantId, ctx.tenantId),
+        eq(cashSessions.status, 'CLOSED'),
+        isNull(cashSessions.deletedAt),
+        gte(cashSessions.businessDate, businessDate),
+        inArray(cashSessions.accountId, [...accountIds]),
+      ))
+      .limit(1);
+    return row !== undefined;
+  }
+
   async findOpenSession(tx: Tx, ctx: TenantContext): Promise<CashSessionRow | null> {
     return this.oneSession(
       tx,

@@ -396,6 +396,54 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it('control #84: an unrelated petty-CASH transfer can be backdated without restating a closed drawer', async () => {
+    const ordinary = await signed(api().post('/api/v1/money/accounts')).send({
+      name: 'Uncounted petty cash for prior-date control',
+      type: 'CASH', holderName: null, reference: null, isDrawer: false,
+      openingAmountMinor: 15_000, openingDate, operationId: Ulid.generate(clock),
+    });
+    expectStatus(ordinary, 201);
+    const before = await snapshot();
+    const response = await signed(api().post('/api/v1/money/movements')).send({
+      kind: 'TRANSFER',
+      fromAccountCode: 'CASH:' + (ordinary.body.data.id as string),
+      toAccountCode: 'BANK:' + bankId,
+      amountMinor: 1_000,
+      businessDate: addDays(day, -1),
+      reference: null,
+      note: 'Uncounted cash backdated control',
+      operationId: Ulid.generate(clock),
+    });
+    expectStatus(response, 201);
+    const after = await snapshot();
+    expect(after.closes).toEqual(before.closes);
+    expect(after.sessions).toEqual(before.sessions);
+  });
+
+  it('control #84: BANK-to-BANK transfer can be backdated without changing counted CASH', async () => {
+    const otherBank = await signed(api().post('/api/v1/money/accounts')).send({
+      name: 'Other bank for prior-date control',
+      type: 'BANK', holderName: null, reference: null, isDrawer: false,
+      openingAmountMinor: 0, openingDate, operationId: Ulid.generate(clock),
+    });
+    expectStatus(otherBank, 201);
+    const before = await snapshot();
+    const response = await signed(api().post('/api/v1/money/movements')).send({
+      kind: 'TRANSFER',
+      fromAccountCode: 'BANK:' + bankId,
+      toAccountCode: 'BANK:' + (otherBank.body.data.id as string),
+      amountMinor: 1_000,
+      businessDate: addDays(day, -1),
+      reference: null,
+      note: 'Bank-only backdated control',
+      operationId: Ulid.generate(clock),
+    });
+    expectStatus(response, 201);
+    const after = await snapshot();
+    expect(after.closes).toEqual(before.closes);
+    expect(after.sessions).toEqual(before.sessions);
+  });
+
   it('RED #84: rejects a backdated former-drawer CASH transfer that restates a later counted close', async () => {
     await removeDrawerFlag();
     const before = await snapshot();
