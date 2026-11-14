@@ -30,6 +30,13 @@ describe('MOD-008 D06B initial purchase payment-leg request preflight', () => {
     if (result.success) expect(result.data).toEqual(input);
   });
 
+  it('accepts legacy MFS account syntax for later server-side BANK code normalization', () => {
+    const input = [row('MFS:' + accountId, 1_500)];
+    const result = parse(input);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual(input);
+  });
+
   it('preserves repeated account rows for audit/source provenance', () => {
     const result = parse([row(cash, 2_000), row(cash, 3_000)]);
     expect(result.success).toBe(true);
@@ -65,7 +72,7 @@ describe('MOD-008 D06B initial purchase payment-leg request preflight', () => {
 
   it.each([
     'AP', 'INVENTORY', 'LOAN:' + accountId, 'EXPENSE:' + accountId,
-    'MFS:' + accountId, 'cash:' + accountId, 'CASH:', 'CASH: invalid',
+    'cash:' + accountId, 'CASH:', 'CASH: invalid',
     ' CASH:' + accountId, 'BANK:' + 'A'.repeat(36),
   ])('refuses invalid or non-asset payment account syntax %s', accountCode => {
     expect(parse([row(accountCode, 1)]).success).toBe(false);
