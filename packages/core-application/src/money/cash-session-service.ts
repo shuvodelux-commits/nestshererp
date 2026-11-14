@@ -524,9 +524,15 @@ export class CashSessionService {
           original?.closes?.some((saved) => saved.id === close.id &&
             saved.status === 'SUPERSEDED'),
         );
+        // A conflicting key may belong to Start/Close, whose saved response
+        // contains no superseded close. Authorize against the *current* active
+        // close in that case so an otherwise permitted closer gets a precise
+        // 409 key-reuse conflict, not an accidental 403.
+        const closeForAuthorization = originalClose ??
+          await this.money.findActiveClose(tx, ctx, session.id);
         const held = await this.accessControl.permissionsOf(tx, ctx);
         if (!held.includes(Permission.CASH_SESSION_REOPEN) &&
-            originalClose?.closedBy !== ctx.userId) {
+            closeForAuthorization?.closedBy !== ctx.userId) {
           throw new AppError(
             ErrorCode.PERMISSION_DENIED,
             'Only the owner, or whoever closed the day, can reopen it',
