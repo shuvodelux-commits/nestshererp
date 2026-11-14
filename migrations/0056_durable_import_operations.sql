@@ -57,5 +57,19 @@ CREATE POLICY tenant_isolation ON import_operations
   USING (tenant_id = current_setting('app.tenant_id', TRUE)::CHAR(26))
   WITH CHECK (tenant_id = current_setting('app.tenant_id', TRUE)::CHAR(26));
 
--- Production grant policy follows the deployment role-provisioning contract.
--- No superuser, BYPASSRLS, TRUNCATE or cross-tenant read is granted here.
+-- The migration principal may differ from the runtime principal. Where the
+-- standard runtime role already exists, grant only the operations used by the
+-- import service. The RLS policy still binds every row to app.tenant_id.
+-- Deployments using another named runtime role must apply their own explicit
+-- least-privilege grants; no role is created or elevated by this migration.
+DO $
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sher_app') THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE import_operations TO sher_app;
+  END IF;
+END
+$;
+
+-- Never grant DELETE, TRUNCATE, BYPASSRLS or SUPERUSER for durable import
+-- identities. Any authorized tenant/data-erasure process needs a distinct,
+-- audited operator path; a routine import replay must not erase history.
