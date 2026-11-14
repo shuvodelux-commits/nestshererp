@@ -49,7 +49,7 @@ async function snapshot(db: pg.Pool): Promise<unknown[]> {
 
 async function seed(db: pg.Pool): Promise<void> {
   const now = clock.now();
-  const ts = new Date(now.getTime() - 86_400_000);
+  const ts = now;
   for (const [id, name] of [[a, 'Upgrade A'], [b, 'Upgrade B']]) {
     await db.query(
       'INSERT INTO tenants (id,name,timezone,created_at,updated_at,created_by,updated_by,version) ' +
@@ -98,6 +98,7 @@ it('P8b2a upgrades populated pre-0059 catalogs with no historical mutation or RL
   let app: pg.Pool | undefined;
   let createdDatabase = false;
   const folder = mkdtempSync(join(tmpdir(), 'mod002-p8b2a-old-'));
+  const upgradeFolder = mkdtempSync(join(tmpdir(), 'mod002-p8b2a-new-'));
   try {
     await server.query('CREATE DATABASE "' + name + '"');
     createdDatabase = true;
@@ -118,7 +119,9 @@ it('P8b2a upgrades populated pre-0059 catalogs with no historical mutation or RL
     const before = await snapshot(upgraded);
     expect(before).toHaveLength(7);
 
-    const newlyApplied = await runMigrations(upgraded, root);
+    symlinkSync(join(root, '0059_catalog_lifecycle_active.sql'),
+      join(upgradeFolder, '0059_catalog_lifecycle_active.sql'));
+    const newlyApplied = await runMigrations(upgraded, upgradeFolder);
     expect(newlyApplied).toContain('0059_catalog_lifecycle_active.sql');
     const after = await snapshot(upgraded);
     expect(after).toEqual(before);
@@ -147,7 +150,7 @@ it('P8b2a upgrades populated pre-0059 catalogs with no historical mutation or RL
       "('units_tenant_name_unique','brands_tenant_name_unique','categories_tenant_sibling_name_unique')",
     );
     expect(Number(indexes.rows[0]!.count)).toBe(3);
-    expect(await runMigrations(upgraded, root)).toEqual([]);
+    expect(await runMigrations(upgraded, upgradeFolder)).toEqual([]);
 
     await server.query("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles " +
       "WHERE rolname = 'sher_app') THEN CREATE ROLE sher_app LOGIN " +
@@ -171,5 +174,6 @@ it('P8b2a upgrades populated pre-0059 catalogs with no historical mutation or RL
     if (createdDatabase) await server.query('DROP DATABASE "' + name + '"');
     await server.end();
     rmSync(folder, { recursive: true, force: true });
+    rmSync(upgradeFolder, { recursive: true, force: true });
   }
 }, 60_000);
