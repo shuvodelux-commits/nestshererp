@@ -208,7 +208,7 @@ export class CreatePurchaseService {
     purchaseId: string,
     businessDate: string,
     today: string,
-  ): Promise<{ readonly id: string; readonly number: string }> {
+  ): Promise<{ readonly id: string; readonly number: string; readonly supplierOrderId: string | null }> {
     const original = await this.purchases.findPurchaseForReversal(tx, ctx, purchaseId);
     if (original === null) throw new AppError(ErrorCode.NOT_FOUND, 'That bill was not found');
     if (original.status !== 'POSTED') {
@@ -325,7 +325,7 @@ export class CreatePurchaseService {
       source: 'API',
     });
 
-    return { id: original.id, number: original.number };
+    return { id: original.id, number: original.number, supplierOrderId: original.supplierOrderId };
   }
 
   async create(command: CreatePurchaseCommand): Promise<PurchaseResponse> {
@@ -547,6 +547,16 @@ export class CreatePurchaseService {
         command.correctionOf === null
           ? null
           : await this.reverseForCorrection(tx, ctx, command.correctionOf, businessDate, today);
+
+      // A correction is not allowed to silently drop its approved source.
+      // The Class-T reversal above rolls back in full if provenance differs,
+      // preserving the original CONVERTED order → posted purchase link.
+      if (replaced !== null && replaced.supplierOrderId !== orderId) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Corrected purchase must retain its original supplier-order source',
+        );
+      }
 
       const supplier = await this.parties.findById(tx, ctx, command.supplierPartyId);
       if (supplier === null) throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
