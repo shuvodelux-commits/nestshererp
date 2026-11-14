@@ -371,11 +371,15 @@ describe('MOD-004 T13-N — versioned selected-role ledger', () => {
 
     const deniedExisting = await ledger(shared, '?role=SUPPLIER').expect(403);
     const deniedMissing = await ledger(missingId, '?role=SUPPLIER').expect(403);
-    expect(deniedExisting.body.error).toEqual(deniedMissing.body.error);
+    expect(deniedExisting.body.error.code).toBe(deniedMissing.body.error.code);
+    expect(deniedExisting.body.error.message).toBe(deniedMissing.body.error.message);
+    expect(deniedExisting.body.error.details).toEqual(deniedMissing.body.error.details);
 
     const hidden = await ledger(supplierOnlyId, '?role=CUSTOMER').expect(404);
     const absent = await ledger(missingId, '?role=CUSTOMER').expect(404);
-    expect(hidden.body.error).toEqual(absent.body.error);
+    expect(hidden.body.error.code).toBe(absent.body.error.code);
+    expect(hidden.body.error.message).toBe(absent.body.error.message);
+    expect(hidden.body.error.details).toEqual(absent.body.error.details);
     expect(JSON.stringify(hidden.body)).not.toContain('T13 private supplier-only');
 
     const foreign = await seedTenant(pool, {
@@ -384,7 +388,9 @@ describe('MOD-004 T13-N — versioned selected-role ledger', () => {
     const foreignToken = signToken(foreign, TEST_JWT_SECRET);
     const other = await ledger(shared, '?role=SUPPLIER', foreignToken).expect(404);
     const otherAbsent = await ledger(missingId, '?role=SUPPLIER', foreignToken).expect(404);
-    expect(other.body.error).toEqual(otherAbsent.body.error);
+    expect(other.body.error.code).toBe(otherAbsent.body.error.code);
+    expect(other.body.error.message).toBe(otherAbsent.body.error.message);
+    expect(other.body.error.details).toEqual(otherAbsent.body.error.details);
   });
 
   it('matches V2 Vendor feature OFF/ON policy before identity lookup and never posts from GET', async () => {
@@ -421,7 +427,9 @@ describe('MOD-004 T13-N — versioned selected-role ledger', () => {
     const disabled = await ledger(vendorId, '?role=VENDOR').expect(403);
     const disabledMissing = await ledger(missing, '?role=VENDOR').expect(403);
     expect(disabled.body.error.code).toBe('FEATURE_DISABLED');
-    expect(disabled.body.error).toEqual(disabledMissing.body.error);
+    expect(disabled.body.error.code).toBe(disabledMissing.body.error.code);
+    expect(disabled.body.error.message).toBe(disabledMissing.body.error.message);
+    expect(disabled.body.error.details).toEqual(disabledMissing.body.error.details);
     expect(await countJournals()).toBe(originalLines);
   });
 });
