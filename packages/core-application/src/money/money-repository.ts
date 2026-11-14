@@ -337,6 +337,10 @@ export interface MoneyRepository {
     },
   ): Promise<readonly MoneyAccountRow[]>;
   findAccountById(tx: Tx, ctx: TenantContext, accountId: string): Promise<MoneyAccountRow | null>;
+  /** Any posted journal line for CASH/BANK(MFS)/LOAN account identity.
+   * Existence, not a balance sum: reversed/fully settled history still locks
+   * the account type. Caller holds the account row's FOR UPDATE lock. */
+  hasPostedAccountJournalHistory(tx: Tx, ctx: TenantContext, accountId: string): Promise<boolean>;
   /** The one box the day is counted against, or `null` before setup. */
   findDrawer(tx: Tx, ctx: TenantContext): Promise<MoneyAccountRow | null>;
   insertAccount(tx: Tx, ctx: TenantContext, account: NewMoneyAccount): Promise<void>;

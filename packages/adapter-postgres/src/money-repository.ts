@@ -170,6 +170,33 @@ export class PostgresMoneyRepository implements MoneyRepository {
     return row === undefined ? null : toAccountRow(row);
   }
 
+  async hasPostedAccountJournalHistory(
+    tx: Tx,
+    ctx: TenantContext,
+    accountId: string,
+  ): Promise<boolean> {
+    // Journal lines store the account family at posting time. Matching only
+    // the account's *current* type would miss prior reclassifications, and
+    // SUM(balance) would mistakenly unlock fully settled or reversed history.
+    // MFS posts to BANK:<id>, not MFS:<id>.
+    const posted = await txOf(tx)
+      .select({ id: journalLines.id })
+      .from(journalLines)
+      .where(
+        and(
+          eq(journalLines.tenantId, ctx.tenantId),
+          inArray(journalLines.accountCode, [
+            'CASH:' + accountId,
+            'BANK:' + accountId,
+            'LOAN:' + accountId,
+          ]),
+        ),
+      )
+      .limit(1);
+
+    return posted.length > 0;
+  }
+
   async findDrawer(tx: Tx, ctx: TenantContext): Promise<MoneyAccountRow | null> {
     const [row] = await txOf(tx)
       .select(this.accountSelection())
