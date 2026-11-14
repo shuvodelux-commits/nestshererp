@@ -340,3 +340,107 @@ describe('F0-01 readiness: adversarial tenant, feature and retry partitions', ()
     expect(await persisted(a)).toEqual(beforeA);
   });
 });
+
+
+describe('F0-01 readiness: previously blocked live-role and profile-commit cases', () => {
+  it('F001-15b: a real password-authenticated cashier with no grants can bootstrap /me, but not access privileged API', async () => {
+    const owner = await register('01712345678', 'Shop A');
+    const other = await register('01912345678', 'Shop B');
+
+    const roles = await request(app.getHttpServer())
+      .get('/api/v1/users').set('Authorization', 'Bearer ' + owner.accessToken);
+    expect(roles.status).toBe(200);
+    const cashier = (roles.body.data.roles as { id: string; code: string }[])
+      .find((role) => role.code === 'CASHIER');
+    expect(cashier).toBeDefined();
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/users').set('Authorization', 'Bearer ' + owner.accessToken)
+      .send({
+        displayName: 'Cashier A', username: 'cashier',
+        identifier: '01799887766', roleId: cashier!.id,
+        confirmPassword: 'Passw0rd23',
+      });
+    expect(created.status).toBe(201);
+    const cashierId = created.body.data.id as string;
+
+    // Use the real OTP password-set and login path; do not forge an owner token.
+    const otp = await request(app.getHttpServer())
+      .post('/api/v1/auth/password/otp')
+      .send({ identifier: '01799887766' });
+    expect(otp.status).toBe(200);
+    const reset = await request(app.getHttpServer())
+      .post('/api/v1/auth/password/reset')
+      .send({
+        identifier: '01799887766',
+        otpCode: otp.body.data.devCode as string,
+        password: 'Cashier99',
+      });
+    expect(reset.status).toBe(204);
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ identifier: '01799887766', password: 'Cashier99' });
+    expect(signedIn.status).toBe(200);
+    const token = signedIn.body.data.accessToken as string;
+
+    const beforeA = await persisted(owner);
+    const beforeB = await persisted(other);
+    const bootstrap = await me(token, other.tenantId);
+    expect(bootstrap.status).toBe(200);
+    expect(bootstrap.body.data).toMatchObject({
+      tenantId: owner.tenantId, timezone: 'Asia/Dhaka', businessName: 'Shop A',
+      user: { id: cashierId, username: 'cashier', displayName: 'Cashier A', roleName: 'Cashier' },
+      permissions: [],
+    });
+    expect(myAccessResponseSchema.safeParse(bootstrap.body.data).success).toBe(true);
+    const forbidden = await request(app.getHttpServer())
+      .get('/api/v1/users').set('Authorization', 'Bearer ' + token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.data).toBeUndefined();
+    expect(await persisted(owner)).toEqual(beforeA);
+    expect(await persisted(other)).toEqual(beforeB);
+  });
+
+  it('F001-14b: /me never observes an uncommitted profile update or a cross-tenant profile', async () => {
+    const a = await register('01712345678', 'Shop A');
+    const b = await register('01912345678', 'Shop B');
+    const oldProfile = { tenantId: a.tenantId, businessName: 'Shop A', timezone: 'Asia/Dhaka' };
+    const newProfile = { tenantId: a.tenantId, businessName: 'Updated Shop A', timezone: 'Europe/London' };
+
+    // Hold a real PostgreSQL transaction open through all concurrent HTTP GETs.
+    // Every GET must read a coherent committed profile, never a half-update.
+    await asTenant(pool, a.tenantId, async (client) => {
+      await client.query('UPDATE tenants SET name = $1, timezone = $2 WHERE id = $3',
+        [newProfile.businessName, newProfile.timezone, a.tenantId]);
+      const outcomes = await Promise.allSettled(Array.from({ length: 12 }, (_, index) =>
+        index % 2 === 0 ? me(a.accessToken, b.tenantId) : me(b.accessToken, a.tenantId),
+      ));
+      expect(outcomes.every((result) => result.status === 'fulfilled')).toBe(true);
+      for (let index = 0; index < outcomes.length; index += 1) {
+        const result = outcomes[index]!;
+        if (result.status !== 'fulfilled') continue;
+        expect(result.value.status).toBe(200);
+        if (index % 2 === 0) {
+          expect(result.value.body.data).toMatchObject(oldProfile);
+          expect(result.value.body.data.user.id).toBe(a.userId);
+        } else {
+          expect(result.value.body.data).toMatchObject({
+            tenantId: b.tenantId, businessName: 'Shop B', timezone: 'Asia/Dhaka',
+          });
+        }
+      }
+    });
+
+    const afterA = await persisted(a);
+    const afterB = await persisted(b);
+    const settled = await Promise.all([me(a.accessToken, b.tenantId), me(b.accessToken, a.tenantId)]);
+    expect(settled[0]!.status).toBe(200);
+    expect(settled[0]!.body.data).toMatchObject(newProfile);
+    expect(settled[1]!.status).toBe(200);
+    expect(settled[1]!.body.data).toMatchObject({
+      tenantId: b.tenantId, businessName: 'Shop B', timezone: 'Asia/Dhaka',
+    });
+    expect(await persisted(a)).toEqual(afterA);
+    expect(await persisted(b)).toEqual(afterB);
+  });
+});
