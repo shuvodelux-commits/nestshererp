@@ -110,6 +110,14 @@ export const Permission = {
   VENDOR_EDIT: 'party.vendor.edit',
   VENDOR_DEACTIVATE: 'party.vendor.deactivate',
 
+  /**
+   * T09C — sensitive profile and party-global posted history are distinct
+   * capabilities. Trading-role VIEW/EDIT/DEACTIVATE does not imply either.
+   * Global history is only a wire disclosure grant, never a delete criterion.
+   */
+  PARTY_PROFILE_VIEW: 'party.profile.view',
+  PARTY_HISTORY_GLOBAL_VIEW: 'party.history.global.view',
+
   /** Customer groups (§5.6), the classification dealer pricing will later use. */
   PARTY_GROUP_MANAGE: 'party.group.manage',
 
@@ -638,6 +646,18 @@ export const PERMISSION_CATALOGUE: readonly PermissionDescriptor[] = [
     group: 'Vendors',
     label: 'Deactivate and reactivate vendors',
     detail: 'Stop a vendor appearing in new consignments. Their history and balance stay.',
+  },
+  {
+    code: Permission.PARTY_PROFILE_VIEW,
+    group: 'Parties',
+    label: 'See sensitive Party profile',
+    detail: 'Read address, guardian, NID, email and notes, separately from a trading-role view.',
+  },
+  {
+    code: Permission.PARTY_HISTORY_GLOBAL_VIEW,
+    group: 'Parties',
+    label: 'Inspect Party-wide posted history',
+    detail: 'See whether this identity has any posted journal history across roles; does not grant delete.',
   },
   {
     code: Permission.PARTY_GROUP_MANAGE,

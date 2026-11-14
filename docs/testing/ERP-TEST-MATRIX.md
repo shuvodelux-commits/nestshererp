@@ -17,8 +17,8 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 245 |
-| Permission codes | 119 |
+| HTTP endpoints | 247 |
+| Permission codes | 121 |
 | Cross-module workflows | 17 |
 
 ## Screens at a glance
@@ -3512,20 +3512,22 @@
 | POST | `/api/v1/money/reconciliations/:id/reopen` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/notes` | NotesController | NOTE_CREATE, NOTE_VIEW | ✅ TESTED |
 | GET | `/api/v1/notes/:id` | NotesController | NOTE_CREATE, NOTE_VIEW | ✅ TESTED |
-| GET | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| GET | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| GET | `/api/v1/parties/:id/ledger` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| POST | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| GET | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
-| POST | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
-| PATCH | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
-| PATCH | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| POST | `/api/v1/parties/:id/status` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| DELETE | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| GET | `/api/v1/party-setup` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
-| POST | `/api/v1/party-setup/groups` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ✅ TESTED |
-| PATCH | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
-| DELETE | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+9) | ❌ NOT TESTED |
+| GET | `/api/v2/parties` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| GET | `/api/v2/parties/:id` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| GET | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| GET | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| GET | `/api/v1/parties/:id/ledger` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| POST | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| GET | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| POST | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| PATCH | `/api/v1/parties/:id/opening` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| PATCH | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| POST | `/api/v1/parties/:id/status` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| DELETE | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| GET | `/api/v1/party-setup` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| POST | `/api/v1/party-setup/groups` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| PATCH | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| DELETE | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
 | GET | `/api/v1/periods` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
 | POST | `/api/v1/periods/close` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
 | GET | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
@@ -3685,6 +3687,8 @@
 | `party.vendor.create` | party | ❌ NOT TESTED |
 | `party.vendor.edit` | party | ❌ NOT TESTED |
 | `party.vendor.deactivate` | party | ❌ NOT TESTED |
+| `party.profile.view` | party | ❌ NOT TESTED |
+| `party.history.global.view` | party | ❌ NOT TESTED |
 | `party.group.manage` | party | ❌ NOT TESTED |
 | `data.import.run` | data | ❌ NOT TESTED |
 | `cash.account.view` | cash | ❌ NOT TESTED |
