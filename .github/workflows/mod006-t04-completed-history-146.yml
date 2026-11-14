@@ -6,7 +6,7 @@ on:
       - fix/mod006-t04-completed-recon-type-146-20261114
   pull_request:
     branches:
-      - test/mod006-t04-completed-history-146-20261114
+      - fix/mod006-t04-account-type-toctou-20261114
 
 jobs:
   completed-history:
