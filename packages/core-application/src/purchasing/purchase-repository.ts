@@ -53,6 +53,9 @@ export interface NewPurchase {
   readonly id: string;
   readonly number: string;
   readonly operationId: string;
+  /** Immutable canonical request identity, stored with posted accounting source. */
+  readonly createFingerprintVersion: string;
+  readonly createFingerprint: string;
   readonly supplierPartyId: string;
   readonly supplierBillRef: string | null;
   readonly locationId: string;
@@ -313,13 +316,29 @@ export interface PurchaseRepository {
   setPurchaseDraftDeletion(
     tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, deletedAt: Date | null,
   ): Promise<PurchaseDraftRow | null>;
+  /**
+   * Serialize this purchase's product status check with product deactivation.
+   * Must be called for unique product IDs in ascending order within the same
+   * transaction, before reading their status or writing purchase/stock rows.
+   * This locks only the tenant's live product row; the service still applies
+   * the normal NOT_FOUND / PRODUCT_INACTIVE validation.
+   */
+  lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void>;
+  /** Transactionally serialize retries of the same tenant-owned purchase key. */
+  lockPurchaseOperation(tx: Tx, ctx: TenantContext, operationId: string): Promise<void>;
   insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void>;
-  /** C10: the permanent unique index is the guarantee, not the 30-day cache. */
-  findPurchaseIdByOperationId(
+  /** Permanent tenant-scoped create identity, including soft-deleted source. */
+  findPurchaseOperation(
     tx: Tx,
     ctx: TenantContext,
     operationId: string,
-  ): Promise<string | null>;
+  ): Promise<{
+    id: string;
+    createFingerprintVersion: string | null;
+    createFingerprint: string | null;
+    status: string;
+    deletedAt: Date | null;
+  } | null>;
   findPurchaseById(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDetail | null>;
   listPurchases(
     tx: Tx,

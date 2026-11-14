@@ -735,6 +735,8 @@ export const purchases = pgTable('purchases', {
   entryMode: text('entry_mode').notNull(),
   status: text('status').notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
+  createFingerprintVersion: text('create_fingerprint_version'),
+  createFingerprint: char('create_fingerprint', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),

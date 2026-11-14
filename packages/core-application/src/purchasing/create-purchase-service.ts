@@ -93,6 +93,56 @@ export interface CreatePurchaseCommand {
   readonly vendorSettlement?: boolean | undefined;
 }
 
+
+/**
+ * Canonical SHA-256 of the entire validated creation INTENT, not of mutable
+ * post-calculation or source fields. Fixed key order and explicit defaults
+ * make JSON canonical; submitted line/cost array order remains significant.
+ * Omitted businessDate stays null across midnight, even though the first
+ * successful posting resolves the server date and persists it separately.
+ * Record coverage requires future accepted application-command fields to be
+ * explicitly considered. Web Crypto also runs in browsers (no Node imports).
+ */
+const PURCHASE_FINGERPRINT_VERSION = 'purchase.create/v1';
+
+async function purchaseCreateFingerprint(command: CreatePurchaseCommand): Promise<string> {
+  const intent = {
+    supplierPartyId: command.supplierPartyId,
+    supplierBillRef: command.supplierBillRef,
+    businessDate: command.businessDate ?? null,
+    dueDate: command.dueDate,
+    lines: command.lines.map(line => ({
+      productId: line.productId,
+      qty: line.qty,
+      unitPriceMinor: line.unitPriceMinor,
+      expiryDate: line.expiryDate,
+      planLineId: line.planLineId ?? null,
+    })),
+    discountMinor: command.discountMinor,
+    landedCosts: (command.landedCosts ?? []).map(cost => ({
+      category: cost.category,
+      method: cost.method,
+      amountMinor: cost.amountMinor,
+      description: cost.description,
+      manualAllocations: cost.manualAllocations.map(row => ({
+        lineIndex: row.lineIndex,
+        amountMinor: row.amountMinor,
+      })),
+    })),
+    extraCostMinor: command.extraCostMinor,
+    paidMinor: command.paidMinor,
+    paidAccountCode: command.paidAccountCode,
+    notes: command.notes,
+    correctionOf: command.correctionOf,
+    supplierOrderId: command.supplierOrderId ?? null,
+    vendorSettlement: command.vendorSettlement ?? false,
+  } satisfies Record<Exclude<keyof CreatePurchaseCommand, 'ctx' | 'operationId'>, unknown>;
+
+  const bytes = new TextEncoder().encode(JSON.stringify([PURCHASE_FINGERPRINT_VERSION, intent]));
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * The unit cost (scale 4) that a value in poisha spread over a quantity comes
  * to, rounded half-up once — the inverse of `stockValueMinor`.
@@ -333,17 +383,8 @@ export class CreatePurchaseService {
     const rejection = rejectPurchase(draft);
     if (rejection !== null) throw new AppError(ErrorCode.VALIDATION_FAILED, REFUSALS[rejection]);
 
-    const fingerprint = JSON.stringify([
-      command.supplierPartyId,
-      command.businessDate ?? null,
-      command.dueDate,
-      command.lines,
-      command.discountMinor,
-      command.landedCosts ?? [],
-      command.extraCostMinor,
-      command.paidMinor,
-      command.paidAccountCode,
-    ]);
+    const fingerprint = await purchaseCreateFingerprint(command);
+    const cacheFingerprint = PURCHASE_FINGERPRINT_VERSION + ':' + fingerprint;
 
       const { ctx } = command;
       await this.access.require(
@@ -352,18 +393,48 @@ export class CreatePurchaseService {
         command.correctionOf === null ? Permission.PURCHASE_CREATE : Permission.PURCHASE_EDIT,
       );
 
-      const replay = await this.idempotency.find(tx, ctx, command.operationId);
-      if (replay !== null) {
-        if (replay.requestFingerprint !== fingerprint) {
+      // One tenant/key at a time. The winner commits its immutable source
+      // before the loser compares it, rather than surfacing unique violations.
+      await this.purchases.lockPurchaseOperation(tx, ctx, command.operationId);
+      const posted = await this.purchases.findPurchaseOperation(tx, ctx, command.operationId);
+      if (posted !== null) {
+        // Legacy rows have no provable complete original request fingerprint.
+        // Even an old partial cached fingerprint is not sufficient evidence.
+        if (posted.createFingerprintVersion !== PURCHASE_FINGERPRINT_VERSION ||
+            posted.createFingerprint !== fingerprint) {
           throw new AppError(
             ErrorCode.IDEMPOTENCY_KEY_REUSED,
-            'This operation id was already used for a different purchase',
+            'This operation id belongs to a different or unverified historical purchase',
           );
         }
-        return replay.response as PurchaseResponse;
+        if (posted.deletedAt !== null) {
+          throw new AppError(
+            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            'This purchase was removed; reconcile its original operation before retrying',
+          );
+        }
+        const replay = await this.idempotency.find(tx, ctx, command.operationId);
+        if (replay !== null && replay.requestFingerprint === cacheFingerprint) {
+          return replay.response as PurchaseResponse;
+        }
+        // The original active source can be read after the temporary cache
+        // expires. A corrected/voided source lacks an immutable old response.
+        if (posted.status !== 'POSTED') {
+          throw new AppError(
+            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            'This purchase changed state; reconcile the original operation',
+          );
+        }
+        return this.detail(tx, ctx, posted.id, []);
       }
-      const posted = await this.purchases.findPurchaseIdByOperationId(tx, ctx, command.operationId);
-      if (posted !== null) return this.detail(tx, ctx, posted, []);
+
+      // Orphaned historical cache rows cannot prove a purchase committed.
+      if (await this.idempotency.find(tx, ctx, command.operationId) !== null) {
+        throw new AppError(
+          ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'This operation has an unverified historical response; reconciliation required',
+        );
+      }
 
       const today = this.clock.businessDate(ctx.timezone);
       const businessDate = command.businessDate ?? today;
@@ -376,6 +447,19 @@ export class CreatePurchaseService {
           ErrorCode.VALIDATION_FAILED,
           'The due date cannot be before the purchase date',
         );
+      }
+
+      /*
+       * A product may be deactivated by another transaction while this bill
+       * is in flight. Serialize the row before status validation, correction
+       * reversal or stock/journal posting, and retain the lock until commit.
+       * Duplicate cart lines lock once; sorted IDs avoid opposite-cart-order
+       * purchase deadlocks. Exact-key replays returned above without locking,
+       * even if a product was deactivated after the original purchase.
+       */
+      const productIds = [...new Set(command.lines.map((line) => line.productId))].sort();
+      for (const productId of productIds) {
+        await this.purchases.lockProductForPosting(tx, ctx, productId);
       }
 
       /*
@@ -573,6 +657,8 @@ export class CreatePurchaseService {
         id: purchaseId,
         number,
         operationId: command.operationId,
+        createFingerprintVersion: PURCHASE_FINGERPRINT_VERSION,
+        createFingerprint: fingerprint,
         supplierPartyId: supplier.id,
         supplierBillRef: command.supplierBillRef,
         locationId: location.id,
@@ -646,7 +732,7 @@ export class CreatePurchaseService {
       const response = await this.detail(tx, ctx, purchaseId, warnings);
       await this.idempotency.save(tx, ctx, {
         operationId: command.operationId,
-        requestFingerprint: fingerprint,
+        requestFingerprint: cacheFingerprint,
         response,
       });
       return response;

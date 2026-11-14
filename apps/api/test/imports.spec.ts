@@ -14,6 +14,13 @@
  */
 import 'reflect-metadata';
 
+import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { createServer as createHttpServer, request as httpRequest } from 'node:http';
+import { createServer } from 'node:net';
+import { resolve } from 'node:path';
+
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Permission } from '@sher/core-contracts';
@@ -710,4 +717,248 @@ describe('importing opening stock', () => {
       },
     ]);
   });
+});
+
+
+/** C003-02/C02-04–05: verify the PostgreSQL claim across separate Nest OS processes. */
+async function importRacePort(): Promise<number> {
+  return new Promise<number>((done, fail) => {
+    const server = createServer();
+    server.once('error', fail);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address === null || typeof address === 'string') {
+        server.close();
+        fail(new Error('Ephemeral port unavailable'));
+        return;
+      }
+      server.close((error) => error === undefined ? done(address.port) : fail(error));
+    });
+  });
+}
+
+interface ImportRaceServer {
+  readonly child: ChildProcess;
+  readonly port: number;
+}
+
+async function stopImportRaceServer(server: ImportRaceServer): Promise<void> {
+  if (server.child.exitCode !== null || server.child.signalCode !== null) return;
+  const ended = new Promise<void>((done) => server.child.once('exit', () => done()));
+  server.child.kill('SIGTERM');
+  await Promise.race([ended, new Promise<void>((done) => setTimeout(done, 2000))]);
+  if (server.child.exitCode === null && server.child.signalCode === null) {
+    server.child.kill('SIGKILL');
+    await ended;
+  }
+}
+
+async function startImportRaceServer(): Promise<ImportRaceServer> {
+  const entry = resolve(__dirname, '../dist/main.js');
+  if (!existsSync(entry)) throw new Error('Two-process test requires the built Nest API');
+  const databaseUrl = process.env['DATABASE_URL'];
+  if (!databaseUrl || !databaseUrl.endsWith('/sher_test')) {
+    throw new Error('Refusing two-process test outside disposable sher_test database');
+  }
+  const port = await importRacePort();
+  const child = spawn(process.execPath, [entry], {
+    cwd: resolve(__dirname, '..'),
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      JWT_SECRET: TEST_JWT_SECRET,
+      ENTITLEMENT_SOURCE: 'subscription',
+      NODE_ENV: 'test',
+      PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  // Consume only; never leak connection strings or signed test tokens into CI logs.
+  child.stdout?.on('data', () => {});
+  child.stderr?.on('data', () => {});
+  const server = { child, port };
+  try {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error('Nest child exited before health readiness');
+      }
+      try {
+        const response = await fetch('http://127.0.0.1:' + port + '/health', {
+          signal: AbortSignal.timeout(800),
+        });
+        if (response.status === 200) return server;
+      } catch {
+        // Startup; retry within bounded deadline.
+      }
+      await new Promise<void>((done) => setTimeout(done, 100));
+    }
+    throw new Error('Nest child did not become healthy');
+  } catch (error) {
+    await stopImportRaceServer(server);
+    throw error;
+  }
+}
+
+async function importFromRaceServer(
+  server: ImportRaceServer,
+  csv: string,
+  operationId: string,
+): Promise<{ status: number; data: unknown; errorCode: string | undefined }> {
+  const response = await fetch('http://127.0.0.1:' + server.port + '/api/v1/imports', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + token,
+      'Idempotency-Key': operationId,
+    },
+    body: JSON.stringify({ type: 'PRODUCTS', csv }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const body = await response.json() as { data?: unknown; error?: { code?: string } };
+  return { status: response.status, data: body.data, errorCode: body.error?.code };
+}
+
+describe('C003-02 real two-Nest-process import arbitration', () => {
+  it('replays one SKU-less product after separate processes race on identical bytes', async () => {
+    const processes: ImportRaceServer[] = [];
+    try {
+      processes.push(await startImportRaceServer());
+      processes.push(await startImportRaceServer());
+      const [left, right] = processes as [ImportRaceServer, ImportRaceServer];
+      expect(left.child.pid).not.toBe(right.child.pid);
+      const operationId = Ulid.generate(clock);
+      const csv = [PRODUCT_HEADER, 'Cross Process Bolt,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+
+      const [first, second] = await Promise.all([
+        importFromRaceServer(left, csv, operationId),
+        importFromRaceServer(right, csv, operationId),
+      ]);
+      expect([first.status, second.status]).toEqual([201, 201]);
+      expect(second.data).toEqual(first.data);
+      expect((await products()).filter((row) => row.name === 'Cross Process Bolt')).toHaveLength(1);
+
+      await pruneFastImportReplay(operationId);
+      const later = await importFromRaceServer(right, csv, operationId);
+      expect(later.status).toBe(201);
+      expect(later.data).toEqual(first.data);
+      expect((await products()).filter((row) => row.name === 'Cross Process Bolt')).toHaveLength(1);
+      const claims = await asTenant(pool, tenant.tenantId, (client) =>
+        client.query('SELECT response_json FROM import_operations WHERE operation_id = $1', [operationId]));
+      expect(claims.rows).toHaveLength(1);
+      expect(claims.rows[0]?.response_json).toEqual(first.data);
+    } finally {
+      await Promise.all(processes.map(stopImportRaceServer));
+    }
+  }, 90000);
+
+  it('rejects equal-length changed payload across two independent Nest processes', async () => {
+    const processes: ImportRaceServer[] = [];
+    try {
+      processes.push(await startImportRaceServer());
+      processes.push(await startImportRaceServer());
+      const [left, right] = processes as [ImportRaceServer, ImportRaceServer];
+      const operationId = Ulid.generate(clock);
+      const original = [PRODUCT_HEADER, 'Cross Process Bolt A,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+      const changed = [PRODUCT_HEADER, 'Cross Process Bolt B,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+      expect(changed.length).toBe(original.length);
+      const [first, second] = await Promise.all([
+        importFromRaceServer(left, original, operationId),
+        importFromRaceServer(right, changed, operationId),
+      ]);
+      expect([first.status, second.status].sort()).toEqual([201, 409]);
+      const refused = first.status === 409 ? first : second;
+      expect(refused.errorCode).toBe('IDEMPOTENCY_KEY_REUSED');
+      expect(await products()).toHaveLength(1);
+      const claims = await asTenant(pool, tenant.tenantId, (client) =>
+        client.query('SELECT response_json FROM import_operations WHERE operation_id = $1', [operationId]));
+      expect(claims.rows).toHaveLength(1);
+    } finally {
+      await Promise.all(processes.map(stopImportRaceServer));
+    }
+  }, 90000);
+
+  // C02-07: the server commits and has a successful response, but an
+  // intermediary drops it. The caller must safely retry after the API process
+  // restarts and after the prunable fast key has been removed.
+  it('replays a committed import after HTTP response loss and Nest process restart', async () => {
+    const processes: ImportRaceServer[] = [];
+    let dropProxy: ReturnType<typeof createHttpServer> | undefined;
+    try {
+      const first = await startImportRaceServer();
+      processes.push(first);
+      const operationId = Ulid.generate(clock);
+      const csv = [PRODUCT_HEADER, 'Lost Response Bolt,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+      let upstreamStatus = 0;
+      let upstreamBody: { data?: unknown } | undefined;
+
+      // Proxy receives the *whole successful upstream HTTP response* and only
+      // then tears down the client socket. Commit-before-loss is deterministic.
+      dropProxy = createHttpServer((_incoming, downstream) => {
+        const upstream = httpRequest({
+          hostname: '127.0.0.1',
+          port: first.port,
+          path: '/api/v1/imports',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + token,
+            'Idempotency-Key': operationId,
+          },
+        }, (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.once('end', () => {
+            upstreamStatus = response.statusCode ?? 0;
+            upstreamBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { data?: unknown };
+            downstream.destroy();
+          });
+          response.once('error', () => downstream.destroy());
+        });
+        upstream.once('error', () => downstream.destroy());
+        upstream.end(JSON.stringify({ type: 'PRODUCTS', csv }));
+      });
+      const proxy = dropProxy;
+      const proxyPort = await new Promise<number>((resolvePort, rejectPort) => {
+        proxy.once('error', rejectPort);
+        proxy.listen(0, '127.0.0.1', () => {
+          const address = proxy.address();
+          if (!address || typeof address === 'string') {
+            rejectPort(new Error('No loopback response-loss proxy port'));
+          } else {
+            resolvePort(address.port);
+          }
+        });
+      });
+
+      await expect(fetch('http://127.0.0.1:' + proxyPort + '/lost-reply', {
+        method: 'POST',
+        signal: AbortSignal.timeout(20000),
+      })).rejects.toThrow();
+      expect(upstreamStatus).toBe(201);
+      expect(upstreamBody?.data).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
+      const getSourceCounts = async () => asTenant(pool, tenant.tenantId, (client) =>
+        client.query([
+          'SELECT',
+          '(SELECT count(*)::integer FROM import_operations WHERE tenant_id = $1 AND operation_id = $2 AND response_json IS NOT NULL) AS operations,',
+          '(SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = \'data_import\' AND entity_id = $2) AS audits,',
+          '(SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = \'data.imported\' AND aggregate_id = $2) AS events',
+        ].join(' '), [tenant.tenantId, operationId]));
+      const before = await getSourceCounts();
+      expect(before.rows[0]).toEqual({ operations: 1, audits: 1, events: 1 });
+
+      await stopImportRaceServer(first);
+      await pruneFastImportReplay(operationId);
+      const restarted = await startImportRaceServer();
+      processes.push(restarted);
+      const replay = await importFromRaceServer(restarted, csv, operationId);
+      expect(replay.status).toBe(201);
+      expect(replay.data).toEqual(upstreamBody?.data);
+      expect((await products()).filter((row) => row.name === 'Lost Response Bolt')).toHaveLength(1);
+      expect((await getSourceCounts()).rows).toEqual(before.rows);
+    } finally {
+      if (dropProxy) await new Promise<void>((done) => dropProxy?.close(() => done()));
+      await Promise.all(processes.map(stopImportRaceServer));
+    }
+  }, 90000);
+
 });

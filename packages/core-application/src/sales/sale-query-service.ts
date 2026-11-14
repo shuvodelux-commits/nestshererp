@@ -6,6 +6,8 @@ import type {
   PosProductList,
   PosProductQuery,
   SaleDraftResponse,
+  SaleDraftDetailResponse,
+  UpdateSaleDraftRequest,
   SaleListQuery,
   SaleListResponse,
   SaleResponse,
@@ -19,10 +21,25 @@ import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
 import { effectiveSettings, settingValuesOf } from '../settings/feature-dependencies';
 import type { SettingsRepository } from '../settings/settings-repository';
-import type { SaleRepository } from './sale-repository';
+import type { SaleDraftRow, SaleRepository } from './sale-repository';
 import { toSaleListItem, toSaleResponse } from './sale-view';
 
 const DEFAULT_LIMIT = 50;
+
+function draftDetailResponse(row: SaleDraftRow): SaleDraftDetailResponse {
+  return {
+    id: row.id,
+    label: row.label,
+    customerName: row.customerName,
+    itemCount: row.itemCount,
+    grandTotalMinor: row.grandTotalMinor,
+    businessDate: row.businessDate,
+    savedAt: row.savedAt.toISOString(),
+    cart: row.cart,
+    version: row.version,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 const RANKED_POS_CURSOR = /^v2\.([0-9]{1,4})\.([0-7][0-9A-HJKMNP-TV-Z]{25})\.([a-f0-9]{24})$/;
 
@@ -387,6 +404,32 @@ export class SaleQueryService {
         savedAt: row.savedAt.toISOString(),
         cart: row.cart,
       }));
+    });
+  }
+
+  /** A single parked cart is always tenant-scoped and requires SALE_CREATE. */
+  async draftDetail(ctx: TenantContext, id: string): Promise<SaleDraftDetailResponse> {
+    return this.uow.run(ctx, async (tx) => {
+      await this.access.require(tx, ctx, Permission.SALE_CREATE);
+      const row = await this.sales.findDraftById(tx, ctx, id);
+      if (row === null) throw new AppError(ErrorCode.NOT_FOUND, 'Draft not found');
+      return draftDetailResponse(row);
+    });
+  }
+
+  /** Update only the version the POS read: never re-POST and duplicate the cart. */
+  async updateDraft(
+    ctx: TenantContext,
+    id: string,
+    draft: UpdateSaleDraftRequest,
+  ): Promise<SaleDraftDetailResponse> {
+    return this.uow.run(ctx, async (tx) => {
+      await this.access.require(tx, ctx, Permission.SALE_CREATE);
+      const changed = await this.sales.updateDraft(tx, ctx, id, draft.expectedVersion, draft);
+      if (changed !== null) return draftDetailResponse(changed);
+      const existing = await this.sales.findDraftById(tx, ctx, id);
+      if (existing === null) throw new AppError(ErrorCode.NOT_FOUND, 'Draft not found');
+      throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Draft was changed; reload before editing');
     });
   }
 

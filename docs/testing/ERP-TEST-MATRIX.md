@@ -17,7 +17,7 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 247 |
+| HTTP endpoints | 249 |
 | Permission codes | 121 |
 | Cross-module workflows | 17 |
 
@@ -3600,8 +3600,10 @@
 | GET | `/api/v1/sales/invoice-logo` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | POST | `/api/v1/sales/invoice-logo` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | DELETE | `/api/v1/sales/invoice-logo` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
-| GET | `/api/v1/sales/drafts` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
-| POST | `/api/v1/sales/drafts` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/sales/drafts` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
+| POST | `/api/v1/sales/drafts` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
+| GET | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
+| PUT | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | DELETE | `/api/v1/sales/drafts/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ❌ NOT TESTED |
 | GET | `/api/v1/sales` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
 | GET | `/api/v1/sales/:id` | SalesController | COST_VIEW, CUSTOMER_VIEW, RECEIPT_VOID, SALE_CREATE … (+8) | ✅ TESTED |
