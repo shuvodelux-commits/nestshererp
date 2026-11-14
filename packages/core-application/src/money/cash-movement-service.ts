@@ -179,6 +179,12 @@ export class CashMovementService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
       }
 
+      // Session independence must never permit a post on a physical day that
+      // has already been counted, even after its drawer account is reassigned.
+      await this.assertClosedCashDayImmutable(
+        tx, ctx, command.businessDate, [from.code, to.code],
+      );
+
       // Session enforcement is tenant-configured, not a hard requirement of CASH.
       // Resolve from the locked server setting in the same money-posting UoW.
       const sessionId = await this.requireDrawerSession(
@@ -192,6 +198,9 @@ export class CashMovementService {
         toAccount: to.code as never,
         amountMinor: command.amountMinor,
       });
+      await this.assertLenderPrincipal(
+        tx, ctx, command.kind, from.code, to.code, posting.lines, [],
+      );
 
       const movementId = Ulid.generate(this.clock);
       const number = await this.numbering.allocate(
@@ -299,6 +308,13 @@ export class CashMovementService {
       await this.settings.lockTenant(tx, ctx);
       await this.requireKindPermission(tx, ctx, command.movementId);
       await this.assertDrawerOpenFor(tx, ctx, command.movementId);
+      // A void is the exact opposite of the standing journal. Removing a
+      // lender receipt after repayments must never turn liability into an asset.
+      const standing = await this.reversals.findPosted(tx, ctx, 'CASH_MOVEMENT', command.movementId);
+      if (standing === null) throw new AppError(ErrorCode.NOT_FOUND, 'That movement was not found');
+      if (standing.status === 'POSTED') {
+        await this.assertLenderPrincipal(tx, ctx, null, '', '', [], standing.journalLines);
+      }
 
       await reverseMoneyDocument(
         {
@@ -379,9 +395,29 @@ export class CashMovementService {
         throw new AppError(ErrorCode.VALIDATION_FAILED, REJECTION_MESSAGES[rejection]);
       }
 
+      // Both the old standing journal and the newly selected sides would be
+      // posted on placement.businessDate. Neither may restate a counted close.
+      await this.assertClosedCashDayImmutable(
+        tx, ctx, placement.businessDate,
+        [...posted.journalLines.map((line) => line.account), from.code, to.code],
+      );
+
       const sessionId = await this.requireDrawerSession(
         tx, ctx, placement.businessDate, from.isDrawer || to.isDrawer,
         'Start the day before correcting cash in or out of the drawer',
+      );
+
+      const posting = cashMovementPosting({
+        kind: command.kind,
+        fromAccount: from.code as never,
+        toAccount: to.code as never,
+        amountMinor: command.amountMinor,
+      });
+      // Compare proposed principal with the standing movement's effect, not
+      // with today's balance alone: a corrected repayment replaces its old
+      // repayment in the same journal UoW.
+      await this.assertLenderPrincipal(
+        tx, ctx, command.kind, from.code, to.code, posting.lines, posted.journalLines,
       );
 
       await reverseMoneyDocument(
@@ -407,12 +443,7 @@ export class CashMovementService {
         },
       );
 
-      const posting = cashMovementPosting({
-        kind: command.kind,
-        fromAccount: from.code as never,
-        toAccount: to.code as never,
-        amountMinor: command.amountMinor,
-      });
+
 
       const reposted = await this.money.repostMovement(tx, ctx, {
         id: command.movementId,
@@ -471,6 +502,54 @@ export class CashMovementService {
   }
 
   /**
+   * A LOAN is a lender liability, never a spare asset account. V1 principal
+   * movements have a fixed direction; interest/fees belong to Expenses.
+   *
+   * Compute the projected ledger after replacing or reversing a standing
+   * journal, all within the money writer's tenant-row lock. This prevents
+   * over-repaying principal via record, correction or cancellation races.
+   */
+  private async assertLenderPrincipal(
+    tx: Tx,
+    ctx: TenantContext,
+    kind: RecordMovementCommand['kind'] | null,
+    from: string,
+    to: string,
+    proposed: readonly { readonly account: string; readonly amountMinor: number }[],
+    standing: readonly { readonly account: string; readonly amountMinor: number }[],
+  ): Promise<void> {
+    if (kind === 'LOAN_RECEIVED' &&
+        (!from.startsWith('LOAN:') || to.startsWith('LOAN:'))) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED,
+        'Receive a lender loan from the loan account into cash or bank');
+    }
+    if (kind === 'LOAN_REPAYMENT' &&
+        (!to.startsWith('LOAN:') || from.startsWith('LOAN:'))) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED,
+        'Repay lender principal from cash or bank into the loan account');
+    }
+
+    const codes = new Set([...proposed, ...standing]
+      .map((line) => line.account).filter((code) => code.startsWith('LOAN:')));
+    for (const code of codes) {
+      const account = await this.money.findAccountById(tx, ctx, code.slice(5));
+      if (account === null || account.type !== 'LOAN') {
+        throw new AppError(ErrorCode.VALIDATION_FAILED, 'The lender loan account is unavailable');
+      }
+      const proposedMinor = proposed
+        .filter((line) => line.account === code)
+        .reduce((sum, line) => sum + line.amountMinor, 0);
+      const standingMinor = standing
+        .filter((line) => line.account === code)
+        .reduce((sum, line) => sum + line.amountMinor, 0);
+      if (account.balanceMinor + proposedMinor - standingMinor > 0) {
+        throw new AppError(ErrorCode.VALIDATION_FAILED,
+          'Principal repayment cannot exceed the outstanding lender loan');
+      }
+    }
+  }
+
+  /**
    * The permission the movement **already on the row** needs.
    *
    * Used by cancel and correct, and deliberately not by record: those two
@@ -500,6 +579,32 @@ export class CashMovementService {
   }
 
   /**
+   * A counted close is immutable on its business date. The original drawer
+   * identity lives on cash_sessions.account_id, NOT the account's mutable
+   * current isDrawer flag. Journal reversals, corrections and new transfers
+   * must not add cash entries after that session is CLOSED.
+   *
+   * Called only from money-movement transactions after taking the tenant
+   * row lock, which Close Day also acquires before calculating its totals.
+   * Bank-only and unrelated non-drawer cash accounts are unaffected.
+   */
+  private async assertClosedCashDayImmutable(
+    tx: Tx,
+    ctx: TenantContext,
+    businessDate: string,
+    accounts: readonly string[],
+  ): Promise<void> {
+    if (!accounts.some((code) => code.startsWith('CASH:'))) return;
+    const counted = await this.money.findSessionByDate(tx, ctx, businessDate);
+    if (counted?.status !== 'CLOSED') return;
+    if (!accounts.includes(`CASH:${counted.accountId}`)) return;
+    throw new AppError(
+      ErrorCode.VALIDATION_FAILED,
+      'This cash day is already counted and closed; record a separate approved adjustment on an eligible date',
+    );
+  }
+
+  /**
    * Undoing drawer cash needs an eligible open day when the feature is ON.
    * OFF mode preserves the exact reversal journal without a physical day.
    */
@@ -515,6 +620,12 @@ export class CashMovementService {
     const cashCodes = new Set(posted.journalLines
       .map((line) => line.account)
       .filter((code) => code.startsWith('CASH:')));
+    // The cancellation's reversal posts on the current business date. Even
+    // when isDrawer is now false, the original session account cannot receive
+    // another same-date journal after its physical close was counted.
+    await this.assertClosedCashDayImmutable(
+      tx, ctx, this.clock.businessDate(ctx.timezone), [...cashCodes],
+    );
     for (const code of cashCodes) {
       const account = await this.money.findAccountById(tx, ctx, code.slice('CASH:'.length));
       if (account === null) {

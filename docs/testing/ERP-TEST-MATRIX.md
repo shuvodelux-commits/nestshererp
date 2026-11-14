@@ -3416,13 +3416,13 @@
 | PATCH | `/api/v1/catalog/metadata-v1/categories/:id` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | GET | `/api/v1/catalog` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/units` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
-| PATCH | `/api/v1/catalog/units/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
+| PATCH | `/api/v1/catalog/units/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/units/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
 | POST | `/api/v1/catalog/brands` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
-| PATCH | `/api/v1/catalog/brands/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
-| POST | `/api/v1/catalog/brands/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
+| PATCH | `/api/v1/catalog/brands/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| POST | `/api/v1/catalog/brands/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/categories` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
-| PATCH | `/api/v1/catalog/categories/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
+| PATCH | `/api/v1/catalog/categories/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/categories/:id/remove` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ❌ NOT TESTED |
 | GET | `/api/v1/products` | ProductsController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | GET | `/api/v1/products/:id` | ProductsController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
@@ -3497,7 +3497,7 @@
 | POST | `/api/v1/money/movements` | CashSessionsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | PATCH | `/api/v1/money/movements/:id` | CashSessionsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
 | POST | `/api/v1/money/movements/:id/void` | CashSessionsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
-| GET | `/api/v1/money/reconciliations` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
+| GET | `/api/v1/money/reconciliations` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | GET | `/api/v1/money/reconciliations/:id` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/reconciliations` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/reconciliations/:id/statement` | ReconciliationsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
