@@ -1235,10 +1235,30 @@ export class PostgresSaleRepository implements SaleRepository {
       )
       .orderBy(sales.businessDate, sales.id);
 
-    const settledMinor = allocationRows.reduce(
-      (sum, allocation) => sum + Number(allocation.amountMinor),
-      0,
-    );
+    // A receipt can settle a historical AR opening without an invoice.
+    // The net credit to AR (including any reversal and re-posted correction)
+    // is authoritative; invoice allocations only express invoice links.
+    const settlementRows = await db
+      .select({
+        settledMinor: sql<number>`COALESCE(-SUM(${journalLines.amountMinor}), 0)::bigint`,
+      })
+      .from(journalEntries)
+      .innerJoin(journalLines, and(
+        eq(journalLines.tenantId, ctx.tenantId),
+        eq(journalLines.journalEntryId, journalEntries.id),
+      ))
+      .where(and(
+        eq(journalEntries.tenantId, ctx.tenantId),
+        eq(journalEntries.sourceDocumentId, row.id),
+        inArray(journalEntries.sourceDocumentType, [
+          'CUSTOMER_RECEIPT',
+          'CUSTOMER_RECEIPT_REVERSAL',
+          'CUSTOMER_RECEIPT_CORRECTION',
+        ]),
+        eq(journalLines.accountCode, 'AR'),
+        eq(journalLines.partyId, row.customerPartyId),
+      ));
+    const settledMinor = Number(settlementRows[0]?.settledMinor ?? 0);
     const names = await this.accountsByCode(tx, ctx, [row.accountCode]);
 
     return {
