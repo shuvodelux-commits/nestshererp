@@ -771,7 +771,7 @@
 | **Tables** | 5 columns, sortable, paginated, empty state |
 | **Search / filters / tabs** | search / filters / — |
 | **Validation rules** | — |
-| **Business effects** | createCustomerGroup, deleteParty, fetchParties, fetchPartySetup, removeCustomerGroup, renameCustomerGroup, setPartyStatus |
+| **Business effects** | createCustomerGroup, deleteParty, fetchPartiesV2, fetchPartySetup, removeCustomerGroup, renameCustomerGroup, setPartyStatus |
 | **Permissions** | party.group.manage |
 | **Desktop / mobile** | desktop |
 | **Responsible tests** | component |
@@ -787,7 +787,7 @@
 | **File** | `apps/web/src/pages/PartyFormPage.vue` |
 | **Kind** | PAGE |
 | **Route** | `/parties/:id` |
-| **Roles** | party.group.manage |
+| **Roles** | party.group.manage, party.customer.view, party.customer.edit |
 | **Fields** | party-name (TEXT), party-guardian (TEXT), party-phone (TEXT), party-address (TEXT), Vendor (CHECKBOX), party-nid (TEXT), party-email (TEXT), customerGroupId (SEARCHABLE_SELECT), party-credit (MONEY), party-notes (TEXT), party-opening (MONEY), openingDirection (SELECT), party-opening-role (SELECT), party-opening-date (DATE) |
 | **Required fields** | party-name, party-phone, party-credit, party-opening |
 | **Optional fields** | party-guardian, party-address, Vendor, party-nid, party-email, customerGroupId, party-notes, openingDirection, party-opening-role, party-opening-date |
@@ -801,7 +801,7 @@
 | **Search / filters / tabs** | — / — / — |
 | **Validation rules** | Enter the credit limit as an amount, with at most two decimal places, Enter the opening balance as an amount greater than zero |
 | **Business effects** | createCustomerGroup, createParty, deleteParty, fetchParty, fetchPartySetup, updateParty |
-| **Permissions** | party.group.manage |
+| **Permissions** | party.group.manage, party.customer.view, party.customer.edit |
 | **Desktop / mobile** | desktop |
 | **Responsible tests** | component |
 | **Status** | 🟡 PARTIALLY TESTED |

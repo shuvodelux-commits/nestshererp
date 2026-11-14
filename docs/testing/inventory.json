@@ -2279,7 +2279,7 @@
       "apiCalls": [
         "createCustomerGroup",
         "deleteParty",
-        "fetchParties",
+        "fetchPartiesV2",
         "fetchPartySetup",
         "removeCustomerGroup",
         "renameCustomerGroup",
@@ -2296,7 +2296,9 @@
       "routeName": "party",
       "navPermissions": [],
       "permissionsUsed": [
-        "party.group.manage"
+        "party.group.manage",
+        "party.customer.view",
+        "party.customer.edit"
       ],
       "fields": [
         {
