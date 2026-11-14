@@ -55,6 +55,12 @@ export class PartyLedgerService {
     const { ctx } = command;
 
     return this.uow.run(ctx, async (tx) => {
+      // An explicitly requested relationship must be authorized before
+      // identity lookup, or 403 versus 404 reveals a hidden Party's existence.
+      // Keep the optional legacy role behavior for old single-role callers.
+      if (command.role !== undefined) {
+        await this.accessControl.require(tx, ctx, VIEW_PERMISSIONS[command.role]);
+      }
       const party = await this.parties.findById(tx, ctx, command.partyId);
       if (party === null) {
         throw new AppError(ErrorCode.NOT_FOUND, 'That party no longer exists');
