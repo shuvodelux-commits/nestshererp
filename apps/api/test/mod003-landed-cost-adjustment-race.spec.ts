@@ -149,8 +149,8 @@ async function post(
   const json = await response.json() as { data?: unknown; error?: unknown };
   if (response.status >= 500) {
     // Keep the actual Nest exception in RED QA evidence. Never whitelist 500.
-    console.error('C003-06 server error', JSON.stringify(json.error),
-      server.logs.slice(-35).join('').slice(-9000));
+    process.stderr.write('C003-06 server error ' + JSON.stringify(json.error) + '\n' +
+      server.logs.slice(-35).join('').slice(-9000) + '\n');
   }
   return { status: response.status, data: json.data };
 }
