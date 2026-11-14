@@ -27,6 +27,8 @@ import {
   journalEntries,
   journalLines,
   supplierPurchaseOrders,
+  supplierPurchaseOrderLines,
+  purchasePlanLines,
   parties,
   paymentAllocations,
   productCostState,
@@ -95,6 +97,112 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     // A hash collision only creates extra serialization, never data sharing.
     const key = ctx.tenantId + ':' + operationId;
     await txOf(tx).execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+  }
+
+
+  async lockSupplierOrderForPurchase(
+    tx: Tx,
+    ctx: TenantContext,
+    supplierOrderId: string,
+  ): Promise<{
+    supplierPartyId: string;
+    status: string;
+    purchaseId: string | null;
+    deletedAt: Date | null;
+    lines: readonly { productId: string; qty: number; planLineId: string | null }[];
+  } | null> {
+    const db = txOf(tx);
+    // A separate operationId MUST still contend on this same source row.
+    // Lock before product rows/correction so distinct-key retries serialize.
+    const [order] = await db
+      .select({
+        planId: supplierPurchaseOrders.planId,
+        supplierPartyId: supplierPurchaseOrders.supplierPartyId,
+        status: supplierPurchaseOrders.status,
+        purchaseId: supplierPurchaseOrders.purchaseId,
+        deletedAt: supplierPurchaseOrders.deletedAt,
+      })
+      .from(supplierPurchaseOrders)
+      .where(and(
+        eq(supplierPurchaseOrders.tenantId, ctx.tenantId),
+        eq(supplierPurchaseOrders.id, supplierOrderId),
+      ))
+      .for('update')
+      .limit(1);
+    if (order === undefined) return null;
+
+    const orderLines = await db
+      .select({
+        productId: supplierPurchaseOrderLines.productId,
+        qty: supplierPurchaseOrderLines.qty,
+      })
+      .from(supplierPurchaseOrderLines)
+      .where(and(
+        eq(supplierPurchaseOrderLines.tenantId, ctx.tenantId),
+        eq(supplierPurchaseOrderLines.orderId, supplierOrderId),
+      ))
+      .orderBy(asc(supplierPurchaseOrderLines.lineNo));
+
+    const planLines = await db
+      .select({
+        id: purchasePlanLines.id,
+        productId: purchasePlanLines.productId,
+        supplierPartyId: purchasePlanLines.supplierPartyId,
+      })
+      .from(purchasePlanLines)
+      .where(and(
+        eq(purchasePlanLines.tenantId, ctx.tenantId),
+        eq(purchasePlanLines.planId, order.planId),
+      ));
+    const planByProduct = new Map(
+      planLines
+        .filter(line => line.supplierPartyId === order.supplierPartyId)
+        .map(line => [line.productId.trim(), line.id.trim()] as const),
+    );
+
+    return {
+      supplierPartyId: order.supplierPartyId.trim(),
+      status: order.status,
+      purchaseId: order.purchaseId?.trim() ?? null,
+      deletedAt: order.deletedAt,
+      lines: orderLines.map(line => ({
+        productId: line.productId.trim(),
+        qty: line.qty,
+        planLineId: planByProduct.get(line.productId.trim()) ?? null,
+      })),
+    };
+  }
+
+  async convertSupplierOrderForPurchase(
+    tx: Tx,
+    ctx: TenantContext,
+    supplierOrderId: string,
+    supplierPartyId: string,
+    purchaseId: string,
+    previousPurchaseId: string | null,
+  ): Promise<boolean> {
+    const db = txOf(tx);
+    const now = this.clock.now();
+    const sourceCondition = previousPurchaseId === null
+      ? and(eq(supplierPurchaseOrders.status, 'OPEN'), isNull(supplierPurchaseOrders.purchaseId))
+      : and(
+          eq(supplierPurchaseOrders.status, 'CONVERTED'),
+          eq(supplierPurchaseOrders.purchaseId, previousPurchaseId),
+        );
+    const [updated] = await db.update(supplierPurchaseOrders).set({
+      status: 'CONVERTED',
+      purchaseId,
+      updatedAt: now,
+      updatedBy: ctx.userId,
+      version: sql`${supplierPurchaseOrders.version} + 1`,
+    }).where(and(
+      eq(supplierPurchaseOrders.tenantId, ctx.tenantId),
+      eq(supplierPurchaseOrders.id, supplierOrderId),
+      eq(supplierPurchaseOrders.supplierPartyId, supplierPartyId),
+      isNull(supplierPurchaseOrders.deletedAt),
+      sourceCondition,
+    )).returning({ id: supplierPurchaseOrders.id });
+    return updated !== undefined;
   }
 
   async lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void> {
@@ -373,29 +481,6 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
           })),
         );
       }
-    }
-
-    /*
-     * Closing the order belongs in the bill's own transaction: a bill that
-     * posted while its order stayed Open would have the shop ask the same
-     * supplier for the same goods again.
-     */
-    if (purchase.supplierOrderId !== null && purchase.supplierOrderId !== undefined) {
-      await db
-        .update(supplierPurchaseOrders)
-        .set({
-          status: 'CONVERTED',
-          purchaseId: purchase.id,
-          updatedAt: now,
-          updatedBy: ctx.userId,
-          version: sql`${supplierPurchaseOrders.version} + 1`,
-        })
-        .where(
-          and(
-            eq(supplierPurchaseOrders.tenantId, ctx.tenantId),
-            eq(supplierPurchaseOrders.id, purchase.supplierOrderId),
-          ),
-        );
     }
 
     await this.insertJournal(
