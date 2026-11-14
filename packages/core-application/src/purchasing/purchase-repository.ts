@@ -324,6 +324,39 @@ export interface PurchaseRepository {
    * the normal NOT_FOUND / PRODUCT_INACTIVE validation.
    */
   lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void>;
+  /**
+   * Lock the tenant-owned supplier-order row before any source-linked financial
+   * posting, and read its immutable ordered lines and approved plan lineage.
+   * Row lock remains held until Class-T commit/rollback.
+   */
+  lockSupplierOrderForPurchase(
+    tx: Tx,
+    ctx: TenantContext,
+    supplierOrderId: string,
+  ): Promise<{
+    supplierPartyId: string;
+    status: string;
+    purchaseId: string | null;
+    deletedAt: Date | null;
+    lines: readonly {
+      productId: string;
+      qty: number;
+      planLineId: string | null;
+    }[];
+  } | null>;
+  /**
+   * One-time OPEN→CONVERTED (or correcting this source's own purchase).
+   * False means the source changed or no longer belongs to this tenant.
+   * Must run inside the same Class-T transaction as posting all financial rows.
+   */
+  convertSupplierOrderForPurchase(
+    tx: Tx,
+    ctx: TenantContext,
+    supplierOrderId: string,
+    supplierPartyId: string,
+    purchaseId: string,
+    previousPurchaseId: string | null,
+  ): Promise<boolean>;
   /** Transactionally serialize retries of the same tenant-owned purchase key. */
   lockPurchaseOperation(tx: Tx, ctx: TenantContext, operationId: string): Promise<void>;
   insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void>;
