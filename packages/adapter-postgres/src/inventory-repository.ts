@@ -6,6 +6,7 @@ import type {
   StockAdjustmentForReversal,
   StockAdjustmentReversal,
 } from '@sher/core-application';
+import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { InventoryLotSort } from '@sher/core-contracts';
 import type { AccountCode, StockAdjustmentReason } from '@sher/core-domain';
 import type { Clock } from '@sher/shared-utils';
@@ -52,8 +53,18 @@ export class PostgresInventoryRepository implements InventoryRepository {
 
   async createDefaultLocation(tx: Tx, ctx: TenantContext, id: string): Promise<LocationRow> {
     const now = this.clock.now(); const name = 'Main Shop';
-    await txOf(tx).insert(inventoryLocations).values({ id, tenantId: ctx.tenantId, name, isDefault: true, createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
-    return { id, name };
+    // Another transaction may be creating this shop's sole default location.
+    // ON CONFLICT waits for its outcome, then we read the committed winner.
+    await txOf(tx).insert(inventoryLocations).values({
+      id, tenantId: ctx.tenantId, name, isDefault: true,
+      createdAt: now, updatedAt: now, createdBy: ctx.userId,
+      updatedBy: ctx.userId, version: 1,
+    }).onConflictDoNothing();
+    const location = await this.findDefaultLocation(tx, ctx);
+    if (location === null) {
+      throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'The default stock location changed — retry');
+    }
+    return location;
   }
 
   findOpeningByOperationId(tx: Tx, ctx: TenantContext, operationId: string): Promise<OpeningStockRecord | null> {
@@ -99,7 +110,19 @@ export class PostgresInventoryRepository implements InventoryRepository {
     await db.insert(stockOpenings).values({ id: opening.id, tenantId: ctx.tenantId, openingNumber: opening.number, productId: opening.productId, locationId: opening.locationId, qty: opening.qty, unitCost: opening.unitCost, valueMinor: opening.valueMinor, businessDate: opening.businessDate, entryMode: opening.entryMode, status: 'POSTED', operationId: opening.operationId, createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
     await db.insert(inventoryLots).values({ id: opening.lotId, tenantId: ctx.tenantId, productId: opening.productId, locationId: opening.locationId, ownerType: 'OWNED', vendorPartyId: null, supplierPartyId: null, sourceDocumentType: 'OPENING_STOCK', sourceDocumentId: opening.id, sourceNumber: opening.number, qtyReceived: opening.qty, qtyRemaining: opening.qty, purchaseUnitCost: opening.unitCost, landedCostTotal: 0, actualUnitCost: opening.unitCost, businessDate: opening.businessDate, expiryDate: opening.expiryDate, status: 'OPEN', createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
     await db.insert(stockMovements).values({ id: opening.movementId, tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId, productId: opening.productId, locationId: opening.locationId, lotId: opening.lotId, qty: opening.qty, direction: 'IN', businessDate: opening.businessDate, sourceDocumentType: 'OPENING_STOCK', sourceDocumentId: opening.id, sourceNumber: opening.number, unitCost: opening.unitCost });
-    await db.insert(productCostState).values({ id: opening.costStateId, tenantId: ctx.tenantId, productId: opening.productId, locationId: opening.locationId, avgUnitCost: opening.unitCost, qtyOnHand: opening.qty, lastRecomputedAt: now, createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1 });
+    const insertedPosition = await db.insert(productCostState).values({
+      id: opening.costStateId, tenantId: ctx.tenantId, productId: opening.productId,
+      locationId: opening.locationId, avgUnitCost: opening.unitCost, qtyOnHand: opening.qty,
+      lastRecomputedAt: now, createdAt: now, updatedAt: now, createdBy: ctx.userId,
+      updatedBy: ctx.userId, version: 1,
+    }).onConflictDoNothing({
+      target: [productCostState.tenantId, productCostState.productId, productCostState.locationId],
+    }).returning({ id: productCostState.id });
+    if (insertedPosition.length !== 1) {
+      // A sale/adjustment/receipt already established a stock position.
+      // Roll back this entire opening (movement, lot, journal and audit).
+      throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock was changed by another operation — retry');
+    }
     await db.insert(journalEntries).values({ id: opening.journalEntryId, tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId, businessDate: opening.businessDate, sourceDocumentType: 'OPENING_STOCK', sourceDocumentId: opening.id, sourceNumber: opening.number, entryMode: opening.entryMode });
     await db.insert(journalLines).values(opening.journalLines.map((line) => ({ id: line.id, tenantId: ctx.tenantId, createdAt: now, createdBy: ctx.userId, journalEntryId: opening.journalEntryId, accountCode: line.account, amountMinor: line.amountMinor, partyId: line.partyId })));
   }
@@ -195,7 +218,7 @@ export class PostgresInventoryRepository implements InventoryRepository {
       // DR13.11: a lot reaching zero is CLOSED and kept forever. The guard on
       // `qty_remaining` is what stops two concurrent issues from driving one lot
       // below zero — the loser updates no rows and the caller sees the shortage.
-      await db.update(inventoryLots)
+      const updatedLot = await db.update(inventoryLots)
         .set({
           qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${consumption.qty}`,
           status: consumption.closesLot ? 'CLOSED' : 'OPEN',
@@ -205,24 +228,44 @@ export class PostgresInventoryRepository implements InventoryRepository {
           eq(inventoryLots.tenantId, ctx.tenantId),
           eq(inventoryLots.id, consumption.lotId),
           gte(inventoryLots.qtyRemaining, consumption.qty),
-        ));
+        ))
+        .returning({ id: inventoryLots.id });
+      if (updatedLot.length !== 1) {
+        // The lot guard is meaningful only when we REQUIRE one updated row.
+        // Otherwise a second writer can journal a stock write-off it never made.
+        throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock lots changed — retry this adjustment');
+      }
     }
 
     if (adjustment.costState.exists) {
-      await db.update(productCostState)
+      const expectedQty = adjustment.costState.qtyOnHand - adjustment.qtyDelta;
+      const updatedPosition = await db.update(productCostState)
         .set({
           avgUnitCost: adjustment.costState.avgUnitCost, qtyOnHand: adjustment.costState.qtyOnHand,
           lastRecomputedAt: now, updatedAt: now, updatedBy: ctx.userId,
           version: sql`${productCostState.version} + 1`,
         })
-        .where(and(eq(productCostState.tenantId, ctx.tenantId), eq(productCostState.id, adjustment.costState.id)));
+        .where(and(
+          eq(productCostState.tenantId, ctx.tenantId),
+          eq(productCostState.id, adjustment.costState.id),
+          eq(productCostState.qtyOnHand, expectedQty),
+        ))
+        .returning({ id: productCostState.id });
+      if (updatedPosition.length !== 1) {
+        throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock position changed — retry this adjustment');
+      }
     } else {
-      await db.insert(productCostState).values({
+      const insertedPosition = await db.insert(productCostState).values({
         id: adjustment.costState.id, tenantId: ctx.tenantId, productId: adjustment.productId,
         locationId: adjustment.locationId, avgUnitCost: adjustment.costState.avgUnitCost,
         qtyOnHand: adjustment.costState.qtyOnHand, lastRecomputedAt: now,
         createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId, version: 1,
-      });
+      }).onConflictDoNothing({
+        target: [productCostState.tenantId, productCostState.productId, productCostState.locationId],
+      }).returning({ id: productCostState.id });
+      if (insertedPosition.length !== 1) {
+        throw new AppError(ErrorCode.CONFLICT_STALE_VERSION, 'Stock position changed — retry this adjustment');
+      }
     }
 
     await db.insert(journalEntries).values({
