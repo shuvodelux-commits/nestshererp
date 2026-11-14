@@ -83,9 +83,9 @@ function edit(id: string, version: number, overrides: Record<string, unknown> = 
     .set(auth()).send({ ...fields, ...overrides, version });
 }
 
-async function stored(id: string): Promise<{ name: string; phone: string; nid: string; credit_limit_minor: number | null; status: string }> {
+async function stored(id: string): Promise<{ name: string; phone: string; nid: string | null; credit_limit_minor: number | null; status: string }> {
   return asTenant(pool, tenant.tenantId, async (client) => {
-    const r = await client.query<{name:string;phone:string;nid:string;credit_limit_minor:number|null;status:string}>(
+    const r = await client.query<{name:string;phone:string;nid:string|null;credit_limit_minor:number|null;status:string}>(
       'SELECT name, phone, nid, credit_limit_minor, status FROM parties WHERE tenant_id = $1 AND id = $2', [tenant.tenantId, id]);
     return r.rows[0]!;
   });
@@ -123,6 +123,39 @@ describe('MOD-004 P3A — minimal-friction relationship-aware Party writer guard
     expect(row.name).toBe('Corrected Merchant');
     expect(row.phone).toBe('01722223333');
     expect(row.nid).toBe('NID-SECRET');
+  });
+
+  it('preserves private data when a role-only full-form update carries redacted nulls', async () => {
+    const p = await createParty();
+    await restrict([Permission.CUSTOMER_EDIT]);
+    const saved = await edit(p.id, p.version, {
+      name: 'Updated with redacted details', address: null, guardianName: null,
+      nid: null, email: null, notes: null,
+    }).expect(200);
+    expect(saved.body.data.name).toBe('Updated with redacted details');
+    expect((await stored(p.id)).nid).toBe('NID-SECRET');
+
+    // An explicit clear is effective only after receiving the private grant.
+    await restrict([Permission.CUSTOMER_EDIT, Permission.PARTY_PROFILE_VIEW]);
+    await edit(p.id, p.version + 1, { nid: null }).expect(200);
+    expect((await stored(p.id)).nid).toBeNull();
+  });
+
+  it('preserves Customer credit when a Supplier editor receives a redacted full form', async () => {
+    const p = await createParty();
+    await restrict([Permission.CUSTOMER_EDIT]);
+    await edit(p.id, p.version, { creditLimitMinor: 12000 }).expect(200);
+
+    await restrict([Permission.SUPPLIER_EDIT]);
+    await edit(p.id, p.version + 1, {
+      name: 'Updated by Supplier editor', creditLimitMinor: null,
+    }).expect(200);
+    const saved = await stored(p.id);
+    expect(saved.name).toBe('Updated by Supplier editor');
+    expect(saved.credit_limit_minor).toBe(12000);
+
+    await edit(p.id, p.version + 2, { creditLimitMinor: 12345 }).expect(403);
+    expect((await stored(p.id)).credit_limit_minor).toBe(12000);
   });
 
   it('refuses effective changes to private fields without profile VIEW; allows with it', async () => {
