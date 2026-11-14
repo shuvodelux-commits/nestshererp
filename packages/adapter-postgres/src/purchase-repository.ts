@@ -1183,6 +1183,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
       .select({
         id: purchases.id,
         number: purchases.purchaseNumber,
+        supplierOrderId: purchases.supplierOrderId,
         businessDate: purchases.businessDate,
         status: purchases.status,
         supplierPartyId: purchases.supplierPartyId,
@@ -1234,6 +1235,7 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     return {
       id: head.id.trim(),
       number: head.number,
+      supplierOrderId: head.supplierOrderId?.trim() ?? null,
       businessDate: head.businessDate,
       status: head.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
       supplierPartyId: head.supplierPartyId.trim(),
