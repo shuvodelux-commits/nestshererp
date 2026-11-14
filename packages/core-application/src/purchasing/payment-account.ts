@@ -6,6 +6,7 @@ import { Money } from '@sher/shared-utils';
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx } from '../ports/unit-of-work';
+import { assertCashDayNotClosed } from '../money/assert-cash-day-not-closed';
 import type { MoneyRepository } from '../money/money-repository';
 import { lockCashSessionPolicy } from '../settings/manage-settings-service';
 import type { SettingsRepository } from '../settings/settings-repository';
@@ -101,6 +102,10 @@ export async function resolvePaymentAccount(
   if (account.status === 'INACTIVE') {
     throw new AppError(ErrorCode.VALIDATION_FAILED, `“${account.name}” is no longer in use`);
   }
+
+  await assertCashDayNotClosed(
+    deps.money, tx, ctx, businessDate, [accountCodeFor(account.type, account.id)],
+  );
 
   /*
    * Checked against the live journal rollup, not a stored column, so it is the

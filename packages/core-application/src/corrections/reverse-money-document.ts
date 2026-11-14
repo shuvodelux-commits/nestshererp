@@ -4,6 +4,9 @@ import { AppError, ErrorCode } from '@sher/core-contracts';
 import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
+import { assertCashDayNotClosed } from '../money/assert-cash-day-not-closed';
+import type { MoneyRepository } from '../money/money-repository';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { Outbox } from '../ports/outbox';
 import type { PeriodGuard } from '../ports/period-guard';
@@ -30,6 +33,8 @@ import type {
 
 export interface ReverseMoneyDocumentDeps {
   readonly reversals: DocumentReversalRepository;
+  readonly money: MoneyRepository;
+  readonly settings: SettingsRepository;
   readonly periods: PeriodGuard;
   readonly audit: AuditWriter;
   readonly outbox: Outbox;
@@ -84,6 +89,7 @@ export async function reverseMoneyDocument(
   ctx: TenantContext,
   input: ReverseMoneyDocumentInput,
 ): Promise<PostedDocument> {
+  await deps.settings.lockTenant(tx, ctx);
   const noun = NOUNS[input.documentType];
   const posted = await deps.reversals.findPosted(tx, ctx, input.documentType, input.documentId);
   if (posted === null) throw new AppError(ErrorCode.NOT_FOUND, `That ${noun} was not found`);
@@ -119,6 +125,10 @@ export async function reverseMoneyDocument(
   if (rejectEntry({ lines: reversal }) !== null) {
     throw new AppError(ErrorCode.INTERNAL_ERROR, `This ${noun} cannot be reversed cleanly`);
   }
+
+  await assertCashDayNotClosed(
+    deps.money, tx, ctx, businessDate, reversal.map((line) => line.account),
+  );
 
   const ok = await deps.reversals.reverse(tx, ctx, {
     documentType: input.documentType,
