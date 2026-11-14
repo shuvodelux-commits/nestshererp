@@ -13,6 +13,7 @@ import type {
   PeriodGuard,
   PurchaseReturnRepository,
   SalesReturnRepository,
+  SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
 import {
@@ -39,6 +40,7 @@ import {
   PERIOD_GUARD,
   PURCHASE_RETURN_REPOSITORY,
   SALES_RETURN_REPOSITORY,
+  SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
 import { PurchaseReturnsController } from './purchase-returns.controller';
@@ -83,6 +85,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): CreateSalesReturnService =>
         new CreateSalesReturnService(
           uow,
@@ -99,6 +102,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -115,6 +119,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
     {
@@ -131,6 +136,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): CreatePurchaseReturnService =>
         new CreatePurchaseReturnService(
           uow,
@@ -144,6 +150,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -157,6 +164,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
     {

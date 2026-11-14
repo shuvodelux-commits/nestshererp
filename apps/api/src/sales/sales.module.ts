@@ -151,6 +151,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): ReceiveCustomerPaymentService =>
         new ReceiveCustomerPaymentService(
           uow,
@@ -165,6 +166,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -179,6 +181,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
     {
