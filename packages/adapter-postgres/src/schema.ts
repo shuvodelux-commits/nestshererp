@@ -1056,6 +1056,25 @@ export const purchaseDrafts = pgTable('purchase_drafts', {
   deletedBy: char('deleted_by', { length: 26 }),
 });
 
+/**
+ * M7-02B2A: immutable creation identity, not a second copy of the parked cart.
+ * The independent row remains after sale_drafts is hard-deleted.
+ */
+export const saleDraftCreateOperations = pgTable('sale_draft_create_operations', {
+  tenantId: char('tenant_id', { length: 26 }).notNull(),
+  operationId: char('operation_id', { length: 26 }).notNull(),
+  fingerprintVersion: text('fingerprint_version').notNull(),
+  requestFingerprint: char('request_fingerprint', { length: 64 }).notNull(),
+  draftId: char('draft_id', { length: 26 }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  savedAt: timestamp('saved_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  createdBy: char('created_by', { length: 26 }).notNull(),
+}, (table) => [
+  unique('sale_draft_create_operations_tenant_operation_unique')
+    .on(table.tenantId, table.operationId),
+]);
+
 export const saleDrafts = pgTable('sale_drafts', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   label: text('label').notNull(), customerName: text('customer_name'),

@@ -357,6 +357,7 @@ export type {
   PosProductRow,
   QuotationRow,
   SaleDetail,
+  SaleDraftCreateOperation,
   SaleDraftRow,
   SaleFilter,
   SaleLineRow,

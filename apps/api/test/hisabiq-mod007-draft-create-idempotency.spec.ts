@@ -282,4 +282,68 @@ describe('M7-02B2A durable sale-draft create operation — real PG16', () => {
     expect(refused.status).toBe(413);
     expect(await draftCount()).toBe(0);
   });
+
+  it('retains a PII-free creation tombstone after hard delete and hides other tenants', async () => {
+    const key = makeKey();
+    const first = mustCreated(await post(key));
+    const source = await asTenant(pool, tenant.tenantId, async (client) => {
+      const result = await client.query(
+        'SELECT operation_id, fingerprint_version, request_fingerprint, draft_id, ' +
+        'business_date, saved_at, created_at, created_by ' +
+        'FROM sale_draft_create_operations WHERE tenant_id=$1 AND operation_id=$2',
+        [tenant.tenantId, key],
+      );
+      return result.rows;
+    });
+    expect(source).toHaveLength(1);
+    expect(source[0].operation_id.trim()).toBe(key);
+    expect(source[0].draft_id.trim()).toBe(first.id);
+    expect(source[0].fingerprint_version).toBe('sale.draft.create/v1');
+    expect(source[0].request_fingerprint.trim()).toMatch(/^[0-9a-f]{64}$/);
+    expect(source[0].saved_at.toISOString()).toBe(first.savedAt);
+    // Only source identity and actor, not the original cart/customer PII.
+    expect(Object.keys(source[0]).sort()).toEqual([
+      'business_date', 'created_at', 'created_by', 'draft_id',
+      'fingerprint_version', 'operation_id', 'request_fingerprint', 'saved_at',
+    ]);
+    const other = await seedTenant(pool, { name: 'Tombstone RLS isolated', permissions: [] });
+    const unseen = await asTenant(pool, other.tenantId, async (client) =>
+      (await client.query(
+        'SELECT operation_id FROM sale_draft_create_operations WHERE operation_id=$1', [key],
+      )).rows);
+    expect(unseen).toEqual([]);
+
+    const deleted = await request(app.getHttpServer())
+      .delete(path + '/' + first.id).set('Authorization', 'Bearer ' + token);
+    expect(deleted.status).toBe(204);
+    expect(await draftCount()).toBe(0);
+    const remains = await asTenant(pool, tenant.tenantId, async (client) =>
+      (await client.query(
+        'SELECT count(*)::integer AS n FROM sale_draft_create_operations ' +
+        'WHERE tenant_id=$1 AND operation_id=$2', [tenant.tenantId, key],
+      )).rows[0].n as number);
+    expect(remains).toBe(1);
+    expect((await post(key)).status).toBe(409);
+  });
+
+  it('arbitrates a same-key race across two independently bootstrapped Nest apps', async () => {
+    const moduleTwo = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const secondApp = moduleTwo.createNestApplication();
+    secondApp.useGlobalFilters(new AppErrorFilter());
+    await secondApp.init();
+    try {
+      const key = makeKey();
+      const [left, right] = await Promise.all([
+        post(key),
+        request(secondApp.getHttpServer()).post(path)
+          .set('Authorization', 'Bearer ' + token)
+          .set('Idempotency-Key', key).send(payload()),
+      ]);
+      expect([left.status, right.status]).toEqual([201, 201]);
+      expect(left.body.data).toEqual(right.body.data);
+      expect(await draftCount()).toBe(1);
+    } finally {
+      await secondApp.close();
+    }
+  });
 });
