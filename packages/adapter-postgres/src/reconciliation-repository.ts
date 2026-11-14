@@ -220,6 +220,15 @@ export class PostgresReconciliationRepository implements ReconciliationRepositor
     ctx: TenantContext,
     accountId: string,
   ): Promise<ReconciliationRow | null> {
+    // Serialize the check-and-insert lifecycle on the actual tenant/account
+    // row. A SELECT without this lock races a competing start and leaks the
+    // database's one-DRAFT unique-index violation as an HTTP 500.
+    // The unique index remains the final integrity backstop.
+    await txOf(tx).execute(sql`
+      SELECT id FROM accounts
+      WHERE tenant_id = ${ctx.tenantId} AND id = ${accountId}
+      FOR UPDATE
+    `);
     const rows = await this.selectReconciliations(tx, [
       eq(accountReconciliations.tenantId, ctx.tenantId),
       eq(accountReconciliations.accountId, accountId),

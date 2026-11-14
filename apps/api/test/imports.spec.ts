@@ -26,7 +26,7 @@ import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
-import { prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
+import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
 import { assertGoldenInvariants } from './support/invariants';
 
 /**
@@ -267,6 +267,74 @@ describe('importing products', () => {
     expect(second.status).toBe(201);
     expect(second.body.data).toEqual(first.body.data);
     expect(await products()).toHaveLength(2);
+  });
+
+  // C003-01: two different files can have identical character counts. The
+  // operation id must never return success for a different import payload.
+  it('rejects a same-length changed CSV under an already committed import id', async () => {
+    const operationId = Ulid.generate(clock);
+    const changedFile = file.replace('PVC Pipe 1 inch', 'PVC Tube 1 inch');
+    expect(changedFile).not.toBe(file);
+    expect(changedFile.length).toBe(file.length);
+
+    const original = await commit('PRODUCTS', file, operationId);
+    expect(original.status).toBe(201);
+
+    const rejected = await commit('PRODUCTS', changedFile, operationId);
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
+    // Reusing the same key for another import type must also refuse before
+    // parsing or posting that new type's rows.
+    const changedType = await commit('CUSTOMERS', file, operationId);
+    expect(changedType.status).toBe(409);
+    expect(changedType.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
+    expect((await products()).map((row) => row.name)).toEqual(
+      expect.arrayContaining(['PVC Pipe 1 inch', 'Cement Bag']),
+    );
+    expect((await products()).some((row) => row.name === 'PVC Tube 1 inch')).toBe(false);
+
+    const retry = await commit('PRODUCTS', file, operationId);
+    expect(retry.status).toBe(201);
+    expect(retry.body.data).toEqual(original.body.data);
+    expect(await products()).toHaveLength(2);
+  });
+
+  // Before C003-01, imports stored only [type, csv.length]. Such legacy
+  // records cannot prove what bytes the original request actually contained.
+  it('fails closed when a stored import fingerprint uses the legacy length format', async () => {
+    const operationId = Ulid.generate(clock);
+    expect((await commit('PRODUCTS', file, operationId)).status).toBe(201);
+    const legacyFingerprint = JSON.stringify(['PRODUCTS', file.length]);
+    const updatedCount = await asTenant(pool, tenant.tenantId, async (client) => {
+      const updated = await client.query(
+        'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE tenant_id = $2 AND operation_id = $3',
+        [legacyFingerprint, tenant.tenantId, operationId],
+      );
+      return updated.rowCount;
+    });
+    expect(updatedCount).toBe(1);
+
+    const replay = await commit('PRODUCTS', file, operationId);
+    expect(replay.status).toBe(409);
+    expect(replay.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(2);
+  });
+
+  it('keeps the same import operation id tenant scoped', async () => {
+    const operationId = Ulid.generate(clock);
+    expect((await commit('PRODUCTS', file, operationId)).status).toBe(201);
+
+    const other = await seedTenant(pool, { name: 'Second Import Shop', permissions: PERMISSIONS });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    await addUnit('Piece', otherToken);
+    const otherFile = file.replace('PVC Pipe 1 inch', 'PVC Tube 1 inch');
+    expect((await commit('PRODUCTS', otherFile, operationId, otherToken)).status).toBe(201);
+    expect((await products()).some((row) => row.name === 'PVC Pipe 1 inch')).toBe(true);
+    expect((await products(otherToken)).some((row) => row.name === 'PVC Tube 1 inch')).toBe(true);
+    expect(await products()).toHaveLength(2);
+    expect(await products(otherToken)).toHaveLength(2);
   });
 
   it('refuses a caller who may not create products, before reading the file', async () => {
