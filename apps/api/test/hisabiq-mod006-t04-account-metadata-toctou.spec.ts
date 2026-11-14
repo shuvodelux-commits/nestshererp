@@ -143,8 +143,13 @@ suite('MOD-006 T04: account eligibility cannot turn stale during reconciliation 
       let resume!: () => void;
       const reached = new Promise<void>(resolve => { reachGap = resolve; });
       const hold = new Promise<void>(resolve => { resume = resolve; });
+      // Pause ONLY the first invocation (reconciliation start). The account
+      // PATCH uses the same repository locking method after the source fix;
+      // pausing both would deadlock the test itself instead of modeling the race.
+      let startPaused = false;
       const spy = vi.spyOn(repo, 'findDraftForAccount').mockImplementation(async (...args) => {
-        if (args[2] === account.id) {
+        if (args[2] === account.id && !startPaused) {
+          startPaused = true;
           reachGap();
           await hold;
         }
