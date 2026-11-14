@@ -51,6 +51,7 @@ const TENANT_SCOPED_TABLES = [
   'refresh_tokens',
   'user_identifiers',
   'otp_codes',
+  'import_operations',
   'idempotency_keys',
   'outbox',
   'audit_events',

@@ -7,6 +7,7 @@ export const ACCESS_CONTROL = Symbol('AccessControl');
 export const PERIOD_GUARD = Symbol('PeriodGuard');
 export const AUDIT_WRITER = Symbol('AuditWriter');
 export const IDEMPOTENCY_STORE = Symbol('IdempotencyStore');
+export const IMPORT_OPERATION_STORE = Symbol('ImportOperationStore');
 export const OUTBOX = Symbol('Outbox');
 export const NUMBERING_SERVICE = Symbol('NumberingService');
 export const NOTE_REPOSITORY = Symbol('NoteRepository');
