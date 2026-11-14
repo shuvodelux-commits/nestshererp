@@ -57,18 +57,13 @@ CREATE POLICY tenant_isolation ON import_operations
   USING (tenant_id = current_setting('app.tenant_id', TRUE)::CHAR(26))
   WITH CHECK (tenant_id = current_setting('app.tenant_id', TRUE)::CHAR(26));
 
--- The migration principal may differ from the runtime principal. Where the
--- standard runtime role already exists, grant only the operations used by the
--- import service. The RLS policy still binds every row to app.tenant_id.
--- Deployments using another named runtime role must apply their own explicit
--- least-privilege grants; no role is created or elevated by this migration.
-DO $
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sher_app') THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE import_operations TO sher_app;
-  END IF;
-END;
-$;
+-- Runtime table grants are owned by deployment role provisioning. Some
+-- installations connect as the table owner (FORCE RLS still applies), others
+-- use a separate, explicitly provisioned low-privilege account. Do not assume
+-- that a role named sher_app exists in every supported deployment.
+-- Before activation, an installation using a separate runtime role MUST grant
+-- that role SELECT, INSERT and UPDATE on import_operations, never DELETE or
+-- TRUNCATE. This migration does not create/alter deployment principals.
 
 -- Never grant DELETE, TRUNCATE, BYPASSRLS or SUPERUSER for durable import
 -- identities. Any authorized tenant/data-erasure process needs a distinct,
