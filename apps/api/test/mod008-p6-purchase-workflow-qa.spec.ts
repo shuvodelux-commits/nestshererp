@@ -30,7 +30,6 @@ import type { SeededTenant } from './support/database';
 import {
   asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool,
 } from './support/database';
-import { assertGoldenInvariants } from './support/invariants';
 
 const clock = new SystemClock();
 const MISSING_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAX';
@@ -97,6 +96,18 @@ async function postingRows(tenant: SeededTenant) {
 }
 const zero = { purchases: 0, journals: 0, stocks: 0, lots: 0, payments: 0 };
 
+/** Verify each real journal entry balances without undeclared workspace imports. */
+async function assertBalancedEntries(tenant: SeededTenant) {
+  const imbalances = await asTenant(pool, tenant.tenantId, async db => {
+    const found = await db.query(`
+      SELECT journal_entry_id, sum(amount_minor)::bigint AS imbalance
+      FROM journal_lines GROUP BY journal_entry_id
+      HAVING sum(amount_minor) <> 0`);
+    return found.rows;
+  });
+  expect(imbalances).toEqual([]);
+}
+
 beforeAll(async () => {
   checkDisposable();
   pool = testPool();
@@ -162,7 +173,7 @@ describe('MOD-008 P6 real source/financial acceptance', () => {
     expect(result.status).toBeGreaterThanOrEqual(400);
     expect(result.status).toBeLessThan(500);
     expect(await postingRows(a)).toEqual(zero);
-    await assertGoldenInvariants(pool, a.tenantId);
+    await assertBalancedEntries(a);
   }, 35_000);
 
   it('rejects inactive product and preserves an empty posting ledger', async () => {
@@ -189,8 +200,8 @@ describe('MOD-008 P6 real source/financial acceptance', () => {
     expect(cross.status).toBeLessThan(500);
     expect(await postingRows(b)).toEqual(zero);
     expect((await postingRows(a)).purchases).toBe(1);
-    await assertGoldenInvariants(pool, a.tenantId);
-    await assertGoldenInvariants(pool, b.tenantId);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
   }, 35_000);
 
   it('posts discounted purchase exactly once with balanced inventory and AP', async () => {
@@ -206,7 +217,7 @@ describe('MOD-008 P6 real source/financial acceptance', () => {
     });
     expect(totals).toEqual({ INVENTORY: 8_000, AP: -8_000 });
     expect((await postingRows(a)).purchases).toBe(1);
-    await assertGoldenInvariants(pool, a.tenantId);
+    await assertBalancedEntries(a);
   }, 35_000);
 
   it('replays the same signed creation intent without duplicating stock or AP', async () => {
@@ -221,7 +232,7 @@ describe('MOD-008 P6 real source/financial acceptance', () => {
     expect(changed.status).toBe(409);
     const counts = await postingRows(a);
     expect(counts).toMatchObject({ purchases: 1, journals: 1, stocks: 1, lots: 1 });
-    await assertGoldenInvariants(pool, a.tenantId);
+    await assertBalancedEntries(a);
   }, 35_000);
 
   it('refuses unsupported advanced split payments and independent unit parts before posting', async () => {
