@@ -11,6 +11,7 @@ import {
   PostgresCatalogMetadataV1Repository,
   PostgresCatalogMetadataV1CreationRepository,
   PostgresIdempotencyStore,
+  PostgresImportOperationStore,
   PostgresInventoryRepository,
   PostgresNoteRepository,
   PostgresNumberingService,
@@ -96,6 +97,7 @@ import {
   CLOCK,
   DATABASE_POOL,
   IDEMPOTENCY_STORE,
+  IMPORT_OPERATION_STORE,
   INVENTORY_REPOSITORY,
   IDENTITY_VERIFIER,
   NOTE_REPOSITORY,
@@ -226,6 +228,11 @@ function selectEntitlementProvider(
     {
       provide: IDEMPOTENCY_STORE,
       useFactory: (clock: Clock): PostgresIdempotencyStore => new PostgresIdempotencyStore(clock),
+      inject: [CLOCK],
+    },
+    {
+      provide: IMPORT_OPERATION_STORE,
+      useFactory: (clock: Clock): PostgresImportOperationStore => new PostgresImportOperationStore(clock),
       inject: [CLOCK],
     },
     {
@@ -553,6 +560,7 @@ function selectEntitlementProvider(
     PERIOD_GUARD,
     AUDIT_WRITER,
     IDEMPOTENCY_STORE,
+  IMPORT_OPERATION_STORE,
     OUTBOX,
     NUMBERING_SERVICE,
     NOTE_REPOSITORY,

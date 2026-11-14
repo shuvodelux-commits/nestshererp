@@ -153,6 +153,28 @@ export const outbox = pgTable('outbox', {
 });
 
 /** Class C — append-only, pruned after 30 days. */
+/**
+ * C003-02: permanent import batch identity, separate from the prunable
+ * idempotency_keys cache. Claimed and completed within the same UoW.
+ */
+export const importOperations = pgTable(
+  'import_operations',
+  {
+    id: char('id', { length: 26 }).primaryKey(),
+    tenantId: char('tenant_id', { length: 26 }).notNull(),
+    operationId: char('operation_id', { length: 26 }).notNull(),
+    importType: text('import_type').notNull(),
+    requestFingerprint: text('request_fingerprint').notNull(),
+    responseJson: jsonb('response_json'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    createdBy: char('created_by', { length: 26 }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    unique: unique('import_operations_tenant_operation_unique').on(table.tenantId, table.operationId),
+  }),
+);
+
 export const idempotencyKeys = pgTable(
   'idempotency_keys',
   {

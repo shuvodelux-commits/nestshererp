@@ -209,6 +209,84 @@ export const partyListResponseSchema = z
   .strict();
 
 /**
+ * MOD-004 T09C-P1: proposed additive Party READ V2 schema.
+ *
+ * NOT mounted on any endpoint yet. Legacy V1 continues to leak raw sensitive
+ * fields and party-global history to some role-only readers (#72/#93). A V2
+ * response cannot mistake "withheld by authorization" for a real false, null
+ * or zero value. The server must grant profile/history independently of role
+ * VIEW, and check the selected trading role before returning a V2 row.
+ *
+ * The internal, unscoped journal-history deletion guard is NOT a read grant.
+ * In particular, hiding history cannot make a used Party deletable.
+ */
+const partySensitiveProfileV2Schema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('WITHHELD') }).strict(),
+  z.object({
+    state: z.literal('VISIBLE'),
+    data: z.object({
+      address: z.string().nullable(),
+      guardianName: z.string().nullable(),
+      nid: z.string().nullable(),
+      email: z.string().nullable(),
+      notes: z.string().nullable(),
+    }).strict(),
+  }).strict(),
+]);
+
+const partyGlobalHistoryV2Schema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('WITHHELD') }).strict(),
+  z.object({
+    state: z.literal('VISIBLE'),
+    hasLedgerEntries: z.boolean(),
+  }).strict(),
+]);
+
+export const partyReadV2Schema = partyResponseSchema
+  .omit({
+    address: true,
+    guardianName: true,
+    nid: true,
+    email: true,
+    notes: true,
+    hasLedgerEntries: true,
+  })
+  .extend({
+    /** The role used to authorize and calculate this row's financial balance. */
+    readRole: partyRoleSchema,
+    /** Directory contact (name/phone) still requires role VIEW. */
+    profile: partySensitiveProfileV2Schema,
+    /** Owner/operator-only inspection is separate from the global DELETE guard. */
+    globalHistory: partyGlobalHistoryV2Schema,
+  })
+  .strict()
+  .superRefine((row, ctx) => {
+    if (!row.roles.includes(row.readRole)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ['roles'],
+        message: 'The selected trading role must be visible in this read',
+      });
+    }
+    if (row.readRole !== 'CUSTOMER' &&
+      (row.customerGroupId !== null ||
+        row.customerGroupName !== null ||
+        row.creditLimitMinor !== null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ['customerGroupId'],
+        message: 'Customer-only metadata is unavailable for this trading-role read',
+      });
+    }
+  });
+
+export type PartyReadV2 = z.infer<typeof partyReadV2Schema>;
+
+export const partyReadV2ListResponseSchema = partyListResponseSchema
+  .extend({ data: z.array(partyReadV2Schema) })
+  .strict();
+
+export type PartyReadV2ListResponse = z.infer<typeof partyReadV2ListResponseSchema>;
+
+/**
  * List filters (§5.6, §5.0's "search · filter · sort").
  *
  * `role` is the tab the shopkeeper is on — Customers, Suppliers or Vendors —

@@ -151,6 +151,11 @@ export type {
 export type { CatalogMetadataV1CreationRepository } from './catalog/catalog-metadata-v1-creation-repository';
 export { CreateCatalogMetadataV1Service } from './catalog/create-catalog-metadata-v1-service';
 export type { CreateCatalogMetadataV1Command } from './catalog/create-catalog-metadata-v1-service';
+export type {
+  CatalogFullEditName, CatalogFullEditUnit, CatalogMetadataV1FullEditRepository,
+} from './catalog/catalog-metadata-v1-full-edit-repository';
+export { EditCatalogMetadataV1Service } from './catalog/edit-catalog-metadata-v1-service';
+export type { EditCatalogMetadataV1Command } from './catalog/edit-catalog-metadata-v1-service';
 export { ManageCatalogMetadataV1Service } from './catalog/manage-catalog-metadata-v1-service';
 export type {
   ListCatalogMetadataV1Command,
@@ -241,6 +246,7 @@ export type {
   RemoveCustomerGroupCommand,
   RenameCustomerGroupCommand,
 } from './parties/manage-party-groups-service';
+export type { ImportOperationReservation, ImportOperationStore } from './imports/import-operation-store';
 export { ImportDataService } from './imports/import-data-service';
 export type { CommitImportCommand, ImportCommand } from './imports/import-data-service';
 export { CashMovementService } from './money/cash-movement-service';

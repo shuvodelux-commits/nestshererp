@@ -11,6 +11,7 @@ export { PostgresAccessControl, SUPPORT_FORBIDDEN_PERMISSIONS } from './access-c
 export { PostgresPeriodGuard } from './period-guard';
 export { PostgresAuditWriter } from './audit-writer';
 export { PostgresIdempotencyStore } from './idempotency-store';
+export { PostgresImportOperationStore } from './import-operation-store';
 export { PostgresOutbox } from './outbox';
 export { PostgresNumberingService } from './numbering-service';
 export { PostgresNoteRepository } from './note-repository';
