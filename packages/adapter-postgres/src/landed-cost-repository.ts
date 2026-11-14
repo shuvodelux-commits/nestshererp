@@ -36,6 +36,22 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
   ): Promise<LandedCostPurchaseRow | null> {
     const db = txOf(tx);
 
+    // Cost-only freight can change lot unit cost and average without moving
+    // quantity. Serialize against a concurrent stock adjustment/sale BEFORE
+    // reading any lot quantities or cost state used to compute postings.
+    // A deterministic order avoids AB/BA locks for multi-product purchases.
+    await db.execute(sql`
+      SELECT cs.id FROM product_cost_state cs
+       WHERE cs.tenant_id = ${ctx.tenantId}
+         AND cs.deleted_at IS NULL
+         AND cs.product_id IN (
+           SELECT pl.product_id FROM purchase_lines pl
+            WHERE pl.tenant_id = ${ctx.tenantId}
+              AND pl.purchase_id = ${purchaseId}
+         )
+       ORDER BY cs.id FOR UPDATE
+    `);
+
     const header = await db.execute<{
       id: string;
       number: string;
@@ -192,6 +208,23 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
     const db = txOf(tx);
     const now = this.clock.now();
 
+    // The late cost header holds an immediate FK to journal_entries.
+    // Write its journal source first; everything remains inside the owning UoW,
+    // so a failed cost/lot/line write rolls back this entry too.
+    if (input.cost.journalEntryId !== null) {
+      await db.insert(journalEntries).values({
+        id: input.cost.journalEntryId,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        businessDate: input.cost.businessDate,
+        sourceDocumentType: 'PURCHASE_LANDED_COST',
+        sourceDocumentId: input.cost.id,
+        sourceNumber: input.purchaseNumber,
+        entryMode: input.entryMode,
+      });
+    }
+
     await db.insert(purchaseLandedCosts).values({
       id: input.cost.id,
       tenantId: ctx.tenantId,
@@ -265,17 +298,6 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
     }
 
     if (input.cost.journalEntryId !== null) {
-      await db.insert(journalEntries).values({
-        id: input.cost.journalEntryId,
-        tenantId: ctx.tenantId,
-        createdAt: now,
-        createdBy: ctx.userId,
-        businessDate: input.cost.businessDate,
-        sourceDocumentType: 'PURCHASE_LANDED_COST',
-        sourceDocumentId: input.cost.id,
-        sourceNumber: input.purchaseNumber,
-        entryMode: input.entryMode,
-      });
       await db.insert(journalLines).values(
         input.journalLines.map((line) => ({
           id: line.id,
