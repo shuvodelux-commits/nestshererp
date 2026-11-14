@@ -147,7 +147,11 @@ describe('M7-02B1 versioned parked sale drafts — PG16', () => {
     expect(first.status).toBe(200);
     expect(first.body.data).toMatchObject({ id, version: 2, ...payload({label:'পরিবর্তিত • Draft', customerName:'রহিম',itemCount:3}) });
     expect(first.body.data.savedAt).toBe(original.savedAt.toISOString());
-    expect(first.body.data.businessDate).toBe(original.businessDate);
+    expect(first.body.data.businessDate).toBe(
+      original.businessDate instanceof Date
+        ? original.businessDate.toISOString().slice(0, 10)
+        : original.businessDate,
+    );
     const persisted = await originalRow(id);
     expect(persisted.id.trim()).toBe(id);
     expect(persisted.version).toBe(2);
