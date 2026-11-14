@@ -32,7 +32,9 @@ async function privileges(table: string): Promise<GrantRow> {
             has_table_privilege(current_user, $1, 'TRUNCATE') AS can_truncate`,
     [table],
   );
-  return result.rows[0];
+  const grant = result.rows[0];
+  if (!grant) throw new Error('Permission introspection returned no row');
+  return grant;
 }
 
 beforeAll(async () => {
@@ -64,7 +66,7 @@ describe('issue #225: disposable PG16 app-role privilege boundaries', () => {
     expect(beforeReset.rows).toHaveLength(1);
     await resetDatabase(pool);
     const count = await pool.query<{ total: string }>('SELECT COUNT(*)::text AS total FROM tenants');
-    expect(count.rows[0].total).toBe('0');
+    expect(count.rows[0]?.total).toBe('0');
     const found = await privileges('public.import_operations');
     expect(found.can_truncate).toBe(false);
   });
@@ -112,7 +114,8 @@ describe('issue #225: disposable PG16 app-role privilege boundaries', () => {
     );
     // #221 is a separate, unmerged PR on this base. Its exact-head integration
     // must rerun this assertion after migration 0058 has actually landed.
-    if (!exists.rows[0].present) return;
+    expect(exists.rows).toHaveLength(1);
+    if (exists.rows[0]?.present !== true) return;
     const found = await privileges('public.sale_draft_create_operations');
     expect(found).toMatchObject({
       can_select: true, can_insert: true,
