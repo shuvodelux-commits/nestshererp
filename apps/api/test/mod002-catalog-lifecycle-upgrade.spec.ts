@@ -133,7 +133,11 @@ it('P8b2a upgrades populated pre-0059 catalogs with no historical mutation or RL
       'SELECT is_active,deleted_at FROM brands UNION ALL ' +
       'SELECT is_active,deleted_at FROM categories) x',
     );
-    expect(active.rows[0]).toEqual({ total: '7', enabled: '7', archived: '3' });
+    expect({
+      total: Number(active.rows[0]!.total),
+      enabled: Number(active.rows[0]!.enabled),
+      archived: Number(active.rows[0]!.archived),
+    }).toEqual({ total: 7, enabled: 7, archived: 3 });
     const columns = await upgraded.query<{ count: string }>(
       "SELECT count(*) FROM information_schema.columns " +
       "WHERE table_name IN ('units','brands','categories') " +
