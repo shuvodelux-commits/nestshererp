@@ -69,20 +69,41 @@ if [ -f "$HERE/super-board-gh-guard.sh" ]; then
   sb_gh_guard_check 200 || exit $?
 fi
 
-MERGED=$(python3 "$HERE/super-board-github-read.py" --kind prs-merged -- pr list --repo "$REPO" --state merged --limit 100 --json number,title,body,url ) || exit $?
-OPEN=$(python3 "$HERE/super-board-github-read.py" --kind prs-open -- pr list --repo "$REPO" --state open --limit 100 --json number,title,body,url,headRefName,files ) || exit $?
-CLOSED=$(python3 "$HERE/super-board-github-read.py" --kind issues-closed -- issue list --repo "$REPO" --state closed --limit 100 --json number,title,body,stateReason ) || exit $?
-CARDS="[]"
-[ -n "$INFLIGHT" ] && CARDS=$(cat "$INFLIGHT")
+# GitHub PR bodies/file lists can exceed Linux's per-argument limit (~128 KiB).
+# Keep strict reads and full datasets, but pass them through private files rather
+# than jq --argjson: every list must contain exactly one JSON array document.
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/super-board-preflight.XXXXXXXX")
+trap 'rm -rf -- "$WORK"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-TARGETS="[]"
+python3 "$HERE/super-board-github-read.py" --kind prs-merged -- pr list --repo "$REPO" --state merged --limit 100 --json number,title,body,url > "$WORK/merged.json" || exit $?
+python3 "$HERE/super-board-github-read.py" --kind prs-open -- pr list --repo "$REPO" --state open --limit 100 --json number,title,body,url,headRefName,files > "$WORK/open.json" || exit $?
+python3 "$HERE/super-board-github-read.py" --kind issues-closed -- issue list --repo "$REPO" --state closed --limit 100 --json number,title,body,stateReason > "$WORK/closed.json" || exit $?
+if [ -n "$INFLIGHT" ]; then
+  cp -- "$INFLIGHT" "$WORK/cards.json"
+else
+  printf '%s\n' '[]' > "$WORK/cards.json"
+fi
+
+: > "$WORK/targets.jsonl"
 for n in ${ISSUES//,/ }; do
-  one=$(python3 "$HERE/super-board-github-read.py" --kind issue -- issue view "$n" --repo "$REPO" --json number,title,body ) || exit $?
-  TARGETS=$(jq -c --argjson one "$one" '. + [$one]' <<<"$TARGETS")
+  python3 "$HERE/super-board-github-read.py" --kind issue -- issue view "$n" --repo "$REPO" --json number,title,body >> "$WORK/targets.jsonl" || exit $?
+  printf '\n' >> "$WORK/targets.jsonl"
+done
+jq -s '.' "$WORK/targets.jsonl" > "$WORK/targets.json"
+printf '%s' "$FILES" > "$WORK/files.txt"
+
+for kind in merged open closed cards targets; do
+  if ! jq -e -s 'length == 1 and (.[0] | type == "array")' "$WORK/$kind.json" >/dev/null; then
+    echo "invalid $kind preflight evidence: expected one JSON array" >&2
+    exit 79
+  fi
 done
 
-jq -n --argjson targets "$TARGETS" --argjson merged "$MERGED" --argjson open "$OPEN" \
-      --argjson closed "$CLOSED" --argjson cards "$CARDS" --arg files "$FILES" \
+jq -n --slurpfile targetsDocs "$WORK/targets.json" --slurpfile mergedDocs "$WORK/merged.json" \
+      --slurpfile openDocs "$WORK/open.json" --slurpfile closedDocs "$WORK/closed.json" \
+      --slurpfile cardsDocs "$WORK/cards.json" --rawfile files "$WORK/files.txt" \
       --argjson th "$THRESHOLD" '
   def stop: ["the","and","for","with","from","into","when","that","this","add","fix","make","use","should","not","are","can","new"];
   def toks: ascii_downcase | [scan("[a-z0-9]+")] | map(select(length > 2)) | . - stop | unique;
@@ -102,7 +123,12 @@ jq -n --argjson targets "$TARGETS" --argjson merged "$MERGED" --argjson open "$O
         | ([ $t | to_entries[] | select(.value | test("^##[ \t]")) | .key ] | first) as $e
         | (if $e == null then $t else $t[:$e] end) | any(.[]; test("^[ \t]*[-*][ \t]+\\S")) end;
 
-  [ $targets[] | . as $i | $i.number as $n
+  ($targetsDocs[0]) as $targets
+  | ($mergedDocs[0]) as $merged
+  | ($openDocs[0]) as $open
+  | ($closedDocs[0]) as $closed
+  | ($cardsDocs[0]) as $cards
+  | [ $targets[] | . as $i | $i.number as $n
     | ($i | fps) as $myfp
     | (if $files == "" then ($i | paths) else ($files / ",") end) as $mine
     # Own branch = this card coming back (rebuild, rebase); never its own duplicate.
