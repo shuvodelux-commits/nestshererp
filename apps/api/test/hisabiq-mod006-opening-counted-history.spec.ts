@@ -78,7 +78,7 @@ interface Snapshot {
 async function snapshot(): Promise<Snapshot> {
   return asTenant(pool, tenant.tenantId, async (db) => {
     const [accounts, sessions, closes, entries, lines, sum] = await Promise.all([
-      db.query('SELECT id, type, is_drawer, status, version, opening_amount_minor::text, opening_date FROM accounts ORDER BY id'),
+      db.query('SELECT id, type, is_drawer, status, version FROM accounts ORDER BY id'),
       db.query('SELECT id, account_id, status, business_date, version FROM cash_sessions ORDER BY id'),
       db.query('SELECT id, session_id, status, expected_closing_minor::text, counted_closing_minor::text FROM cash_session_closes ORDER BY id'),
       db.query('SELECT id, business_date, source_document_type, source_document_id FROM journal_entries ORDER BY id'),
