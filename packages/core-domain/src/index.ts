@@ -226,6 +226,7 @@ export type {
 export {
   purchaseCosts,
   purchasePosting,
+  purchasePostingWithLegs,
   rejectPurchase,
 } from './purchasing/purchase';
 export type {
@@ -234,6 +235,8 @@ export type {
   PurchaseLineCost,
   PurchaseLineDraft,
   PurchasePostingSides,
+  PurchasePostingLeg,
+  PurchaseMultiLegPostingSides,
   PurchaseRejection,
 } from './purchasing/purchase';
 export {
