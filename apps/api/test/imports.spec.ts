@@ -404,6 +404,20 @@ describe('importing products', () => {
     expect(own.rows[0]?.response_json).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
   });
 
+
+  it('preserves permanent import type identity after fast cache pruning', async () => {
+    const operationId = Ulid.generate(clock);
+    const productCsv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect((await commit('PRODUCTS', productCsv, operationId)).status).toBe(201);
+
+    await pruneFastImportReplay(operationId);
+    const refused = await commit('CUSTOMERS', productCsv, operationId);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+    expect(await customers()).toHaveLength(0);
+  });
+
   // C003-01: two different files can have identical character counts. The
   // operation id must never return success for a different import payload.
   it('rejects a same-length changed CSV under an already committed import id', async () => {
@@ -579,12 +593,34 @@ describe('importing opening stock', () => {
       reconciled: true,
     }));
 
+
+    // Prove that idempotency protects the owning accounting and stock writers,
+    // not only the API response or the cached valuation projection.
+    const sourceCounts = async () => asTenant(pool, tenant.tenantId, async (client) => {
+      const result = await client.query(
+        `SELECT
+          (SELECT count(*)::integer FROM stock_openings WHERE tenant_id = $1) AS openings,
+          (SELECT count(*)::integer FROM inventory_lots WHERE tenant_id = $1) AS lots,
+          (SELECT count(*)::integer FROM stock_movements WHERE tenant_id = $1) AS movements,
+          (SELECT count(*)::integer FROM journal_entries WHERE tenant_id = $1) AS journals,
+          (SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = 'data_import' AND entity_id = $2) AS imports,
+          (SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = 'data.imported' AND aggregate_id = $2) AS events`,
+        [tenant.tenantId, operationId],
+      );
+      return result.rows[0];
+    });
+    const beforeCounts = await sourceCounts();
+    expect(beforeCounts?.openings).toBe(2);
+    expect(beforeCounts?.imports).toBe(1);
+    expect(beforeCounts?.events).toBe(1);
+
     await pruneFastImportReplay(operationId);
     const replay = await commit('OPENING_STOCK', file, operationId);
     expect(replay.status).toBe(201);
     expect(replay.body.data).toEqual(first.body.data);
     expect(await valuation()).toEqual(original);
     expect((await products()).filter((row) => row.name === 'Rice')[0]?.stockQty).toBe(10_000);
+    expect(await sourceCounts()).toEqual(beforeCounts);
   });
 
   it('posts no stock at all when one row names a product that does not exist', async () => {
