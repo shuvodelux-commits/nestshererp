@@ -239,16 +239,15 @@ async function snapshot(tenantId: string, f: Fixture): Promise<Snapshot> {
     payableMinor: Number(row.payableMinor),
   };
 }
-async function expectOnce(tenantId: string, f: Fixture): Promise<void> {
+async function expectOnce(tenantId: string, f: Fixture, bearer = token): Promise<void> {
   expect(await snapshot(tenantId, f)).toEqual({
     purchases: 1, lines: 1, movements: 1, journals: 1, audits: 1,
     events: 1, qty: 7_000, lotQty: 7_000,
     inventoryMinor: 70_000, payableMinor: -70_000,
   });
-  const t = signToken({ ...tenant, tenantId }, TEST_JWT_SECRET);
   const valuation = await request(app.getHttpServer())
     .get('/api/v1/inventory/valuation')
-    .set('Authorization', 'Bearer ' + t);
+    .set('Authorization', 'Bearer ' + bearer);
   expect(valuation.status).toBe(200);
   expect(valuation.body.data).toMatchObject({
     rows: [expect.objectContaining({ productId: f.productId, qtyOnHand: 7_000, valueMinor: 70_000 })],
@@ -364,14 +363,14 @@ describe('MOD-003 #184: durable purchase operation identity across two Nest proc
       expect(two.status).toBe(201);
       expect(one.data).not.toEqual(two.data);
       await expectOnce(tenant.tenantId, f1);
-      await expectOnce(other.tenantId, f2);
+      await expectOnce(other.tenantId, f2, otherToken);
       await assertGoldenInvariants(pool, other.tenantId);
       const foreign = await fetch('http://127.0.0.1:' + b.port + '/api/v1/products/' + productId, {
         headers: { Authorization: 'Bearer ' + otherToken },
       });
       expect([403, 404]).toContain(foreign.status);
       await expectOnce(tenant.tenantId, f1);
-      await expectOnce(other.tenantId, f2);
+      await expectOnce(other.tenantId, f2, otherToken);
     } finally {
       await Promise.all(children.map(stopApi));
     }
