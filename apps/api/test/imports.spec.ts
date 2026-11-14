@@ -386,6 +386,32 @@ describe('importing products', () => {
     expect(await products()).toHaveLength(1);
   });
 
+  // C003-02 / C02-06: a 2000-row CSV must stay atomic if its last row fails.
+  it('leaves no products or import side effects when row 2000 is invalid', async () => {
+    const operationId = Ulid.generate(clock);
+    const records = Array.from({ length: 2_000 }, (_, index) =>
+      'Bulk Bolt ' + String(index + 1).padStart(4, '0') + ',' +
+        (index === 1_999 ? 'Peice' : 'Piece') + ',10.00,15.00,1,,,,,,',
+    );
+    const csv = [PRODUCT_HEADER, ...records].join('\r\n');
+
+    const refused = await commit('PRODUCTS', csv, operationId);
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+    expect(await products()).toHaveLength(0);
+
+    const counts = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        `SELECT
+          (SELECT count(*)::integer FROM import_operations WHERE tenant_id = $1 AND operation_id = $2) AS claims,
+          (SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = 'data_import' AND entity_id = $2) AS audits,
+          (SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = 'data.imported' AND aggregate_id = $2) AS events`,
+        [tenant.tenantId, operationId],
+      ),
+    );
+    expect(counts.rows[0]).toEqual({ claims: 0, audits: 0, events: 0 });
+  }, 90_000);
+
   it('never exposes tenant A durable import identity to tenant B under RLS', async () => {
     const operationId = Ulid.generate(clock);
     const csv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
