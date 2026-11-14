@@ -33,6 +33,7 @@ export { PostgresCatalogRepository } from './catalog-repository';
 export { PostgresCatalogMetadataV1Repository } from './catalog-metadata-v1-repository';
 export { PostgresCatalogMetadataV1CreationRepository } from './catalog-metadata-v1-creation-repository';
 export { PostgresCatalogMetadataV1FullEditRepository } from './catalog-metadata-v1-full-edit-repository';
+export { PostgresCatalogSettingsUsageV1Reader } from './catalog-settings-usage-v1-reader';
 export { PostgresProductRepository } from './product-repository';
 export { PostgresPartyRepository } from './party-repository';
 export { PostgresInventoryRepository } from './inventory-repository';

@@ -11,6 +11,7 @@ import {
   PostgresCatalogMetadataV1Repository,
   PostgresCatalogMetadataV1CreationRepository,
   PostgresCatalogMetadataV1FullEditRepository,
+  PostgresCatalogSettingsUsageV1Reader,
   PostgresIdempotencyStore,
   PostgresImportOperationStore,
   PostgresInventoryRepository,
@@ -96,6 +97,7 @@ import {
   CATALOG_METADATA_V1_REPOSITORY,
   CATALOG_METADATA_V1_CREATION_REPOSITORY,
   CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
+  CATALOG_SETTINGS_USAGE_V1_REPOSITORY,
   CLOCK,
   DATABASE_POOL,
   IDEMPOTENCY_STORE,
@@ -378,6 +380,11 @@ function selectEntitlementProvider(
       inject: [CLOCK],
     },
     {
+      provide: CATALOG_SETTINGS_USAGE_V1_REPOSITORY,
+      useFactory: (): PostgresCatalogSettingsUsageV1Reader =>
+        new PostgresCatalogSettingsUsageV1Reader(),
+    },
+    {
       provide: PRODUCT_REPOSITORY,
       useFactory: (clock: Clock): PostgresProductRepository => new PostgresProductRepository(clock),
       inject: [CLOCK],
@@ -595,6 +602,7 @@ function selectEntitlementProvider(
     CATALOG_METADATA_V1_REPOSITORY,
     CATALOG_METADATA_V1_CREATION_REPOSITORY,
     CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY,
+    CATALOG_SETTINGS_USAGE_V1_REPOSITORY,
     PRODUCT_REPOSITORY,
     PARTY_REPOSITORY,
     MONEY_REPOSITORY,

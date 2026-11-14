@@ -17,7 +17,7 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 249 |
+| HTTP endpoints | 250 |
 | Permission codes | 121 |
 | Cross-module workflows | 17 |
 
@@ -3417,6 +3417,7 @@
 | PATCH | `/api/v1/catalog/metadata-v1/units/:id` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | PATCH | `/api/v1/catalog/metadata-v1/brands/:id` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | PATCH | `/api/v1/catalog/metadata-v1/categories/:id` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| GET | `/api/v1/catalog/settings-usage-v1` | CatalogSettingsUsageV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | GET | `/api/v1/catalog` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/units` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | PATCH | `/api/v1/catalog/units/:id` | CatalogController | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |

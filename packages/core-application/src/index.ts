@@ -156,6 +156,8 @@ export type {
 } from './catalog/catalog-metadata-v1-full-edit-repository';
 export { EditCatalogMetadataV1Service } from './catalog/edit-catalog-metadata-v1-service';
 export type { EditCatalogMetadataV1Command } from './catalog/edit-catalog-metadata-v1-service';
+export type { CatalogSettingsUsageV1Snapshot, CatalogSettingsUsageV1Repository } from './catalog/catalog-settings-usage-v1-repository';
+export { ReadCatalogSettingsUsageV1Service } from './catalog/read-catalog-settings-usage-v1-service';
 export { ManageCatalogMetadataV1Service } from './catalog/manage-catalog-metadata-v1-service';
 export type {
   ListCatalogMetadataV1Command,
