@@ -10,7 +10,8 @@
  */
 import 'reflect-metadata';
 
-import type { INestApplication } from '@nestjs/common';
+import type { ArgumentsHost, INestApplication } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -38,6 +39,33 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
 });
+
+/**
+ * Unit exercise of framework exceptions, independent of any database/session.
+ * Actual Express JSON-limit behavior is also tested through real HTTP above.
+ */
+function mapThrownError(exception: unknown): { status: number; envelope: unknown } {
+  let status = 0;
+  let envelope: unknown;
+  const response = {
+    getHeader: () => undefined,
+    status(code: number) { status = code; return response; },
+    json(body: unknown) { envelope = body; return response; },
+  };
+  const request = {
+    method: 'POST',
+    originalUrl: '/api/v1/sales/drafts?tenantSecret=NOT_FOR_CLIENT',
+    url: '/api/v1/sales/drafts?tenantSecret=NOT_FOR_CLIENT',
+  };
+  const host = {
+    switchToHttp: () => ({
+      getResponse: () => response,
+      getRequest: () => request,
+    }),
+  } as unknown as ArgumentsHost;
+  new AppErrorFilter().catch(exception, host);
+  return { status, envelope };
+}
 
 describe('the error envelope', () => {
   it('reports an unknown route as 404 NOT_FOUND, never 500', async () => {
@@ -142,5 +170,44 @@ describe('the error envelope', () => {
       expect(response.status, 'payload byte count ' + bytes).toBe(404);
       expect(response.body.error.code).toBe('NOT_FOUND');
     }
+  });
+
+  it('also maps a Nest framework 413 to the same redacted validation code', () => {
+    const response = mapThrownError(new HttpException('PRIVATE_FRAMEWORK_413', 413));
+    expect(response.status).toBe(413);
+    expect(response.envelope).toMatchObject({
+      error: { code: 'VALIDATION_FAILED', message: 'Request body too large' },
+    });
+    expect(JSON.stringify(response.envelope)).not.toContain('PRIVATE_FRAMEWORK_413');
+    expect(JSON.stringify(response.envelope)).not.toContain('NOT_FOR_CLIENT');
+  });
+
+  it('does not trust arbitrary error status fields or client-supplied parser-type fragments', () => {
+    const spoofed = Object.assign(new Error('PRIVATE_SERVER_FAULT'), {
+      status: 413,
+      statusCode: 413,
+      type: 'entity.too.large-but-not-real',
+    });
+    const response = mapThrownError(spoofed);
+    expect(response.status).toBe(500);
+    expect(response.envelope).toMatchObject({
+      error: { code: 'INTERNAL_ERROR', message: 'Internal error' },
+    });
+    expect(JSON.stringify(response.envelope)).not.toContain('PRIVATE_SERVER_FAULT');
+  });
+
+  it('preserves existing framework conflict status and never echoes exception text', () => {
+    const response = mapThrownError(new HttpException('PRIVATE_STALE_VERSION', 409));
+    expect(response.status).toBe(409);
+    expect(response.envelope).toMatchObject({
+      error: { code: 'CONFLICT_STALE_VERSION', message: 'That conflicts with the current state' },
+    });
+    expect(JSON.stringify(response.envelope)).not.toContain('PRIVATE_STALE_VERSION');
+  });
+
+  it('retains the framework 422 status without echoing its error body', () => {
+    const response = mapThrownError(new HttpException('PRIVATE_422', 422));
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.envelope)).not.toContain('PRIVATE_422');
   });
 });
