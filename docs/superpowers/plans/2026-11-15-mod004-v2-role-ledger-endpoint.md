@@ -16,6 +16,11 @@
 3. `apps/api/src/parties/parties.module.ts` — inject existing ledger service.
 4. `packages/core-application/src/parties/party-ledger-service.ts` — optional `SCOPED_V2` mode/vendor gate, no changed V1 code-path behavior.
 5. This plan.
+6. `docs/testing/inventory.json` — generator-produced new endpoint inventory.
+7. `docs/testing/ERP-TEST-MATRIX.md` — generator-produced endpoint coverage matrix.
+8. `docs/testing/COVERAGE.md` — generator-produced coverage counts.
+
+**Generator-required amendment:** CI runs `pnpm test:inventory -- --check` and rejects any uncommitted changes under `docs/testing/`. For this new endpoint, only the three deterministic output files listed above were generated (27 insertions, 2 deletions), and the signed HTTP test includes the explicit `@covers endpoint:GET /api/v2/parties/:id/ledger` claim. These are required CI artifacts, not a Vue source change or scope expansion into the old frontend.
 
 ## Task 1 — Write RED signed API tests
 
