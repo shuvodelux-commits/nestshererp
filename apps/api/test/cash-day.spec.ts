@@ -489,6 +489,82 @@ describe('cash-session idempotency and immutable close/reopen audit', () => {
     expect(await ledgerState()).toEqual(before);
   });
 
+  it('Reopen cannot reuse a Start operation ID as if it were its own response', async () => {
+    const op = Ulid.generate(clock);
+    const first = await start(op, 'Original start operation');
+    expect(first.status).toBe(201);
+    const id = first.body.data.id as string;
+    expect((await close(id, Ulid.generate(clock), 'Count was wrong')).status).toBe(201);
+    const before = await ledgerState();
+    const wrong = await reopen(id, op, 'Different action with same operation key');
+    expect(wrong.status).toBe(409);
+    expect(wrong.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('concurrent identical Reopen operation IDs produce one supersession and reversal', async () => {
+    const id = await startDay();
+    expect((await close(id, Ulid.generate(clock), 'Incorrect counted close')).status).toBe(201);
+    const op = Ulid.generate(clock);
+    const [first, second] = await Promise.all([
+      reopen(id, op, 'Undo one incorrect close'),
+      reopen(id, op, 'Undo one incorrect close'),
+    ]);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body.data).toEqual(first.body.data);
+    expect(first.body.data.closes.filter(
+      (c: { status: string }) => c.status === 'SUPERSEDED',
+    )).toHaveLength(1);
+    const state = await ledgerState();
+    expect((await reopen(id, op, 'Undo one incorrect close')).body.data).toEqual(first.body.data);
+    expect(await ledgerState()).toEqual(state);
+    expect((await ledger())['CASH_SHORT_OVER'] ?? 0).toBe(0);
+  });
+
+  it('preserves old Start fingerprint replay without creating a second opening', async () => {
+    const op = Ulid.generate(clock);
+    const note = 'Pre-v2 original note';
+    const first = await start(op, note);
+    expect(first.status).toBe(201);
+    // Simulate the exact fingerprint persisted before the v2 rollout.
+    const legacy = JSON.stringify({
+      businessDate: today,
+      openingAmountMinor: 5000_00,
+      counterpartAccountCode: null,
+    });
+    await asTenant(pool, tenant.tenantId, (db) => db.query(
+      'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE operation_id = $2',
+      [legacy, op],
+    ));
+    const before = await ledgerState();
+    const replay = await start(op, note);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await ledgerState()).toEqual(before);
+  });
+
+  it('legacy Close fingerprint still rejects an altered immutable reason', async () => {
+    const id = await startDay();
+    const op = Ulid.generate(clock);
+    const reason = 'Original close count was fifty short';
+    const first = await close(id, op, reason);
+    expect(first.status).toBe(201);
+    const legacy = JSON.stringify({ sessionId: id, countedClosingMinor: 4950_00 });
+    await asTenant(pool, tenant.tenantId, (db) => db.query(
+      'UPDATE idempotency_keys SET request_fingerprint = $1 WHERE operation_id = $2',
+      [legacy, op],
+    ));
+    const before = await ledgerState();
+    const replay = await close(id, op, reason);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    const changed = await close(id, op, 'Changed old close explanation');
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await ledgerState()).toEqual(before);
+  });
+
   it('Reopen rejects the same operationId against a foreign tenant session without disclosure', async () => {
     const id = await startDay();
     expect((await close(id, Ulid.generate(clock), 'Wrong count')).status).toBe(201);
