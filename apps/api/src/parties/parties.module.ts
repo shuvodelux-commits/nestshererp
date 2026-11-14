@@ -30,6 +30,7 @@ import {
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
 import { PartiesController } from './parties.controller';
+import { PartiesV2Controller } from './parties-v2.controller';
 import { PartyGroupsController } from './party-groups.controller';
 import {
   MANAGE_PARTIES_SERVICE,
@@ -38,7 +39,7 @@ import {
 } from './tokens';
 
 @Module({
-  controllers: [PartyGroupsController, PartiesController],
+  controllers: [PartyGroupsController, PartiesController, PartiesV2Controller],
   providers: [
     {
       provide: MANAGE_PARTIES_SERVICE,

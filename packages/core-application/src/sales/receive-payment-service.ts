@@ -157,20 +157,10 @@ export class ReceiveCustomerPaymentService {
         businessDate,
       );
 
-      const invoices = await this.sales.listOpenInvoices(
-        tx,
-        ctx,
-        customer.id,
-        command.saleIds,
-      );
-      const { allocations, advanceMinor } = allocateReceipt(
-        command.amountMinor,
-        invoices.map((invoice) => ({
-          saleId: invoice.id,
-          outstandingMinor: invoice.outstandingMinor,
-        })),
-      );
-      const settledMinor = command.amountMinor - advanceMinor;
+      const { allocations, settledMinor, advanceMinor, openingSettledMinor } =
+        await this.allocateAgainstReceivables(
+          tx, ctx, customer.id, partyRole, command.saleIds, command.amountMinor,
+        );
 
       const posting = receiptPosting({
         partyId: customer.id,
@@ -217,6 +207,7 @@ export class ReceiveCustomerPaymentService {
           customerPartyId: customer.id,
           amountMinor: String(command.amountMinor),
           settledMinor: String(settledMinor),
+          openingSettledMinor: String(openingSettledMinor),
           advanceMinor: String(advanceMinor),
           businessDate,
           invoiceCount: String(allocations.length),
@@ -349,15 +340,15 @@ export class ReceiveCustomerPaymentService {
         placement.businessDate,
       );
 
-      const invoices = await this.sales.listOpenInvoices(tx, ctx, customer.id, command.saleIds);
-      const { allocations, advanceMinor } = allocateReceipt(
-        command.amountMinor,
-        invoices.map((invoice) => ({
-          saleId: invoice.id,
-          outstandingMinor: invoice.outstandingMinor,
-        })),
-      );
-      const settledMinor = command.amountMinor - advanceMinor;
+      // Correcting a posted receipt must use the same original-opening
+      // settlement policy as a new receipt after the reversal released its AR.
+      if (!(await this.sales.lockReceivableParty(tx, ctx, customer.id))) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Customer not found');
+      }
+      const { allocations, settledMinor, advanceMinor, openingSettledMinor } =
+        await this.allocateAgainstReceivables(
+          tx, ctx, customer.id, 'CUSTOMER', command.saleIds, command.amountMinor,
+        );
 
       const posting = receiptPosting({
         partyId: customer.id,
@@ -404,6 +395,9 @@ export class ReceiveCustomerPaymentService {
         },
         after: {
           amountMinor: String(command.amountMinor),
+          settledMinor: String(settledMinor),
+          openingSettledMinor: String(openingSettledMinor),
+          advanceMinor: String(advanceMinor),
           businessDate: placement.businessDate,
           entryMode: placement.entryMode,
           reason,
@@ -413,6 +407,69 @@ export class ReceiveCustomerPaymentService {
 
       return this.detail(tx, ctx, command.receiptId);
     });
+  }
+
+  /**
+   * Cash collected against an on-boarding Customer opening is not an advance.
+   * It settles the party's original AR before newer invoices on the automatic
+   * oldest-first path. Explicit saleIds on an invoice screen are never silently
+   * diverted to historical openings.
+   *
+   * The balance comes from the actual per-party journal (INV-06). Subtract
+   * all outstanding invoices to find the remaining historical receivable:
+   * prior collections and corrections already affected journal AR.
+   * Run under the same party lock used for invoice receipts; post through
+   * the one normal journal writer with an attached receipt source.
+   */
+  private async allocateAgainstReceivables(
+    tx: Tx,
+    ctx: TenantContext,
+    partyId: string,
+    partyRole: 'CUSTOMER' | 'VENDOR',
+    saleIds: readonly string[],
+    amountMinor: number,
+  ): Promise<{
+    readonly allocations: ReturnType<typeof allocateReceipt>['allocations'];
+    readonly settledMinor: number;
+    readonly advanceMinor: number;
+    readonly openingSettledMinor: number;
+  }> {
+    const invoices = await this.sales.listOpenInvoices(tx, ctx, partyId, saleIds);
+    let openingSettledMinor = 0;
+
+    if (partyRole === 'CUSTOMER' && saleIds.length === 0) {
+      const standing = await this.sales.customerStanding(tx, ctx, partyId);
+      if (!Number.isSafeInteger(standing.dueMinor) ||
+          invoices.some((invoice) => !Number.isSafeInteger(invoice.outstandingMinor))) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'The customer balance cannot be verified safely; review the ledger before collecting',
+        );
+      }
+      // BigInt avoids unsafe summation of many individually valid invoices.
+      const invoiceDue = invoices.reduce(
+        (total, invoice) => total + BigInt(Math.max(0, invoice.outstandingMinor)), 0n,
+      );
+      const residualOpening = BigInt(standing.dueMinor) - invoiceDue;
+      if (residualOpening > 0n) {
+        const collected = BigInt(amountMinor);
+        openingSettledMinor = Number(residualOpening < collected ? residualOpening : collected);
+      }
+    }
+
+    const { allocations, advanceMinor } = allocateReceipt(
+      amountMinor - openingSettledMinor,
+      invoices.map((invoice) => ({
+        saleId: invoice.id,
+        outstandingMinor: invoice.outstandingMinor,
+      })),
+    );
+    return {
+      allocations,
+      settledMinor: amountMinor - advanceMinor,
+      openingSettledMinor,
+      advanceMinor,
+    };
   }
 
   /** Whether a business date's month still accepts postings (§5.14). */

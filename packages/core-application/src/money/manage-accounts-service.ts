@@ -23,6 +23,7 @@ import type { Tx, UnitOfWork } from '../ports/unit-of-work';
 import { isFeatureOn, settingValuesOf } from '../settings/feature-dependencies';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { MoneyAccountRow, MoneyRepository } from './money-repository';
+import type { ReconciliationRepository } from '../reconciliation/reconciliation-repository';
 
 /**
  * Where the shop's money sits (Phase 4, §5.16, §5.17).
@@ -117,6 +118,7 @@ export class ManageAccountsService {
     private readonly uow: UnitOfWork,
     private readonly accessControl: AccessControl,
     private readonly money: MoneyRepository,
+    private readonly reconciliations: ReconciliationRepository,
     private readonly settings: SettingsRepository,
     private readonly numbering: NumberingService,
     private readonly periods: PeriodGuard,
@@ -290,6 +292,34 @@ export class ManageAccountsService {
       await this.accessControl.require(tx, ctx, managePermissionFor(input.type));
 
       this.validate(input);
+      if (existing.type !== input.type) {
+        // Lock the same account row that reconciliation-start locks. If it
+        // already has a DRAFT bank statement, changing its type would turn
+        // a legitimate reconciliation into a cash/loan misclassification.
+        // Same-type name/reference edits are intentionally unaffected.
+        const draft = await this.reconciliations.findDraftForAccount(tx, ctx, existing.id);
+        if (draft !== null) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'Finish the draft reconciliation before changing this account type',
+          );
+        }
+        // Even after sign-off, statement history resolves its ledger code and
+        // account type through the current account record. Retyping would
+        // silently reinterpret a certified BANK/MFS reconciliation as CASH or
+        // a lender liability. Keep the original classification immutable.
+        //
+        // findDraftForAccount acquired this account's FOR UPDATE lock above:
+        // this lookup and any subsequent update are serialized against new
+        // reconciliation starts. Same-type metadata edits do not run this guard.
+        const history = await this.reconciliations.list(tx, ctx, { accountId: existing.id });
+        if (history.length > 0) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This account has reconciliation history and its type cannot be changed',
+          );
+        }
+      }
       if (existing.isDrawer !== input.isDrawer ||
           (existing.isDrawer && existing.type !== input.type)) {
         await this.assertNoOpenDrawerChange(tx, ctx, existing.id, input.isDrawer);
