@@ -1816,3 +1816,398 @@ describe('T09C-0 — party-global delete guard with cross-role history', () => {
     }
   });
 });
+
+
+/**
+ * QA #120: complete the Customer-group lifecycle matrix through signed API
+ * requests and tenant-scoped PostgreSQL 16. Existing T09A/B tests cover reads;
+ * these cases verify mutation outcomes, rollback and hidden state.
+ */
+describe('QA120 — customer-group lifecycle and adversarial workflows', () => {
+  const createGroup = (name: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .post('/api/v1/party-setup/groups')
+      .set('Authorization', 'Bearer ' + as)
+      .send({ name });
+
+  const renameGroup = (id: string, name: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .patch('/api/v1/party-setup/groups/' + id)
+      .set('Authorization', 'Bearer ' + as)
+      .send({ name });
+
+  const deleteGroup = (id: string, as = token): request.Test =>
+    request(app.getHttpServer())
+      .delete('/api/v1/party-setup/groups/' + id)
+      .set('Authorization', 'Bearer ' + as);
+
+  const setup = (as = token): request.Test =>
+    request(app.getHttpServer())
+      .get('/api/v1/party-setup')
+      .set('Authorization', 'Bearer ' + as);
+
+  it('renames an assigned group without changing Party identity, and audits its lifecycle', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Dealer').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+    const party = await createParty(minimalCustomer({
+      customerGroupId: groupId,
+    })).expect(201);
+    const partyId = (party.body.data as PartyBody).id;
+
+    const renamed = await renameGroup(groupId, 'Trade Partner').expect(200);
+    expect(renamed.body.data.groups).toContainEqual({ id: groupId, name: 'Trade Partner' });
+    const detail = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(detail.body.data.id).toBe(partyId);
+    expect(detail.body.data.customerGroupId).toBe(groupId);
+    expect(detail.body.data.customerGroupName).toBe('Trade Partner');
+    const list = await listParties('?role=CUSTOMER&groupId=' + groupId).expect(200);
+    expect(list.body.data.map((item: { id: string }) => item.id)).toContain(partyId);
+
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' AND entity_id = $1 ORDER BY id",
+        [groupId],
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE', 'UPDATE']);
+  });
+
+  it('deletes an unused group, but archives an assigned group without clearing customer history', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const unused = await createGroup('Unused Tier').expect(201);
+    const unusedId = unused.body.data.groups[0].id as string;
+    const inUse = await createGroup('Customer Tier').expect(201);
+    const usedId = (inUse.body.data.groups as { id: string; name: string }[])
+      .find((group) => group.name === 'Customer Tier')!.id;
+    const party = await createParty(minimalCustomer({ customerGroupId: usedId })).expect(201);
+    const partyId = (party.body.data as PartyBody).id;
+
+    expect((await deleteGroup(unusedId).expect(200)).body.data.outcome).toBe('DELETED');
+    expect((await deleteGroup(usedId).expect(200)).body.data.outcome).toBe('ARCHIVED');
+    const current = await setup().expect(200);
+    expect(current.body.data.groups).toEqual([]);
+    const detail = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(detail.body.data.customerGroupId).toBe(usedId);
+    expect(detail.body.data.customerGroupName).toBe('Customer Tier');
+
+    const persisted = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ id: string; deleted_at: string | null }>(
+        'SELECT id, deleted_at FROM customer_groups WHERE tenant_id = $1 AND id = ANY($2::text[]) ORDER BY id',
+        [tenant.tenantId, [usedId, unusedId]],
+      ),
+    );
+    expect(persisted.rows).toHaveLength(1);
+    expect(persisted.rows[0]?.id).toBe(usedId);
+    expect(persisted.rows[0]?.deleted_at).not.toBeNull();
+  });
+
+  it('rejects duplicate or invalid names and preserves the existing catalog', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const first = await createGroup('Dealer').expect(201);
+    const groupId = first.body.data.groups[0].id as string;
+
+    for (const name of ['dealer', ' Dealer ']) {
+      const duplicate = await createGroup(name).expect(400);
+      expect(duplicate.body.error.code).toBe('VALIDATION_FAILED');
+    }
+    await createGroup(' ').expect(400);
+    await createGroup('X'.repeat(121)).expect(400);
+    const renamed = await renameGroup(groupId, 'DEALER').expect(200);
+    expect(renamed.body.data.groups).toEqual([{ id: groupId, name: 'DEALER' }]);
+    expect((await setup().expect(200)).body.data.groups).toHaveLength(1);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' ORDER BY id",
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE', 'UPDATE']);
+  });
+
+  it('allows Customer-only catalog reads but denies all group mutations without manage permission', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Private Customer Group').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+
+    await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.PARTY_GROUP_MANAGE],
+      ),
+    );
+    expect((await setup().expect(200)).body.data.groups).toContainEqual({
+      id: groupId, name: 'Private Customer Group',
+    });
+    await createGroup('Forbidden').expect(403);
+    await renameGroup(groupId, 'Forbidden').expect(403);
+    await deleteGroup(groupId).expect(403);
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupId, name: 'Private Customer Group' },
+    ]);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ action: string }>(
+        "SELECT action FROM audit_events WHERE entity_type = 'customer_group' AND entity_id = $1",
+        [groupId],
+      ),
+    );
+    expect(events.rows.map((event) => event.action)).toEqual(['CREATE']);
+  });
+
+  it('rejects rename/delete while groups are OFF and restores the saved catalog when ON again', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Kept Group').expect(201);
+    const groupId = created.body.data.groups[0].id as string;
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'off');
+    expect((await setup().expect(200)).body.data.groups).toEqual([]);
+    expect((await renameGroup(groupId, 'Disallowed').expect(403)).body.error.code)
+      .toBe('FEATURE_DISABLED');
+    expect((await deleteGroup(groupId).expect(403)).body.error.code)
+      .toBe('FEATURE_DISABLED');
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupId, name: 'Kept Group' },
+    ]);
+  });
+
+  it('rejects cross-tenant rename and delete, while allowing the same name within each tenant', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const created = await createGroup('Shared Name').expect(201);
+    const groupAId = created.body.data.groups[0].id as string;
+    const other = await seedTenant(pool, { name: 'QA120 Business B', permissions: ALL_PARTIES });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    await request(app.getHttpServer())
+      .post('/api/v1/settings/value')
+      .set('Authorization', 'Bearer ' + otherToken)
+      .send({ key: SettingKey.CUSTOMER_GROUPS_ENABLED, value: 'on' })
+      .expect(201);
+
+    await renameGroup(groupAId, 'Intrusion', otherToken).expect(404);
+    await deleteGroup(groupAId, otherToken).expect(404);
+    const own = await createGroup('Shared Name', otherToken).expect(201);
+    expect(own.body.data.groups).toHaveLength(1);
+    expect(own.body.data.groups[0].id).not.toBe(groupAId);
+    expect((await setup().expect(200)).body.data.groups).toEqual([
+      { id: groupAId, name: 'Shared Name' },
+    ]);
+  });
+
+  it('returns not found for an unknown group without changing the catalog or audit', async () => {
+    await setSetting(SettingKey.CUSTOMER_GROUPS_ENABLED, 'on');
+    const unknownId = Ulid.generate(clock);
+    await renameGroup(unknownId, 'Not Here').expect(404);
+    await deleteGroup(unknownId).expect(404);
+    expect((await setup().expect(200)).body.data.groups).toEqual([]);
+    const events = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM audit_events WHERE entity_type = 'customer_group'",
+      ),
+    );
+    expect(events.rows[0]?.count).toBe(0);
+  });
+});
+
+
+/**
+ * MOD-004 QA #120 (slice 2): historical openings are journal postings, not
+ * physical-drawer movements. Signed requests run on a real tenant RLS database.
+ */
+describe('QA120 P2 — historical Party opening and directory regression', () => {
+  it('posts Customer and Supplier historical openings with cash sessions ON or OFF and no open drawer', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    for (const [sessionEnabled, suffix] of [['on', 'On'], ['off', 'Off']] as const) {
+      await setSetting(SettingKey.CASH_SESSION_ENABLED, sessionEnabled);
+      const customer = await createParty(minimalCustomer({
+        name: 'Historical Customer ' + suffix,
+        phone: sessionEnabled === 'on' ? '01788110111' : '01788110222',
+        opening: {
+          role: 'CUSTOMER', direction: 'RECEIVABLE',
+          amountMinor: 123_456, businessDate,
+        },
+      })).expect(201);
+      const supplier = await createParty(minimalCustomer({
+        name: 'Historical Supplier ' + suffix, roles: ['SUPPLIER'], phone: null,
+        opening: {
+          role: 'SUPPLIER', direction: 'PAYABLE',
+          amountMinor: 78_900, businessDate,
+        },
+      })).expect(201);
+      const customerId = (customer.body.data as PartyBody).id;
+      const supplierId = (supplier.body.data as PartyBody).id;
+      const customerLedger = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + customerId + '/ledger?role=CUSTOMER')
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      const supplierLedger = await request(app.getHttpServer())
+        .get('/api/v1/parties/' + supplierId + '/ledger?role=SUPPLIER')
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(customerLedger.body.closingBalance.netMinor).toBe(123_456);
+      expect(supplierLedger.body.closingBalance.netMinor).toBe(-78_900);
+
+      const financial = await asTenant(pool, tenant.tenantId, (client) =>
+        client.query<{
+          sessions: number; cashMovements: number;
+          openingDocuments: number; unbalanced: number;
+        }>(
+          "SELECT (SELECT count(*)::int FROM cash_sessions WHERE tenant_id = $1) AS sessions, " +
+          "(SELECT count(*)::int FROM cash_movements WHERE tenant_id = $1) AS \"cashMovements\", " +
+          "(SELECT count(*)::int FROM party_openings WHERE tenant_id = $1) AS \"openingDocuments\", " +
+          "(SELECT count(*)::int FROM (SELECT e.id FROM journal_entries e " +
+          " JOIN journal_lines l ON l.journal_entry_id = e.id AND l.tenant_id = e.tenant_id " +
+          " WHERE e.tenant_id = $1 AND e.source_document_type = 'OPENING_BALANCE' " +
+          " GROUP BY e.id HAVING sum(l.amount_minor) <> 0) bad) AS unbalanced",
+          [tenant.tenantId],
+        ),
+      );
+      expect(financial.rows[0]).toEqual({
+        sessions: 0,
+        cashMovements: 0,
+        openingDocuments: sessionEnabled === 'on' ? 2 : 4,
+        unbalanced: 0,
+      });
+    }
+  });
+
+  it('corrects a historical Supplier opening under cash-session ON without posting cash movement', async () => {
+    const businessDate = clock.businessDate('Asia/Dhaka');
+    await setSetting(SettingKey.CASH_SESSION_ENABLED, 'on');
+    const created = await createParty(minimalCustomer({
+      name: 'Supplier Historical Correction', roles: ['SUPPLIER'], phone: null,
+      opening: {
+        role: 'SUPPLIER', direction: 'PAYABLE',
+        amountMinor: 90_000, businessDate,
+      },
+    })).expect(201);
+    const partyId = (created.body.data as PartyBody).id;
+    const opening = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '/opening?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    const correction = await request(app.getHttpServer())
+      .patch('/api/v1/parties/' + partyId + '/opening')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        role: 'SUPPLIER', direction: 'PAYABLE', amountMinor: 65_000,
+        businessDate, version: opening.body.data.version,
+      })
+      .expect(200);
+    expect(correction.body.data.amountMinor).toBe(65_000);
+    const ledger = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '/ledger?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(ledger.body.rows).toHaveLength(3);
+    expect(ledger.body.closingBalance.netMinor).toBe(-65_000);
+    const financial = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query<{ cashCount: number; cashSessions: number; payableTotal: number }>(
+        "SELECT (SELECT count(*)::int FROM cash_movements WHERE tenant_id = $1) AS \"cashCount\", " +
+        "(SELECT count(*)::int FROM cash_sessions WHERE tenant_id = $1) AS \"cashSessions\", " +
+        "(SELECT coalesce(sum(amount_minor),0)::int FROM journal_lines WHERE tenant_id = $1 AND party_id = $2 AND account_code = 'AP') AS \"payableTotal\"",
+        [tenant.tenantId, partyId],
+      ),
+    );
+    expect(financial.rows[0]).toEqual({
+      cashCount: 0, cashSessions: 0, payableTotal: -65_000,
+    });
+  });
+
+  it('supports bilingual-name-independent case-insensitive search, phone lookup, status, and stable keyset pages', async () => {
+    for (const [name, phone] of [
+      ['Alpha Electrical', '01788120001'],
+      ['Bravo Electrical', '01788120002'],
+      ['Charlie Electrical', '01788120003'],
+    ] as const) {
+      await createParty(minimalCustomer({ name, phone })).expect(201);
+    }
+    const inactive = await listParties('?role=CUSTOMER&search=Charlie').expect(200);
+    const inactiveId = inactive.body.data[0].id as string;
+    await request(app.getHttpServer())
+      .post('/api/v1/parties/' + inactiveId + '/status')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+
+    const named = await listParties('?role=CUSTOMER&search=alpha').expect(200);
+    expect(named.body.data.map((item: { name: string }) => item.name))
+      .toEqual(['Alpha Electrical']);
+    const numbered = await listParties('?role=CUSTOMER&search=20002').expect(200);
+    expect(numbered.body.data.map((item: { name: string }) => item.name))
+      .toEqual(['Bravo Electrical']);
+    const active = await listParties('?role=CUSTOMER&status=ACTIVE').expect(200);
+    expect(active.body.summary.total).toBe(2);
+    const deactivated = await listParties('?role=CUSTOMER&status=INACTIVE').expect(200);
+    expect(deactivated.body.data.map((item: { id: string }) => item.id))
+      .toEqual([inactiveId]);
+
+    const names: string[] = [];
+    const ids = new Set<string>();
+    let cursor: string | null = null;
+    for (let i = 0; i < 3; i += 1) {
+      const page: {
+        body: {
+          data: { id: string; name: string }[];
+          page: { hasMore: boolean; nextCursor: string | null };
+        };
+      } = await listParties(
+        '?role=CUSTOMER&sort=name&direction=ASC&limit=1' +
+        (cursor === null ? '' : '&cursor=' + cursor),
+      ).expect(200);
+      expect(page.body.data).toHaveLength(1);
+      const item = page.body.data[0] as { id: string; name: string };
+      expect(ids.has(item.id)).toBe(false);
+      ids.add(item.id);
+      names.push(item.name);
+      expect(page.body.page.hasMore).toBe(i < 2);
+      cursor = page.body.page.nextCursor;
+    }
+    expect(names).toEqual(['Alpha Electrical', 'Bravo Electrical', 'Charlie Electrical']);
+  });
+
+  it('rejects missing role, invalid page limits, sort, status, and excessive search without changing rows', async () => {
+    await createParty(minimalCustomer()).expect(201);
+    for (const query of [
+      '?search=Karim',
+      '?role=CUSTOMER&limit=0',
+      '?role=CUSTOMER&limit=201',
+      '?role=CUSTOMER&sort=not-allowed',
+      '?role=CUSTOMER&status=REMOVED',
+      '?role=CUSTOMER&search=' + 'x'.repeat(121),
+      '?role=ADMIN',
+    ]) {
+      await listParties(query).expect(400);
+    }
+    const unchanged = await listParties('?role=CUSTOMER').expect(200);
+    expect(unchanged.body.summary.total).toBe(1);
+    expect(unchanged.body.data[0].name).toBe('Karim Uddin');
+  });
+
+  it('does not honor a different tenant’s Party keyset cursor', async () => {
+    const ours = await createParty(minimalCustomer({
+      name: 'Private Tenant A', phone: '01788130001',
+    })).expect(201);
+    const foreignId = (ours.body.data as PartyBody).id;
+    const other = await seedTenant(pool, { name: 'QA120 Cursor Tenant B', permissions: ALL_PARTIES });
+    const otherToken = signToken(other, TEST_JWT_SECRET);
+    const theirs = await createParty(minimalCustomer({
+      name: 'Private Tenant B', phone: '01788130002',
+    }), Ulid.generate(clock), otherToken).expect(201);
+    const otherId = (theirs.body.data as PartyBody).id;
+    const normal = await listParties('?role=CUSTOMER&sort=name&limit=1', otherToken).expect(200);
+    expect(normal.body.data.map((item: { id: string }) => item.id)).toEqual([otherId]);
+
+    const attempted = await listParties(
+      '?role=CUSTOMER&sort=name&limit=1&cursor=' + foreignId,
+      otherToken,
+    ).expect(200);
+    expect(attempted.body.data).toEqual([]);
+    expect(JSON.stringify(attempted.body)).not.toContain(foreignId);
+    expect(JSON.stringify(attempted.body)).not.toContain('Private Tenant A');
+  });
+});

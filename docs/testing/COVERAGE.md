@@ -14,7 +14,7 @@
 | Fields | 392 | 100 | — |
 | Dropdowns | 94 | 0 | — |
 | Business actions | 106 | — | — |
-| Endpoints | 242 | 121 | 50% |
+| Endpoints | 242 | 122 | 50% |
 | Permission codes | 119 | 14 | 12% |
 | Critical workflows | 17 | 11 | 65% |
 | Mobile-relevant screens | 14 | 5 | 36% |
