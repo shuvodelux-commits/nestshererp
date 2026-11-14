@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { purchaseInitialPaymentLegsSchema } from '../src/purchasing';
+import { createPurchaseRequestSchema, purchaseInitialPaymentLegsSchema } from '../src/purchasing';
 
 /**
  * MOD-008 D06B #224: a pure, nonposting request-array validator.
@@ -87,6 +87,23 @@ describe('MOD-008 D06B initial purchase payment-leg request preflight', () => {
     expect(parse(null).success).toBe(false);
     expect(parse({ paidMinor: 2000, paidAccountCode: cash }).success).toBe(false);
   });
+
+  it.each(['payments', 'paymentLegs'])(
+    'keeps unsupported advanced %s explicitly rejected by live purchase-create schema',
+    (field) => {
+      const legacy = {
+        supplierPartyId: accountId,
+        lines: [{ productId: accountId, qty: 1000, unitPriceMinor: 9000 }],
+        paidMinor: 0,
+        paidAccountCode: null,
+      };
+      expect(createPurchaseRequestSchema.safeParse(legacy).success).toBe(true);
+      expect(createPurchaseRequestSchema.safeParse({
+        ...legacy,
+        [field]: [row(cash, 1000)],
+      }).success).toBe(false);
+    },
+  );
 
   it('does not mutate the supplied ordered payment row objects', () => {
     const input = Object.freeze([
