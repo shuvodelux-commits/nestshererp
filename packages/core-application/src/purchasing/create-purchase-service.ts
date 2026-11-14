@@ -379,6 +379,19 @@ export class CreatePurchaseService {
       }
 
       /*
+       * A product may be deactivated by another transaction while this bill
+       * is in flight. Serialize the row before status validation, correction
+       * reversal or stock/journal posting, and retain the lock until commit.
+       * Duplicate cart lines lock once; sorted IDs avoid opposite-cart-order
+       * purchase deadlocks. Exact-key replays returned above without locking,
+       * even if a product was deactivated after the original purchase.
+       */
+      const productIds = [...new Set(command.lines.map((line) => line.productId))].sort();
+      for (const productId of productIds) {
+        await this.purchases.lockProductForPosting(tx, ctx, productId);
+      }
+
+      /*
        * The correction happens first, inside this same transaction: the old
        * bill is undone before the new one lands, so stock and the ledger never
        * hold both at once, and anything that refuses below rolls the reversal
