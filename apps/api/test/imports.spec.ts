@@ -397,10 +397,15 @@ describe('importing products', () => {
     );
     expect(foreign.rows).toHaveLength(0);
     const own = await asTenant(pool, tenant.tenantId, (client) =>
-      client.query('SELECT current_user AS principal, response_json FROM import_operations WHERE operation_id = $1', [operationId]),
+      client.query(
+        'SELECT current_user AS principal, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS is_superuser, (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass_rls, response_json FROM import_operations WHERE operation_id = $1',
+        [operationId],
+      ),
     );
     expect(own.rows).toHaveLength(1);
     expect(own.rows[0]?.principal).toBe('sher_app');
+    expect(own.rows[0]?.is_superuser).toBe(false);
+    expect(own.rows[0]?.bypass_rls).toBe(false);
     expect(own.rows[0]?.response_json).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
   });
 
