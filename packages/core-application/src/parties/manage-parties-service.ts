@@ -245,7 +245,7 @@ export class ManagePartiesService {
     if (command.role === undefined) {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this party');
     }
-    return this.getFor(command, (row, role, held) => toReadV2(row, role, held));
+    return this.getFor(command, (row, role, held) => toReadV2(row, role, held), 'SCOPED');
   }
 
   private async listFor<T>(
@@ -303,16 +303,31 @@ export class ManagePartiesService {
   private async getFor<T>(
     command: PartyIdCommand,
     project: (row: PartyRow, role: PartyRole, held: readonly string[]) => T,
+    mode: 'LEGACY' | 'SCOPED' = 'LEGACY',
   ): Promise<T> {
     const { ctx } = command;
 
     return this.uow.run(ctx, async (tx) => {
+      if (mode === 'SCOPED') {
+        // Authorize the requested relationship *before* identity lookup.
+        // Otherwise an unauthorized Supplier-only identity produces a 403
+        // while a nonexistent identity yields 404, revealing hidden existence.
+        const requestedRole = command.role;
+        if (requestedRole === undefined) {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this party');
+        }
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[requestedRole].view);
+        // List and detail must enforce the same feature state.
+        if (requestedRole === 'VENDOR') await this.assertVendorsOn(tx, ctx);
+      }
       const party = await this.requireParty(tx, ctx, command.partyId);
       // Identity may be shared, but a Customer, Supplier and Vendor balance
       // is not one obligation. Require an unambiguous selected relationship.
       const held = await this.accessControl.permissionsOf(tx, ctx);
       const visibleRoles = party.roles.filter((role) => held.includes(ROLE_PERMISSIONS[role].view));
-      if (visibleRoles.length === 0) {
+      if (mode === 'LEGACY' && visibleRoles.length === 0) {
+        // Preserve the existing V1 contract. V2 must not distinguish an
+        // existing Party with only hidden roles from an absent identity.
         await this.requireAnyRole(tx, ctx, party.roles, 'view');
         throw new AppError(ErrorCode.PERMISSION_DENIED, 'No permission to view this party');
       }
