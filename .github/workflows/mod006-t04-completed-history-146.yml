@@ -1,0 +1,52 @@
+name: MOD-006 T04 Completed Reconciliation History
+
+on:
+  push:
+    branches:
+      - fix/mod006-t04-completed-recon-type-146-20261114
+  pull_request:
+    branches:
+      - test/mod006-t04-completed-history-146-20261114
+
+jobs:
+  completed-history:
+    name: T04 signed completed-history PostgreSQL16 acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mod006_t04_history_ci_only
+          POSTGRES_DB: hisabiq_mod006_t04_completed_20261114
+        ports:
+          - 55794:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hisabiq_mod006_t04_completed_20261114"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MOD006_T04_COMPLETED_HISTORY_ONLY: MOD006_T04_COMPLETED_HISTORY_TEST_ONLY_20261114
+      DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55794/hisabiq_mod006_t04_completed_20261114
+      TEST_DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55794/hisabiq_mod006_t04_completed_20261114
+      ADMIN_DATABASE_URL: postgres://postgres:mod006_t04_history_ci_only@127.0.0.1:55794/hisabiq_mod006_t04_completed_20261114
+      NODE_ENV: test
+      JWT_SECRET: test-secret-not-used-in-production
+      ENTITLEMENT_SOURCE: subscription
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install exact lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Build API and domain dependencies
+        run: pnpm --filter '@sher/api...' build
+      - name: Signed Nest and guarded PostgreSQL16 historical integrity
+        run: pnpm --filter @sher/api exec vitest run test/hisabiq-mod006-t04-completed-history.spec.ts --reporter=verbose
