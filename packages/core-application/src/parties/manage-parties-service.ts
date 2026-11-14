@@ -561,8 +561,9 @@ export class ManagePartiesService {
       const before = await this.requireParty(tx, ctx, command.partyId);
       this.assertNotSystemReserved(before, 'change');
 
-      // Both sides: you may not edit a party you cannot already reach, and you
-      // may not hand it a role you are not trusted to create.
+      // Ordinary shared-directory corrections remain simple: one current
+      // trading-role EDIT is sufficient for name/phone. Other relationships,
+      // customer-only values and private fields are guarded by what CHANGED.
       await this.requireAnyRole(tx, ctx, before.roles, 'edit');
       for (const role of unique(command.input.roles)) {
         if (!before.roles.includes(role)) {
@@ -571,6 +572,51 @@ export class ManagePartiesService {
       }
 
       const clean = await this.validate(tx, ctx, command.input, before);
+
+      // No extra grant is required for a full-form PATCH that repeats stored
+      // private fields. Validate first: hidden-by-Settings fields are preserved
+      // by validate(), and must not be treated as effective modifications.
+      const privateChanged = (
+        clean.address !== before.address ||
+        clean.guardianName !== before.guardianName ||
+        clean.nid !== before.nid ||
+        clean.email !== before.email ||
+        clean.notes !== before.notes
+      );
+      if (privateChanged) {
+        await this.accessControl.require(tx, ctx, Permission.PARTY_PROFILE_VIEW);
+      }
+
+      // A Supplier-only editor may correct the common name/phone but cannot
+      // change the Customer's credit terms or group. Creating a NEW Customer
+      // role already requires CUSTOMER_CREATE above and permits its initial
+      // customer-specific values without a redundant EDIT grant.
+      const customerFieldsChanged = (
+        clean.customerGroupId !== before.customerGroupId ||
+        clean.creditLimitMinor !== before.creditLimitMinor
+      );
+      if (customerFieldsChanged) {
+        await this.accessControl.require(
+          tx, ctx,
+          before.roles.includes('CUSTOMER')
+            ? Permission.CUSTOMER_EDIT
+            : Permission.CUSTOMER_CREATE,
+        );
+      }
+
+      // One role's EDIT never authorizes removing somebody else's trading
+      // relationship. A Party that ever posted remains accounting-linked: do
+      // not discard role metadata while its history is still in the journal.
+      const removedRoles = before.roles.filter((role) => !clean.roles.includes(role));
+      for (const role of removedRoles) {
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].deactivate);
+      }
+      if (removedRoles.length > 0 && before.hasLedgerEntries) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'A party with posted history cannot have trading relationships removed',
+        );
+      }
 
       // D-32: the loser of a simultaneous edit is told, not silently overwritten.
       const saved = await this.parties.update(
@@ -624,7 +670,12 @@ export class ManagePartiesService {
     return this.uow.run(ctx, async (tx) => {
       const before = await this.requireParty(tx, ctx, command.partyId);
       this.assertNotSystemReserved(before, 'deactivate');
-      await this.requireAnyRole(tx, ctx, before.roles, 'deactivate');
+      // Status belongs to the identity, not to a single relationship: a
+      // Customer-only deactivation grant cannot disable Supplier operations.
+      // Single-role Parties still need only their familiar permission.
+      for (const role of before.roles) {
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].deactivate);
+      }
 
       await this.parties.setStatus(tx, ctx, command.partyId, command.status);
 
@@ -665,7 +716,11 @@ export class ManagePartiesService {
       this.assertNotSystemReserved(before, 'delete');
       // Deleting is the destructive end of deactivating, so it is gated on the
       // same code — §5.26 keeps destructive actions off the ordinary edit right.
-      await this.requireAnyRole(tx, ctx, before.roles, 'deactivate');
+      // Hard delete is identity-wide; require each affected relationship's
+      // destructive authority, then retain the GLOBAL posted-history guard.
+      for (const role of before.roles) {
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].deactivate);
+      }
       this.assertNeverUsed(before);
 
       await this.parties.deleteUnused(tx, ctx, command.partyId);
