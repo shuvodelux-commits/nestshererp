@@ -802,7 +802,7 @@ async function importFromRaceServer(
   server: ImportRaceServer,
   csv: string,
   operationId: string,
-): Promise<{ status: number; data: unknown; errorCode?: string }> {
+): Promise<{ status: number; data: unknown; errorCode: string | undefined }> {
   const response = await fetch('http://127.0.0.1:' + server.port + '/api/v1/imports', {
     method: 'POST',
     headers: {
