@@ -37,6 +37,7 @@ let purchaseId: string;
 interface ApiProcess {
   readonly child: ChildProcess;
   readonly port: number;
+  readonly logs: string[];
 }
 
 function enforceDisposableTestDatabase(): void {
@@ -99,9 +100,14 @@ async function startApi(): Promise<ApiProcess> {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stdout?.on('data', () => {});
-  child.stderr?.on('data', () => {});
-  const server = { child, port };
+  const logs: string[] = [];
+  const capture = (chunk: Buffer) => {
+    logs.push(chunk.toString());
+    if (logs.length > 120) logs.shift();
+  };
+  child.stdout?.on('data', capture);
+  child.stderr?.on('data', capture);
+  const server = { child, port, logs };
   try {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       if (child.exitCode !== null || child.signalCode !== null) {
@@ -140,7 +146,12 @@ async function post(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(20000),
   });
-  const json = await response.json() as { data?: unknown };
+  const json = await response.json() as { data?: unknown; error?: unknown };
+  if (response.status >= 500) {
+    // Keep the actual Nest exception in RED QA evidence. Never whitelist 500.
+    console.error('C003-06 server error', JSON.stringify(json.error),
+      server.logs.slice(-35).join('').slice(-9000));
+  }
   return { status: response.status, data: json.data };
 }
 
@@ -370,10 +381,10 @@ describe('MOD-003 C003-06 landed freight vs stock adjustment consistency', () =>
       if (!first || !second) throw new Error('Missing independent Nest processes');
       expect(first.child.pid).not.toBe(second.child.pid);
 
-      let raced: Promise<readonly [
+      const holder: { promise?: Promise<readonly [
         { status: number; data: unknown },
         { status: number; data: unknown },
-      ]> | null = null;
+      ]> } = {};
       await asTenant(pool, tenant.tenantId, async (db) => {
         const lock = await db.query(
           'SELECT id FROM product_cost_state WHERE tenant_id = $1 AND product_id = $2 FOR UPDATE',
@@ -383,11 +394,12 @@ describe('MOD-003 C003-06 landed freight vs stock adjustment consistency', () =>
         // Hold one real PostgreSQL row lock while the two independent Nest
         // processes calculate and attempt their separate writes. No stock,
         // lot, or journal is directly modified by this test barrier.
-        raced = Promise.all([lateFreight(first), writeOff(second)]);
+        holder.promise = Promise.all([lateFreight(first), writeOff(second)]);
         await new Promise<void>((done) => setTimeout(done, 500));
       });
-      if (raced === null) throw new Error('Concurrent requests were not started');
-      const [landedResult, adjustmentResult] = await raced;
+      const requests = holder.promise;
+      if (!requests) throw new Error('Concurrent requests were not started');
+      const [landedResult, adjustmentResult] = await requests;
       expect([201, 400, 409]).toContain(landedResult.status);
       expect([201, 400, 409]).toContain(adjustmentResult.status);
       expect([landedResult.status, adjustmentResult.status]).toContain(201);
