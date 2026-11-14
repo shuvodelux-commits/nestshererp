@@ -114,6 +114,7 @@ const CODE_FOR_STATUS: Readonly<Record<number, ErrorCode>> = {
   403: ErrorCode.PERMISSION_DENIED,
   404: ErrorCode.NOT_FOUND,
   409: ErrorCode.CONFLICT_STALE_VERSION,
+  413: ErrorCode.VALIDATION_FAILED,
 };
 
 const MESSAGE_FOR_STATUS: Readonly<Record<number, string>> = {
@@ -122,6 +123,7 @@ const MESSAGE_FOR_STATUS: Readonly<Record<number, string>> = {
   403: 'Not allowed',
   404: 'No such endpoint',
   409: 'That conflicts with the current state',
+  413: 'Request body too large',
 };
 
 /**
