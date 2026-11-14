@@ -141,3 +141,54 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           retention-days: 7
+
+  # MOD-006 T05: real PostgreSQL regression on a private disposable database.
+  # Ordinary pnpm test intentionally skips this opt-in suite; this job proves
+  # historical counted-day immutability and both transfer-vs-close lock orders.
+  # It never opens a production connection or needs a GitHub secret.
+  mod006-cash-close:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mod006_t05_ci_only
+          POSTGRES_DB: hisabiq_mod006_closed_day_t05_20261113
+        ports:
+          - 55712:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hisabiq_mod006_closed_day_t05_20261113"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      JWT_SECRET: mod006-t05-ci-only-not-production
+      ENTITLEMENT_SOURCE: subscription
+      MOD006_T05_TEST_ONLY: MOD006_T05_DISPOSABLE_CLOSED_DAY_20261113
+      ADMIN_DATABASE_URL: postgres://postgres:mod006_t05_ci_only@127.0.0.1:55712/hisabiq_mod006_closed_day_t05_20261113
+      DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55712/hisabiq_mod006_closed_day_t05_20261113
+      TEST_DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55712/hisabiq_mod006_closed_day_t05_20261113
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter "@sher/api..." build
+
+      - name: Real PostgreSQL 16 counted-close and two-way lock acceptance (T05)
+        run: pnpm --filter @sher/api exec vitest run test/hisabiq-mod006-closed-day-lineage.spec.ts --reporter=verbose

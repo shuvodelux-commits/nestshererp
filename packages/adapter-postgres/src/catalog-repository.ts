@@ -8,6 +8,7 @@ import type {
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 
+import { rethrowCatalogNameConflict } from './catalog-name-conflict';
 import { brands, categories, units } from './schema';
 import { txOf } from './unit-of-work';
 
@@ -82,44 +83,68 @@ export class PostgresCatalogRepository implements CatalogRepository {
   }
 
   async insertUnit(tx: Tx, ctx: TenantContext, entry: CatalogEntry): Promise<void> {
-    await txOf(tx).insert(units).values({ ...this.stamp(ctx), id: entry.id, name: entry.name });
+    try {
+      await txOf(tx).insert(units).values({ ...this.stamp(ctx), id: entry.id, name: entry.name });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'unit');
+    }
   }
 
   async insertBrand(tx: Tx, ctx: TenantContext, entry: CatalogEntry): Promise<void> {
-    await txOf(tx).insert(brands).values({ ...this.stamp(ctx), id: entry.id, name: entry.name });
+    try {
+      await txOf(tx).insert(brands).values({ ...this.stamp(ctx), id: entry.id, name: entry.name });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'brand');
+    }
   }
 
   async insertCategory(tx: Tx, ctx: TenantContext, entry: CategoryEntry): Promise<void> {
-    await txOf(tx)
-      .insert(categories)
-      .values({ ...this.stamp(ctx), id: entry.id, name: entry.name, parentId: entry.parentId });
+    try {
+      await txOf(tx)
+        .insert(categories)
+        .values({ ...this.stamp(ctx), id: entry.id, name: entry.name, parentId: entry.parentId });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'category');
+    }
   }
 
   async renameUnit(tx: Tx, ctx: TenantContext, id: string, name: string): Promise<void> {
-    await txOf(tx)
-      .update(units)
-      .set({ name, ...this.touch(ctx), version: sql`${units.version} + 1` })
-      .where(and(eq(units.tenantId, ctx.tenantId), eq(units.id, id), isNull(units.deletedAt)));
+    try {
+      await txOf(tx)
+        .update(units)
+        .set({ name, ...this.touch(ctx), version: sql`${units.version} + 1` })
+        .where(and(eq(units.tenantId, ctx.tenantId), eq(units.id, id), isNull(units.deletedAt)));
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'unit');
+    }
   }
 
   async renameBrand(tx: Tx, ctx: TenantContext, id: string, name: string): Promise<void> {
-    await txOf(tx)
-      .update(brands)
-      .set({ name, ...this.touch(ctx), version: sql`${brands.version} + 1` })
-      .where(and(eq(brands.tenantId, ctx.tenantId), eq(brands.id, id), isNull(brands.deletedAt)));
+    try {
+      await txOf(tx)
+        .update(brands)
+        .set({ name, ...this.touch(ctx), version: sql`${brands.version} + 1` })
+        .where(and(eq(brands.tenantId, ctx.tenantId), eq(brands.id, id), isNull(brands.deletedAt)));
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'brand');
+    }
   }
 
   async renameCategory(tx: Tx, ctx: TenantContext, id: string, name: string): Promise<void> {
-    await txOf(tx)
-      .update(categories)
-      .set({ name, ...this.touch(ctx), version: sql`${categories.version} + 1` })
-      .where(
-        and(
-          eq(categories.tenantId, ctx.tenantId),
-          eq(categories.id, id),
-          isNull(categories.deletedAt),
-        ),
-      );
+    try {
+      await txOf(tx)
+        .update(categories)
+        .set({ name, ...this.touch(ctx), version: sql`${categories.version} + 1` })
+        .where(
+          and(
+            eq(categories.tenantId, ctx.tenantId),
+            eq(categories.id, id),
+            isNull(categories.deletedAt),
+          ),
+        );
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'category');
+    }
   }
 
   async deleteUnit(tx: Tx, ctx: TenantContext, id: string): Promise<void> {

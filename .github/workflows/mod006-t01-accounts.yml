@@ -1,0 +1,52 @@
+name: MOD-006 T01 Money Account Lifecycle
+
+on:
+  push:
+    branches:
+      - test/mod006-t01-account-lifecycle-20261113
+  pull_request:
+    branches:
+      - chore/hisabiq-adoption-runtime-a01
+
+jobs:
+  accounts-lifecycle:
+    name: T01 real account and journal invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mod006_t01_ci_only
+          POSTGRES_DB: hisabiq_mod006_t01_verify_20261113
+        ports:
+          - 55724:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hisabiq_mod006_t01_verify_20261113"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MOD006_T01_TEST_ONLY: MOD006_T01_ONLY_DISPOSABLE_20261113
+      DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55724/hisabiq_mod006_t01_verify_20261113
+      TEST_DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55724/hisabiq_mod006_t01_verify_20261113
+      ADMIN_DATABASE_URL: postgres://postgres:mod006_t01_ci_only@127.0.0.1:55724/hisabiq_mod006_t01_verify_20261113
+      NODE_ENV: test
+      JWT_SECRET: test-secret-not-used-in-production
+      ENTITLEMENT_SOURCE: subscription
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "@sher/api..." build
+      - name: Signed Nest + PostgreSQL16 T01 account lifecycle
+        run: pnpm --filter @sher/api exec vitest run test/hisabiq-mod006-accounts-lifecycle-gate.spec.ts --reporter=verbose

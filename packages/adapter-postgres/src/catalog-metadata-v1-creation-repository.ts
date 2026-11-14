@@ -10,6 +10,7 @@ import type {
 } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 
+import { rethrowCatalogNameConflict } from './catalog-name-conflict';
 import { brands, categories, units } from './schema';
 import { txOf } from './unit-of-work';
 
@@ -41,31 +42,43 @@ export class PostgresCatalogMetadataV1CreationRepository
   }
 
   async insertUnit(tx: Tx, ctx: TenantContext, row: CatalogMetadataV1Unit): Promise<void> {
-    await txOf(tx).insert(units).values({
-      ...this.stamp(ctx),
-      id: row.id,
-      name: row.name,
-      nameBn: row.nameBn,
-      symbol: row.symbol,
-    });
+    try {
+      await txOf(tx).insert(units).values({
+        ...this.stamp(ctx),
+        id: row.id,
+        name: row.name,
+        nameBn: row.nameBn,
+        symbol: row.symbol,
+      });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'unit');
+    }
   }
 
   async insertBrand(tx: Tx, ctx: TenantContext, row: CatalogMetadataV1Brand): Promise<void> {
-    await txOf(tx).insert(brands).values({
-      ...this.stamp(ctx),
-      id: row.id,
-      name: row.name,
-      nameBn: row.nameBn,
-    });
+    try {
+      await txOf(tx).insert(brands).values({
+        ...this.stamp(ctx),
+        id: row.id,
+        name: row.name,
+        nameBn: row.nameBn,
+      });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'brand');
+    }
   }
 
   async insertCategory(tx: Tx, ctx: TenantContext, row: CatalogMetadataV1Category): Promise<void> {
-    await txOf(tx).insert(categories).values({
-      ...this.stamp(ctx),
-      id: row.id,
-      name: row.name,
-      nameBn: row.nameBn,
-      parentId: row.parentId,
-    });
+    try {
+      await txOf(tx).insert(categories).values({
+        ...this.stamp(ctx),
+        id: row.id,
+        name: row.name,
+        nameBn: row.nameBn,
+        parentId: row.parentId,
+      });
+    } catch (error) {
+      rethrowCatalogNameConflict(error, 'category');
+    }
   }
 }
