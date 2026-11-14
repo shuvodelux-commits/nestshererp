@@ -4,13 +4,13 @@
  * @covers endpoint:POST /api/v1/purchases
  * @covers endpoint:GET /api/v1/purchases
  * @covers endpoint:GET /api/v1/purchases/:id
- * @covers workflow:purchase
  * @covers permission:purchase.bill.create
  *
  * Use ONLY with the dedicated, labelled disposable P6 PostgreSQL16 container.
  * Never connect a retained shop DB; real purchase journal/stock writes are
  * created ONLY inside the disposable test tenant and reset between cases.
  * The existing production purchasing contracts remain unchanged.
+ * Opt-in: HISABIQ_P6_DISPOSABLE_ACK=isolated-pg16-only; skipped in ordinary CI.
  */
 import 'reflect-metadata';
 
@@ -108,6 +108,9 @@ async function assertBalancedEntries(tenant: SeededTenant) {
   expect(imbalances).toEqual([]);
 }
 
+const p6Suite = process.env.HISABIQ_P6_DISPOSABLE_ACK === 'isolated-pg16-only'
+  ? describe : describe.skip;
+p6Suite('MOD-008 P6 real source/financial acceptance', () => {
 beforeAll(async () => {
   checkDisposable();
   pool = testPool();
@@ -161,7 +164,6 @@ beforeEach(async () => {
   customerId = customer.body.data.id as string;
 }, 45_000);
 
-describe('MOD-008 P6 real source/financial acceptance', () => {
   it.each([
     ['missing supplier', () => bill({ supplierPartyId: MISSING_ID })],
     ['wrong-role customer', () => bill({ supplierPartyId: customerId })],
