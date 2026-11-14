@@ -10,6 +10,7 @@ import type {
   Outbox,
   PartyRepository,
   PeriodGuard,
+  SettingsRepository,
   UnitOfWork,
 } from '@sher/core-application';
 import { ManageExpensesService } from '@sher/core-application';
@@ -27,6 +28,7 @@ import {
   OUTBOX,
   PARTY_REPOSITORY,
   PERIOD_GUARD,
+  SETTINGS_REPOSITORY,
   UNIT_OF_WORK,
 } from '../infrastructure/tokens';
 import { ExpensesController } from './expenses.controller';
@@ -51,6 +53,7 @@ import { MANAGE_EXPENSES_SERVICE } from './tokens';
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): ManageExpensesService =>
         new ManageExpensesService(
           uow,
@@ -65,6 +68,7 @@ import { MANAGE_EXPENSES_SERVICE } from './tokens';
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -79,6 +83,7 @@ import { MANAGE_EXPENSES_SERVICE } from './tokens';
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
   ],

@@ -108,6 +108,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): CreatePurchaseService =>
         new CreatePurchaseService(
           uow,
@@ -123,6 +124,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -138,6 +140,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
     {
@@ -155,6 +158,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): PaySupplierService =>
         new PaySupplierService(
           uow,
@@ -169,6 +173,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -183,6 +188,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
     {
@@ -283,6 +289,7 @@ import {
         audit: AuditWriter,
         outbox: Outbox,
         clock: Clock,
+        settings: SettingsRepository,
       ): AddLandedCostService =>
         new AddLandedCostService(
           uow,
@@ -294,6 +301,7 @@ import {
           audit,
           outbox,
           clock,
+          settings,
         ),
       inject: [
         UNIT_OF_WORK,
@@ -305,6 +313,7 @@ import {
         AUDIT_WRITER,
         OUTBOX,
         CLOCK,
+        SETTINGS_REPOSITORY,
       ],
     },
   ],

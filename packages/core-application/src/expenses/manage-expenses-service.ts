@@ -9,6 +9,7 @@ import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import { reverseMoneyDocument } from '../corrections/reverse-money-document';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { DocumentReversalRepository } from '../corrections/document-reversal-repository';
 import { entryModeFor } from '../notes/create-note-service';
 import type { PartyRepository } from '../parties/party-repository';
@@ -90,6 +91,7 @@ export class ManageExpensesService {
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
+    private readonly settings: SettingsRepository,
   ) {}
 
   async record(command: RecordExpenseCommand): Promise<ExpenseResponse> {
@@ -139,7 +141,7 @@ export class ManageExpensesService {
       }
 
       const account = await resolvePaymentAccount(
-        { access: this.access, money: this.money },
+        { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
         tx,
         ctx,
         command.accountCode,
@@ -356,7 +358,7 @@ export class ManageExpensesService {
       }
 
       const account = await resolvePaymentAccount(
-        { access: this.access, money: this.money },
+        { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
         tx,
         ctx,
         command.accountCode,
