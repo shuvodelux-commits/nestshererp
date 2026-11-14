@@ -484,3 +484,120 @@ describe('deleting a product once stock exists', () => {
     });
   });
 });
+
+
+/**
+ * MOD-003 C003-03: two concurrent genuine HTTP writes backed by independent
+ * PostgreSQL transactions. No mocked inventory/ledger writers.
+ */
+describe('C003-03 concurrent inventory sources', () => {
+  const today = () => todayIn(tenant.timezone);
+  const opening = (operationId = Ulid.generate(clock)) =>
+    request(app.getHttpServer()).post('/api/v1/inventory/openings')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', operationId)
+      .send({ productId, qty: 10_000, businessDate: today() });
+  const adjustment = (qtyDelta: number, operationId = Ulid.generate(clock)) =>
+    request(app.getHttpServer()).post('/api/v1/inventory/adjustments')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', operationId)
+      .send({ productId, qtyDelta, reason: 'RECOUNT', note: null, businessDate: today() });
+
+  async function state(): Promise<{
+    openings: number;
+    adjustments: number;
+    openingMovements: number;
+    adjustmentMovements: number;
+    stockQty: number | null;
+    lotQty: number | null;
+    journalEntries: number;
+    auditEvents: number;
+    outboxEvents: number;
+  }> {
+    const result = await asTenant(pool, tenant.tenantId, (db) => db.query([
+      'SELECT',
+      '(SELECT count(*)::integer FROM stock_openings WHERE product_id = $1) AS openings,',
+      '(SELECT count(*)::integer FROM stock_adjustments WHERE product_id = $1) AS adjustments,',
+      "(SELECT count(*)::integer FROM stock_movements WHERE product_id = $1 AND source_document_type = 'OPENING_STOCK') AS \"openingMovements\",",
+      "(SELECT count(*)::integer FROM stock_movements WHERE product_id = $1 AND source_document_type = 'STOCK_ADJUSTMENT') AS \"adjustmentMovements\",",
+      '(SELECT sum(qty_on_hand)::integer FROM product_cost_state WHERE product_id = $1) AS "stockQty",',
+      '(SELECT sum(qty_remaining)::integer FROM inventory_lots WHERE product_id = $1 AND owner_type = \'OWNED\') AS "lotQty",',
+      "(SELECT count(*)::integer FROM journal_entries WHERE source_document_type IN ('OPENING_STOCK','STOCK_ADJUSTMENT')) AS \"journalEntries\",",
+      "(SELECT count(*)::integer FROM audit_events WHERE entity_type IN ('stock_opening','stock_adjustment')) AS \"auditEvents\",",
+      "(SELECT count(*)::integer FROM outbox WHERE event_type IN ('inventory.opening-recorded','inventory.stock-adjusted')) AS \"outboxEvents\"",
+    ].join(' '), [productId]));
+    const row = result.rows[0];
+    if (!row) throw new Error('Missing PostgreSQL inventory state');
+    return {
+      openings: Number(row.openings), adjustments: Number(row.adjustments),
+      openingMovements: Number(row.openingMovements), adjustmentMovements: Number(row.adjustmentMovements),
+      stockQty: row.stockQty === null ? null : Number(row.stockQty),
+      lotQty: row.lotQty === null ? null : Number(row.lotQty),
+      journalEntries: Number(row.journalEntries), auditEvents: Number(row.auditEvents),
+      outboxEvents: Number(row.outboxEvents),
+    };
+  }
+
+  async function valuation(expectedQuantity: number, expectedValue: number): Promise<void> {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/inventory/valuation')
+      .set('Authorization', 'Bearer ' + token);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      rows: [expect.objectContaining({ productId, qtyOnHand: expectedQuantity, valueMinor: expectedValue })],
+      totalValueMinor: expectedValue,
+      inventoryAccountMinor: expectedValue,
+      differenceMinor: 0,
+      reconciled: true,
+    });
+  }
+
+  it('arbitrates simultaneous first openings without duplicate source, stock or equity', async () => {
+    const [a, b] = await Promise.all([opening(), opening()]);
+    expect([a.status, b.status].filter((status) => status === 201)).toHaveLength(1);
+    expect([400, 409]).toContain(a.status === 201 ? b.status : a.status);
+    expect(await state()).toEqual({
+      openings: 1, adjustments: 0,
+      openingMovements: 1, adjustmentMovements: 0,
+      stockQty: 10_000, lotQty: 10_000,
+      journalEntries: 1, auditEvents: 1, outboxEvents: 1,
+    });
+    await valuation(10_000, 100_000);
+  });
+
+  it('prevents two concurrent seven-unit write-offs from overdrawing ten owned units', async () => {
+    expect((await opening()).status).toBe(201);
+    const [a, b] = await Promise.all([adjustment(-7_000), adjustment(-7_000)]);
+    expect([a.status, b.status].filter((status) => status === 201)).toHaveLength(1);
+    expect([400, 409]).toContain(a.status === 201 ? b.status : a.status);
+    expect(await state()).toEqual({
+      openings: 1, adjustments: 1,
+      openingMovements: 1, adjustmentMovements: 1,
+      stockQty: 3_000, lotQty: 3_000,
+      journalEntries: 2, auditEvents: 2, outboxEvents: 2,
+    });
+    await valuation(3_000, 30_000);
+  });
+
+  it('never double-initializes cost state during a first opening and found-stock race', async () => {
+    const [opened, adjusted] = await Promise.all([opening(), adjustment(5_000)]);
+    for (const result of [opened, adjusted]) {
+      expect([201, 400, 409]).toContain(result.status);
+    }
+    expect([opened.status, adjusted.status]).toContain(201);
+    const actual = await state();
+    const successfulOpening = opened.status === 201 ? 1 : 0;
+    const successfulAdjustment = adjusted.status === 201 ? 1 : 0;
+    const expectedQty = successfulOpening * 10_000 + successfulAdjustment * 5_000;
+    const expectedValue = successfulOpening * 100_000 + successfulAdjustment * 50_000;
+    expect(actual).toEqual({
+      openings: successfulOpening, adjustments: successfulAdjustment,
+      openingMovements: successfulOpening, adjustmentMovements: successfulAdjustment,
+      stockQty: expectedQty, lotQty: expectedQty,
+      journalEntries: successfulOpening + successfulAdjustment,
+      auditEvents: successfulOpening + successfulAdjustment,
+      outboxEvents: successfulOpening + successfulAdjustment,
+    });
+    await valuation(expectedQty, expectedValue);
+  });
+});
