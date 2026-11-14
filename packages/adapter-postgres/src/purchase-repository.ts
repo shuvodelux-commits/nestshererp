@@ -89,6 +89,23 @@ function purchaseDraftRow(row: typeof purchaseDrafts.$inferSelect): PurchaseDraf
 export class PostgresPurchaseRepository implements PurchaseRepository {
   constructor(private readonly clock: Clock) {}
 
+  async lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void> {
+    // Called for sorted unique IDs by CreatePurchaseService. Keep these
+    // product-row locks through the purchase UOW commit so deactivation cannot
+    // commit between source validation and posted stock/journal writes.
+    // Explicit tenant + live filters accompany the database's RLS policy.
+    await txOf(tx)
+      .select({ id: products.id })
+      .from(products)
+      .where(and(
+        eq(products.tenantId, ctx.tenantId),
+        eq(products.id, productId),
+        isNull(products.deletedAt),
+      ))
+      .for('update')
+      .limit(1);
+  }
+
   async listPurchaseDrafts(
     tx: Tx, ctx: TenantContext, state: 'active' | 'deleted', limit: number,
   ): Promise<readonly PurchaseDraftRow[]> {
