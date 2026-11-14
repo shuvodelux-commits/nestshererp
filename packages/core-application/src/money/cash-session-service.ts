@@ -188,10 +188,19 @@ export class CashSessionService {
 
   /** §5.16.2 — the counted cash going into the drawer opens the day. */
   async startDay(command: StartDayCommand): Promise<CashSessionResponse> {
-    const fingerprint = JSON.stringify({
+    const legacyFingerprint = JSON.stringify({
       businessDate: command.businessDate,
       openingAmountMinor: command.openingAmountMinor,
       counterpartAccountCode: command.counterpartAccountCode,
+    });
+    const fingerprint = JSON.stringify({
+      version: 2,
+      action: 'CASH_SESSION_START',
+      actorId: command.ctx.userId,
+      businessDate: command.businessDate,
+      openingAmountMinor: command.openingAmountMinor,
+      counterpartAccountCode: command.counterpartAccountCode,
+      note: command.note,
     });
 
     return this.uow.run(command.ctx, async (tx) => {
@@ -204,7 +213,10 @@ export class CashSessionService {
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
-        if (replayed.requestFingerprint !== fingerprint) {
+        // Old keys lacked note and actor. Preserve response-only legacy replay:
+        // the original note is not recoverable for every historic Start.
+        if (replayed.requestFingerprint !== fingerprint &&
+            replayed.requestFingerprint !== legacyFingerprint) {
           throw new AppError(
             ErrorCode.IDEMPOTENCY_KEY_REUSED,
             'This operation id was already used to start a different day',
@@ -333,9 +345,17 @@ export class CashSessionService {
   /** §5.16.4 — count the drawer, store the five figures, post the difference. */
   async closeDay(command: CloseDayCommand): Promise<CashSessionResponse> {
     const { ctx } = command;
-    const fingerprint = JSON.stringify({
+    const legacyFingerprint = JSON.stringify({
       sessionId: command.sessionId,
       countedClosingMinor: command.countedClosingMinor,
+    });
+    const fingerprint = JSON.stringify({
+      version: 2,
+      action: 'CASH_SESSION_CLOSE',
+      actorId: ctx.userId,
+      sessionId: command.sessionId,
+      countedClosingMinor: command.countedClosingMinor,
+      reason: command.reason,
     });
 
     return this.uow.run(ctx, async (tx) => {
@@ -348,7 +368,14 @@ export class CashSessionService {
 
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
-        if (replayed.requestFingerprint !== fingerprint) {
+        // Old Close fingerprints lacked reason, but the immutable response
+        // retains the original close's actual explanation.
+        const legacyClose = (replayed.response as CashSessionResponse | null)?.closes?.find(
+          (close) => close.status === 'ACTIVE' &&
+            close.differenceReason === command.reason,
+        );
+        if (replayed.requestFingerprint !== fingerprint &&
+            !(replayed.requestFingerprint === legacyFingerprint && legacyClose !== undefined)) {
           throw new AppError(
             ErrorCode.IDEMPOTENCY_KEY_REUSED,
             'This operation id was already used to close a different day',
@@ -468,6 +495,14 @@ export class CashSessionService {
    * count standing where the reports found it.
    */
   async reopenDay(command: ReopenDayCommand): Promise<CashSessionResponse> {
+    const fingerprint = JSON.stringify({
+      version: 2,
+      action: 'CASH_SESSION_REOPEN',
+      actorId: command.ctx.userId,
+      sessionId: command.sessionId,
+      reason: command.reason,
+    });
+
     return this.uow.run(command.ctx, async (tx) => {
       // Reopening also makes a session OPEN, so it shares Start Day's lock.
       const policy = await lockCashSessionPolicy(tx, command.ctx, this.settings, this.clock);
@@ -476,7 +511,44 @@ export class CashSessionService {
         throw new AppError(ErrorCode.FEATURE_DISABLED, 'The cash drawer is switched off for this shop');
       }
 
+      // Tenant and permission checks still apply to a previously committed
+      // operation. The active close is already SUPERSEDED after the first
+      // success, so exact-response replay must precede CLOSED validation.
       const session = await this.requireSession(tx, ctx, command.sessionId);
+      const replayed = await this.idempotency.find(tx, ctx, command.operationId);
+      if (replayed !== null) {
+        const original = replayed.response as CashSessionResponse;
+        const closes = await this.money.listCloses(tx, ctx, session.id);
+        const originalClose = closes.find((close) =>
+          close.status === 'SUPERSEDED' &&
+          original?.closes?.some((saved) => saved.id === close.id &&
+            saved.status === 'SUPERSEDED'),
+        );
+        // A conflicting key may belong to Start/Close, whose saved response
+        // contains no superseded close. Authorize against the *current* active
+        // close in that case so an otherwise permitted closer gets a precise
+        // 409 key-reuse conflict, not an accidental 403.
+        const closeForAuthorization = originalClose ??
+          await this.money.findActiveClose(tx, ctx, session.id);
+        const held = await this.accessControl.permissionsOf(tx, ctx);
+        if (!held.includes(Permission.CASH_SESSION_REOPEN) &&
+            closeForAuthorization?.closedBy !== ctx.userId) {
+          throw new AppError(
+            ErrorCode.PERMISSION_DENIED,
+            'Only the owner, or whoever closed the day, can reopen it',
+          );
+        }
+        if (!original || replayed.requestFingerprint !== fingerprint ||
+            original.id !== command.sessionId ||
+            original.status !== 'OPEN' || originalClose === undefined) {
+          throw new AppError(
+            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            'This operation id was already used for a different cash-session operation',
+          );
+        }
+        return original;
+      }
+
       const close = await this.money.findActiveClose(tx, ctx, session.id);
 
       if (session.status === 'OPEN' || close === null) {
@@ -557,7 +629,13 @@ export class CashSessionService {
         source: 'API',
       });
 
-      return this.toResponse(tx, ctx, await this.requireSession(tx, ctx, session.id));
+      const response = await this.toResponse(tx, ctx, await this.requireSession(tx, ctx, session.id));
+      await this.idempotency.save(tx, ctx, {
+        operationId: command.operationId,
+        requestFingerprint: fingerprint,
+        response,
+      });
+      return response;
     });
   }
 
