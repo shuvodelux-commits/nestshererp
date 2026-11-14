@@ -2214,3 +2214,62 @@ describe('QA120 P2 — historical Party opening and directory regression', () =>
     expect(JSON.stringify(attempted.body)).not.toContain('Private Tenant A');
   });
 });
+
+
+describe('MOD-004 T11-N — explicit ledger-role authorization precedes Party identity lookup', () => {
+  it('denies an explicit ungranted ledger role for existing and nonexistent Party identically', async () => {
+    const created = await createParty(minimalCustomer({
+      name: 'Dual-role electrical shop', roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const existingId = (created.body.data as PartyBody).id;
+    const nonexistentId = Ulid.generate(clock);
+
+    // The role retains Customer VIEW but loses Supplier VIEW on the same
+    // authenticated tenant. No second tenant or fabricated HTTP mock.
+    await asTenant(pool, tenant.tenantId, async (client) => {
+      await client.query(
+        'DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 AND permission_code = $3',
+        [tenant.tenantId, tenant.roleId, Permission.SUPPLIER_VIEW],
+      );
+    });
+
+    const readSupplier = (id: string) => request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '/ledger?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + token);
+    const existing = await readSupplier(existingId);
+    const missing = await readSupplier(nonexistentId);
+    expect(existing.status).toBe(403);
+    expect(missing.status).toBe(403);
+    expect(existing.body.error.code).toBe('PERMISSION_DENIED');
+    expect(missing.body.error.code).toBe('PERMISSION_DENIED');
+    expect(missing.body.error.message).toBe(existing.body.error.message);
+    expect(JSON.stringify(missing.body)).not.toContain('Dual-role electrical shop');
+
+    const customer = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + existingId + '/ledger?role=CUSTOMER')
+      .set('Authorization', 'Bearer ' + token).expect(200);
+    expect(customer.body.rows).toEqual([]);
+    expect(customer.body.closingBalance.netMinor).toBe(0);
+  });
+
+  it('a different tenant with the selected role cannot enumerate another tenant Party', async () => {
+    const created = await createParty(minimalCustomer({
+      name: 'Tenant A trade identity', roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const existingId = (created.body.data as PartyBody).id;
+    const stranger = await seedTenant(pool, {
+      name: 'T11-N separate authorized tenant',
+      permissions: [Permission.SUPPLIER_VIEW],
+    });
+    const outsiderToken = signToken(stranger, TEST_JWT_SECRET);
+    const denied = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + existingId + '/ledger?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + outsiderToken).expect(404);
+    expect(JSON.stringify(denied.body)).not.toContain('Tenant A trade identity');
+    const nonexistentId = Ulid.generate(clock);
+    const missing = await request(app.getHttpServer())
+      .get('/api/v1/parties/' + nonexistentId + '/ledger?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + outsiderToken).expect(404);
+    expect(denied.body.error.code).toBe(missing.body.error.code);
+  });
+});
