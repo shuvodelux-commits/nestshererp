@@ -36,6 +36,22 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
   ): Promise<LandedCostPurchaseRow | null> {
     const db = txOf(tx);
 
+    // Cost-only freight can change lot unit cost and average without moving
+    // quantity. Serialize against a concurrent stock adjustment/sale BEFORE
+    // reading any lot quantities or cost state used to compute postings.
+    // A deterministic order avoids AB/BA locks for multi-product purchases.
+    await db.execute(sql`
+      SELECT cs.id FROM product_cost_state cs
+       WHERE cs.tenant_id = ${ctx.tenantId}
+         AND cs.deleted_at IS NULL
+         AND cs.product_id IN (
+           SELECT pl.product_id FROM purchase_lines pl
+            WHERE pl.tenant_id = ${ctx.tenantId}
+              AND pl.purchase_id = ${purchaseId}
+         )
+       ORDER BY cs.id FOR UPDATE
+    `);
+
     const header = await db.execute<{
       id: string;
       number: string;
