@@ -323,6 +323,87 @@ describe('importing products', () => {
     expect((await products()).some((row) => row.name === 'Hex Bolt 02')).toBe(false);
   });
 
+
+  // C003-02: two HTTP requests can race on separate Nest connections. The
+  // durable UNIQUE claim is acquired before the owning product writer.
+  it('serializes simultaneous equal-body SKU-less imports across database transactions', async () => {
+    const operationId = Ulid.generate(clock);
+    const csv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+
+    const [left, right] = await Promise.all([
+      commit('PRODUCTS', csv, operationId),
+      commit('PRODUCTS', csv, operationId),
+    ]);
+    expect(left.status).toBe(201);
+    expect(right.status).toBe(201);
+    expect(right.body.data).toEqual(left.body.data);
+    expect((await products()).filter((row) => row.name === 'Hex Bolt 01')).toHaveLength(1);
+
+    const observed = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query(
+        'SELECT operation_id, request_fingerprint, response_json FROM import_operations WHERE tenant_id = $1 AND operation_id = $2',
+        [tenant.tenantId, operationId],
+      ),
+    );
+    expect(observed.rows).toHaveLength(1);
+    expect(observed.rows[0]?.response_json).toEqual(left.body.data);
+    expect(observed.rows[0]?.request_fingerprint).toMatch(/^import:sha256:v1:[0-9a-f]{64}$/);
+    expect(JSON.stringify(observed.rows[0])).not.toContain(csv);
+  });
+
+  it('serializes racing changed-body imports as one 201 and one 409', async () => {
+    const operationId = Ulid.generate(clock);
+    const original = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const different = [PRODUCT_HEADER, 'Hex Bolt 02,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const [left, right] = await Promise.all([
+      commit('PRODUCTS', original, operationId),
+      commit('PRODUCTS', different, operationId),
+    ]);
+    expect([left.status, right.status].sort()).toEqual([201, 409]);
+    const refused = left.status === 409 ? left : right;
+    expect(refused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await products()).toHaveLength(1);
+  });
+
+  it('rolls back a durable claim when the CSV validation fails, allowing a corrected retry', async () => {
+    const operationId = Ulid.generate(clock);
+    const bad = [
+      PRODUCT_HEADER,
+      'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,',
+      'Invalid Unit,Peice,10.00,15.00,1,,,,,,',
+    ].join('\r\n');
+    expect((await commit('PRODUCTS', bad, operationId)).status).toBe(400);
+    const saved = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query('SELECT id FROM import_operations WHERE tenant_id = $1 AND operation_id = $2',
+        [tenant.tenantId, operationId]),
+    );
+    expect(saved.rows).toHaveLength(0);
+    expect(await products()).toHaveLength(0);
+
+    const corrected = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    const result = await commit('PRODUCTS', corrected, operationId);
+    expect(result.status).toBe(201);
+    expect(await products()).toHaveLength(1);
+  });
+
+  it('never exposes tenant A durable import identity to tenant B under RLS', async () => {
+    const operationId = Ulid.generate(clock);
+    const csv = [PRODUCT_HEADER, 'Hex Bolt 01,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+    expect((await commit('PRODUCTS', csv, operationId)).status).toBe(201);
+
+    const other = await seedTenant(pool, { name: 'Isolated Import Tenant', permissions: PERMISSIONS });
+    const foreign = await asTenant(pool, other.tenantId, (client) =>
+      client.query('SELECT response_json FROM import_operations WHERE operation_id = $1', [operationId]),
+    );
+    expect(foreign.rows).toHaveLength(0);
+    const own = await asTenant(pool, tenant.tenantId, (client) =>
+      client.query('SELECT current_user AS principal, response_json FROM import_operations WHERE operation_id = $1', [operationId]),
+    );
+    expect(own.rows).toHaveLength(1);
+    expect(own.rows[0]?.principal).toBe('sher_app');
+    expect(own.rows[0]?.response_json).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
+  });
+
   // C003-01: two different files can have identical character counts. The
   // operation id must never return success for a different import payload.
   it('rejects a same-length changed CSV under an already committed import id', async () => {
