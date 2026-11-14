@@ -447,6 +447,13 @@ export class CreatePurchaseService {
       for (const [index, cost] of costs.lines.entries()) {
         const product = await this.products.findById(tx, ctx, cost.productId);
         if (product === null) throw new AppError(ErrorCode.NOT_FOUND, 'Product not found');
+        if (product.status === 'INACTIVE') {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            `“${product.name}” is no longer in use — reactivate it before purchasing`,
+            { reason: 'PRODUCT_INACTIVE', productId: product.id },
+          );
+        }
         const expiryDate = command.lines[index]?.expiryDate ?? null;
         if (expiryDate !== null && !product.tracksExpiry) {
           throw new AppError(
