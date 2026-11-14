@@ -458,6 +458,51 @@ describe('D08 P0-L03 — exact-role opening authorization', () => {
     });
   }
 
+
+  it('denies missing and existing opening identity identically without selected-role view', async () => {
+    const created = await createParty(minimalCustomer({
+      name: 'Private dual-role opening identity', roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const existingId = (created.body.data as PartyBody).id;
+    const unknownId = Ulid.generate(clock);
+    await revoke(Permission.SUPPLIER_VIEW);
+
+    const readOpening = (id: string, role: string) => request(app.getHttpServer())
+      .get('/api/v1/parties/' + id + '/opening?role=' + role)
+      .set('Authorization', 'Bearer ' + token);
+
+    const existing = await readOpening(existingId, 'SUPPLIER');
+    const unknown = await readOpening(unknownId, 'SUPPLIER');
+    expect(existing.status).toBe(403);
+    expect(unknown.status).toBe(403);
+    expect(existing.body.error.code).toBe('PERMISSION_DENIED');
+    expect(unknown.body.error.code).toBe('PERMISSION_DENIED');
+    expect(existing.body.error.message).toBe(unknown.body.error.message);
+    expect(JSON.stringify(unknown.body)).not.toContain('Private dual-role opening identity');
+
+    const customer = await readOpening(existingId, 'CUSTOMER').expect(200);
+    expect(customer.body.data).toBeNull();
+  });
+
+  it('authorized foreign-tenant opening lookup remains 404', async () => {
+    const created = await createParty(minimalCustomer({
+      name: 'Tenant A private opening', roles: ['CUSTOMER', 'SUPPLIER'],
+    })).expect(201);
+    const id = (created.body.data as PartyBody).id;
+    const foreign = await seedTenant(pool, {
+      name: 'T12-N foreign authorized opening tenant',
+      permissions: [Permission.SUPPLIER_VIEW],
+    });
+    const foreignToken = signToken(foreign, TEST_JWT_SECRET);
+    const readOpening = (partyId: string) => request(app.getHttpServer())
+      .get('/api/v1/parties/' + partyId + '/opening?role=SUPPLIER')
+      .set('Authorization', 'Bearer ' + foreignToken);
+    const hidden = await readOpening(id).expect(404);
+    const missing = await readOpening(Ulid.generate(clock)).expect(404);
+    expect(hidden.body.error.code).toBe(missing.body.error.code);
+    expect(JSON.stringify(hidden.body)).not.toContain('Tenant A private opening');
+  });
+
   it('does not disclose a Supplier opening through Customer-view permission', async () => {
     const businessDate = clock.businessDate('Asia/Dhaka');
     const created = await createParty(minimalCustomer({ roles: ['CUSTOMER', 'SUPPLIER'] })).expect(201);
