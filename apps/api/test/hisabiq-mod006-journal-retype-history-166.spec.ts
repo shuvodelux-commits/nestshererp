@@ -15,10 +15,12 @@ import { Permission } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { MONEY_REPOSITORY } from '../src/infrastructure/tokens';
+import type { MoneyRepository } from '@sher/core-application';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
@@ -48,11 +50,13 @@ const fullPermission = [
   Permission.BANK_ACCOUNT_VIEW, Permission.BANK_ACCOUNT_MANAGE,
   Permission.LOAN_ACCOUNT_MANAGE,
   Permission.CASH_MOVEMENT_RECORD,
+  Permission.EXPENSE_RECORD, Permission.EXPENSE_VIEW,
 ];
 let app: INestApplication;
 let pool: pg.Pool;
 let tenant: SeededTenant;
 let auth: string;
+let money: MoneyRepository;
 
 const api = (): ReturnType<typeof request> => request(app.getHttpServer());
 const signed = (req: request.Test, token = auth): request.Test =>
@@ -119,6 +123,7 @@ suite('MOD-006 #166 — posted journals must survive account-type metadata chang
     pool = testPool();
     await prepareTestDatabase();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    money = moduleRef.get<MoneyRepository>(MONEY_REPOSITORY, { strict: false });
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AppErrorFilter());
     await app.init();
@@ -133,6 +138,7 @@ suite('MOD-006 #166 — posted journals must survive account-type metadata chang
     auth = signToken(tenant, TEST_JWT_SECRET);
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (tenant?.tenantId) await assertGoldenInvariants(pool, tenant.tenantId);
   });
 
@@ -226,6 +232,125 @@ suite('MOD-006 #166 — posted journals must survive account-type metadata chang
       made.body.data.version as number);
     expect(changed.status, JSON.stringify(changed.body)).toBe(400);
     expect(await ledgerSnapshot(accountId)).toEqual(before);
+  });
+
+  it('serializes first expense posting vs unused-account type PATCH without orphaning BANK journals', async () => {
+    const original = input('BANK', 0, 'Never-used race bank');
+    const made = await create(original);
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const accountId = made.body.data.id as string;
+    const category = await signed(api().post('/api/v1/expenses/categories'))
+      .send({ name: 'Race expense' });
+    expect(category.status, JSON.stringify(category.body)).toBe(201);
+
+    let wake!: () => void;
+    let resume!: () => void;
+    const reached = new Promise<void>(resolve => { wake = resolve; });
+    const hold = new Promise<void>(resolve => { resume = resolve; });
+    const originalFind = money.findAccountById.bind(money);
+    let heldOnce = false;
+    const spy = vi.spyOn(money, 'findAccountById').mockImplementation(async (...args) => {
+      const row = await originalFind(...args);
+      if (!heldOnce && args[2] === accountId && row?.type === 'BANK') {
+        heldOnce = true;
+        wake();
+        await hold;
+      }
+      return row;
+    });
+
+    const pendingExpense = signed(api().post('/api/v1/expenses'))
+      .set('Idempotency-Key', op()).send({
+        categoryId: category.body.data.id, amountMinor: 2000,
+        accountCode: 'BANK:' + accountId, payeePartyId: null, note: 'First posting race',
+      }).then(response => response);
+    let patchPromise: Promise<request.Response> | undefined;
+    try {
+      const first = await Promise.race([
+        reached.then(() => ({ kind: 'paused' })),
+        pendingExpense.then(response => ({
+          kind: 'ended-before-account-read', status: response.status, body: response.body,
+        })),
+        new Promise<{ kind: string }>(resolve =>
+          setTimeout(() => resolve({ kind: 'never-reached-account-read' }), 8000)),
+      ]);
+      expect(first, JSON.stringify(first)).toEqual({ kind: 'paused' });
+      // A concurrently started update must be serialized with first posting.
+      // Before the fix, the PATCH commits against an empty journal while the
+      // expense is already holding the stale BANK account type in memory.
+      patchPromise = update(accountId, { ...original, type: 'LOAN' },
+        made.body.data.version as number).then(response => response);
+      await Promise.race([
+        patchPromise.then(() => undefined),
+        new Promise<void>(resolve => setTimeout(resolve, 600)),
+      ]);
+    } finally {
+      resume();
+    }
+    const expense = await pendingExpense;
+    const changed = await patchPromise!;
+    spy.mockRestore();
+    expect([201, 400]).toContain(expense.status);
+    expect([200, 400]).toContain(changed.status);
+
+    const after = await ledgerSnapshot(accountId);
+    // Policy A: an accepted first BANK posting locks classification forever.
+    // If an unused account was legitimately changed first, stale BANK-based
+    // posting must be rejected and leave journal history untouched.
+    const bankLines = after.journal.filter(line => line.account_code === 'BANK:' + accountId);
+    if (after.accountType === 'LOAN') {
+      expect(changed.status).toBe(200);
+      expect(expense.status).toBe(400);
+      expect(bankLines).toHaveLength(0);
+    } else {
+      expect(after.accountType).toBe('BANK');
+      expect(expense.status).toBe(201);
+      expect(changed.status).toBe(400);
+      expect(bankLines).toHaveLength(1);
+    }
+  }, 45_000);
+
+  it('rejects a stale BANK payment code after an unused account was retyped to LOAN', async () => {
+    const original = input('BANK', 0, 'Stale client bank');
+    const made = await create(original);
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const accountId = made.body.data.id as string;
+    const changed = await update(accountId, { ...original, type: 'LOAN' },
+      made.body.data.version as number);
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    const category = await signed(api().post('/api/v1/expenses/categories'))
+      .send({ name: 'Stale category' });
+    expect(category.status, JSON.stringify(category.body)).toBe(201);
+    const attempt = await signed(api().post('/api/v1/expenses'))
+      .set('Idempotency-Key', op()).send({
+        categoryId: category.body.data.id, amountMinor: 1000,
+        accountCode: 'BANK:' + accountId, payeePartyId: null,
+        note: 'Must not silently debit retyped LOAN account',
+      });
+    expect(attempt.status, JSON.stringify(attempt.body)).toBe(400);
+    const after = await ledgerSnapshot(accountId);
+    expect(after.accountType).toBe('LOAN');
+    expect(after.journal).toHaveLength(0);
+  });
+
+  it('preserves existing MFS alias payments by normalizing MFS code to the BANK journal family', async () => {
+    const made = await create(input('MFS', 0, 'Mobile wallet'));
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const accountId = made.body.data.id as string;
+    const category = await signed(api().post('/api/v1/expenses/categories'))
+      .send({ name: 'Wallet test expense' });
+    expect(category.status, JSON.stringify(category.body)).toBe(201);
+    const expense = await signed(api().post('/api/v1/expenses'))
+      .set('Idempotency-Key', op()).send({
+        categoryId: category.body.data.id, amountMinor: 500,
+        accountCode: 'MFS:' + accountId, payeePartyId: null,
+        note: 'Preserve previously supported MFS alias',
+      });
+    expect(expense.status, JSON.stringify(expense.body)).toBe(201);
+    expect(expense.body.data.accountCode).toBe('BANK:' + accountId);
+    const journal = await ledgerSnapshot(accountId);
+    expect(journal.accountType).toBe('MFS');
+    expect(journal.journal.some(line => line.account_code === 'BANK:' + accountId)).toBe(true);
   });
 
   it('permits a same-type name change without altering the posted opening', async () => {

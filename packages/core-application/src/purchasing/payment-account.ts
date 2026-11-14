@@ -66,12 +66,30 @@ export async function resolvePaymentAccount(
    */
   outflowMinor?: number,
 ): Promise<ResolvedPaymentAccount> {
+  // Account type changes take the tenant lock before updating the account.
+  // Hold that same lock before resolving the first payment against an unused
+  // account: otherwise a concurrent retype can commit after this read but
+  // before the expense/sale/purchase journal first posts, orphaning its code.
+  // This also keeps drawer policy and account classification in one order.
+  await deps.settings.lockTenant(tx, ctx);
   const separatorAt = code.indexOf(':');
   const accountId = separatorAt === -1 ? '' : code.slice(separatorAt + 1);
   const account = accountId === '' ? null : await deps.money.findAccountById(tx, ctx, accountId);
 
   if (account === null) {
     throw new AppError(ErrorCode.VALIDATION_FAILED, 'That is not an account of this shop');
+  }
+
+  // A stale client may still submit BANK:{id} after an *unused* account was
+  // changed to a LOAN. Never silently post the payment to the new family.
+  // Preserve existing MFS:{id} inputs, which normalize to BANK:{id}.
+  const currentCode = accountCodeFor(account.type, account.id);
+  if (code !== currentCode &&
+      !(account.type === 'MFS' && code === 'MFS:' + account.id)) {
+    throw new AppError(
+      ErrorCode.VALIDATION_FAILED,
+      'This account has changed type; select it again before posting',
+    );
   }
 
   await deps.access.require(
