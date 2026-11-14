@@ -304,6 +304,21 @@ export class ManageAccountsService {
             'Finish the draft reconciliation before changing this account type',
           );
         }
+        // Even after sign-off, statement history resolves its ledger code and
+        // account type through the current account record. Retyping would
+        // silently reinterpret a certified BANK/MFS reconciliation as CASH or
+        // a lender liability. Keep the original classification immutable.
+        //
+        // findDraftForAccount acquired this account's FOR UPDATE lock above:
+        // this lookup and any subsequent update are serialized against new
+        // reconciliation starts. Same-type metadata edits do not run this guard.
+        const history = await this.reconciliations.list(tx, ctx, { accountId: existing.id });
+        if (history.length > 0) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This account has reconciliation history and its type cannot be changed',
+          );
+        }
       }
       if (existing.isDrawer !== input.isDrawer ||
           (existing.isDrawer && existing.type !== input.type)) {
