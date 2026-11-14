@@ -162,6 +162,17 @@ export class ReconcileAccountService {
       }
 
       const openDraft = await this.reconciliations.findDraftForAccount(tx, ctx, account.id);
+      // findDraftForAccount takes the actual account-row FOR UPDATE lock.
+      // Account PATCH may have committed a different type after the first
+      // eligibility read but before this lock. Re-read under the lock: a
+      // lender liability or cash box must never acquire a bank statement.
+      const lockedAccount = await this.requireAccount(tx, ctx, account.id);
+      if (lockedAccount.type !== account.type) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'The account type changed while starting reconciliation — retry the current account',
+        );
+      }
       if (openDraft !== null) {
         // The account-row lock above may have waited for a concurrent start
         // using this SAME operation id. Re-read its committed fingerprint
