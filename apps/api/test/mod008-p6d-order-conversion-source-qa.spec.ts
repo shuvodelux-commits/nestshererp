@@ -3,11 +3,8 @@
  * QA-only. NEVER change backend posting code from this test branch.
  * Opt-in, label-checked disposable PostgreSQL16 only; no shared DB or UI.
  *
- * @covers endpoint:POST /api/v1/purchase-plans
- * @covers endpoint:POST /api/v1/purchase-plans/:id/decide
  * Supplier-order detail GET assertions remain executable, but its route is not in the
  * generated endpoint census; no explicit coverage-inventory entry is asserted.
- * @covers endpoint:POST /api/v1/purchases
  */
 import 'reflect-metadata';
 
