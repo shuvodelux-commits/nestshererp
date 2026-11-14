@@ -89,6 +89,14 @@ function purchaseDraftRow(row: typeof purchaseDrafts.$inferSelect): PurchaseDraf
 export class PostgresPurchaseRepository implements PurchaseRepository {
   constructor(private readonly clock: Clock) {}
 
+  async lockPurchaseOperation(tx: Tx, ctx: TenantContext, operationId: string): Promise<void> {
+    // Transaction-scoped tenant/key advisory lock: a competing retry waits
+    // to verify the winner instead of aborting the Class-T unique insertion.
+    // A hash collision only creates extra serialization, never data sharing.
+    const key = ctx.tenantId + ':' + operationId;
+    await txOf(tx).execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+  }
+
   async lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void> {
     // Called for sorted unique IDs by CreatePurchaseService. Keep these
     // product-row locks through the purchase UOW commit so deactivation cannot
@@ -219,6 +227,8 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
       entryMode: purchase.entryMode,
       status: 'POSTED',
       operationId: purchase.operationId,
+      createFingerprintVersion: purchase.createFingerprintVersion,
+      createFingerprint: purchase.createFingerprint,
       createdAt: now,
       updatedAt: now,
       createdBy: ctx.userId,
@@ -401,23 +411,25 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
     );
   }
 
-  async findPurchaseIdByOperationId(
-    tx: Tx,
-    ctx: TenantContext,
-    operationId: string,
-  ): Promise<string | null> {
-    const rows = await txOf(tx)
-      .select({ id: purchases.id })
+  async findPurchaseOperation(tx: Tx, ctx: TenantContext, operationId: string): Promise<{
+    id: string;
+    createFingerprintVersion: string | null;
+    createFingerprint: string | null;
+    status: string;
+    deletedAt: Date | null;
+  } | null> {
+    const [row] = await txOf(tx)
+      .select({
+        id: purchases.id,
+        createFingerprintVersion: purchases.createFingerprintVersion,
+        createFingerprint: purchases.createFingerprint,
+        status: purchases.status,
+        deletedAt: purchases.deletedAt,
+      })
       .from(purchases)
-      .where(
-        and(
-          eq(purchases.tenantId, ctx.tenantId),
-          eq(purchases.operationId, operationId),
-          isNull(purchases.deletedAt),
-        ),
-      )
+      .where(and(eq(purchases.tenantId, ctx.tenantId), eq(purchases.operationId, operationId)))
       .limit(1);
-    return rows[0]?.id.trim() ?? null;
+    return row ? { ...row, id: row.id.trim() } : null;
   }
 
   async findPurchaseById(tx: Tx, ctx: TenantContext, id: string): Promise<PurchaseDetail | null> {
