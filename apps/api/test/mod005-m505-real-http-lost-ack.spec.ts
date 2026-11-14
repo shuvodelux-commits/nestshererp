@@ -18,28 +18,36 @@ import { createRealNestLostAckProxy } from './support/mod005-real-nest-lost-ack-
 
 const clock = new SystemClock();
 const sentinel = 'MOD005_M505_REALACK_DISPOSABLE_20261114';
-const suite = process.env['MOD005_M505_REALACK_TEST_ONLY'] === sentinel ? describe : describe.skip;
+const negativeSentinel = 'MOD005_557_NEGATIVE_DISPOSABLE_20261114';
+const legacyOptIn = process.env['MOD005_M505_REALACK_TEST_ONLY'] === sentinel;
+const negativeOptIn = process.env['MOD005_557_NEGATIVE_TEST_ONLY'] === negativeSentinel;
+const suite = legacyOptIn || negativeOptIn ? describe : describe.skip;
 let app: INestApplication;
 let pool: pg.Pool;
 let target: string;
 let token: string;
 let refreshToken: string;
 let tenantId: string;
+let originalUserId: string;
 let day: string;
 const ulid = (): string => Ulid.generate(clock);
 const api = (): ReturnType<typeof request> => request(app.getHttpServer());
 const auth = (r: request.Test): request.Test => r.set('Authorization', 'Bearer ' + token);
 
 function ensureDisposable(): void {
-  if (process.env['MOD005_M505_REALACK_TEST_ONLY'] !== sentinel) {
+  if (!legacyOptIn && !negativeOptIn) {
     throw new Error('M5-05 real-ACK tests require explicit opt-in');
   }
+  const expectedPort = negativeOptIn ? '55746' : '55744';
+  const expectedDatabase = negativeOptIn
+    ? '/hisabiq_mod005_557_negative_20261114'
+    : '/hisabiq_mod005_m505_realack_20261114';
   for (const name of ['DATABASE_URL', 'TEST_DATABASE_URL', 'ADMIN_DATABASE_URL']) {
     const value = process.env[name];
     if (!value) throw new Error('Missing exclusive DB URL ' + name);
     const url = new URL(value);
     if (url.protocol !== 'postgres:' || url.hostname !== '127.0.0.1' ||
-      url.port !== '55744' || url.pathname !== '/hisabiq_mod005_m505_realack_20261114' ||
+      url.port !== expectedPort || url.pathname !== expectedDatabase ||
       url.username !== (name === 'ADMIN_DATABASE_URL' ? 'postgres' : 'sher_app')) {
       throw new Error('Refuse non-disposable M5-05 DB connection: ' + name);
     }
@@ -84,6 +92,12 @@ async function snapshot(): Promise<State> {
     };
   });
 }
+function expectPermissionAuditOnly(before: State, after: State): void {
+  // A genuine 403 is independently audited; its denied financial request
+  // must add no session, journal, idempotency key, close or outbox row.
+  expect(after).toEqual({ ...before, audit: before.audit + 1 });
+}
+
 async function tokenRefresh(): Promise<void> {
   const response = await api().post('/api/v1/auth/refresh').send({ refreshToken });
   expect(response.status, JSON.stringify(response.body)).toBe(200);
@@ -115,6 +129,14 @@ async function operationAfterRealNetworkLoss(
     await proxy.close();
   }
 }
+async function setOriginalOwnerPermission(permission: string, allowed: boolean): Promise<void> {
+  const updated = await asTenant(pool, tenantId, db => db.query(
+    'UPDATE role_permissions SET deleted_at = CASE WHEN $3 THEN NULL ELSE now() END WHERE tenant_id = $1 AND permission_code = $2 AND role_id = (SELECT u.role_id FROM users u WHERE u.tenant_id = $1 AND u.id = $4) RETURNING id',
+    [tenantId, permission, allowed, originalUserId],
+  ));
+  expect(updated.rowCount).toBe(1);
+}
+
 async function startDay(): Promise<string> {
   const r = await auth(api().post('/api/v1/money/day/start')).send({
     businessDate: day, openingAmountMinor: 500_000, counterpartAccountCode: null,
@@ -150,6 +172,7 @@ suite('M5-05 actual Nest commit followed by lost ACK, token refresh and ULID ret
     token = registered.body.data.accessToken as string;
     refreshToken = registered.body.data.refreshToken as string;
     tenantId = registered.body.data.tenant.id as string;
+    originalUserId = registered.body.data.user.id as string;
     day = todayIn('Asia/Dhaka');
     const account = await auth(api().post('/api/v1/money/accounts')).send({
       name: 'Counted test drawer', type: 'CASH', holderName: null, reference: null,
@@ -242,5 +265,97 @@ suite('M5-05 actual Nest commit followed by lost ACK, token refresh and ULID ret
     });
     expect(altered.status).toBe(409);
     expect(await snapshot()).toEqual(beforeRetry);
+  });
+
+  it('initial invalid bearer and revoked Start permission never post cash or journals', async () => {
+    const body = {
+      businessDate: day, openingAmountMinor: 500_000, counterpartAccountCode: null,
+      note: 'First attempt must not post while unauthorized', operationId: ulid(),
+    };
+    const baseline = await snapshot();
+    const denied401 = await api().post('/api/v1/money/day/start')
+      .set('Authorization', 'Bearer malformed-invalid-token').send(body);
+    expect(denied401.status).toBe(401);
+    expect(await snapshot()).toEqual(baseline);
+    await setOriginalOwnerPermission('cash.session.start', false);
+    const before403 = await snapshot();
+    const denied403 = await auth(api().post('/api/v1/money/day/start')).send(body);
+    expect(denied403.status, JSON.stringify(denied403.body)).toBe(403);
+    expectPermissionAuditOnly(before403, await snapshot());
+    await setOriginalOwnerPermission('cash.session.start', true);
+    const validAfterRefusal = await auth(api().post('/api/v1/money/day/start')).send(body);
+    expect(validAfterRefusal.status, JSON.stringify(validAfterRefusal.body)).toBe(201);
+    expect((await snapshot()).sessions).toBe(baseline.sessions + 1);
+  });
+
+  it('START commits before lost ACK: invalid 401 replay changes no financial rows; valid original ID recovers', async () => {
+    const body = {
+      businessDate: day, openingAmountMinor: 500_000, counterpartAccountCode: null,
+      note: 'Posted before stale credential replay', operationId: ulid(),
+    };
+    const before = await snapshot();
+    const committed = await operationAfterRealNetworkLoss('/api/v1/money/day/start', body);
+    const afterCommit = await snapshot();
+    expect(afterCommit.sessions).toBe(before.sessions + 1);
+    expect(committed.data.status).toBe('OPEN');
+    const denied = await api().post('/api/v1/money/day/start')
+      .set('Authorization', 'Bearer invalid-stale-access').send(body);
+    expect(denied.status).toBe(401);
+    expect(await snapshot()).toEqual(afterCommit);
+    await tokenRefresh();
+    // Refresh rotation deliberately rejects the previous credential and
+    // records a separate security audit event; replay must add no more.
+    const beforeReplay = await snapshot();
+    const replay = await auth(api().post('/api/v1/money/day/start')).send(body);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body).toEqual(committed);
+    expect(await snapshot()).toEqual(beforeReplay);
+  });
+
+  it('START commits before lost ACK: revoked permission returns 403 then regrant returns original receipt without duplicate', async () => {
+    const body = {
+      businessDate: day, openingAmountMinor: 500_000, counterpartAccountCode: null,
+      note: 'Posted before role was revoked', operationId: ulid(),
+    };
+    const before = await snapshot();
+    const committed = await operationAfterRealNetworkLoss('/api/v1/money/day/start', body);
+    const afterCommit = await snapshot();
+    expect(afterCommit.sessions).toBe(before.sessions + 1);
+    await setOriginalOwnerPermission('cash.session.start', false);
+    const beforeDenied = await snapshot();
+    const denied = await auth(api().post('/api/v1/money/day/start')).send(body);
+    expect(denied.status, JSON.stringify(denied.body)).toBe(403);
+    expectPermissionAuditOnly(beforeDenied, await snapshot());
+    await setOriginalOwnerPermission('cash.session.start', true);
+    const beforeReplay = await snapshot();
+    const replay = await auth(api().post('/api/v1/money/day/start')).send(body);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body).toEqual(committed);
+    expect(await snapshot()).toEqual(beforeReplay);
+  });
+
+  it('CLOSE shortage commits before lost ACK: revoked permission 403 and regrant never duplicates shortage journal', async () => {
+    const sessionId = await startDay();
+    const path = '/api/v1/money/day/' + sessionId + '/close';
+    const body = {
+      countedClosingMinor: 495_000,
+      reason: 'Actual counted shortage before permission revoked', operationId: ulid(),
+    };
+    const before = await snapshot();
+    const committed = await operationAfterRealNetworkLoss(path, body);
+    const afterCommit = await snapshot();
+    expect(afterCommit.closes).toBe(before.closes + 1);
+    expect(afterCommit.difference).not.toBe(before.difference);
+    await setOriginalOwnerPermission('cash.session.close', false);
+    const beforeDenied = await snapshot();
+    const denied = await auth(api().post(path)).send(body);
+    expect(denied.status, JSON.stringify(denied.body)).toBe(403);
+    expectPermissionAuditOnly(beforeDenied, await snapshot());
+    await setOriginalOwnerPermission('cash.session.close', true);
+    const beforeReplay = await snapshot();
+    const replay = await auth(api().post(path)).send(body);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body).toEqual(committed);
+    expect(await snapshot()).toEqual(beforeReplay);
   });
 });
