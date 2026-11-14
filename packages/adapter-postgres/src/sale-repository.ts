@@ -1670,6 +1670,21 @@ export class PostgresSaleRepository implements SaleRepository {
       .where(eq(invoiceSettings.tenantId, ctx.tenantId));
   }
 
+  private toDraftRow(row: typeof saleDrafts.$inferSelect): SaleDraftRow {
+    return {
+      id: row.id.trim(),
+      label: row.label,
+      customerName: row.customerName,
+      itemCount: row.itemCount,
+      grandTotalMinor: Number(row.grandTotalMinor),
+      cart: (row.cart ?? {}) as Record<string, unknown>,
+      businessDate: row.businessDate,
+      savedAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      version: row.version,
+    };
+  }
+
   async listDrafts(
     tx: Tx,
     ctx: TenantContext,
@@ -1682,16 +1697,44 @@ export class PostgresSaleRepository implements SaleRepository {
       .orderBy(desc(saleDrafts.createdAt), desc(saleDrafts.id))
       .limit(limit);
 
-    return rows.map((row) => ({
-      id: row.id.trim(),
-      label: row.label,
-      customerName: row.customerName,
-      itemCount: row.itemCount,
-      grandTotalMinor: Number(row.grandTotalMinor),
-      cart: (row.cart ?? {}) as Record<string, unknown>,
-      businessDate: row.businessDate,
-      savedAt: row.createdAt,
-    }));
+    return rows.map((row) => this.toDraftRow(row));
+  }
+
+  async findDraftById(tx: Tx, ctx: TenantContext, id: string): Promise<SaleDraftRow | null> {
+    const [row] = await txOf(tx)
+      .select()
+      .from(saleDrafts)
+      .where(and(eq(saleDrafts.tenantId, ctx.tenantId), eq(saleDrafts.id, id)))
+      .limit(1);
+    return row === undefined ? null : this.toDraftRow(row);
+  }
+
+  async updateDraft(
+    tx: Tx,
+    ctx: TenantContext,
+    id: string,
+    expectedVersion: number,
+    draft: Omit<NewSaleDraft, 'id' | 'businessDate'>,
+  ): Promise<SaleDraftRow | null> {
+    const [row] = await txOf(tx)
+      .update(saleDrafts)
+      .set({
+        label: draft.label,
+        customerName: draft.customerName,
+        itemCount: draft.itemCount,
+        grandTotalMinor: draft.grandTotalMinor,
+        cart: draft.cart,
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+        version: sql`${saleDrafts.version} + 1`,
+      })
+      .where(and(
+        eq(saleDrafts.tenantId, ctx.tenantId),
+        eq(saleDrafts.id, id),
+        eq(saleDrafts.version, expectedVersion),
+      ))
+      .returning();
+    return row === undefined ? null : this.toDraftRow(row);
   }
 
   async saveDraft(tx: Tx, ctx: TenantContext, draft: NewSaleDraft): Promise<void> {
