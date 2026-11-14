@@ -192,6 +192,23 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
     const db = txOf(tx);
     const now = this.clock.now();
 
+    // The late cost header holds an immediate FK to journal_entries.
+    // Write its journal source first; everything remains inside the owning UoW,
+    // so a failed cost/lot/line write rolls back this entry too.
+    if (input.cost.journalEntryId !== null) {
+      await db.insert(journalEntries).values({
+        id: input.cost.journalEntryId,
+        tenantId: ctx.tenantId,
+        createdAt: now,
+        createdBy: ctx.userId,
+        businessDate: input.cost.businessDate,
+        sourceDocumentType: 'PURCHASE_LANDED_COST',
+        sourceDocumentId: input.cost.id,
+        sourceNumber: input.purchaseNumber,
+        entryMode: input.entryMode,
+      });
+    }
+
     await db.insert(purchaseLandedCosts).values({
       id: input.cost.id,
       tenantId: ctx.tenantId,
@@ -265,17 +282,6 @@ export class PostgresLandedCostRepository implements LandedCostRepository {
     }
 
     if (input.cost.journalEntryId !== null) {
-      await db.insert(journalEntries).values({
-        id: input.cost.journalEntryId,
-        tenantId: ctx.tenantId,
-        createdAt: now,
-        createdBy: ctx.userId,
-        businessDate: input.cost.businessDate,
-        sourceDocumentType: 'PURCHASE_LANDED_COST',
-        sourceDocumentId: input.cost.id,
-        sourceNumber: input.purchaseNumber,
-        entryMode: input.entryMode,
-      });
       await db.insert(journalLines).values(
         input.journalLines.map((line) => ({
           id: line.id,
