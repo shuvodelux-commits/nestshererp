@@ -554,7 +554,8 @@ describe('C003-03 concurrent inventory sources', () => {
 
   it('arbitrates simultaneous first openings without duplicate source, stock or equity', async () => {
     const [a, b] = await Promise.all([opening(), opening()]);
-    expect([a.status, b.status].sort()).toEqual([201, expect.any(Number)]);
+    expect([a.status, b.status].filter((status) => status === 201)).toHaveLength(1);
+    expect([400, 409]).toContain(a.status === 201 ? b.status : a.status);
     expect(await state()).toEqual({
       openings: 1, adjustments: 0,
       openingMovements: 1, adjustmentMovements: 0,
@@ -567,7 +568,8 @@ describe('C003-03 concurrent inventory sources', () => {
   it('prevents two concurrent seven-unit write-offs from overdrawing ten owned units', async () => {
     expect((await opening()).status).toBe(201);
     const [a, b] = await Promise.all([adjustment(-7_000), adjustment(-7_000)]);
-    expect([a.status, b.status].sort()).toEqual([201, expect.any(Number)]);
+    expect([a.status, b.status].filter((status) => status === 201)).toHaveLength(1);
+    expect([400, 409]).toContain(a.status === 201 ? b.status : a.status);
     expect(await state()).toEqual({
       openings: 1, adjustments: 1,
       openingMovements: 1, adjustmentMovements: 1,
