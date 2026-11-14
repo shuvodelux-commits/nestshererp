@@ -16,7 +16,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { SettingsRepository } from '@sher/core-application';
 import { Test } from '@nestjs/testing';
 import { Permission } from '@sher/core-contracts';
-import { SystemClock, Ulid } from '@sher/shared-utils';
+import { addDays, SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -393,6 +393,25 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
       journalCountBefore: before.entries.length,
       journalCountAfter: (await snapshot()).entries.length,
     })).toBe(400);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('RED #84: rejects a backdated former-drawer CASH transfer that restates a later counted close', async () => {
+    await removeDrawerFlag();
+    const before = await snapshot();
+    const response = await signed(api().post('/api/v1/money/movements')).send({
+      kind: 'TRANSFER',
+      fromAccountCode: 'CASH:' + cashId,
+      toAccountCode: 'BANK:' + bankId,
+      amountMinor: 5_000,
+      businessDate: addDays(day, -1),
+      reference: null,
+      note: 'Backdate after physical close would change the later counted balance',
+      operationId: Ulid.generate(clock),
+    });
+    // The later CLOSED day already counted this original CASH account.
+    // A prior-date journal would still change its as-of-date ledger.
+    expectStatus(response, 400);
     expect(await snapshot()).toEqual(before);
   });
 
