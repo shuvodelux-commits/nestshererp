@@ -313,6 +313,14 @@ export interface PurchaseRepository {
   setPurchaseDraftDeletion(
     tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, deletedAt: Date | null,
   ): Promise<PurchaseDraftRow | null>;
+  /**
+   * Serialize this purchase's product status check with product deactivation.
+   * Must be called for unique product IDs in ascending order within the same
+   * transaction, before reading their status or writing purchase/stock rows.
+   * This locks only the tenant's live product row; the service still applies
+   * the normal NOT_FOUND / PRODUCT_INACTIVE validation.
+   */
+  lockProductForPosting(tx: Tx, ctx: TenantContext, productId: string): Promise<void>;
   insertPurchase(tx: Tx, ctx: TenantContext, purchase: NewPurchase): Promise<void>;
   /** C10: the permanent unique index is the guarantee, not the 30-day cache. */
   findPurchaseIdByOperationId(

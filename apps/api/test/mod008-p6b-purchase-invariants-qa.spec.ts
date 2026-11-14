@@ -26,9 +26,9 @@ import {
   asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool,
 } from './support/database';
 
-const DB_PORT = 55683;
-const DB_NAME = 'hisabiq-mod008-p6b-pg16';
-const DB_LABEL = 'mod008-p6b-147';
+const DB_PORT = 55684;
+const DB_NAME = 'hisabiq-mod008-p6b-155-pg16';
+const DB_LABEL = 'mod008-p6b-155';
 const APP_URL = `postgres://sher_app:sher_app_test@127.0.0.1:${DB_PORT}/sher_test`;
 const ADMIN_URL = `postgres://postgres:dev@127.0.0.1:${DB_PORT}/sher_test`;
 const clock = new SystemClock();
@@ -129,6 +129,24 @@ async function makeInactive(productId: string) {
   expect(response.body.data.status).toBe('INACTIVE');
 }
 
+
+/** Poll the owned disposable PostgreSQL, not timing sleeps or an app mock. */
+async function waitForPgLock(admin: Pool, relation: string): Promise<boolean> {
+  for (let i = 0; i < 240; i++) {
+    const blocked = await admin.query<{ waiting: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND query ILIKE $1
+      ) AS waiting
+    `, [`%${relation}%`]);
+    if (blocked.rows[0]?.waiting === true) return true;
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
 const gated = process.env.HISABIQ_P6B_DISPOSABLE_ACK === 'isolated-pg16-only'
   ? describe : describe.skip;
 
@@ -225,46 +243,108 @@ gated('MOD-008 P6B source-locked purchases and rollback', () => {
     expect(await snapshot()).toEqual(before);
   }, 60000);
 
-  it('serializes deactivation committed during an in-flight purchase, failing closed', async () => {
-    // Hold the later purchase_lines INSERT, not the earlier product status SELECT.
-    // This makes the interleaving observable, not timing dependent.
+
+  it('holds product status until purchase-first transaction commits', async () => {
+    // A purchase which already locked its product may commit first. The
+    // deactivation must WAIT, not silently commit ahead of that purchase.
     const admin = new Pool({ connectionString: ADMIN_URL, max: 3 });
     const locker = await admin.connect();
     let locked = false;
-    let pending: Promise<request.Response> | undefined;
+    let pendingPurchase: Promise<request.Response> | undefined;
+    let pendingDeactivation: Promise<request.Response> | undefined;
     try {
       await locker.query('BEGIN');
       await locker.query('LOCK TABLE purchase_lines IN ACCESS EXCLUSIVE MODE');
       locked = true;
-      pending = post('/api/v1/purchases', bill([line(activeId)])).then(x => x);
-      let waiting = false;
-      for (let i = 0; i < 240; i++) {
-        const response = await admin.query<{ n: number }>(`
-          SELECT count(*)::int AS n FROM pg_locks l
-          JOIN pg_class c ON c.oid = l.relation
-          WHERE c.relname='purchase_lines' AND l.granted=false`);
-        if (Number(response.rows[0]?.n ?? 0) > 0) {
-          waiting = true;
-          break;
-        }
-        await new Promise<void>(resolve => setTimeout(resolve, 50));
-      }
-      expect(waiting, 'purchase must reach the post-validation purchase_lines lock').toBe(true);
-      await makeInactive(activeId);
-      const beforeRelease = await snapshot();
-      expect(beforeRelease.purchases).toBe(0);
+      pendingPurchase = post('/api/v1/purchases', bill([line(activeId)])).then(x => x);
+      expect(await waitForPgLock(admin, 'purchase_lines'),
+        'purchase must reach the post-validation line-insert barrier').toBe(true);
+
+      let deactivated = false;
+      pendingDeactivation = post(`/api/v1/products/${activeId}/status`,
+        { status: 'INACTIVE' }).then(response => {
+        deactivated = true;
+        return response;
+      });
+      expect(await waitForPgLock(admin, 'products'),
+        'deactivation must wait for the purchase-held product row').toBe(true);
+      expect(deactivated, 'status cannot commit while purchase holds the product lock').toBe(false);
+
       await locker.query('COMMIT');
       locked = false;
-      const result = await pending;
-      expect(result.status, 'a purchase should fail after the source was deactivated')
-        .toBe(400);
-      expect(result.body.error.details.reason).toBe('PRODUCT_INACTIVE');
-      expect((await snapshot()).purchases).toBe(0);
+      const posted = await pendingPurchase;
+      expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+      const status = await pendingDeactivation;
+      expect(status.status).toBe(200);
+      expect(status.body.data.status).toBe('INACTIVE');
+      const after = await snapshot();
+      expect(after.purchases).toBe(1);
+      expect(after.journals).toBe(1);
+      expect(after.movements).toBe(1);
     } finally {
       if (locked) await locker.query('ROLLBACK');
       locker.release();
-      if (pending !== undefined) await pending.catch(() => undefined);
+      if (pendingPurchase) await pendingPurchase.catch(() => undefined);
+      if (pendingDeactivation) await pendingDeactivation.catch(() => undefined);
       await admin.end();
     }
   }, 120000);
+
+  it('rejects after an in-flight product deactivation acquires the row first', async () => {
+    // A held UPDATE models a product-status transaction before COMMIT.
+    // The signed Nest purchase uses the tenant RLS role and must wait, then
+    // observe INACTIVE at READ COMMITTED after the status transaction commits.
+    const admin = new Pool({ connectionString: ADMIN_URL, max: 3 });
+    const locker = await admin.connect();
+    let locked = false;
+    let pendingPurchase: Promise<request.Response> | undefined;
+    try {
+      await locker.query('BEGIN');
+      locked = true;
+      const updated = await locker.query(
+        "UPDATE products SET status = 'INACTIVE' WHERE tenant_id = $1 AND id = $2",
+        [a.tenantId, activeId]);
+      expect(updated.rowCount).toBe(1);
+      pendingPurchase = post('/api/v1/purchases', bill([line(activeId)])).then(x => x);
+      expect(await waitForPgLock(admin, 'products'),
+        'purchase must wait for the uncommitted product status change').toBe(true);
+      expect((await snapshot()).purchases).toBe(0);
+
+      await locker.query('COMMIT');
+      locked = false;
+      const rejected = await pendingPurchase;
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.error).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { reason: 'PRODUCT_INACTIVE', productId: activeId },
+      });
+      const after = await snapshot();
+      expect(after.purchases).toBe(0);
+      expect(after.journals).toBe(0);
+      expect(after.movements).toBe(0);
+      expect(after.lots).toBe(0);
+      expect(after.payments).toBe(0);
+    } finally {
+      if (locked) await locker.query('ROLLBACK');
+      locker.release();
+      if (pendingPurchase) await pendingPurchase.catch(() => undefined);
+      await admin.end();
+    }
+  }, 120000);
+
+  it('locks unique products in fixed order under opposite-order duplicate-line carts', async () => {
+    const left = bill([line(activeId), line(inactiveCandidateId), line(activeId)]);
+    const right = bill([line(inactiveCandidateId), line(activeId)]);
+    const results = await Promise.all([
+      post('/api/v1/purchases', left),
+      post('/api/v1/purchases', right),
+    ]);
+    expect(results.map(x => x.status)).toEqual([201, 201]);
+    const after = await snapshot();
+    expect(after.purchases).toBe(2);
+    expect(after.journals).toBe(2);
+    expect(after.movements).toBe(5);
+    expect(after.lots).toBe(5);
+  }, 120000);
+
 });
