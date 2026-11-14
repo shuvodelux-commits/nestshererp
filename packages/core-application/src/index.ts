@@ -241,6 +241,7 @@ export type {
   RemoveCustomerGroupCommand,
   RenameCustomerGroupCommand,
 } from './parties/manage-party-groups-service';
+export type { ImportOperationReservation, ImportOperationStore } from './imports/import-operation-store';
 export { ImportDataService } from './imports/import-data-service';
 export type { CommitImportCommand, ImportCommand } from './imports/import-data-service';
 export { CashMovementService } from './money/cash-movement-service';
