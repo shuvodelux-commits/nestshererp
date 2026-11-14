@@ -9982,6 +9982,60 @@
       ]
     },
     {
+      "id": "endpoint:PATCH /api/v1/catalog/metadata-v1/units/:id/full-edit",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/metadata-v1/units/:id/full-edit",
+      "controller": "CatalogMetadataV1Controller",
+      "file": "apps/api/src/catalog/catalog-metadata-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:PATCH /api/v1/catalog/metadata-v1/brands/:id/full-edit",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/metadata-v1/brands/:id/full-edit",
+      "controller": "CatalogMetadataV1Controller",
+      "file": "apps/api/src/catalog/catalog-metadata-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:PATCH /api/v1/catalog/metadata-v1/categories/:id/full-edit",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/metadata-v1/categories/:id/full-edit",
+      "controller": "CatalogMetadataV1Controller",
+      "file": "apps/api/src/catalog/catalog-metadata-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
       "id": "endpoint:PATCH /api/v1/catalog/metadata-v1/units/:id",
       "method": "PATCH",
       "path": "/api/v1/catalog/metadata-v1/units/:id",

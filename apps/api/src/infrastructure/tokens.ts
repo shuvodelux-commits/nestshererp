@@ -29,6 +29,7 @@ export const ENTITLEMENT_PROVIDER = Symbol('EntitlementProvider');
 export const CATALOG_REPOSITORY = Symbol('CatalogRepository');
 export const CATALOG_METADATA_V1_REPOSITORY = Symbol('CatalogMetadataV1Repository');
 export const CATALOG_METADATA_V1_CREATION_REPOSITORY = Symbol('CatalogMetadataV1CreationRepository');
+export const CATALOG_METADATA_V1_FULL_EDIT_REPOSITORY = Symbol('CatalogMetadataV1FullEditRepository');
 export const PRODUCT_REPOSITORY = Symbol('ProductRepository');
 export const PARTY_REPOSITORY = Symbol('PartyRepository');
 export const MONEY_REPOSITORY = Symbol('MoneyRepository');
