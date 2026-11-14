@@ -46,7 +46,7 @@ function seed(): State {
       { id: id.root2, parentId: null, name: 'Plumbing', nameBn: null, version: 1 },
       { id: id.category, parentId: id.root, name: 'Wire', nameBn: 'তার', version: 3 },
       { id: id.sibling, parentId: id.root, name: 'Switch', nameBn: null, version: 1 },
-      { id: id.otherChild, parentId: id.root2, name: 'Switch', nameBn: null, version: 1 },
+      { id: id.otherChild, parentId: id.root2, name: 'Valve', nameBn: null, version: 1 },
     ],
   };
 }
@@ -206,8 +206,8 @@ describe('MOD-002 P6b: atomic EN+BN edit application seam', () => {
   });
   it('category allows equal names in other parent but does not reparent', async () => {
     const h = harness();
-    await edit(h, 'category', id.category, { expectedVersion: 3, name: 'Switch' });
-    expect(h.state().categories.find(x => x.id === id.category)).toMatchObject({ parentId: id.root, name: 'Switch' });
+    await edit(h, 'category', id.category, { expectedVersion: 3, name: 'Valve' });
+    expect(h.state().categories.find(x => x.id === id.category)).toMatchObject({ parentId: id.root, name: 'Valve' });
   });
   it.each(cases)('$kind: strict invalid fields reject before transaction', async c => {
     const h = harness();
