@@ -31,6 +31,7 @@ const OWNER_FIXTURE_GRANTS = [
   Permission.CUSTOMER_VIEW, Permission.CUSTOMER_CREATE, Permission.CUSTOMER_EDIT,
   Permission.CUSTOMER_DEACTIVATE, Permission.SUPPLIER_VIEW, Permission.SUPPLIER_CREATE,
   Permission.SUPPLIER_EDIT, Permission.SUPPLIER_DEACTIVATE,
+  Permission.VENDOR_CREATE, Permission.VENDOR_VIEW,
   Permission.SETTING_VIEW, Permission.SETTING_EDIT, Permission.SETTING_TOGGLE,
 ];
 
