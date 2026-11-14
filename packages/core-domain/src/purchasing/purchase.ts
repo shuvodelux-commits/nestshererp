@@ -1,6 +1,6 @@
 import { allocateLargestRemainder, divideRoundHalfUp, Money, Qty, UnitCost } from '@sher/shared-utils';
 
-import { fixedAccount } from '../accounting/account';
+import { fixedAccount, parseAccountCode } from '../accounting/account';
 import type { AccountCode } from '../accounting/account';
 import { rejectEntry } from '../accounting/journal-entry';
 import type { JournalEntryDraft } from '../accounting/journal-entry';
@@ -235,6 +235,74 @@ export function purchasePosting(costs: PurchaseCosts, sides: PurchasePostingSide
   };
 
   if (rejectEntry(journal) !== null) throw new Error('Purchase journal is not balanced');
+  return journal;
+}
+
+/**
+ * Pure D06A planning primitive, not a live purchase API. The validated and
+ * tenant-resolved account identities come from the application layer; the
+ * journal kernel still refuses forged fixed/liability account families.
+ * Each leg stays distinct for later immutable source/audit provenance.
+ */
+export interface PurchasePostingLeg {
+  readonly account: AccountCode;
+  readonly amountMinor: number;
+}
+
+export interface PurchaseMultiLegPostingSides {
+  readonly supplierPartyId: string;
+  readonly paymentLegs: readonly PurchasePostingLeg[];
+}
+
+/**
+ * Prepare ONE purchase journal for multiple account outflows.
+ * The live legacy purchasePosting path is deliberately unchanged.
+ * This does not check account balances or cash sessions; the future Class-T
+ * writer must lock and authorize those before it can commit this journal.
+ */
+export function purchasePostingWithLegs(
+  costs: PurchaseCosts,
+  sides: PurchaseMultiLegPostingSides,
+): JournalEntryDraft {
+  const legs = sides.paymentLegs;
+  if (legs.length > 10) throw new RangeError('A purchase cannot have more than ten initial payments');
+  if (!Number.isSafeInteger(costs.grandTotalMinor) || costs.grandTotalMinor <= 0) {
+    throw new RangeError('Purchase grand total must be positive integer poisha');
+  }
+  let paidMinor = 0;
+  for (const payment of legs) {
+    const kind = parseAccountCode(payment.account)?.kind;
+    if (kind !== 'CASH' && kind !== 'BANK') {
+      throw new RangeError('A purchase payment must come from a real cash, bank or MFS asset account');
+    }
+    if (!Number.isSafeInteger(payment.amountMinor) || payment.amountMinor <= 0) {
+      throw new RangeError('Payment legs must be positive integer poisha');
+    }
+    if (!Number.isSafeInteger(paidMinor + payment.amountMinor)) {
+      throw new RangeError('Combined purchase payments exceed safe integer money bounds');
+    }
+    paidMinor += payment.amountMinor;
+  }
+  const dueMinor = costs.grandTotalMinor - paidMinor;
+  if (dueMinor < 0) throw new RangeError('A purchase cannot be paid more than it is worth');
+
+  const journal: JournalEntryDraft = {
+    lines: [
+      { account: fixedAccount('INVENTORY'), amountMinor: costs.inventoryValueMinor, partyId: null },
+      ...(costs.roundingMinor === 0
+        ? []
+        : [{ account: fixedAccount('ROUNDING'), amountMinor: costs.roundingMinor, partyId: null }]),
+      ...legs.map(({ account, amountMinor }) => ({
+        account,
+        amountMinor: -amountMinor,
+        partyId: null,
+      })),
+      ...(dueMinor === 0
+        ? []
+        : [{ account: fixedAccount('AP'), amountMinor: -dueMinor, partyId: sides.supplierPartyId }]),
+    ],
+  };
+  if (rejectEntry(journal) !== null) throw new Error('Multi-account purchase journal is not balanced');
   return journal;
 }
 
