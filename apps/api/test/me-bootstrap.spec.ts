@@ -68,6 +68,9 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AppErrorFilter());
   await app.init();
+  // Pin a single ephemeral listener: concurrent Supertest requests must not race
+  // to open/close the same unbound HTTP server (ECONNRESET between requests).
+  await app.listen(0);
 });
 
 afterAll(async () => {
@@ -277,15 +280,20 @@ describe('F0-01 readiness: adversarial tenant, feature and retry partitions', ()
     ));
     const beforeA = await persisted(a);
     const beforeB = await persisted(b);
-    const responses = await Promise.all(Array.from({ length: 20 }, (_, index) => {
+    // Drain every in-flight request even if one refuses/fails; otherwise the
+    // next test's TRUNCATE can race a read transaction and deadlock PG16.
+    const outcomes = await Promise.allSettled(Array.from({ length: 20 }, (_, index) => {
       const owner = index % 2 === 0 ? a : b;
       const other = index % 2 === 0 ? b : a;
       return me(owner.accessToken, other.tenantId);
     }));
-    for (let index = 0; index < responses.length; index += 1) {
+    expect(outcomes.filter((result) => result.status === 'rejected')).toEqual([]);
+    for (let index = 0; index < outcomes.length; index += 1) {
+      const outcome = outcomes[index]!;
+      if (outcome.status !== 'fulfilled') continue;
       const owner = index % 2 === 0 ? a : b;
       const timezone = index % 2 === 0 ? 'Asia/Dhaka' : 'Europe/London';
-      const response = responses[index]!;
+      const response = outcome.value;
       expect(response.status).toBe(200);
       expect(response.body.data.tenantId).toBe(owner.tenantId);
       expect(response.body.data.user.id).toBe(owner.userId);
