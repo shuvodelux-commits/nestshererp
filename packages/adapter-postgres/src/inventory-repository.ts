@@ -586,6 +586,17 @@ export class PostgresInventoryRepository implements InventoryRepository {
   }
 
   async findStockPosition(tx: Tx, ctx: TenantContext, productId: string): Promise<ProductStockPosition | null> {
+    // The stock position is consumed by transactional posting writers. Lock it
+    // BEFORE reading quantity/average and before allocating FIFO lots, so a
+    // landed-cost-only revaluation cannot race with a write-off at stale cost.
+    // Same tenant/product locks are acquired in stable id order by both writers.
+    await txOf(tx).execute(sql`
+      SELECT id FROM product_cost_state
+       WHERE tenant_id = ${ctx.tenantId}
+         AND product_id = ${productId}
+         AND deleted_at IS NULL
+       ORDER BY id FOR UPDATE
+    `);
     const rows = await txOf(tx).select({
       costStateId: productCostState.id, locationId: productCostState.locationId,
       locationName: inventoryLocations.name, qtyOnHand: productCostState.qtyOnHand,
