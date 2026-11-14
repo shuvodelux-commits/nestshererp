@@ -138,3 +138,37 @@ export type CreateCatalogMetadataV1CategoryRequest = z.infer<typeof createCatalo
 export type PatchCatalogMetadataV1UnitRequest = z.infer<typeof patchCatalogMetadataV1UnitRequestSchema>;
 export type PatchCatalogMetadataV1BrandRequest = z.infer<typeof patchCatalogMetadataV1BrandRequestSchema>;
 export type PatchCatalogMetadataV1CategoryRequest = z.infer<typeof patchCatalogMetadataV1CategoryRequestSchema>;
+
+/**
+ * MOD-002 T02A/P6a — strictly separate full-edit command contracts.
+ *
+ * A future versioned service may update English and Bengali metadata in the
+ * same tenant transaction. No live endpoint is registered by these schemas.
+ * Omission of nameBn/symbol preserves the stored value; explicit null clears.
+ * The category parent, tenant, actor and row ID are owned by the route and
+ * existing master row, never accepted from the edit body.
+ *
+ * Legacy English-only rename and metadata-only PATCH remain unchanged.
+ */
+export const editCatalogMetadataV1UnitRequestSchema = z.object({
+  expectedVersion: entryVersion,
+  name: catalogNameSchema,
+  nameBn: optionalNameBn,
+  symbol: catalogMetadataUnitSymbolSchema.nullable().optional(),
+}).strict();
+
+export const editCatalogMetadataV1BrandRequestSchema = z.object({
+  expectedVersion: entryVersion,
+  name: catalogNameSchema,
+  nameBn: optionalNameBn,
+}).strict();
+
+export const editCatalogMetadataV1CategoryRequestSchema = z.object({
+  expectedVersion: entryVersion,
+  name: catalogNameSchema,
+  nameBn: optionalNameBn,
+}).strict();
+
+export type EditCatalogMetadataV1UnitRequest = z.infer<typeof editCatalogMetadataV1UnitRequestSchema>;
+export type EditCatalogMetadataV1BrandRequest = z.infer<typeof editCatalogMetadataV1BrandRequestSchema>;
+export type EditCatalogMetadataV1CategoryRequest = z.infer<typeof editCatalogMetadataV1CategoryRequestSchema>;
