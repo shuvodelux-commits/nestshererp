@@ -443,6 +443,8 @@ export interface PurchaseRepository {
 export interface PurchaseForReversal {
   readonly id: string;
   readonly number: string;
+  /** Preserve the original supplier-order provenance during correction. */
+  readonly supplierOrderId: string | null;
   readonly businessDate: string;
   readonly status: 'POSTED' | 'VOIDED';
   readonly supplierPartyId: string;
