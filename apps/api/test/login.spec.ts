@@ -24,7 +24,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
-import { asPlatform, prepareTestDatabase, resetDatabase, testPool } from './support/database';
+import { asPlatform, asTenant, prepareTestDatabase, resetDatabase, testPool } from './support/database';
 
 /**
  * Slice 1.2 — log in and log out (D-07). Expected values written before the code.
@@ -41,6 +41,7 @@ interface Registered {
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly userId: string;
+  readonly tenantId: string;
 }
 
 async function registerAccount(identifier = PHONE, pin = PIN): Promise<Registered> {
@@ -64,6 +65,7 @@ async function registerAccount(identifier = PHONE, pin = PIN): Promise<Registere
     accessToken: created.body.data.accessToken as string,
     refreshToken: created.body.data.refreshToken as string,
     userId: created.body.data.user.id as string,
+    tenantId: created.body.data.tenant.id as string,
   };
 }
 
@@ -85,6 +87,9 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AppErrorFilter());
   await app.init();
+  // Keep one ephemeral listener for parallel PIN requests; otherwise Supertest
+  // may start/close the same unbound HTTP server between in-flight requests.
+  await app.listen(0);
 });
 
 afterAll(async () => {
@@ -298,5 +303,168 @@ describe('tenant isolation across sessions (R-E5)', () => {
 
     const sessions = await pool.query('SELECT DISTINCT tenant_id FROM refresh_tokens');
     expect(sessions.rowCount).toBe(2);
+  });
+});
+
+
+/**
+ * HisabIQ MOD-000-A / F0-02 readiness — follow-up to merged #25.
+ * Only disposable PG16 and real signed Nest API, no production source changes.
+ * Intentionally do not assert #27's known stale text-only validation message.
+ */
+describe('F0-02 readiness: legacy/new PIN security and tenant boundaries (#214)', () => {
+  const withPin = (body: Record<string, unknown>): request.Test =>
+    request(app.getHttpServer()).post('/api/v1/auth/login/pin').send(body);
+
+  it('F002-03/09: refuses malformed registration PINs without consuming the verified OTP', async () => {
+    const otp = await request(app.getHttpServer())
+      .post('/api/v1/auth/registration/otp')
+      .send({ identifier: PHONE });
+    expect(otp.status).toBe(200);
+    const payload = {
+      identifier: PHONE,
+      otpCode: otp.body.data.devCode as string,
+      businessName: 'Karim Traders',
+      username: 'karim',
+      password: PASSWORD,
+    };
+    for (const pin of ['482', '48219', '4821937', '48219a', '৪৮২১৯৩', ' 482193', '482193 ']) {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/registration').send({ ...payload, pin });
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_FAILED');
+      expect(response.body.data).toBeUndefined();
+    }
+    expect((await pool.query('SELECT id FROM tenants')).rowCount).toBe(0);
+    expect((await pool.query('SELECT id FROM refresh_tokens')).rowCount).toBe(0);
+
+    // A rejected PIN is validation before OTP use, so the same verified OTP
+    // can still complete exactly one legitimate six-digit registration.
+    const accepted = await request(app.getHttpServer())
+      .post('/api/v1/auth/registration').send({ ...payload, pin: '004821' });
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.data.refreshToken).toEqual(expect.any(String));
+    const confirmed = await withPin({
+      refreshToken: accepted.body.data.refreshToken as string, pin: '004821',
+    });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.data.user.id).toBe(accepted.body.data.user.id);
+    const second = await request(app.getHttpServer())
+      .post('/api/v1/auth/registration').send({ ...payload, pin: '004821' });
+    expect(second.status).not.toBe(201);
+  });
+
+  it('F002-01/02/05/07/10: legacy four and new six digit PINs never cross tenants or device refresh ownership', async () => {
+    const a = await registerAccount(PHONE, '0482');
+    const b = await registerAccount('01912345678', '004821');
+    const aBefore = await request(app.getHttpServer())
+      .get('/api/v1/me').set('Authorization', 'Bearer ' + a.accessToken);
+    const bBefore = await request(app.getHttpServer())
+      .get('/api/v1/me').set('Authorization', 'Bearer ' + b.accessToken);
+    expect(aBefore.status).toBe(200);
+    expect(bBefore.status).toBe(200);
+    expect(aBefore.body.data.tenantId).toBe(a.tenantId);
+    expect(bBefore.body.data.tenantId).toBe(b.tenantId);
+    expect(a.tenantId).not.toBe(b.tenantId);
+
+    for (const response of [
+      await withPin({ refreshToken: a.refreshToken, pin: '004821' }),
+      await withPin({ refreshToken: b.refreshToken, pin: '0482' }),
+      await withPin({ refreshToken: a.refreshToken, pin: '0482', tenantId: b.tenantId }),
+    ]) {
+      expect([400, 401]).toContain(response.status);
+      expect(response.body.data).toBeUndefined();
+    }
+    expect((await pool.query('SELECT id FROM refresh_tokens')).rowCount).toBe(2);
+    const aValid = await withPin({ refreshToken: a.refreshToken, pin: '0482' });
+    const bValid = await withPin({ refreshToken: b.refreshToken, pin: '004821' });
+    expect(aValid.status).toBe(200);
+    expect(bValid.status).toBe(200);
+    expect(aValid.body.data.user.id).toBe(a.userId);
+    expect(bValid.body.data.user.id).toBe(b.userId);
+    expect(aValid.body.data.refreshToken).not.toBe(a.refreshToken);
+    expect(bValid.body.data.refreshToken).not.toBe(b.refreshToken);
+    const aAfter = await request(app.getHttpServer())
+      .get('/api/v1/me').set('Authorization', 'Bearer ' + aValid.body.data.accessToken);
+    const bAfter = await request(app.getHttpServer())
+      .get('/api/v1/me').set('Authorization', 'Bearer ' + bValid.body.data.accessToken);
+    expect(aAfter.body.data.tenantId).toBe(a.tenantId);
+    expect(bAfter.body.data.tenantId).toBe(b.tenantId);
+    expect((await withPin({ refreshToken: a.refreshToken, pin: '0482' })).status).toBe(401);
+    expect((await withPin({ refreshToken: b.refreshToken, pin: '004821' })).status).toBe(401);
+  });
+
+  it('F002-03/04/06: failed PIN attempts append own audit only, never rotate a still-live device credential', async () => {
+    const b = await registerAccount('01912345678', '482193');
+    const before = (await pool.query(
+      'SELECT token_hash, revoked_at, rotated_to FROM refresh_tokens WHERE tenant_id=$1 ORDER BY id',
+      [b.tenantId],
+    )).rows;
+    const malformed = ['000000', '48219', '4821937', '48219a', '৪৮২১৯৩'];
+    for (const pin of malformed) {
+      const response = await withPin({ refreshToken: b.refreshToken, pin });
+      expect(response.status).toBe(401);
+      expect(response.body.error.code).toBe('UNAUTHENTICATED');
+      expect(response.body.data).toBeUndefined();
+    }
+    const after = (await pool.query(
+      'SELECT token_hash, revoked_at, rotated_to FROM refresh_tokens WHERE tenant_id=$1 ORDER BY id',
+      [b.tenantId],
+    )).rows;
+    expect(after).toEqual(before);
+    const audit = await asTenant(pool, b.tenantId, (client) => client.query(
+      "SELECT after_json FROM audit_events WHERE action='LOGIN_FAILED' ORDER BY id",
+    ));
+    expect(audit.rows).toHaveLength(malformed.length);
+    expect(audit.rows.every((entry) => entry.after_json.method === 'PIN')).toBe(true);
+    expect(JSON.stringify(audit.rows)).not.toContain('482193');
+    expect(JSON.stringify(audit.rows)).not.toContain(b.refreshToken);
+
+    const valid = await withPin({ refreshToken: b.refreshToken, pin: '482193' });
+    expect(valid.status).toBe(200);
+    expect(valid.body.data.user.id).toBe(b.userId);
+    expect((await withPin({ refreshToken: b.refreshToken, pin: '482193' })).status).toBe(401);
+  });
+
+  it('F002-04/11: an expired device refresh cannot be revived even with the correct six digit PIN', async () => {
+    const a = await registerAccount(PHONE, '482193');
+    await pool.query('UPDATE refresh_tokens SET expires_at=$1 WHERE tenant_id=$2',
+      ['2000-01-01T00:00:00Z', a.tenantId]);
+    const before = (await pool.query('SELECT id, revoked_at FROM refresh_tokens')).rows;
+    const refused = await withPin({ refreshToken: a.refreshToken, pin: '482193' });
+    expect(refused.status).toBe(401);
+    expect(refused.body.error.code).toBe('UNAUTHENTICATED');
+    expect((await pool.query('SELECT id, revoked_at FROM refresh_tokens')).rows).toEqual(before);
+    const loggedOut = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout').send({ refreshToken: a.refreshToken });
+    expect(loggedOut.status).toBe(204);
+    expect((await withPin({ refreshToken: a.refreshToken, pin: '482193' })).status).toBe(401);
+  });
+
+  it('F002-08/11: concurrent PIN requests must not issue two valid rotations from one refresh', async () => {
+    const a = await registerAccount(PHONE, '482193');
+    const outcomes = await Promise.allSettled(Array.from({ length: 6 }, () =>
+      withPin({ refreshToken: a.refreshToken, pin: '482193' }),
+    ));
+    expect(outcomes.every((result) => result.status === 'fulfilled')).toBe(true);
+    const responses = outcomes
+      .filter((result): result is PromiseFulfilledResult<request.Response> => result.status === 'fulfilled')
+      .map((result) => result.value);
+    expect(responses).toHaveLength(6);
+    const ok = responses.filter((response) => response.status === 200);
+    const refused = responses.filter((response) => response.status === 401);
+    // Security invariant: a stolen/replayed device refresh may rotate only once.
+    expect(ok).toHaveLength(1);
+    expect(refused).toHaveLength(5);
+    expect(ok[0]!.body.data.user.id).toBe(a.userId);
+    expect((await withPin({ refreshToken: a.refreshToken, pin: '482193' })).status).toBe(401);
+    const acceptedReplacement = ok[0]!.body.data.refreshToken as string;
+    expect((await withPin({ refreshToken: acceptedReplacement, pin: '482193' })).status).toBe(200);
+    const sessions = await pool.query(
+      'SELECT id, revoked_at, rotated_to FROM refresh_tokens WHERE tenant_id=$1 ORDER BY created_at',
+      [a.tenantId],
+    );
+    // Registration, first rotation, and second rotation with the accepted child.
+    expect(sessions.rows).toHaveLength(3);
   });
 });
