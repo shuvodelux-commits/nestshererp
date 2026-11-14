@@ -24,7 +24,7 @@ import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
-import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool, todayIn } from './support/database';
+import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
 import { assertGoldenInvariants } from './support/invariants';
 
 const clock = new SystemClock();
