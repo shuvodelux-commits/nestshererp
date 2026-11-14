@@ -6,7 +6,7 @@
  * @covers endpoint:POST /api/v1/purchase-plans
  * @covers endpoint:POST /api/v1/purchase-plans/:id/decide
  * Supplier-order detail GET assertions remain executable, but its route is not in the
- * generated endpoint census; do not invent a @covers inventory claim.
+ * generated endpoint census; no explicit coverage-inventory entry is asserted.
  * @covers endpoint:POST /api/v1/purchases
  */
 import 'reflect-metadata';
