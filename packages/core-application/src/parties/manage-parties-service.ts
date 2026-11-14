@@ -20,6 +20,8 @@ import type {
   PartyListResponse,
   PartyOpeningResponse,
   PartyResponse,
+  PartyReadV2,
+  PartyReadV2ListResponse,
   PartySort,
   SortDirection,
 } from '@sher/core-contracts';
@@ -225,7 +227,31 @@ export class ManagePartiesService {
     private readonly periods: PeriodGuard,
   ) {}
 
+  /** V1 stays wire-compatible until both legacy clients are migrated. */
   async list(command: ListPartiesCommand): Promise<PartyListResponse> {
+    return this.listFor(command, (row, role) => toResponse(row, role));
+  }
+
+  /** Additive, permission-projected read; never reuse a V1 response at the HTTP boundary. */
+  async listV2(command: ListPartiesCommand): Promise<PartyReadV2ListResponse> {
+    return this.listFor(command, (row, role, held) => toReadV2(row, role, held));
+  }
+
+  async get(command: PartyIdCommand): Promise<PartyResponse> {
+    return this.getFor(command, (row, role) => toResponse(row, role));
+  }
+
+  async getV2(command: PartyIdCommand): Promise<PartyReadV2> {
+    if (command.role === undefined) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this party');
+    }
+    return this.getFor(command, (row, role, held) => toReadV2(row, role, held));
+  }
+
+  private async listFor<T>(
+    command: ListPartiesCommand,
+    project: (row: PartyRow, role: PartyRole, held: readonly string[]) => T,
+  ): Promise<Omit<PartyListResponse, 'data'> & { data: T[] }> {
     const { ctx, role } = command;
 
     return this.uow.run(ctx, async (tx) => {
@@ -264,17 +290,20 @@ export class ManagePartiesService {
       // reveal other trading relationships to a role-limited viewer.
       const held = await this.accessControl.permissionsOf(tx, ctx);
       return {
-        data: page.map((row) => toResponse({
+        data: page.map((row) => project({
           ...row,
           roles: row.roles.filter((itemRole) => held.includes(ROLE_PERMISSIONS[itemRole].view)),
-        }, role)),
+        }, role, held)),
         page: { nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null, hasMore },
         summary: counts,
       };
     });
   }
 
-  async get(command: PartyIdCommand): Promise<PartyResponse> {
+  private async getFor<T>(
+    command: PartyIdCommand,
+    project: (row: PartyRow, role: PartyRole, held: readonly string[]) => T,
+  ): Promise<T> {
     const { ctx } = command;
 
     return this.uow.run(ctx, async (tx) => {
@@ -301,7 +330,7 @@ export class ManagePartiesService {
         throw new AppError(ErrorCode.NOT_FOUND, 'That relationship does not exist');
       }
       const balanceNetMinor = await this.parties.getRoleBalance(tx, ctx, party.id, role);
-      return toResponse({ ...party, roles: visibleRoles, balanceNetMinor }, role);
+      return project({ ...party, roles: visibleRoles, balanceNetMinor }, role, held);
     });
   }
 
@@ -1182,5 +1211,28 @@ function toResponse(row: PartyRow, selectedReadRole?: PartyRole): PartyResponse 
     // calls the same function on the same number.
     balance: partyBalanceOf(row.balanceNetMinor),
     hasLedgerEntries: row.hasLedgerEntries,
+  };
+}
+
+/**
+ * T09C-P2: V2 wire projection. Internal PartyRow keeps its *global* posted
+ * history for delete safety; a role VIEW grant never discloses it or sensitive
+ * personal data. Both grants are evaluated in the same tenant-scoped UoW as
+ * the role permission and balance query (no separate follow-up exposure).
+ */
+function toReadV2(row: PartyRow, role: PartyRole, held: readonly string[]): PartyReadV2 {
+  const {
+    address, guardianName, nid, email, notes, hasLedgerEntries,
+    ...directory
+  } = toResponse(row, role);
+  return {
+    ...directory,
+    readRole: role,
+    profile: held.includes(Permission.PARTY_PROFILE_VIEW)
+      ? { state: 'VISIBLE', data: { address, guardianName, nid, email, notes } }
+      : { state: 'WITHHELD' },
+    globalHistory: held.includes(Permission.PARTY_HISTORY_GLOBAL_VIEW)
+      ? { state: 'VISIBLE', hasLedgerEntries }
+      : { state: 'WITHHELD' },
   };
 }
