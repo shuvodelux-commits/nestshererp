@@ -336,7 +336,7 @@ async function assertOneWriter(winner: 'SALE' | 'DAMAGE'): Promise<void> {
     saleEvents: sold, adjustmentEvents: adjusted,
     inventoryMinor: 30_000,
     cogsMinor: sold * 70_000, adjustmentMinor: adjusted * 70_000,
-    receivableMinor: sold * 84_000, revenueMinor: -sold * 84_000,
+    receivableMinor: sold * 84_000, revenueMinor: sold === 1 ? -84_000 : 0,
   });
   await valuation(3_000, 30_000);
 }
