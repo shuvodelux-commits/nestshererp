@@ -260,4 +260,119 @@ gated('MOD-008 P6C purchase operation replay identity (real signed Nest + RLS PG
       .set(auth(tokenB));
     expect([403, 404]).toContain(unauthorized.status);
   });
+  it('serializes concurrent same-key identical requests into one financial purchase', async () => {
+    const key = Ulid.generate(clock);
+    const payload = body({ supplierBillRef: 'CONCURRENT-SAME' });
+    const results = await Promise.all([
+      post('/api/v1/purchases', payload, key),
+      post('/api/v1/purchases', payload, key),
+    ]);
+    expect(results.map(result => result.status), results.map(result => result.body))
+      .toEqual([201, 201]);
+    expect(results[0]?.body.data.id).toBe(results[1]?.body.data.id);
+    const after = await snapshot();
+    expect(after.purchases).toBe(1);
+    expect(after.journals).toBe(1);
+    expect(after.movements).toBe(1);
+    expect(after.lots).toBe(1);
+  }, 120000);
+
+  it('rejects concurrent same-key different bodies without two postings', async () => {
+    const key = Ulid.generate(clock);
+    const results = await Promise.all([
+      post('/api/v1/purchases', body({ supplierBillRef: 'CONCURRENT-A' }), key),
+      post('/api/v1/purchases', body({ supplierBillRef: 'CONCURRENT-B' }), key),
+    ]);
+    expect(results.map(result => result.status).sort(), results.map(result => result.body))
+      .toEqual([201, 409]);
+    const rejected = results.find(result => result.status === 409);
+    expect(rejected?.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    const after = await snapshot();
+    expect(after.purchases).toBe(1);
+    expect(after.journals).toBe(1);
+    expect(after.movements).toBe(1);
+    expect(after.lots).toBe(1);
+  }, 120000);
+
+  it('canonicalizes omitted and explicit default fields to the same creation intent', async () => {
+    const key = Ulid.generate(clock);
+    const initial = await firstPost(key);
+    const before = await snapshot();
+    const explicitDefaults = body({
+      supplierBillRef: null,
+      dueDate: null,
+      landedCosts: [],
+      extraCostMinor: 0,
+      notes: null,
+      correctionOf: null,
+      supplierOrderId: null,
+      lines: [{ productId, qty: 1000, unitPriceMinor: 10000, expiryDate: null, planLineId: null }],
+    });
+    const replay = await post('/api/v1/purchases', explicitDefaults, key);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data.id).toBe(initial.body.data.id);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('fails closed for unprovable legacy source even if a modern response cache exists', async () => {
+    // Simulate an old posted purchase carried through the forward-only migration.
+    // Superuser SET LOCAL is limited to this uniquely labelled disposable PG;
+    // the immutable identity trigger remains enabled in all transactions after.
+    const key = Ulid.generate(clock);
+    const payload = body({ supplierBillRef: 'LEGACY-OLD-KEY' });
+    const original = await firstPost(key, payload);
+    const admin = new (await import('pg')).Pool({ connectionString: ADMIN_URL, max: 1 });
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL session_replication_role = 'replica'");
+      const simulatedLegacy = await client.query(
+        'UPDATE purchases SET create_fingerprint_version = NULL, create_fingerprint = NULL ' +
+        'WHERE tenant_id = $1 AND id = $2', [tenantA.tenantId, original.body.data.id]);
+      expect(simulatedLegacy.rowCount).toBe(1);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+      await admin.end();
+    }
+    // A matching *cached* payload still does not prove all historical fields.
+    await assertKeyRejected(key, payload);
+    const removedCache = await asTenant(pool, tenantA.tenantId, db =>
+      db.query('DELETE FROM idempotency_keys WHERE tenant_id = $1 AND operation_id = $2',
+        [tenantA.tenantId, key]));
+    expect(removedCache.rowCount).toBe(1);
+    await assertKeyRejected(key, payload);
+  });
+
+  it('keeps purchase identity immutable through direct tenant-scoped UPDATE', async () => {
+    const key = Ulid.generate(clock);
+    const purchase = await firstPost(key);
+    const before = await snapshot();
+    await expect(asTenant(pool, tenantA.tenantId, db =>
+      db.query("UPDATE purchases SET create_fingerprint = repeat('0',64) " +
+        'WHERE tenant_id = $1 AND id = $2', [tenantA.tenantId, purchase.body.data.id])))
+      .rejects.toMatchObject({ code: '23514' });
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('replays an exact purchase after product deactivation and cache pruning', async () => {
+    const key = Ulid.generate(clock);
+    const payload = body({ supplierBillRef: 'AFTER-DEACTIVATION' });
+    const first = await firstPost(key, payload);
+    const status = await post('/api/v1/products/' + productId + '/status',
+      { status: 'INACTIVE' });
+    expect(status.status, JSON.stringify(status.body)).toBe(200);
+    const pruned = await asTenant(pool, tenantA.tenantId, db =>
+      db.query('DELETE FROM idempotency_keys WHERE tenant_id = $1 AND operation_id = $2',
+        [tenantA.tenantId, key]));
+    expect(pruned.rowCount).toBe(1);
+    const before = await snapshot();
+    const replay = await post('/api/v1/purchases', payload, key);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data.id).toBe(first.body.data.id);
+    expect(await snapshot()).toEqual(before);
+  });
 });
