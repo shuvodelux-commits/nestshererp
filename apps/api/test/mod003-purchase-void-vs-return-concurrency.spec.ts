@@ -237,7 +237,7 @@ async function expectPosting(purchaseId: string, outcome: 'VOID' | 'RETURN'): Pr
     purchasePostedOutbox: 1, purchaseVoidedOutbox: voided ? 1 : 0,
     returnPostedOutbox: voided ? 0 : 1,
     stockQty: qty, lotQty: qty,
-    inventoryMinor: minor, apMinor: -minor,
+    inventoryMinor: minor, apMinor: minor === 0 ? 0 : -minor,
   });
   const response = await request(app.getHttpServer())
     .get('/api/v1/inventory/valuation')
