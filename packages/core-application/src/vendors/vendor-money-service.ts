@@ -15,6 +15,7 @@ import { Money, Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import type { MoneyRepository } from '../money/money-repository';
+import type { SettingsRepository } from '../settings/settings-repository';
 import { entryModeFor } from '../notes/create-note-service';
 import type { PartyRepository } from '../parties/party-repository';
 import type { AccessControl } from '../ports/access-control';
@@ -104,6 +105,7 @@ export class VendorMoneyService {
     private readonly audit: AuditWriter,
     private readonly outbox: Outbox,
     private readonly clock: Clock,
+    private readonly settings: SettingsRepository,
   ) {}
 
   /**
@@ -171,7 +173,7 @@ export class VendorMoneyService {
       }
 
       const account = await resolvePaymentAccount(
-        { access: this.access, money: this.money },
+        { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
         tx,
         ctx,
         command.accountCode,
@@ -344,7 +346,7 @@ export class VendorMoneyService {
        * receipt path follows.
        */
       const account = await resolvePaymentAccount(
-        { access: this.access, money: this.money },
+        { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
         tx,
         ctx,
         command.accountCode,

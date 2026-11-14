@@ -300,7 +300,7 @@ export class WarrantyService {
           command.recoveryAccountCode === null
             ? null
             : await resolvePaymentAccount(
-                { access: this.access, money: this.money },
+                { access: this.access, money: this.money, settings: this.settings, clock: this.clock },
                 tx,
                 ctx,
                 command.recoveryAccountCode,
