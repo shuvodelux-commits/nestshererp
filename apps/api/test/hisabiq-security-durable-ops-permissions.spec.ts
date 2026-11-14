@@ -59,13 +59,11 @@ describe('issue #225: disposable PG16 app-role privilege boundaries', () => {
 
   it('reserves destructive cleanup for test-admin and never gives runtime a reset privilege', async () => {
     const tenant = await seedTenant(pool, { name: 'Reset must use admin', permissions: [] });
-    await asTenant(pool, tenant.tenantId, client =>
-      client.query('INSERT INTO notes (id, tenant_id, content, created_at, updated_at, created_by, updated_by, version) VALUES ($1,$2,$3,$4,$4,$5,$5,1)', [
-        Ulid.generate(clock), tenant.tenantId, 'reset-only fixture', clock.now(), tenant.userId,
-      ]),
-    );
+    const beforeReset = await asTenant(pool, tenant.tenantId, client =>
+      client.query('SELECT id FROM tenants WHERE id=$1', [tenant.tenantId]));
+    expect(beforeReset.rows).toHaveLength(1);
     await resetDatabase(pool);
-    const count = await pool.query<{ total: string }>('SELECT COUNT(*)::text AS total FROM notes');
+    const count = await pool.query<{ total: string }>('SELECT COUNT(*)::text AS total FROM tenants');
     expect(count.rows[0].total).toBe('0');
     const found = await privileges('public.import_operations');
     expect(found.can_truncate).toBe(false);
