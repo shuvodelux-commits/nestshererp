@@ -571,7 +571,32 @@ export class ManagePartiesService {
         }
       }
 
-      const clean = await this.validate(tx, ctx, command.input, before);
+      // V1 sends a complete form even when the reader cannot see private or
+      // Customer-only fields. A withheld field often round-trips as null/blank.
+      // Preserve its stored value for a role-limited editor, rather than
+      // treating that placeholder as an authorized deletion (or denying an
+      // otherwise ordinary name/phone correction). Non-empty replacements
+      // still require the corresponding field permission below.
+      const held = await this.accessControl.permissionsOf(tx, ctx);
+      const canViewPrivate = held.includes(Permission.PARTY_PROFILE_VIEW);
+      const customerMutationPermission = before.roles.includes('CUSTOMER')
+        ? Permission.CUSTOMER_EDIT : Permission.CUSTOMER_CREATE;
+      const canEditCustomerFields = held.includes(customerMutationPermission);
+      const keepPrivate = (incoming: string | null, stored: string | null): string | null =>
+        !canViewPrivate && blankToNull(incoming) === null ? stored : incoming;
+      const safeInput: PartyInput = {
+        ...command.input,
+        address: keepPrivate(command.input.address, before.address),
+        guardianName: keepPrivate(command.input.guardianName, before.guardianName),
+        nid: keepPrivate(command.input.nid, before.nid),
+        email: keepPrivate(command.input.email, before.email),
+        notes: keepPrivate(command.input.notes, before.notes),
+        customerGroupId: !canEditCustomerFields && command.input.customerGroupId === null
+          ? before.customerGroupId : command.input.customerGroupId,
+        creditLimitMinor: !canEditCustomerFields && command.input.creditLimitMinor === null
+          ? before.creditLimitMinor : command.input.creditLimitMinor,
+      };
+      const clean = await this.validate(tx, ctx, safeInput, before);
 
       // No extra grant is required for a full-form PATCH that repeats stored
       // private fields. Validate first: hidden-by-Settings fields are preserved
