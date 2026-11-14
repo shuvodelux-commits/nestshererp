@@ -31,7 +31,7 @@ import ErrorNotice from '../ErrorNotice.vue';
  * again once it is in.
  */
 const props = defineProps<{
-  party: PartyResponse;
+  party: Pick<PartyResponse, 'id' | 'name'>;
   /** The list or hub this was opened from — a party may hold several roles (D-04). */
   role: PartyRoleValue;
 }>();
