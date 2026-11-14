@@ -1,7 +1,7 @@
 /*
  * MOD-002 P7b1: real disposable PostgreSQL16, non-owner FORCE RLS.
  * No HTTP route, retained DB, application data or accounting writes.
- * @covers adapter:PostgresCatalogSettingsUsageV1Reader
+ * The adapter has no public endpoint or test-inventory @covers target yet.
  */
 import { createDatabase, PostgresUnitOfWork } from '@sher/adapter-postgres';
 import { SystemClock, Ulid } from '@sher/shared-utils';
