@@ -102,6 +102,21 @@ export async function resolvePaymentAccount(
     throw new AppError(ErrorCode.VALIDATION_FAILED, `“${account.name}” is no longer in use`);
   }
 
+  // The original physical drawer identity is immutable on cash_sessions,
+  // even after its account's current isDrawer flag is cleared. Do not allow
+  // any new expense/receipt/payment to restate that CLOSED counted day's CASH
+  // ledger. The tenant lock above serializes this with Close Day and edits.
+  // Unrelated ordinary CASH accounts and BANK/MFS remain independent.
+  if (account.type === 'CASH') {
+    const counted = await deps.money.findSessionByDate(tx, ctx, businessDate);
+    if (counted?.status === 'CLOSED' && counted.accountId === account.id) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        'This cash day is already counted and closed; record a separate approved adjustment on an eligible date',
+      );
+    }
+  }
+
   /*
    * Checked against the live journal rollup, not a stored column, so it is the
    * same figure the account list and the statement show. A shop that genuinely

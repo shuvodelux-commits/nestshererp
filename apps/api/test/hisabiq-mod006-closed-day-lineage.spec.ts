@@ -279,6 +279,32 @@ suite('MOD-006 T05: a closed counted day cannot be silently restated', () => {
     expect(after.sessions).toEqual(before.sessions);
   });
 
+  it('control #84: ordinary non-drawer CASH expense stays allowed after unrelated drawer close', async () => {
+    const ordinary = await signed(api().post('/api/v1/money/accounts')).send({
+      name: 'Uncounted petty cash',
+      type: 'CASH', holderName: null, reference: null, isDrawer: false,
+      openingAmountMinor: 15_000, openingDate,
+      operationId: Ulid.generate(clock),
+    });
+    expectStatus(ordinary, 201);
+    const category = await signed(api().post('/api/v1/expenses/categories'))
+      .send({ name: 'Ordinary cash expense control' });
+    expectStatus(category, 201);
+    const before = await snapshot();
+    const response = await signed(api().post('/api/v1/expenses'))
+      .set('Idempotency-Key', Ulid.generate(clock)).send({
+        categoryId: category.body.data.id,
+        amountMinor: 1_000,
+        accountCode: 'CASH:' + (ordinary.body.data.id as string),
+        payeePartyId: null,
+        note: 'An unrelated petty cash account is not the counted drawer',
+      });
+    expectStatus(response, 201);
+    const after = await snapshot();
+    expect(after.closes).toEqual(before.closes);
+    expect(after.sessions).toEqual(before.sessions);
+  });
+
   it('RED #84: rejects a same-day EXPENSE from a former drawer after its physical day closed', async () => {
     await removeDrawerFlag();
     const category = await signed(api().post('/api/v1/expenses/categories'))
