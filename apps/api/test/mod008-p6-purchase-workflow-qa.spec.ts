@@ -179,7 +179,7 @@ describe('MOD-008 P6 real source/financial acceptance', () => {
   it('rejects inactive product and preserves an empty posting ledger', async () => {
     const changed = await post('/api/v1/products/' + productId + '/status',
       { status: 'INACTIVE' });
-    expect(changed.status).toBe(201);
+    expect(changed.status).toBe(200);
     const refused = await post('/api/v1/purchases', bill());
     expect(refused.status).toBeGreaterThanOrEqual(400);
     expect(refused.status).toBeLessThan(500);
