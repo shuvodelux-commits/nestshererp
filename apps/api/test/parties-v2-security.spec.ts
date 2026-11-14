@@ -2,6 +2,7 @@
  * MOD-004 T09C-P2 — signed Party V2 HTTP and real PostgreSQL16/RLS regression.
  * Isolated test DATABASE_URL and ADMIN_DATABASE_URL must point to an ephemeral
  * non-production container. V1 disclosures are documented, NOT certified safe.
+ * @covers endpoint:GET /api/v2/parties/:id/ledger
  */
 import 'reflect-metadata';
 
