@@ -17,6 +17,7 @@ import 'reflect-metadata';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 
@@ -875,4 +876,89 @@ describe('C003-02 real two-Nest-process import arbitration', () => {
       await Promise.all(processes.map(stopImportRaceServer));
     }
   }, 90000);
+
+  // C02-07: the server commits and has a successful response, but an
+  // intermediary drops it. The caller must safely retry after the API process
+  // restarts and after the prunable fast key has been removed.
+  it('replays a committed import after HTTP response loss and Nest process restart', async () => {
+    const processes: ImportRaceServer[] = [];
+    let dropProxy: ReturnType<typeof createHttpServer> | undefined;
+    try {
+      const first = await startImportRaceServer();
+      processes.push(first);
+      const operationId = Ulid.generate(clock);
+      const csv = [PRODUCT_HEADER, 'Lost Response Bolt,Piece,10.00,15.00,1,,,,,,'].join('\r\n');
+      let upstreamStatus = 0;
+      let upstreamBody: { data?: unknown } | undefined;
+
+      // Proxy receives the *whole successful upstream HTTP response* and only
+      // then tears down the client socket. Commit-before-loss is deterministic.
+      dropProxy = createHttpServer((_incoming, downstream) => {
+        const upstream = httpRequest({
+          hostname: '127.0.0.1',
+          port: first.port,
+          path: '/api/v1/imports',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + token,
+            'Idempotency-Key': operationId,
+          },
+        }, (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.once('end', () => {
+            upstreamStatus = response.statusCode ?? 0;
+            upstreamBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { data?: unknown };
+            downstream.destroy();
+          });
+          response.once('error', () => downstream.destroy());
+        });
+        upstream.once('error', () => downstream.destroy());
+        upstream.end(JSON.stringify({ type: 'PRODUCTS', csv }));
+      });
+      const proxy = dropProxy;
+      const proxyPort = await new Promise<number>((resolvePort, rejectPort) => {
+        proxy.once('error', rejectPort);
+        proxy.listen(0, '127.0.0.1', () => {
+          const address = proxy.address();
+          if (!address || typeof address === 'string') {
+            rejectPort(new Error('No loopback response-loss proxy port'));
+          } else {
+            resolvePort(address.port);
+          }
+        });
+      });
+
+      await expect(fetch('http://127.0.0.1:' + proxyPort + '/lost-reply', {
+        method: 'POST',
+        signal: AbortSignal.timeout(20000),
+      })).rejects.toThrow();
+      expect(upstreamStatus).toBe(201);
+      expect(upstreamBody?.data).toEqual({ type: 'PRODUCTS', rows: 1, imported: 1 });
+      const getSourceCounts = async () => asTenant(pool, tenant.tenantId, (client) =>
+        client.query([
+          'SELECT',
+          '(SELECT count(*)::integer FROM import_operations WHERE tenant_id = $1 AND operation_id = $2 AND response_json IS NOT NULL) AS operations,',
+          '(SELECT count(*)::integer FROM audit_events WHERE tenant_id = $1 AND entity_type = \'data_import\' AND entity_id = $2) AS audits,',
+          '(SELECT count(*)::integer FROM outbox WHERE tenant_id = $1 AND event_type = \'data.imported\' AND aggregate_id = $2) AS events',
+        ].join(' '), [tenant.tenantId, operationId]));
+      const before = await getSourceCounts();
+      expect(before.rows[0]).toEqual({ operations: 1, audits: 1, events: 1 });
+
+      await stopImportRaceServer(first);
+      await pruneFastImportReplay(operationId);
+      const restarted = await startImportRaceServer();
+      processes.push(restarted);
+      const replay = await importFromRaceServer(restarted, csv, operationId);
+      expect(replay.status).toBe(201);
+      expect(replay.data).toEqual(upstreamBody?.data);
+      expect((await products()).filter((row) => row.name === 'Lost Response Bolt')).toHaveLength(1);
+      expect((await getSourceCounts()).rows).toEqual(before.rows);
+    } finally {
+      if (dropProxy) await new Promise<void>((done) => dropProxy?.close(() => done()));
+      await Promise.all(processes.map(stopImportRaceServer));
+    }
+  }, 90000);
+
 });
