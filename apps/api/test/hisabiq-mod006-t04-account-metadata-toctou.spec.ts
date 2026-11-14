@@ -176,6 +176,35 @@ suite('MOD-006 T04: account eligibility cannot turn stale during reconciliation 
     40_000,
   );
 
+  it.each([
+    ['BANK', 'LOAN'],
+    ['MFS', 'CASH'],
+  ] as const)(
+    'RED: forbids retyping %s to %s while its statement reconciliation is DRAFT',
+    async (initial, changedType) => {
+      const account = await createAccount(initial);
+      const draft = await reconcile(account.id);
+      expect(draft.status, JSON.stringify(draft.body)).toBe(201);
+
+      const attempt = await patchType(account.id, account.version, changedType);
+      expect(attempt.status, JSON.stringify(attempt.body)).toBe(400);
+      expect(await snapshot(account.id)).toEqual({
+        type: initial, reconciliations: 1, journals: 0, lines: 0, sessions: 0,
+      });
+    },
+  );
+
+  it('allows a harmless same-type metadata edit while bank reconciliation is DRAFT', async () => {
+    const account = await createAccount('BANK');
+    const draft = await reconcile(account.id);
+    expect(draft.status).toBe(201);
+    const changed = await patchType(account.id, account.version, 'BANK');
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(await snapshot(account.id)).toEqual({
+      type: 'BANK', reconciliations: 1, journals: 0, lines: 0, sessions: 0,
+    });
+  });
+
   it('accepts an unchanged BANK account and does not post journals', async () => {
     const account = await createAccount('BANK');
     const res = await reconcile(account.id);
