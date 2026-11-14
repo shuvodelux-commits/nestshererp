@@ -411,7 +411,9 @@ describe('MOD-004 T13-N — versioned selected-role ledger', () => {
         'SELECT count(*)::int AS count FROM journal_lines WHERE tenant_id = $1',
         [tenant.tenantId],
       ));
-      return r.rows[0].count;
+      const row = r.rows[0];
+      if (row === undefined) throw new Error('Journal count query returned no row');
+      return row.count;
     };
     const originalLines = await countJournals();
     await ledger(vendorId, '?role=VENDOR').expect(200);
