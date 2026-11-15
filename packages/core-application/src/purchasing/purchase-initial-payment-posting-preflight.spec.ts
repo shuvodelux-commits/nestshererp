@@ -128,6 +128,28 @@ describe('MOD-008 D06C1-B1a nonposting, tenant-authorized purchase journal prepa
     expect(balanced(result.journal.lines)).toBe(0);
   });
 
+  it('accepts a valid negative rounding component and still balances the one journal', async () => {
+    const rounded = { ...costs, inventoryValueMinor: 9001, roundingMinor: -1 };
+    const result = await run([leg(BANK, 1000)], rounded);
+    expect(result.journal.lines).toEqual([
+      { account: 'INVENTORY', amountMinor: 9001, partyId: null },
+      { account: 'ROUNDING', amountMinor: -1, partyId: null },
+      { account: BANK, amountMinor: -1000, partyId: null },
+      { account: 'AP', amountMinor: -8000, partyId: SUPPLIER },
+    ]);
+    expect(balanced(result.journal.lines)).toBe(0);
+  });
+
+  it.each([
+    ['inconsistent stock and invoice values', { inventoryValueMinor: 8998, roundingMinor: 1 }],
+    ['unsafe inventory value', { inventoryValueMinor: Number.MAX_SAFE_INTEGER + 1, roundingMinor: 0 }],
+    ['unsafe rounding value', { inventoryValueMinor: 8999, roundingMinor: Number.MAX_SAFE_INTEGER + 1 }],
+    ['safe operands but unsafe combined value', { inventoryValueMinor: Number.MAX_SAFE_INTEGER, roundingMinor: 1 }],
+  ])('refuses %s before authorizing any money account', async (_description, override) => {
+    await expect(run([leg(CASH, 100)], { ...costs, ...override })).rejects.toThrow(RangeError);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
   it('accepts ten ordered positive legs and aggregates the cash validation', async () => {
     const input = Array.from({ length: 10 }, () => leg(CASH, 100));
     const result = await run(input);
