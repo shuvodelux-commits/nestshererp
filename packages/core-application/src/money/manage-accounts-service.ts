@@ -12,6 +12,7 @@ import { Ulid } from '@sher/shared-utils';
 import type { Clock } from '@sher/shared-utils';
 
 import { entryModeFor } from '../notes/create-note-service';
+import { assertCashDayNotClosed } from './assert-cash-day-not-closed';
 import { requireLoanVisibility, seesLoans } from './loan-visibility';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
@@ -497,6 +498,10 @@ export class ManageAccountsService {
       );
     }
     await this.periods.assertOpen(tx, ctx, businessDate);
+    // Historical opening equity needs no cash session. Its effective-date
+    // journal must nevertheless preserve any later counted physical CASH day.
+    await assertCashDayNotClosed(this.money, tx, ctx, businessDate,
+      [accountCodeFor(type, accountId)]);
 
     const account = accountCodeFor(type, accountId);
     // A loan's opening is what the shop already owes, so it is credited.
@@ -580,6 +585,10 @@ export class ManageAccountsService {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Say which date this opening balance is as at');
     }
     await this.periods.assertOpen(tx, ctx, businessDate);
+    // Opening corrections are delta journals: even when the current drawer
+    // flag changed, do not restate the originally counted cash account.
+    await assertCashDayNotClosed(this.money, tx, ctx, businessDate,
+      [accountCodeFor(input.type, existing.id)]);
 
     const journal = accountOpeningCorrectionPosting(
       accountCodeFor(input.type, existing.id),
