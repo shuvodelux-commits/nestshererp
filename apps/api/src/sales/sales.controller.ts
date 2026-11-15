@@ -127,11 +127,17 @@ export class SalesController {
   @HttpCode(201)
   async saveDraft(
     @Body() body: unknown,
+    @Headers('idempotency-key') operationId: string | undefined,
     @Ctx() ctx: TenantContext,
   ): Promise<{ data: SaleDraftResponse }> {
     const parsed = saveSaleDraftRequestSchema.safeParse(body);
     if (!parsed.success) throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid draft');
-    return { data: await this.query.saveDraft(ctx, parsed.data) };
+    // Optional for backwards compatibility with unconnected preview POS;
+    // supplied malformed/empty values must never degrade to unkeyed creation.
+    if (operationId !== undefined && !/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(operationId)) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid draft idempotency key');
+    }
+    return { data: await this.query.saveDraft(ctx, parsed.data, operationId) };
   }
 
   @Get('drafts/:id')

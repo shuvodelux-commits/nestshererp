@@ -514,6 +514,18 @@ export interface NewSaleDraft {
   readonly grandTotalMinor: number;
   readonly cart: Record<string, unknown>;
   readonly businessDate: string;
+  /** Optional creation-time pin for exact original POST replay response. */
+  readonly savedAt?: Date;
+}
+
+/** Immutable source identity, separate from the mutable/deletable parked cart. */
+export interface SaleDraftCreateOperation {
+  readonly operationId: string;
+  readonly fingerprintVersion: string;
+  readonly requestFingerprint: string;
+  readonly draftId: string;
+  readonly businessDate: string;
+  readonly savedAt: Date;
 }
 
 export interface SaleDraftRow extends NewSaleDraft {
@@ -624,6 +636,13 @@ export interface SaleRepository {
     expectedVersion: number,
     draft: Omit<NewSaleDraft, 'id' | 'businessDate'>,
   ): Promise<SaleDraftRow | null>;
+  /** Atomic source claim: one and only one creator for tenant + key. */
+  tryClaimDraftCreation(
+    tx: Tx, ctx: TenantContext, operation: SaleDraftCreateOperation,
+  ): Promise<boolean>;
+  findDraftCreation(
+    tx: Tx, ctx: TenantContext, operationId: string,
+  ): Promise<SaleDraftCreateOperation | null>;
   saveDraft(tx: Tx, ctx: TenantContext, draft: NewSaleDraft): Promise<void>;
   deleteDraft(tx: Tx, ctx: TenantContext, id: string): Promise<void>;
 

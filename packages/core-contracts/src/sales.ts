@@ -609,7 +609,7 @@ export const saveSaleDraftRequestSchema = z
     label: z.string().trim().min(1).max(80),
     customerName: z.string().trim().max(120).nullable().default(null),
     itemCount: z.number().int().min(0).max(500),
-    grandTotalMinor: z.number().int().min(0),
+    grandTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     cart: z.record(z.unknown()),
   })
   .strict();
