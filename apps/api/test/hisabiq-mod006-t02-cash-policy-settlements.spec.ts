@@ -294,4 +294,59 @@ suite('MOD-006 T02: drawer session policy on real financial settlements', () => 
     expect(after.sessions).toBe(0);
     expect(after.suppliers).toBe(before.suppliers + 1);
   });
+  it('ON: BANK customer advance posts one source journal without a cash session', async () => {
+    const customer = ok(await signed(api().post('/api/v1/parties')).send({
+      name: 'Bank-only customer under test', roles: ['CUSTOMER'], phone: '01812345033',
+      address: null, guardianName: null, nid: null, email: null, notes: null,
+      customerGroupId: null, creditLimitMinor: null,
+    }), 'customer');
+    const before = await snapshot();
+    const key = id();
+    const body = {
+      customerPartyId: customer.body.data.id as string,
+      accountCode: bank, amountMinor: 5_000, saleIds: [], note: 'Bank-only payment',
+    };
+    const payment = await signed(api().post('/api/v1/customer-payments'))
+      .set('Idempotency-Key', key).send(body);
+    ok(payment, 'BANK customer advance with session ON');
+    const after = await snapshot();
+    expect(after.totals[bank]).toBe(55_000);
+    expect(after.totals[drawer]).toBe(100_000);
+    expect(after.totals.CUSTOMER_ADVANCE).toBe(-5_000);
+    expect(after.totals.REVENUE ?? 0).toBe(before.totals.REVENUE ?? 0);
+    expect(after.sessions).toBe(0);
+    expect(after.entries).toBe(before.entries + 1);
+    const rows = await asTenant(pool, tenant.tenantId, db =>
+      db.query<{session_id: string | null}>('SELECT session_id FROM customer_receipts'));
+    expect(rows.rows).toEqual([{ session_id: null }]);
+
+    const repeated = await signed(api().post('/api/v1/customer-payments'))
+      .set('Idempotency-Key', key).send(body);
+    ok(repeated, 'same-key BANK customer retry');
+    expect(await snapshot()).toEqual(after);
+  });
+
+  it('ON: BANK supplier settlement reduces only AP with no drawer session', async () => {
+    const { productId, supplierId } = await productAndSupplier();
+    ok(await purchase(supplierId, productId, 0, null), 'unpaid supplier bill');
+    const before = await snapshot();
+    expect(before.totals.AP).toBe(-100_000);
+
+    const payment = await signed(api().post('/api/v1/suppliers/payments')).send({
+      supplierPartyId: supplierId, amountMinor: 40_000,
+      accountCode: bank, note: null, purchaseId: null,
+    });
+    ok(payment, 'BANK supplier settlement with session ON');
+    const after = await snapshot();
+    expect(after.totals.AP).toBe(-60_000);
+    expect(after.totals[bank]).toBe(10_000);
+    expect(after.totals[drawer]).toBe(100_000);
+    expect(after.suppliers).toBe(before.suppliers + 1);
+    expect(after.entries).toBe(before.entries + 1);
+    expect(after.sessions).toBe(0);
+    const rows = await asTenant(pool, tenant.tenantId, db =>
+      db.query<{session_id: string | null}>('SELECT session_id FROM supplier_payments'));
+    expect(rows.rows).toEqual([{ session_id: null }]);
+  });
+
 });
