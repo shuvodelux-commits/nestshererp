@@ -15,13 +15,15 @@ import type {
   PartyRole,
   PartyStatus,
 } from '@sher/core-domain';
-import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
+import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey, partyV2CreateRequestSchema, partyV2MutationReceiptSchema } from '@sher/core-contracts';
 import type {
   PartyListResponse,
   PartyOpeningResponse,
   PartyResponse,
   PartyReadV2,
   PartyReadV2ListResponse,
+  PartyV2CreateRequest,
+  PartyV2MutationReceipt,
   PartySort,
   SortDirection,
 } from '@sher/core-contracts';
@@ -124,6 +126,13 @@ export interface CreatePartyCommand {
   /** Client-generated ULID, reused verbatim on retry (§5.26, UI-34). */
   readonly operationId: string;
   readonly input: PartyInput;
+}
+
+/** V2 directory-only creation: no opening/journal input and no broad GET grant. */
+export interface CreatePartyV2Command {
+  readonly ctx: TenantContext;
+  readonly operationId: string;
+  readonly input: PartyV2CreateRequest;
 }
 
 export interface UpdatePartyCommand {
@@ -355,6 +364,92 @@ export class ManagePartiesService {
       const balanceNetMinor = await this.parties.getRoleBalance(tx, ctx, party.id, role);
       return project({ ...party, roles: visibleRoles, balanceNetMinor }, role, held);
     });
+  }
+
+  /**
+   * SEC-N02B: the first versioned, privacy-safe Party writer.
+   * Reuses the same transaction and createWithin invariants as V1 but never
+   * persists/returns the raw PartyResponse from a limited-role V2 command.
+   *
+   * Version-tagged fingerprint deliberately shares the operation-id namespace
+   * with V1. A key from one route cannot replay the other route's response.
+   */
+  async createV2(command: CreatePartyV2Command): Promise<PartyV2MutationReceipt> {
+    const parsed = partyV2CreateRequestSchema.safeParse(command.input);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid V2 Party create request');
+    }
+    const { selectedRole, ...input } = parsed.data;
+    const { ctx } = command;
+    const fingerprint = JSON.stringify({ operation: 'PARTY_CREATE_V2', input: parsed.data });
+
+    const authorize = async (tx: Tx): Promise<void> => {
+      // Recheck the CURRENT actor on every attempt and replay, not the first creator.
+      for (const role of unique(input.roles)) {
+        await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].create);
+      }
+      if (input.roles.includes('VENDOR')) await this.assertVendorsOn(tx, ctx);
+      const privateInput = [
+        input.address, input.guardianName, input.nid, input.email, input.notes,
+      ];
+      if (privateInput.some((value) => value !== null && value.trim() !== '')) {
+        await this.accessControl.require(tx, ctx, Permission.PARTY_PROFILE_VIEW);
+      }
+    };
+    const readReplay = async (tx: Tx): Promise<PartyV2MutationReceipt | null> => {
+      const replayed = await this.idempotency.find(tx, ctx, command.operationId);
+      if (replayed === null) return null;
+      if (replayed.requestFingerprint !== fingerprint) {
+        throw new AppError(
+          ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'This operation id was already used with a different record',
+        );
+      }
+      // A V1 raw PartyResponse can never pass this strict receipt shape.
+      return partyV2MutationReceiptSchema.parse(replayed.response);
+    };
+
+    try {
+      return await this.uow.run(ctx, async (tx) => {
+        await authorize(tx);
+        const replay = await readReplay(tx);
+        if (replay !== null) return replay;
+
+        const created = await this.createWithin(tx, ctx, input, 'API_V2');
+        const receipt = partyV2MutationReceiptSchema.parse({
+          id: created.id,
+          version: created.version,
+          selectedRole,
+          status: created.status,
+        });
+        await this.idempotency.save(tx, ctx, {
+          operationId: command.operationId,
+          requestFingerprint: fingerprint,
+          response: receipt,
+        });
+        return receipt;
+      });
+    } catch (error) {
+      // Concurrent copies of the SAME operation can both see an empty
+      // idempotency cache. One transaction commits; the other's unique-phone
+      // validation or unique-key insert fails and rolls back. Only the already
+      // committed receipt may turn that race into an acknowledged replay.
+      // Never reinterpret a denied permission/feature or existing key conflict.
+      if (error instanceof AppError && (
+        error.code === ErrorCode.PERMISSION_DENIED ||
+        error.code === ErrorCode.FEATURE_DISABLED ||
+        error.code === ErrorCode.IDEMPOTENCY_KEY_REUSED
+      )) throw error;
+
+      // The fresh transaction is strictly read-only, tenant-scoped and
+      // reauthorizes before even looking at the cached response.
+      const committed = await this.uow.run(ctx, async (tx) => {
+        await authorize(tx);
+        return readReplay(tx);
+      });
+      if (committed !== null) return committed;
+      throw error;
+    }
   }
 
   async create(command: CreatePartyCommand): Promise<PartyResponse> {
