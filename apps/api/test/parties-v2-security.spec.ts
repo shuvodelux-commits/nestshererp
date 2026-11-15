@@ -3,6 +3,7 @@
  * Isolated test DATABASE_URL and ADMIN_DATABASE_URL must point to an ephemeral
  * non-production container. V1 disclosures are documented, NOT certified safe.
  * @covers endpoint:GET /api/v2/parties/:id/ledger
+ * @covers endpoint:GET /api/v2/parties/:id/opening
  */
 import 'reflect-metadata';
 
@@ -10,6 +11,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   partyLedgerResponseSchema,
+  partyOpeningResponseSchema,
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
   Permission,
@@ -434,5 +436,118 @@ describe('MOD-004 T13-N — versioned selected-role ledger', () => {
     expect(disabled.body.error.message).toBe(disabledMissing.body.error.message);
     expect(disabled.body.error.details).toEqual(disabledMissing.body.error.details);
     expect(await countJournals()).toBe(originalLines);
+  });
+});
+
+
+describe('MOD-004 T15-N — versioned historical opening read', () => {
+  const opening = (id: string, query: string, as = token): request.Test =>
+    request(app.getHttpServer()).get('/api/v2/parties/' + id + '/opening' + query).set(auth(as));
+
+  it('separates Supplier historical payable source from Customer missing opening, without cash session', async () => {
+    const id = await createShared();
+    await restrict([Permission.CUSTOMER_VIEW]);
+    const customer = await opening(id, '?role=CUSTOMER').expect(200);
+    expect(customer.body).toEqual({ data: null });
+    expect(JSON.stringify(customer.body)).not.toContain('315000');
+    expect(JSON.stringify(customer.body)).not.toContain('NID-PRIVATE-P2');
+    await opening(id, '?role=SUPPLIER').expect(403);
+
+    await restrict([Permission.SUPPLIER_VIEW]);
+    const supplier = await opening(id, '?role=SUPPLIER').expect(200);
+    expect(partyOpeningResponseSchema.safeParse(supplier.body.data).success).toBe(true);
+    expect(supplier.body.data.role).toBe('SUPPLIER');
+    expect(supplier.body.data.direction).toBe('PAYABLE');
+    expect(supplier.body.data.amountMinor).toBe(315_000);
+    expect(supplier.body.data.id).toHaveLength(26);
+    expect(supplier.body.data.number).toMatch(/^OPN-/);
+    expect(supplier.body.data.businessDate).toBe(clock.businessDate('Asia/Dhaka'));
+    expect(supplier.body.data.version).toBeGreaterThan(0);
+    expect(JSON.stringify(supplier.body)).not.toContain('NID-PRIVATE-P2');
+    expect(JSON.stringify(supplier.body)).not.toContain('P2 private notes');
+  });
+
+  it('strictly requires one recognized role, without extra query keys', async () => {
+    const id = await createShared();
+    for (const query of ['', '?role=OWNER', '?role=INVALID',
+      '?role=SUPPLIER&foo=1', '?role=CUSTOMER&role=SUPPLIER']) {
+      const bad = await opening(id, query).expect(400);
+      expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+    }
+    await opening(id, '?role=CUSTOMER').expect(200);
+  });
+
+  it('denies unauthorized existing and absent identities uniformly; hides other role and tenant', async () => {
+    const dual = await createShared();
+    const supplier = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'T15 Supplier Only', roles: ['SUPPLIER'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const supplierOnly = supplier.body.data.id as string;
+    const missing = Ulid.generate(clock);
+    await restrict([Permission.CUSTOMER_VIEW]);
+    const denied = await opening(dual, '?role=SUPPLIER').expect(403);
+    const deniedMissing = await opening(missing, '?role=SUPPLIER').expect(403);
+    expect(denied.body.error.code).toBe(deniedMissing.body.error.code);
+    expect(denied.body.error.message).toBe(deniedMissing.body.error.message);
+    expect(denied.body.error.details).toEqual(deniedMissing.body.error.details);
+
+    const hidden = await opening(supplierOnly, '?role=CUSTOMER').expect(404);
+    const absent = await opening(missing, '?role=CUSTOMER').expect(404);
+    expect(hidden.body.error.code).toBe(absent.body.error.code);
+    expect(hidden.body.error.message).toBe(absent.body.error.message);
+    expect(hidden.body.error.details).toEqual(absent.body.error.details);
+    expect(JSON.stringify(hidden.body)).not.toContain('T15 Supplier Only');
+
+    const foreign = await seedTenant(pool, {
+      name: 'T15 Other Tenant', permissions: [Permission.SUPPLIER_VIEW],
+    });
+    const otherToken = signToken(foreign, TEST_JWT_SECRET);
+    const foreignResult = await opening(dual, '?role=SUPPLIER', otherToken).expect(404);
+    const foreignAbsent = await opening(missing, '?role=SUPPLIER', otherToken).expect(404);
+    expect(foreignResult.body.error.code).toBe(foreignAbsent.body.error.code);
+    expect(foreignResult.body.error.message).toBe(foreignAbsent.body.error.message);
+  });
+
+  it('enforces Vendor toggle before identity lookup; GET adds no source or journal lines', async () => {
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'on' }).expect(201);
+    const vendor = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'T15 Vendor No Opening', roles: ['VENDOR'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const vendorId = vendor.body.data.id as string;
+    const missing = Ulid.generate(clock);
+    const journalCount = async (): Promise<number> => {
+      const rows = await asTenant(pool, tenant.tenantId, client => client.query<{ total: number }>(
+        'SELECT count(*)::int AS total FROM journal_lines WHERE tenant_id = $1',
+        [tenant.tenantId],
+      ));
+      const row = rows.rows[0];
+      if (row === undefined) throw new Error('Missing journal count row');
+      return row.total;
+    };
+    const before = await journalCount();
+    await restrict([Permission.VENDOR_VIEW]);
+    expect((await opening(vendorId, '?role=VENDOR').expect(200)).body).toEqual({ data: null });
+    expect(await journalCount()).toBe(before);
+
+    await restrict([Permission.VENDOR_VIEW, Permission.SETTING_EDIT,
+      Permission.SETTING_VIEW, Permission.SETTING_TOGGLE]);
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'off' }).expect(201);
+    await restrict([Permission.VENDOR_VIEW]);
+    const disabled = await opening(vendorId, '?role=VENDOR').expect(403);
+    const absent = await opening(missing, '?role=VENDOR').expect(403);
+    expect(disabled.body.error.code).toBe('FEATURE_DISABLED');
+    expect(disabled.body.error.code).toBe(absent.body.error.code);
+    expect(disabled.body.error.message).toBe(absent.body.error.message);
+    expect(await journalCount()).toBe(before);
   });
 });
