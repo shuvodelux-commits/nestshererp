@@ -45,6 +45,19 @@ export async function preparePurchaseInitialPaymentPosting(
     throw new RangeError('Purchase total must be positive safe integer poisha');
   }
 
+  // Defense in depth: even a mistaken internal caller must not acquire money
+  // account locks for inconsistent stock valuation, rounding or bill totals.
+  // Server-owned purchaseCosts() normally guarantees this identity, but future
+  // pricing adapters may accidentally pass a partially reconstructed object.
+  if (
+    !Number.isSafeInteger(costs.inventoryValueMinor) ||
+    !Number.isSafeInteger(costs.roundingMinor) ||
+    !Number.isSafeInteger(costs.inventoryValueMinor + costs.roundingMinor) ||
+    costs.inventoryValueMinor + costs.roundingMinor !== totalMinor
+  ) {
+    throw new RangeError('Purchase inventory valuation plus rounding must equal the bill total');
+  }
+
   // Validate ALL physical account references and group before the first
   // resolver call, so invalid/overpaid purchase requests never acquire a
   // partial set of account authorizations. Preserve source lines separately.
