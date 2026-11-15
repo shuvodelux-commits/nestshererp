@@ -72,7 +72,7 @@ async function createParty(name: string, roles: Array<'CUSTOMER' | 'SUPPLIER'>):
   const result = await api().post('/api/v1/parties')
     .set(auth()).set('Idempotency-Key', operationId)
     .send({
-      name, roles, phone: null, address: null, guardianName: null,
+      name, roles, phone: '01712345678', address: null, guardianName: null,
       nid: null, email: null, notes: null, customerGroupId: null,
       creditLimitMinor: null,
     });
