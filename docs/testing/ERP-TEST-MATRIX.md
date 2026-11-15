@@ -3773,8 +3773,8 @@
 | `sync.conflict.discard` | sync | ❌ NOT TESTED |
 | `license.term.view` | license | ❌ NOT TESTED |
 | `license.install` | license | ❌ NOT TESTED |
-| `backup.export` | backup | ❌ NOT TESTED |
-| `backup.restore` | backup | ❌ NOT TESTED |
+| `backup.export` | backup | ✅ TESTED |
+| `backup.restore` | backup | ✅ TESTED |
 | `business.reset` | business | ❌ NOT TESTED |
 
 ## Cross-module workflows
