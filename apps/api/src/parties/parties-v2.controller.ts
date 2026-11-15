@@ -1,13 +1,16 @@
 import {
+  Body,
   Controller,
   Get,
+  Headers,
+  Post,
   Inject,
   Param,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import type { ManagePartiesService, PartyLedgerService, TenantContext } from '@sher/core-application';
-import type { PartyLedgerResponse, PartyOpeningResponse, PartyReadV2, PartyReadV2ListResponse } from '@sher/core-contracts';
+import type { PartyLedgerResponse, PartyOpeningResponse, PartyReadV2, PartyReadV2ListResponse, PartyV2MutationReceiptEnvelope } from '@sher/core-contracts';
 import {
   AppError,
   ErrorCode,
@@ -17,6 +20,8 @@ import {
   partyQuerySchema,
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
+  partyV2CreateRequestSchema,
+  partyV2MutationReceiptEnvelopeSchema,
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
@@ -37,6 +42,30 @@ export class PartiesV2Controller {
     @Inject(MANAGE_PARTIES_SERVICE) private readonly parties: ManagePartiesService,
     @Inject(PARTY_LEDGER_SERVICE) private readonly ledgers: PartyLedgerService,
   ) {}
+
+  /** Directory-only creation, no historical opening or broader Party read grant. */
+  @Post()
+  async create(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Ctx() ctx: TenantContext,
+  ): Promise<PartyV2MutationReceiptEnvelope> {
+    const parsed = partyV2CreateRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid request body', {
+        issues: parsed.error.issues.map((issue) => issue.path.join('.')).join(', '),
+      });
+    }
+    if (idempotencyKey === undefined ||
+        !/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(idempotencyKey)) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Valid Idempotency-Key header is required');
+    }
+    return partyV2MutationReceiptEnvelopeSchema.parse({
+      data: await this.parties.createV2({
+        ctx, operationId: idempotencyKey, input: parsed.data,
+      }),
+    });
+  }
 
   @Get()
   async list(
