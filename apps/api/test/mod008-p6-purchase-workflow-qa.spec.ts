@@ -54,8 +54,8 @@ let customerId: string;
 
 function checkDisposable(): void {
   const expected = {
-    DATABASE_URL: 'postgres://sher_app:sher_app_test@127.0.0.1:55682/sher_test',
-    ADMIN_DATABASE_URL: 'postgres://postgres:dev@127.0.0.1:55682/sher_test',
+    DATABASE_URL: 'postgres://sher_app:sher_app_test@127.0.0.1:55713/sher_test',
+    ADMIN_DATABASE_URL: 'postgres://postgres:dev@127.0.0.1:55713/sher_test',
     JWT_SECRET: TEST_JWT_SECRET,
     HISABIQ_P6_DISPOSABLE_ACK: 'isolated-pg16-only',
   };
@@ -64,8 +64,8 @@ function checkDisposable(): void {
   }
   const checked = spawnSync('podman', ['inspect', '--format',
     '{{index .Config.Labels "hisabiq.qa"}}|{{.State.Running}}',
-    'hisabiq-mod008-p6-pg16'], { encoding: 'utf8' });
-  if (checked.status !== 0 || checked.stdout.trim() !== 'mod008-p6-535|true') {
+    'hisabiq-mod008-p6-due-313-pg16'], { encoding: 'utf8' });
+  if (checked.status !== 0 || checked.stdout.trim() !== 'mod008-p6-due-313|true') {
     throw Error('P6 task-owned disposable PostgreSQL label/running guard failed');
   }
 }
