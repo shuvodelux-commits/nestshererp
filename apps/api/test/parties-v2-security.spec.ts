@@ -2,12 +2,14 @@
  * MOD-004 T09C-P2 — signed Party V2 HTTP and real PostgreSQL16/RLS regression.
  * Isolated test DATABASE_URL and ADMIN_DATABASE_URL must point to an ephemeral
  * non-production container. V1 disclosures are documented, NOT certified safe.
+ * @covers endpoint:GET /api/v2/parties/:id/ledger
  */
 import 'reflect-metadata';
 
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
+  partyLedgerResponseSchema,
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
   Permission,
@@ -305,5 +307,132 @@ describe('MOD-004 T09C-P2 — versioned Party read authorization', () => {
     expect(v1.body.data.nid).toBe('NID-PRIVATE-P2');
     expect(v1.body.data.roles).toEqual(['CUSTOMER']);
     expect(v1.body.data.balance.netMinor).toBe(0);
+  });
+});
+
+
+describe('MOD-004 T13-N — versioned selected-role ledger', () => {
+  const ledger = (id: string, query: string, as = token): request.Test =>
+    request(app.getHttpServer()).get('/api/v2/parties/' + id + '/ledger' + query).set(auth(as));
+
+  it('uses exact role-specific journal poisha, never Supplier amount in Customer statement', async () => {
+    const id = await createShared();
+    await restrict([Permission.CUSTOMER_VIEW]);
+
+    const customer = await ledger(id, '?role=CUSTOMER').expect(200);
+    expect(partyLedgerResponseSchema.safeParse(customer.body).success).toBe(true);
+    expect(customer.body.partyId).toBe(id);
+    expect(customer.body.rows).toEqual([]);
+    expect(customer.body.openingBalance.netMinor).toBe(0);
+    expect(customer.body.closingBalance.netMinor).toBe(0);
+    expect(JSON.stringify(customer.body)).not.toContain('315000');
+    expect(JSON.stringify(customer.body)).not.toContain('NID-PRIVATE-P2');
+    expect(JSON.stringify(customer.body)).not.toContain('P2 private notes');
+
+    await ledger(id, '?role=SUPPLIER').expect(403);
+    await restrict([Permission.SUPPLIER_VIEW]);
+    const supplier = await ledger(id, '?role=SUPPLIER').expect(200);
+    expect(partyLedgerResponseSchema.safeParse(supplier.body).success).toBe(true);
+    expect(supplier.body.partyId).toBe(id);
+    expect(supplier.body.closingBalance.netMinor).toBe(-315_000);
+    expect(supplier.body.rows).toHaveLength(1);
+    expect(supplier.body.rows[0].account).toBe('AP');
+    expect(supplier.body.rows[0].sourceDocumentType).toBe('OPENING_BALANCE');
+    expect(supplier.body.rows[0].sourceDocumentId).toHaveLength(26);
+    expect(supplier.body.rows[0].journalLineId).toHaveLength(26);
+    expect(JSON.stringify(supplier.body)).not.toContain('NID-PRIVATE-P2');
+    expect(JSON.stringify(supplier.body)).not.toContain('P2 private notes');
+  });
+
+  it('requires a recognized role and rejects unknown query keys, cursors and limits', async () => {
+    const id = await createShared();
+    for (const query of [
+      '', '?role=OWNER', '?role=INVALID', '?role=CUSTOMER&unexpected=1',
+      '?role=CUSTOMER&cursor=invalid', '?role=CUSTOMER&limit=0',
+      '?role=CUSTOMER&limit=201', '?role=CUSTOMER&fromDate=invalid',
+    ]) {
+      const denied = await ledger(id, query).expect(400);
+      expect(denied.body.error.code).toBe('VALIDATION_FAILED');
+    }
+    await ledger(id, '?role=CUSTOMER&limit=1').expect(200);
+  });
+
+  it('does not distinguish hidden selected-role identity, nonexistent ID or foreign tenant', async () => {
+    const shared = await createShared();
+    const supplier = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'T13 private supplier-only', roles: ['SUPPLIER'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const supplierOnlyId = supplier.body.data.id as string;
+    const missingId = Ulid.generate(clock);
+    await restrict([Permission.CUSTOMER_VIEW]);
+
+    const deniedExisting = await ledger(shared, '?role=SUPPLIER').expect(403);
+    const deniedMissing = await ledger(missingId, '?role=SUPPLIER').expect(403);
+    expect(deniedExisting.body.error.code).toBe(deniedMissing.body.error.code);
+    expect(deniedExisting.body.error.message).toBe(deniedMissing.body.error.message);
+    expect(deniedExisting.body.error.details).toEqual(deniedMissing.body.error.details);
+
+    const hidden = await ledger(supplierOnlyId, '?role=CUSTOMER').expect(404);
+    const absent = await ledger(missingId, '?role=CUSTOMER').expect(404);
+    expect(hidden.body.error.code).toBe(absent.body.error.code);
+    expect(hidden.body.error.message).toBe(absent.body.error.message);
+    expect(hidden.body.error.details).toEqual(absent.body.error.details);
+    expect(JSON.stringify(hidden.body)).not.toContain('T13 private supplier-only');
+
+    const foreign = await seedTenant(pool, {
+      name: 'T13-N other ledger tenant', permissions: [Permission.SUPPLIER_VIEW],
+    });
+    const foreignToken = signToken(foreign, TEST_JWT_SECRET);
+    const other = await ledger(shared, '?role=SUPPLIER', foreignToken).expect(404);
+    const otherAbsent = await ledger(missingId, '?role=SUPPLIER', foreignToken).expect(404);
+    expect(other.body.error.code).toBe(otherAbsent.body.error.code);
+    expect(other.body.error.message).toBe(otherAbsent.body.error.message);
+    expect(other.body.error.details).toEqual(otherAbsent.body.error.details);
+  });
+
+  it('matches V2 Vendor feature OFF/ON policy before identity lookup and never posts from GET', async () => {
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'on' }).expect(201);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/parties').set(auth()).set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'T13 Vendor identity', roles: ['VENDOR'], phone: null,
+        address: null, guardianName: null, nid: null, email: null, notes: null,
+        customerGroupId: null, creditLimitMinor: null,
+      }).expect(201);
+    const vendorId = created.body.data.id as string;
+    const missing = Ulid.generate(clock);
+    await restrict([Permission.VENDOR_VIEW]);
+    const countJournals = async (): Promise<number> => {
+      const r = await asTenant(pool, tenant.tenantId, (client) => client.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM journal_lines WHERE tenant_id = $1',
+        [tenant.tenantId],
+      ));
+      const row = r.rows[0];
+      if (row === undefined) throw new Error('Journal count query returned no row');
+      return row.count;
+    };
+    const originalLines = await countJournals();
+    await ledger(vendorId, '?role=VENDOR').expect(200);
+    expect(await countJournals()).toBe(originalLines);
+
+    await restrict([
+      Permission.VENDOR_VIEW, Permission.SETTING_EDIT, Permission.SETTING_VIEW,
+      Permission.SETTING_TOGGLE,
+    ]);
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.VENDOR_MANAGEMENT_ENABLED, value: 'off' }).expect(201);
+    await restrict([Permission.VENDOR_VIEW]);
+    const disabled = await ledger(vendorId, '?role=VENDOR').expect(403);
+    const disabledMissing = await ledger(missing, '?role=VENDOR').expect(403);
+    expect(disabled.body.error.code).toBe('FEATURE_DISABLED');
+    expect(disabled.body.error.code).toBe(disabledMissing.body.error.code);
+    expect(disabled.body.error.message).toBe(disabledMissing.body.error.message);
+    expect(disabled.body.error.details).toEqual(disabledMissing.body.error.details);
+    expect(await countJournals()).toBe(originalLines);
   });
 });
