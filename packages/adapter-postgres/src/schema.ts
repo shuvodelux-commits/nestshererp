@@ -322,6 +322,7 @@ export const units = pgTable('units', {
   name: text('name').notNull(),
   /** Optional bilingual display metadata; English name remains canonical. */
   nameBn: text('name_bn'),
+  isActive: boolean('is_active').notNull().default(true),
   /** Display shorthand only; not a unique key or conversion factor. */
   symbol: text('symbol'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
@@ -340,6 +341,7 @@ export const brands = pgTable('brands', {
   name: text('name').notNull(),
   /** Optional bilingual display metadata; English name remains canonical. */
   nameBn: text('name_bn'),
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
@@ -507,6 +509,7 @@ export const categories = pgTable('categories', {
   name: text('name').notNull(),
   /** Optional bilingual display metadata; English name remains canonical. */
   nameBn: text('name_bn'),
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   createdBy: char('created_by', { length: 26 }).notNull(),
