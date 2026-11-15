@@ -460,7 +460,7 @@ describe('MOD-004 T15-N — versioned historical opening read', () => {
     expect(supplier.body.data.direction).toBe('PAYABLE');
     expect(supplier.body.data.amountMinor).toBe(315_000);
     expect(supplier.body.data.id).toHaveLength(26);
-    expect(supplier.body.data.number).toMatch(/^OPN-/);
+    expect(supplier.body.data.number).toMatch(/^OPENING_BALANCE-\d{4}-\d{6}$/);
     expect(supplier.body.data.businessDate).toBe(clock.businessDate('Asia/Dhaka'));
     expect(supplier.body.data.version).toBeGreaterThan(0);
     expect(JSON.stringify(supplier.body)).not.toContain('NID-PRIVATE-P2');
