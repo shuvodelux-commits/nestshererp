@@ -96,6 +96,31 @@ async function postingRows(tenant: SeededTenant) {
 }
 const zero = { purchases: 0, journals: 0, stocks: 0, lots: 0, payments: 0 };
 
+/**
+ * Baseline all tenant-visible write sources before a deliberately rejected
+ * advanced transport request. Fixture creation may have already written audit
+ * and outbox rows, so compare before/after rather than asserting zero there.
+ */
+async function purchaseMutationSnapshot(tenant: SeededTenant) {
+  return asTenant(pool, tenant.tenantId, async db => {
+    const rows = await db.query<{
+      purchases: number; purchaseLines: number; journals: number;
+      journalLines: number; stocks: number; lots: number;
+      supplierPayments: number; audits: number; outbox: number;
+    }>(`SELECT
+      (SELECT count(*)::int FROM purchases) AS purchases,
+      (SELECT count(*)::int FROM purchase_lines) AS "purchaseLines",
+      (SELECT count(*)::int FROM journal_entries) AS journals,
+      (SELECT count(*)::int FROM journal_lines) AS "journalLines",
+      (SELECT count(*)::int FROM stock_movements) AS stocks,
+      (SELECT count(*)::int FROM inventory_lots) AS lots,
+      (SELECT count(*)::int FROM supplier_payments) AS "supplierPayments",
+      (SELECT count(*)::int FROM audit_events) AS audits,
+      (SELECT count(*)::int FROM outbox) AS outbox`);
+    return rows.rows[0];
+  });
+}
+
 /** Verify each real journal entry balances without undeclared workspace imports. */
 async function assertBalancedEntries(tenant: SeededTenant) {
   const imbalances = await asTenant(pool, tenant.tenantId, async db => {
@@ -249,6 +274,42 @@ beforeEach(async () => {
       expect(refused.body.error.code).toBe('VALIDATION_FAILED');
       expect(await postingRows(a)).toEqual(zero);
     }
+  }, 35_000);
+
+  it.each([
+    ['standalone canonical unpaid paymentLegs array', () => ({
+      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      discountMinor: 0, paymentLegs: [],
+    })],
+    ['standalone canonical CASH+BANK split payments', () => ({
+      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      discountMinor: 0, paymentLegs: [
+        { accountCode: 'CASH:' + MISSING_ID, amountMinor: 2_000 },
+        { accountCode: 'BANK:01ARZ3NDEKTSV4RRFFQ69G5FAY', amountMinor: 1_000 },
+      ],
+    })],
+    ['canonical MFS-only paymentLegs', () => ({
+      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      discountMinor: 0, paymentLegs: [
+        { accountCode: 'MFS:' + MISSING_ID, amountMinor: 1_000 },
+      ],
+    })],
+    ['mixed legacy paidMinor/paidAccountCode and canonical paymentLegs', () =>
+      bill({ paymentLegs: [{ accountCode: 'CASH:' + MISSING_ID, amountMinor: 1_000 }] })],
+  ])('rejects %s in the unactivated live API without any tenant write', async (_label, requestBody) => {
+    // This proves present-day strict rejection; it is NOT a green split-payment
+    // posting test. Legacy one-account purchase behavior remains unchanged.
+    const beforeA = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+    expect(await postingRows(a)).toEqual(zero);
+    const refused = await post('/api/v1/purchases', requestBody());
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.error.code).toBe('VALIDATION_FAILED');
+    expect(await purchaseMutationSnapshot(a)).toEqual(beforeA);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    expect(await postingRows(a)).toEqual(zero);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
   }, 35_000);
 
   it('validates list query keys rather than treating arbitrary filters as trusted', async () => {
