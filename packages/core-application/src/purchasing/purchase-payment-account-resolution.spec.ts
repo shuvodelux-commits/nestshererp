@@ -120,6 +120,54 @@ describe('MOD-008 D06C1-A account-resolution handoff for initial purchase paymen
     expect(resolver.mock.calls.map((call) => call[3])).toEqual([cashA, bankB]);
   });
 
+  it.each([
+    ['CASH source retyped to BANK', cashA, 'BANK:' + ID_A],
+    ['BANK source retyped to CASH', bankB, cashB],
+    ['BANK source returned as noncanonical MFS', bankB, 'MFS:' + ID_B],
+    ['MFS alias returned without canonical BANK normalization', mfsA, mfsA],
+    ['CASH source returned as non-asset AP', cashA, 'AP:' + ID_A],
+    ['BANK source returned as non-asset LOAN', bankB, 'LOAN:' + ID_B],
+  ])('rejects same-ID resolver family drift: %s', async (_label, original, wrong) => {
+    resolver.mockResolvedValue({
+      code: wrong as AccountCode,
+      name: 'Inconsistent account adapter',
+      sessionId: null,
+    });
+    await expect(resolve([leg(original, 200)])).rejects.toThrow(
+      'Resolved money-account family changed during purchase validation',
+    );
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a resolver substituting another physical account identity', async () => {
+    resolver.mockResolvedValue({
+      code: cashB as AccountCode,
+      name: 'Other physical account',
+      sessionId: 'OPEN-SESSION',
+    });
+    await expect(resolve([leg(cashA, 250)])).rejects.toThrow(
+      'Resolved money-account identity changed during purchase validation',
+    );
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not return a partially authorized split payment when the later account family drifts', async () => {
+    const input = Object.freeze([
+      Object.freeze(leg(bankB, 100)),
+      Object.freeze(leg(cashA, 200)),
+    ]);
+    resolver.mockImplementation(async (_d, _t, _ctx, code) => ({
+      code: (code === cashA ? cashA : cashB) as AccountCode,
+      name: 'Attempted same-ID substitution',
+      sessionId: code === cashA ? 'OPEN-SESSION' : null,
+    }));
+    await expect(resolve(input)).rejects.toThrow(
+      'Resolved money-account family changed during purchase validation',
+    );
+    expect(resolver.mock.calls.map((call) => call[3])).toEqual([cashA, bankB]);
+    expect(input).toEqual([leg(bankB, 100), leg(cashA, 200)]);
+  });
+
   it('preserves frozen original payment rows without adding canonical codes to caller objects', async () => {
     const input = Object.freeze([
       Object.freeze(leg(mfsA, 150)),
