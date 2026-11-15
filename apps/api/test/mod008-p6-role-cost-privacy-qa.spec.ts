@@ -51,6 +51,7 @@ let pool: pg.Pool;
 let tenant: SeededTenant;
 let ownerToken: string;
 let viewerToken: string;
+let viewerUserId: string;
 let noViewToken: string;
 let supplierId: string;
 let productId: string;
@@ -88,7 +89,7 @@ const bill = (changes: Record<string, unknown> = {}) => ({
   discountMinor: 0, paidMinor: 0, paidAccountCode: null, ...changes,
 });
 
-async function roleToken(roleCode: string, permissions: readonly string[]): Promise<string> {
+async function roleToken(roleCode: string, permissions: readonly string[]): Promise<{ token: string; userId: string }> {
   const roleId = Ulid.generate(clock);
   const userId = Ulid.generate(clock);
   const now = clock.now();
@@ -112,7 +113,7 @@ async function roleToken(roleCode: string, permissions: readonly string[]): Prom
       );
     }
   });
-  return signToken({ ...tenant, roleId, userId }, TEST_JWT_SECRET);
+  return { token: signToken({ ...tenant, roleId, userId }, TEST_JWT_SECRET), userId };
 }
 
 async function financialSnapshot() {
@@ -132,6 +133,22 @@ async function financialSnapshot() {
       '(SELECT count(*)::int FROM audit_events) AS audits, ' +
       '(SELECT count(*)::int FROM outbox) AS outbox');
     return result.rows[0];
+  });
+}
+
+/**
+ * A denied mutation is a separate immutable security event even though the
+ * attempted purchase transaction must roll back. Read denials are not audited
+ * individually (the installed DenialAuditInterceptor excludes GET).
+ */
+async function permissionDenials() {
+  return asTenant(pool, tenant.tenantId, async db => {
+    const rows = await db.query<{
+      permission: string; action: string; source: string; actor: string; resource: string;
+    }>('SELECT trim(entity_id) AS permission, action, source, ' +
+      'trim(created_by) AS actor, after_json->>\'resource\' AS resource ' +
+      'FROM audit_events WHERE entity_type = \'permission_denial\' ORDER BY created_at, id');
+    return rows.rows;
   });
 }
 
@@ -188,8 +205,10 @@ roleSuite('MOD-008 P6 signed nonowner purchase cost privacy', () => {
     expect(posted.body.data.grandTotalMinor).toBe(10_000);
     purchaseId = posted.body.data.id as string;
 
-    viewerToken = await roleToken('P6_VIEW_ONLY', [Permission.PURCHASE_VIEW]);
-    noViewToken = await roleToken('P6_NO_VIEW', []);
+    const viewer = await roleToken('P6_VIEW_ONLY', [Permission.PURCHASE_VIEW]);
+    viewerToken = viewer.token;
+    viewerUserId = viewer.userId;
+    noViewToken = (await roleToken('P6_NO_VIEW', [])).token;
   }, 60_000);
 
   it('returns supplier and quantities but omits every money field for same-tenant VIEW-only user', async () => {
@@ -221,18 +240,28 @@ roleSuite('MOD-008 P6 signed nonowner purchase cost privacy', () => {
     for (const key of LINE_KEYS) expect(lines[0]).not.toHaveProperty(key);
   }, 35_000);
 
-  it('rejects view-only create and correction with all financial, audit and outbox rows unchanged', async () => {
+  it('rejects view-only create/correction without financial writes and audits both denials', async () => {
     const before = await financialSnapshot();
     expect(before.purchases).toBe(1);
     expect(before.journals).toBe(1);
     const create = await post('/api/v1/purchases', bill(), viewerToken);
     expect(create.status, JSON.stringify(create.body)).toBe(403);
-    expect(await financialSnapshot()).toEqual(before);
+    const afterCreate = await financialSnapshot();
+    expect({ ...afterCreate, audits: before.audits }).toEqual(before);
+    expect(afterCreate.audits).toBe(before.audits + 1);
 
     const correction = await post('/api/v1/purchases',
       bill({ correctionOf: purchaseId }), viewerToken);
     expect(correction.status, JSON.stringify(correction.body)).toBe(403);
-    expect(await financialSnapshot()).toEqual(before);
+    const afterCorrection = await financialSnapshot();
+    expect({ ...afterCorrection, audits: before.audits }).toEqual(before);
+    expect(afterCorrection.audits).toBe(before.audits + 2);
+    expect(await permissionDenials()).toEqual([
+      { permission: Permission.PURCHASE_CREATE, action: 'DENIED', source: 'API',
+        actor: viewerUserId, resource: 'POST /api/v1/purchases' },
+      { permission: Permission.PURCHASE_EDIT, action: 'DENIED', source: 'API',
+        actor: viewerUserId, resource: 'POST /api/v1/purchases' },
+    ]);
     const ownerDetail = await api().get('/api/v1/purchases/' + purchaseId)
       .set(bearer(ownerToken));
     expect(ownerDetail.status).toBe(200);
@@ -240,11 +269,13 @@ roleSuite('MOD-008 P6 signed nonowner purchase cost privacy', () => {
     expect(ownerDetail.body.data.grandTotalMinor).toBe(10_000);
   }, 35_000);
 
-  it('refuses list/detail without PURCHASE_VIEW, independently of a valid signed token', async () => {
+  it('refuses list/detail without PURCHASE_VIEW and creates no per-read denial audit', async () => {
+    const before = await financialSnapshot();
     const deniedList = await api().get('/api/v1/purchases').set(bearer(noViewToken));
     expect(deniedList.status, JSON.stringify(deniedList.body)).toBe(403);
     const deniedDetail = await api().get('/api/v1/purchases/' + purchaseId)
       .set(bearer(noViewToken));
     expect(deniedDetail.status, JSON.stringify(deniedDetail.body)).toBe(403);
+    expect(await financialSnapshot()).toEqual(before);
   }, 35_000);
 });
