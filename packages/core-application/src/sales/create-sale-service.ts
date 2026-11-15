@@ -295,6 +295,17 @@ export class CreateSaleService {
         (await this.inventory.createDefaultLocation(tx, ctx, Ulid.generate(this.clock)));
 
       /*
+       * P0 #283: the cart order is not a lock order. A sale containing A,B and
+       * another containing B,A used to acquire product_cost_state row locks in
+       * opposite orders, deadlocking and returning HTTP 500 despite enough stock.
+       * Prelock each unique product in stable order before any cost/lot reads;
+       * the lines below still execute in the cashier's original order.
+       */
+      for (const productId of [...new Set(command.lines.map((line) => line.productId))].sort()) {
+        await this.inventory.findStockPosition(tx, ctx, productId);
+      }
+
+      /*
        * Positions and remaining lot quantities are carried in maps rather than
        * re-read per line: a cart may list the same product twice, and re-reading
        * would cost the second line from lots the first line has already emptied.
