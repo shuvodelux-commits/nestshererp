@@ -70,7 +70,10 @@ const createParty = async (roles: string[], name: string, token = tokenA) => {
   const result = await api().post('/api/v1/parties')
     .set(auth(token)).set('Idempotency-Key', Ulid.generate(clock))
     .send({
-      name, roles, phone: null, address: null, guardianName: null,
+      name, roles,
+      phone: roles.includes('CUSTOMER')
+        ? (name === 'Customer-only identity' ? '01790000123' : '01790000124') : null,
+      address: null, guardianName: null,
       nid: null, email: null, notes: null, customerGroupId: null,
       creditLimitMinor: null,
     });
@@ -116,7 +119,7 @@ suite('MOD-008 #315 signed Supplier Due role and tenant authorization', () => {
     a = await seedTenant(pool, { name: 'P6 Supplier Due A', permissions: FULL_PERMISSIONS });
     b = await seedTenant(pool, {
       name: 'P6 Supplier Due B', permissions: [
-        Permission.SUPPLIER_VIEW, Permission.SUPPLIER_CREATE,
+        Permission.PURCHASE_VIEW, Permission.SUPPLIER_VIEW, Permission.SUPPLIER_CREATE,
       ],
     });
     tokenA = signToken(a, TEST_JWT_SECRET);
@@ -160,7 +163,7 @@ suite('MOD-008 #315 signed Supplier Due role and tenant authorization', () => {
     const beforeA = await postingSnapshot(a);
     const beforeB = await postingSnapshot(b);
     expect((await due(MISSING_ID)).status).toBe(404);
-    expect((await due(supplierId, tokenB)).status).toBe(403);
+    expect((await due(supplierId, tokenB)).status).toBe(404);
     expect(await postingSnapshot(a)).toEqual(beforeA);
     expect(await postingSnapshot(b)).toEqual(beforeB);
   }, 35_000);
@@ -177,11 +180,16 @@ suite('MOD-008 #315 signed Supplier Due role and tenant authorization', () => {
   }, 35_000);
 
   it('requires PURCHASE_VIEW before reading an owned supplier', async () => {
-    const supplierB = await createParty(['SUPPLIER'], 'Supplier B', tokenB);
-    const before = await postingSnapshot(b);
-    const denied = await due(supplierB, tokenB);
+    const noPurchase = await seedTenant(pool, {
+      name: 'No Purchase Read Tenant C',
+      permissions: [Permission.SUPPLIER_CREATE, Permission.SUPPLIER_VIEW],
+    });
+    const restrictedToken = signToken(noPurchase, TEST_JWT_SECRET);
+    const ownSupplier = await createParty(['SUPPLIER'], 'Supplier C', restrictedToken);
+    const before = await postingSnapshot(noPurchase);
+    const denied = await due(ownSupplier, restrictedToken);
     expect(denied.status).toBe(403);
-    expect(await postingSnapshot(b)).toEqual(before);
+    expect(await postingSnapshot(noPurchase)).toEqual(before);
   }, 35_000);
 
   it('requires SUPPLIER_VIEW even when purchase viewing is granted', async () => {
