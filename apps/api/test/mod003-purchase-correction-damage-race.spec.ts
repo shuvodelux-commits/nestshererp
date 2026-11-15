@@ -37,7 +37,7 @@ let token: string;
 let productId: string;
 let supplierId: string;
 
-type PostResult = { status: number; data: unknown; error?: { code?: string } };
+type PostResult = { status: number; data: unknown; error: { code?: string } | undefined };
 
 function requireDisposableRls(): void {
   const runtime = process.env['DATABASE_URL'];
