@@ -383,12 +383,11 @@ export class ManagePartiesService {
     const { ctx } = command;
     const fingerprint = JSON.stringify({ operation: 'PARTY_CREATE_V2', input: parsed.data });
 
-    return this.uow.run(ctx, async (tx) => {
-      // Require every new relationship's CREATE grant before replay or any row.
+    const authorize = async (tx: Tx): Promise<void> => {
+      // Recheck the CURRENT actor on every attempt and replay, not the first creator.
       for (const role of unique(input.roles)) {
         await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].create);
       }
-      // A disabled Vendor must not be recreated by replaying an older receipt.
       if (input.roles.includes('VENDOR')) await this.assertVendorsOn(tx, ctx);
       const privateInput = [
         input.address, input.guardianName, input.nid, input.email, input.notes,
@@ -396,33 +395,61 @@ export class ManagePartiesService {
       if (privateInput.some((value) => value !== null && value.trim() !== '')) {
         await this.accessControl.require(tx, ctx, Permission.PARTY_PROFILE_VIEW);
       }
-
+    };
+    const readReplay = async (tx: Tx): Promise<PartyV2MutationReceipt | null> => {
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
-      if (replayed !== null) {
-        if (replayed.requestFingerprint !== fingerprint) {
-          throw new AppError(
-            ErrorCode.IDEMPOTENCY_KEY_REUSED,
-            'This operation id was already used with a different record',
-          );
-        }
-        // Strict decoding blocks disclosure if a stored record is malformed.
-        return partyV2MutationReceiptSchema.parse(replayed.response);
+      if (replayed === null) return null;
+      if (replayed.requestFingerprint !== fingerprint) {
+        throw new AppError(
+          ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          'This operation id was already used with a different record',
+        );
       }
+      // A V1 raw PartyResponse can never pass this strict receipt shape.
+      return partyV2MutationReceiptSchema.parse(replayed.response);
+    };
 
-      const created = await this.createWithin(tx, ctx, input, 'API_V2');
-      const receipt = partyV2MutationReceiptSchema.parse({
-        id: created.id,
-        version: created.version,
-        selectedRole,
-        status: created.status,
+    try {
+      return await this.uow.run(ctx, async (tx) => {
+        await authorize(tx);
+        const replay = await readReplay(tx);
+        if (replay !== null) return replay;
+
+        const created = await this.createWithin(tx, ctx, input, 'API_V2');
+        const receipt = partyV2MutationReceiptSchema.parse({
+          id: created.id,
+          version: created.version,
+          selectedRole,
+          status: created.status,
+        });
+        await this.idempotency.save(tx, ctx, {
+          operationId: command.operationId,
+          requestFingerprint: fingerprint,
+          response: receipt,
+        });
+        return receipt;
       });
-      await this.idempotency.save(tx, ctx, {
-        operationId: command.operationId,
-        requestFingerprint: fingerprint,
-        response: receipt,
+    } catch (error) {
+      // Concurrent copies of the SAME operation can both see an empty
+      // idempotency cache. One transaction commits; the other's unique-phone
+      // validation or unique-key insert fails and rolls back. Only the already
+      // committed receipt may turn that race into an acknowledged replay.
+      // Never reinterpret a denied permission/feature or existing key conflict.
+      if (error instanceof AppError && (
+        error.code === ErrorCode.PERMISSION_DENIED ||
+        error.code === ErrorCode.FEATURE_DISABLED ||
+        error.code === ErrorCode.IDEMPOTENCY_KEY_REUSED
+      )) throw error;
+
+      // The fresh transaction is strictly read-only, tenant-scoped and
+      // reauthorizes before even looking at the cached response.
+      const committed = await this.uow.run(ctx, async (tx) => {
+        await authorize(tx);
+        return readReplay(tx);
       });
-      return receipt;
-    });
+      if (committed !== null) return committed;
+      throw error;
+    }
   }
 
   async create(command: CreatePartyCommand): Promise<PartyResponse> {
