@@ -208,6 +208,27 @@ describe('MOD-004 SEC-N02B V2 Party creation isolation', () => {
     });
   });
 
+  it('refuses a competing concurrent fingerprint without storing two Party rows', async () => {
+    await restrict([Permission.CUSTOMER_CREATE]);
+    const before = await counts();
+    const op = newId();
+    const [first, second] = await Promise.all([
+      post(data(), op),
+      post({ ...data(), name: 'Different operation body', phone: '01712345679' }, op),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([201, 409]);
+    const denied = first.status === 409 ? first : second;
+    expect(denied.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    const after = await counts();
+    expect(after).toEqual({
+      parties: before.parties + 1,
+      audit: before.audit + 1,
+      outbox: before.outbox + 1,
+      idempotency: before.idempotency + 1,
+      journal: before.journal,
+    });
+  });
+
   it('never treats a V2 operation ID as a V1 raw PartyResponse replay', async () => {
     const op = newId();
     const created = await post(data(), op).expect(201);
