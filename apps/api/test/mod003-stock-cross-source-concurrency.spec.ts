@@ -440,4 +440,121 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
       await Promise.all(servers.map(stopApi));
     }
   }, 90_000);
+  it.each([1, 2, 3])('commits opposite-order two-product credit sales without deadlock (round %i)', async () => {
+    // A separate stock identity is created through the same public APIs.
+    // No privileged seed, fake cash session, or mocked movement is involved.
+    const unit = await request(app.getHttpServer()).post('/api/v1/catalog/units')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Second product piece' });
+    expect(unit.status, JSON.stringify(unit.body)).toBe(201);
+
+    const second = await request(app.getHttpServer()).post('/api/v1/products')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'Opposite Cart Cable',
+        baseUnitId: unit.body.data.units[0].id as string,
+        purchasePriceMinor: 10_000, sellingPriceMinor: 12_000, minStockQty: 0,
+        brandId: null, categoryId: null, sku: null, barcode: null, description: null,
+        defaultDiscountType: null, defaultDiscountValue: null,
+        offerEnabled: false, offerPriceMinor: null, offerStartDate: null, offerEndDate: null,
+        tracksExpiry: false, tracksSerial: false,
+        conversionUnitId: null, conversionFactorQty: null,
+      });
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    const secondProductId = second.body.data.id as string;
+
+    const secondOpening = await request(app.getHttpServer()).post('/api/v1/inventory/openings')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        productId: secondProductId, qty: 10_000,
+        businessDate: todayIn(tenant.timezone),
+      });
+    expect(secondOpening.status, JSON.stringify(secondOpening.body)).toBe(201);
+
+    const [lowId, highId] = [productId, secondProductId].sort();
+    if (!lowId || !highId || lowId === highId) throw new Error('Expected two unique products');
+    const creditCart = (reverse: boolean): Record<string, unknown> => ({
+      partyId: customerId, customerName: null, customerPhone: null,
+      lines: (reverse ? [highId, lowId] : [lowId, highId]).map((id) => ({
+        productId: id, qty: 2_000, unitPriceMinor: 12_000, lineDiscountMinor: 0,
+      })),
+      payments: [], discountMinor: 0,
+    });
+
+    const servers: ApiProcess[] = [];
+    try {
+      servers.push(await startApi(), await startApi());
+      const [a, b] = servers as [ApiProcess, ApiProcess];
+      expect(a.child.pid).not.toBe(b.child.pid);
+
+      let pending: Promise<readonly [
+        { status: number; data: unknown; error?: unknown },
+        { status: number; data: unknown; error?: unknown }
+      ]> | undefined;
+      // Force the two independent Nest processes to queue on the same
+      // committed cost states, but with their first cart product reversed.
+      // Under enough owned stock, BOTH valid transactions must commit.
+      await asTenant(pool, tenant.tenantId, async (db) => {
+        const held = await db.query(
+          'SELECT id FROM product_cost_state WHERE tenant_id = $1 AND product_id IN ($2, $3) ORDER BY product_id FOR UPDATE',
+          [tenant.tenantId, lowId, highId],
+        );
+        expect(held.rows).toHaveLength(2);
+        pending = Promise.all([
+          post(a, '/api/v1/sales', creditCart(false)),
+          post(b, '/api/v1/sales', creditCart(true)),
+        ]);
+        await new Promise<void>((done) => setTimeout(done, 400));
+      });
+      if (!pending) throw new Error('Two-process opposite-cart race did not start');
+      const results = await pending;
+      expect(results.map((r) => r.status), JSON.stringify(results.map((r) => r.error)))
+        .toEqual([201, 201]);
+
+      const row = await asTenant(pool, tenant.tenantId, async (db) => {
+        const q = await db.query([
+          'SELECT',
+          '(SELECT count(*)::integer FROM sales) AS "sales",',
+          "(SELECT count(*)::integer FROM journal_entries WHERE source_document_type = 'SALE') AS \"journals\",",
+          "(SELECT count(*)::integer FROM stock_movements WHERE source_document_type = 'SALE') AS \"movements\",",
+          "(SELECT count(*)::integer FROM outbox WHERE event_type = 'sale.posted') AS \"events\",",
+          "(SELECT count(*)::integer FROM audit_events WHERE entity_type = 'sale') AS \"audits\",",
+          '(SELECT coalesce(sum(qty_on_hand),0)::integer FROM product_cost_state WHERE product_id = $1) AS "firstQty",',
+          '(SELECT coalesce(sum(qty_on_hand),0)::integer FROM product_cost_state WHERE product_id = $2) AS "secondQty",',
+          "(SELECT coalesce(sum(qty_remaining),0)::integer FROM inventory_lots WHERE product_id = $1 AND owner_type = 'OWNED') AS \"firstLot\",",
+          "(SELECT coalesce(sum(qty_remaining),0)::integer FROM inventory_lots WHERE product_id = $2 AND owner_type = 'OWNED') AS \"secondLot\",",
+          "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'INVENTORY') AS \"inventoryMinor\",",
+          "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'COGS') AS \"cogsMinor\",",
+          "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'AR') AS \"arMinor\",",
+          "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'SALES') AS \"revenueMinor\"",
+        ].join(' '), [productId, secondProductId]);
+        return q.rows[0];
+      });
+      expect(row).toBeDefined();
+      const observed = Object.fromEntries(Object.entries(row as Record<string, unknown>)
+        .map(([key, value]) => [key, Number(value)]));
+      expect(observed).toEqual({
+        sales: 2, journals: 2, movements: 4, events: 2, audits: 2,
+        firstQty: 6_000, secondQty: 6_000, firstLot: 6_000, secondLot: 6_000,
+        inventoryMinor: 120_000, cogsMinor: 80_000,
+        arMinor: 96_000, revenueMinor: -96_000,
+      });
+      const v = await request(app.getHttpServer()).get('/api/v1/inventory/valuation')
+        .set('Authorization', 'Bearer ' + token);
+      expect(v.status).toBe(200);
+      expect(v.body.data).toMatchObject({
+        totalValueMinor: 120_000, inventoryAccountMinor: 120_000,
+        differenceMinor: 0, reconciled: true,
+      });
+      expect(v.body.data.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ productId, qtyOnHand: 6_000, valueMinor: 60_000 }),
+        expect.objectContaining({ productId: secondProductId, qtyOnHand: 6_000, valueMinor: 60_000 }),
+      ]));
+    } finally {
+      await Promise.all(servers.map(stopApi));
+    }
+  }, 90_000);
+
 });
