@@ -1,5 +1,5 @@
 import type { TenantContext, Tx } from '@sher/core-application';
-import { and, asc, eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 
 import { brands, categories, units } from './schema';
 import { txOf } from './unit-of-work';
