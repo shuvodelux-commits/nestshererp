@@ -239,7 +239,7 @@ beforeEach(async () => {
   tenant = await seedTenant(pool, {
     name: 'MOD003 Cross Source Race',
     permissions: [
-      Permission.SALE_CREATE, Permission.SALE_VIEW, Permission.PRODUCT_VIEW,
+      Permission.SALE_CREATE, Permission.SALE_VIEW, Permission.SALE_VOID, Permission.PRODUCT_VIEW,
       Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT, Permission.UNIT_MANAGE,
       Permission.COST_VIEW, Permission.INVENTORY_LOT_VIEW,
       Permission.CUSTOMER_VIEW, Permission.CUSTOMER_CREATE,
@@ -378,7 +378,17 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
       const [sold, adjusted] = await collide(() => sale(a, 7_000), () => damage(b, 7_000));
       const accepted = [sold.status, adjusted.status];
       expect(accepted.filter((x) => x === 201)).toHaveLength(1);
-      expectStockConflict(sold.status === 201 ? adjusted : sold);
+      if (sold.status === 201 && adjusted.status === 400) {
+        // The sale consumed 7 of 10: DAMAGE cannot write off 7 from the
+        // remaining 3. This is a precise validation refusal, not a stale SALE.
+        expect(adjusted.error).toMatchObject({
+          code: 'VALIDATION_FAILED',
+          message: 'Only 3 in stock — remove that much or less',
+        });
+      } else {
+        // The losing SALE must remain a typed 409/422 stock conflict.
+        expectStockConflict(sold.status === 201 ? adjusted : sold);
+      }
       await assertOneWriter(sold.status === 201 ? 'SALE' : 'DAMAGE');
     } finally {
       await Promise.all(servers.map(stopApi));
@@ -552,6 +562,145 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
         expect.objectContaining({ productId, qtyOnHand: 6_000, valueMinor: 60_000 }),
         expect.objectContaining({ productId: secondProductId, qtyOnHand: 6_000, valueMinor: 60_000 }),
       ]));
+    } finally {
+      await Promise.all(servers.map(stopApi));
+    }
+  }, 90_000);
+
+
+  it.each([1, 2, 3])('voids opposite-order two-product credit sales without a deadlock (round %i)', async () => {
+    // The regular sale path now prelocks stock states in sorted product order.
+    // Cancellation must not reintroduce opposing cost-state lock acquisition
+    // when different customers void two valid reverse-line-order invoices.
+    const unit = await request(app.getHttpServer()).post('/api/v1/catalog/units')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Cancellation second product piece' });
+    expect(unit.status, JSON.stringify(unit.body)).toBe(201);
+    const second = await request(app.getHttpServer()).post('/api/v1/products')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'Reverse-Order Cancellation Cable',
+        baseUnitId: unit.body.data.units[0].id as string,
+        purchasePriceMinor: 10_000, sellingPriceMinor: 12_000, minStockQty: 0,
+        brandId: null, categoryId: null, sku: null, barcode: null, description: null,
+        defaultDiscountType: null, defaultDiscountValue: null,
+        offerEnabled: false, offerPriceMinor: null, offerStartDate: null,
+        offerEndDate: null, tracksExpiry: false, tracksSerial: false,
+        conversionUnitId: null, conversionFactorQty: null,
+      });
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    const secondId = second.body.data.id as string;
+    const opened = await request(app.getHttpServer()).post('/api/v1/inventory/openings')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({ productId: secondId, qty: 10_000, businessDate: todayIn(tenant.timezone) });
+    expect(opened.status, JSON.stringify(opened.body)).toBe(201);
+
+    // Two distinct debtor-party rows avoid serializing the race on the same
+    // customer ledger lock. Both invoices remain unpaid credit documents.
+    const otherParty = await request(app.getHttpServer()).post('/api/v1/parties')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send({
+        name: 'Second Cancellation Customer', roles: ['CUSTOMER'],
+        phone: '01898765432', address: null, guardianName: null,
+        nid: null, email: null, notes: null, customerGroupId: null,
+        creditLimitMinor: null,
+      });
+    expect(otherParty.status, JSON.stringify(otherParty.body)).toBe(201);
+    const customerTwoId = otherParty.body.data.id as string;
+
+    const [lowId, highId] = [productId, secondId].sort();
+    if (!lowId || !highId || lowId === highId) throw new Error('Expected two different stocked products');
+    const creditCart = (partyId: string, reverse: boolean): Record<string, unknown> => ({
+      partyId, customerName: null, customerPhone: null,
+      lines: (reverse ? [highId, lowId] : [lowId, highId]).map((id) => ({
+        productId: id, qty: 2_000, unitPriceMinor: 12_000, lineDiscountMinor: 0,
+      })),
+      payments: [], discountMinor: 0,
+    });
+
+    const first = await request(app.getHttpServer()).post('/api/v1/sales')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send(creditCart(customerId, false));
+    const secondSale = await request(app.getHttpServer()).post('/api/v1/sales')
+      .set('Authorization', 'Bearer ' + token)
+      .set('Idempotency-Key', Ulid.generate(clock))
+      .send(creditCart(customerTwoId, true));
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(secondSale.status, JSON.stringify(secondSale.body)).toBe(201);
+    const firstSaleId = first.body.data.id as string;
+    const secondSaleId = secondSale.body.data.id as string;
+    const firstVersion = first.body.data.version as number;
+    const secondVersion = secondSale.body.data.version as number;
+
+    const servers: ApiProcess[] = [];
+    try {
+      servers.push(await startApi(), await startApi());
+      const [a, b] = servers as [ApiProcess, ApiProcess];
+      expect(a.child.pid).not.toBe(b.child.pid);
+      let pending: Promise<readonly [
+        { status: number; data: unknown; error?: unknown },
+        { status: number; data: unknown; error?: unknown }
+      ]> | undefined;
+      // Hold BOTH existing cost-state rows before releasing two independent
+      // Nest writers. Lock each through tenant RLS, without direct mutations.
+      await asTenant(pool, tenant.tenantId, async (db) => {
+        const held = await db.query(
+          'SELECT id FROM product_cost_state WHERE tenant_id = $1 AND product_id IN ($2, $3) ORDER BY product_id FOR UPDATE',
+          [tenant.tenantId, lowId, highId],
+        );
+        expect(held.rows).toHaveLength(2);
+        pending = Promise.all([
+          post(a, '/api/v1/sales/' + firstSaleId + '/cancel', { version: firstVersion, reason: 'Customer cancelled invoice A' }),
+          post(b, '/api/v1/sales/' + secondSaleId + '/cancel', { version: secondVersion, reason: 'Customer cancelled invoice B' }),
+        ]);
+        await new Promise<void>((done) => setTimeout(done, 400));
+      });
+      if (!pending) throw new Error('Cancellation race did not start');
+      const outcomes = await pending;
+      expect(outcomes.map((r) => r.status), JSON.stringify(outcomes.map((r) => r.error)))
+        .toEqual([201, 201]);
+
+      const result = await asTenant(pool, tenant.tenantId, (db) => db.query([
+        'SELECT',
+        "(SELECT count(*)::integer FROM sales WHERE status = 'VOIDED') AS \"voided\",",
+        "(SELECT count(*)::integer FROM journal_entries WHERE source_document_type = 'SALE') AS \"saleJournals\",",
+        "(SELECT count(*)::integer FROM journal_entries WHERE source_document_type = 'SALE_CANCELLATION') AS \"reversalJournals\",",
+        "(SELECT count(*)::integer FROM stock_movements WHERE source_document_type = 'SALE') AS \"soldMovements\",",
+        "(SELECT count(*)::integer FROM stock_movements WHERE source_document_type = 'SALE_CANCELLATION') AS \"restoredMovements\",",
+        "(SELECT count(*)::integer FROM outbox WHERE event_type = 'sale.posted') AS \"saleEvents\",",
+        "(SELECT count(*)::integer FROM outbox WHERE event_type = 'sale.cancelled') AS \"cancelEvents\",",
+        "(SELECT count(*)::integer FROM audit_events WHERE entity_type = 'sale') AS \"saleAudits\",",
+        '(SELECT coalesce(sum(qty_on_hand),0)::integer FROM product_cost_state WHERE product_id = $1) AS "firstQty",',
+        '(SELECT coalesce(sum(qty_on_hand),0)::integer FROM product_cost_state WHERE product_id = $2) AS "secondQty",',
+        "(SELECT coalesce(sum(qty_remaining),0)::integer FROM inventory_lots WHERE product_id = $1 AND owner_type = 'OWNED') AS \"firstLot\",",
+        "(SELECT coalesce(sum(qty_remaining),0)::integer FROM inventory_lots WHERE product_id = $2 AND owner_type = 'OWNED') AS \"secondLot\",",
+        "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'INVENTORY') AS \"inventoryMinor\",",
+        "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'COGS') AS \"cogsMinor\",",
+        "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'AR') AS \"arMinor\",",
+        "(SELECT coalesce(sum(amount_minor),0)::integer FROM journal_lines WHERE account_code = 'SALES') AS \"revenueMinor\"",
+      ].join(' '), [productId, secondId]));
+      const row = result.rows[0] as Record<string, unknown> | undefined;
+      expect(row).toBeDefined();
+      const observed = Object.fromEntries(Object.entries(row ?? {})
+        .map(([key, value]) => [key, Number(value)]));
+      expect(observed).toEqual({
+        voided: 2, saleJournals: 2, reversalJournals: 2,
+        soldMovements: 4, restoredMovements: 4,
+        saleEvents: 2, cancelEvents: 2, saleAudits: 4,
+        firstQty: 10_000, secondQty: 10_000, firstLot: 10_000, secondLot: 10_000,
+        inventoryMinor: 200_000, cogsMinor: 0, arMinor: 0, revenueMinor: 0,
+      });
+      const value = await request(app.getHttpServer()).get('/api/v1/inventory/valuation')
+        .set('Authorization', 'Bearer ' + token);
+      expect(value.status).toBe(200);
+      expect(value.body.data).toMatchObject({
+        totalValueMinor: 200_000, inventoryAccountMinor: 200_000,
+        differenceMinor: 0, reconciled: true,
+      });
     } finally {
       await Promise.all(servers.map(stopApi));
     }

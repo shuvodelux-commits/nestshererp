@@ -222,6 +222,17 @@ export {
   updatePartyRequestSchema,
   WALK_IN_PARTY_NAME,
 } from './parties';
+/** Additive, not-yet-mounted V2 Party create-only request and privacy-safe receipt. */
+export {
+  partyV2CreateRequestSchema,
+  partyV2MutationReceiptSchema,
+  partyV2MutationReceiptEnvelopeSchema,
+} from './party-v2-write';
+export type {
+  PartyV2CreateRequest,
+  PartyV2MutationReceipt,
+  PartyV2MutationReceiptEnvelope,
+} from './party-v2-write';
 export type {
   BalanceDirectionValue,
   BalanceResponse,

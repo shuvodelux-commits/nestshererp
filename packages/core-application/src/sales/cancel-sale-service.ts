@@ -115,7 +115,12 @@ export class CancelSaleService {
 
       const byLine = new Map(sale.lines.map((line) => [line.id, line]));
       const positions = new Map<string, { qtyOnHand: number; avgUnitCost: number; costStateId: string; exists: boolean; locationId: string }>();
-      for (const line of sale.lines) {
+      // Persisted invoice line order is not a safe cross-product lock order:
+      // concurrent cancellations of A,B and B,A must lock in the same order.
+      const linesInLockOrder = [...sale.lines].sort((a, b) =>
+        a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0,
+      );
+      for (const line of linesInLockOrder) {
         if (positions.has(line.productId)) continue;
         const stored = await this.inventory.findStockPosition(tx, ctx, line.productId);
         positions.set(line.productId, {
