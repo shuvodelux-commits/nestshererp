@@ -1,5 +1,5 @@
 /*
- * MOD-006 #84 / T01 — RED-first, test-only opening-correction vs counted cash.
+ * MOD-006 #84 / T01 — Test-first opening-correction vs counted cash regression.
  * Opt-in; never point this suite at retained databases or disable its URL guard.
  * All business documents are created through signed Nest HTTP, not SQL fixtures.
  */
@@ -189,7 +189,7 @@ suite('MOD-006 #84: historical account opening correction versus counted cash cl
     expect(closed.body.data.status).toBe('CLOSED');
   }
 
-  it('RED: later counted CASH close cannot be restated by correcting an earlier opening date', async () => {
+  it('REGRESSION: later counted CASH close cannot be restated by correcting an earlier opening date', async () => {
     await closeCountedDay();
     const before = await snapshot();
     expect(before.cash).toBe('75000');
@@ -203,6 +203,59 @@ suite('MOD-006 #84: historical account opening correction versus counted cash cl
     // but silently accepting an earlier-dated delta here is NOT acceptable.
     expectStatus(corrected, 400);
     expect(await snapshot()).toEqual(before);
+  });
+
+  it('REGRESSION: original counted drawer remains protected after its isDrawer flag is removed', async () => {
+    await closeCountedDay();
+    const flagUpdate = await signed(api().patch('/api/v1/money/accounts/' + cashId)).send({
+      ...accountInput('CASH', 100_000, false), version: cashVersion,
+    });
+    expectStatus(flagUpdate, 200);
+    const before = await snapshot();
+    expect(before.cash).toBe('75000');
+
+    const correction = await signed(api().patch('/api/v1/money/accounts/' + cashId)).send({
+      ...accountInput('CASH', 105_000, false),
+      version: flagUpdate.body.data.version as number,
+    });
+    expectStatus(correction, 400);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('REGRESSION: adding a first historical opening after this account has a counted day is denied', async () => {
+    // Start without a posted opening; physical count is still a real CLOSE.
+    const removeOpening = await signed(api().post('/api/v1/money/accounts')).send({
+      ...accountInput('CASH', 0, false), name: 'Second till without history',
+      openingDate: null, operationId: Ulid.generate(clock),
+    });
+    expectStatus(removeOpening, 201);
+    // A fresh CASH is unrelated to the counted drawer, so adding its opening is allowed.
+    await closeCountedDay();
+    const baseline = await snapshot();
+    const first = await signed(api().patch('/api/v1/money/accounts/' + removeOpening.body.data.id)).send({
+      ...accountInput('CASH', 8_000, false),
+      name: 'Second till without history',
+      version: removeOpening.body.data.version as number,
+    });
+    expectStatus(first, 200);
+    const after = await snapshot();
+    expect(after.cash).toBe(baseline.cash);
+    expect(after.closes).toEqual(baseline.closes);
+  });
+
+  it('CONTROL: unchanged opening and metadata edit after counted CLOSE post no delta', async () => {
+    await closeCountedDay();
+    const before = await snapshot();
+    const updated = await signed(api().patch('/api/v1/money/accounts/' + cashId)).send({
+      ...accountInput('CASH', 100_000, true), name: 'Renamed counted till',
+      version: cashVersion,
+    });
+    expectStatus(updated, 200);
+    const after = await snapshot();
+    expect(after.cash).toBe('75000');
+    expect(after.entries).toEqual(before.entries);
+    expect(after.lines).toEqual(before.lines);
+    expect(after.closes).toEqual(before.closes);
   });
 
   it('CONTROL: correcting unrelated BANK opening does not restate counted CASH', async () => {
