@@ -17,6 +17,7 @@ import type {
   Tx,
   RepostSupplierPayment,
 } from '@sher/core-application';
+import { AppError, ErrorCode } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
@@ -1327,18 +1328,33 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
         unitCost: movement.unitCost,
       });
 
-      await db
+      // SALE/DAMAGE can consume this lot after VOID reads its pre-lock snapshot.
+      // Require the whole original OWNED quantity atomically at the write;
+      // partially consumed or replenished source lots cannot be voided.
+      const updatedLot = await db
         .update(inventoryLots)
         .set({
           qtyRemaining: sql`${inventoryLots.qtyRemaining} - ${movement.qty}`,
-          // The lot this bill created has nothing left in it and never will:
-          // the service has already refused if any of it had gone.
           status: 'CLOSED',
           updatedAt: now,
           updatedBy: ctx.userId,
           version: sql`${inventoryLots.version} + 1`,
         })
-        .where(and(eq(inventoryLots.tenantId, ctx.tenantId), eq(inventoryLots.id, movement.lotId)));
+        .where(and(
+          eq(inventoryLots.tenantId, ctx.tenantId),
+          eq(inventoryLots.id, movement.lotId),
+          eq(inventoryLots.ownerType, 'OWNED'),
+          eq(inventoryLots.qtyRemaining, movement.qty),
+        ))
+        .returning({ id: inventoryLots.id });
+      if (updatedLot.length !== 1) {
+        // The surrounding Class-T UOW rolls back the already updated document
+        // and movement; do not expose a raw database CHECK violation as 500.
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Purchase stock changed — reload the bill and use a return if goods were consumed',
+        );
+      }
     }
 
     for (const state of reversal.costStates) {
