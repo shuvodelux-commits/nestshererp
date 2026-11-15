@@ -774,6 +774,9 @@ export class ManagePartiesService {
     const { ctx } = command;
 
     return this.uow.run(ctx, async (tx) => {
+      // Require the selected relationship before identity lookup; a caller
+      // without Supplier VIEW must not distinguish missing from hidden Parties.
+      await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[command.role].view);
       const party = await this.requireParty(tx, ctx, command.partyId);
       await this.requireOpeningRole(tx, ctx, party.roles, command.role, 'view');
       return this.parties.findOpening(tx, ctx, command.partyId, command.role);
