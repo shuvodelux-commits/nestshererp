@@ -3487,7 +3487,7 @@
 | POST | `/api/v1/management/backup` | ManagementController | — | ❌ NOT TESTED |
 | POST | `/api/v1/management/feature-flags` | ManagementController | — | ❌ NOT TESTED |
 | POST | `/api/v1/management/support-session` | ManagementController | — | ❌ NOT TESTED |
-| GET | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ❌ NOT TESTED |
+| GET | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | GET | `/api/v1/money/accounts/:id/statement` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | POST | `/api/v1/money/accounts` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
 | PATCH | `/api/v1/money/accounts/:id` | AccountsController | BANK_ACCOUNT_MANAGE, BANK_ACCOUNT_VIEW, CASH_ACCOUNT_MANAGE, CASH_ACCOUNT_VIEW … (+9) | ✅ TESTED |
@@ -3516,7 +3516,7 @@
 | GET | `/api/v2/parties` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
 | GET | `/api/v2/parties/:id/ledger` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v2/parties/:id/opening` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
-| GET | `/api/v2/parties/:id` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
+| GET | `/api/v2/parties/:id` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v1/parties/:id/ledger` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
