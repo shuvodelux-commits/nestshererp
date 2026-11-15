@@ -222,7 +222,7 @@ suite('MOD-006 #84: historical account opening correction versus counted cash cl
     expect(await snapshot()).toEqual(before);
   });
 
-  it('REGRESSION: adding a first historical opening after this account has a counted day is denied', async () => {
+  it('CONTROL: unrelated CASH account may add its opening after another drawer is counted', async () => {
     // Start without a posted opening; physical count is still a real CLOSE.
     const removeOpening = await signed(api().post('/api/v1/money/accounts')).send({
       ...accountInput('CASH', 0, false), name: 'Second till without history',
