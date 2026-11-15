@@ -132,7 +132,9 @@ async function financialSnapshot() {
       '(SELECT count(*)::int FROM supplier_payments) AS "supplierPayments", ' +
       '(SELECT count(*)::int FROM audit_events) AS audits, ' +
       '(SELECT count(*)::int FROM outbox) AS outbox');
-    return result.rows[0];
+    const snapshot = result.rows[0];
+    if (snapshot === undefined) throw new Error('Financial snapshot returned no row');
+    return snapshot;
   });
 }
 
