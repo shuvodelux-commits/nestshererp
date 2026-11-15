@@ -278,18 +278,18 @@ beforeEach(async () => {
 
   it.each([
     ['standalone canonical unpaid paymentLegs array', () => ({
-      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      supplierPartyId: supplierId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
       discountMinor: 0, paymentLegs: [],
     })],
     ['standalone canonical CASH+BANK split payments', () => ({
-      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      supplierPartyId: supplierId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
       discountMinor: 0, paymentLegs: [
         { accountCode: 'CASH:' + MISSING_ID, amountMinor: 2_000 },
         { accountCode: 'BANK:01ARZ3NDEKTSV4RRFFQ69G5FAY', amountMinor: 1_000 },
       ],
     })],
     ['canonical MFS-only paymentLegs', () => ({
-      supplierPartyId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
+      supplierPartyId: supplierId, lines: [{ productId, qty: 1_000, unitPriceMinor: 10_000 }],
       discountMinor: 0, paymentLegs: [
         { accountCode: 'MFS:' + MISSING_ID, amountMinor: 1_000 },
       ],
