@@ -292,9 +292,9 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
       movement('TRANSFER', bank, mfs, 5_000, operationId),
       movement('TRANSFER', bank, mfs, 5_000, operationId),
     ]);
-    expect(first.status, JSON.stringify(first.body)).toBe(201);
-    expect(second.status, JSON.stringify(second.body)).toBe(201);
-    expect(second.body.data.id).toBe(first.body.data.id);
+    // Even when the second response is wrong, prove the database never
+    // retained a second movement/journal/audit. This distinguishes a
+    // response-level race from duplicate financial posting.
     const after = await state();
     expect(after.movementCount).toBe(original.movementCount + 1);
     expect(after.journalCount).toBe(original.journalCount + 1);
@@ -302,6 +302,18 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     expect(after.totals[bank]).toBe(195_000);
     expect(after.totals[mfs]).toBe(25_000);
     expect(after.sessionCount).toBe(0);
+    const successful = first.status === 201 ? first : second;
+    expect(successful.status, JSON.stringify(successful.body)).toBe(201);
+    // An eventual retry of the same approved operation must return the
+    // original source, without posting again.
+    const replay = await movement('TRANSFER', bank, mfs, 5_000, operationId);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data.id).toBe(successful.body.data.id);
+    expect(await state()).toEqual(after);
+    // Both original concurrent responses should also have been successful.
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body.data.id).toBe(first.body.data.id);
   });
 
   it('another tenant cannot debit this shop BANK or credit its MFS', async () => {
