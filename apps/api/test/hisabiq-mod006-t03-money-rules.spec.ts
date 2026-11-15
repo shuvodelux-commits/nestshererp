@@ -284,4 +284,63 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(400);
     expect(await state()).toEqual(before);
   });
+  it('concurrent same-key BANK to MFS retries create exactly one source-linked posting', async () => {
+    const original = await state();
+    const operationId = op();
+    // Real parallel HTTP requests: the replay must not race past source/idempotency locks.
+    const [first, second] = await Promise.all([
+      movement('TRANSFER', bank, mfs, 5_000, operationId),
+      movement('TRANSFER', bank, mfs, 5_000, operationId),
+    ]);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body.data.id).toBe(first.body.data.id);
+    const after = await state();
+    expect(after.movementCount).toBe(original.movementCount + 1);
+    expect(after.journalCount).toBe(original.journalCount + 1);
+    expect(after.auditCount).toBe(original.auditCount + 1);
+    expect(after.totals[bank]).toBe(195_000);
+    expect(after.totals[mfs]).toBe(25_000);
+    expect(after.sessionCount).toBe(0);
+  });
+
+  it('another tenant cannot debit this shop BANK or credit its MFS', async () => {
+    const other = await seedTenant(pool, {
+      name: 'Cross-tenant transfer probe synthetic shop',
+      permissions: [Permission.CASH_MOVEMENT_RECORD],
+    });
+    const tokenB = signToken(other, TEST_JWT_SECRET);
+    const before = await state();
+    const attempted = await api().post('/api/v1/money/movements')
+      .set('Authorization', 'Bearer ' + tokenB).send({
+        kind: 'TRANSFER', fromAccountCode: bank, toAccountCode: mfs,
+        amountMinor: 9_000, businessDate: day, reference: null,
+        note: 'Cross-tenant accounting isolation probe', operationId: op(),
+      });
+    expect(attempted.status).toBeGreaterThanOrEqual(400);
+    expect(attempted.status).toBeLessThan(500);
+    expect(JSON.stringify(attempted.body)).not.toContain(tenant.tenantId);
+    expect(await state()).toEqual(before);
+    const otherRows = await asTenant(pool, other.tenantId, db =>
+      db.query<{ movements: number; journals: number }>(
+        'SELECT (SELECT count(*)::int FROM cash_movements) AS movements, ' +
+        '(SELECT count(*)::int FROM journal_entries) AS journals',
+      ));
+    expect(otherRows.rows[0]).toEqual({ movements: 0, journals: 0 });
+    await assertGoldenInvariants(pool, other.tenantId);
+  });
+
+  it('reverse MFS to BANK transfer is session-independent and never revenue', async () => {
+    const before = await state();
+    const paid = await movement('TRANSFER', mfs, bank, 5_000);
+    expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+    const after = await state();
+    expect(after.totals[mfs]).toBe(15_000);
+    expect(after.totals[bank]).toBe(205_000);
+    expect(after.totals.SALES ?? 0).toBe(before.totals.SALES ?? 0);
+    expect(after.sessionCount).toBe(0);
+    expect(after.journalCount).toBe(before.journalCount + 1);
+    expect(after.movementCount).toBe(before.movementCount + 1);
+  });
+
 });
