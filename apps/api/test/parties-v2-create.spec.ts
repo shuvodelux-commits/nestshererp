@@ -41,7 +41,7 @@ const data = () => ({
 });
 const newId = () => Ulid.generate(clock);
 const auth = (jwt = token) => ({ Authorization: 'Bearer ' + jwt });
-const post = (body: unknown = data(), op = newId(), jwt = token) =>
+const post = (body: object = data(), op = newId(), jwt = token) =>
   request(app.getHttpServer()).post('/api/v2/parties')
     .set(auth(jwt)).set('Idempotency-Key', op).send(body);
 async function restrict(codes: readonly string[]): Promise<void> {
@@ -187,6 +187,23 @@ describe('MOD-004 SEC-N02B V2 Party creation isolation', () => {
     const denied = await post(data(), op).expect(403);
     expect(denied.body.error.code).toBe('PERMISSION_DENIED');
     expect(await counts()).toEqual(after);
+  });
+
+  it('does not create twice when two signed requests concurrently replay one operation', async () => {
+    await restrict([Permission.CUSTOMER_CREATE]);
+    const before = await counts();
+    const op = newId();
+    const [first, second] = await Promise.all([post(data(), op), post(data(), op)]);
+    expect([first.status, second.status]).toEqual([201, 201]);
+    expect(first.body).toEqual(second.body);
+    const after = await counts();
+    expect(after).toEqual({
+      parties: before.parties + 1,
+      audit: before.audit + 1,
+      outbox: before.outbox + 1,
+      idempotency: before.idempotency + 1,
+      journal: before.journal,
+    });
   });
 
   it('never treats a V2 operation ID as a V1 raw PartyResponse replay', async () => {
