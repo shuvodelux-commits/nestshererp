@@ -158,6 +158,8 @@ export interface GetPartyOpeningCommand {
   readonly ctx: TenantContext;
   readonly partyId: string;
   readonly role: PartyRole;
+  /** Opt-in V2-only feature policy; omitted preserves legacy V1 behavior. */
+  readonly readMode?: 'SCOPED_V2' | undefined;
 }
 
 const ENTITY_TYPE = 'party';
@@ -777,6 +779,11 @@ export class ManagePartiesService {
       // Require the selected relationship before identity lookup; a caller
       // without Supplier VIEW must not distinguish missing from hidden Parties.
       await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[command.role].view);
+      // Match V2 list/detail/ledger: a disabled Vendor is not enumerable by
+      // opening source existence. Do not alter the still-used V1 read path.
+      if (command.readMode === 'SCOPED_V2' && command.role === 'VENDOR') {
+        await this.assertVendorsOn(tx, ctx);
+      }
       const party = await this.requireParty(tx, ctx, command.partyId);
       await this.requireOpeningRole(tx, ctx, party.roles, command.role, 'view');
       return this.parties.findOpening(tx, ctx, command.partyId, command.role);
