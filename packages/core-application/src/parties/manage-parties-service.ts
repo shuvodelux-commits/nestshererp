@@ -15,7 +15,7 @@ import type {
   PartyRole,
   PartyStatus,
 } from '@sher/core-domain';
-import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey, partyV2CreateRequestSchema, partyV2MutationReceiptSchema } from '@sher/core-contracts';
+import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey, partyV2CreateRequestSchema, partyV2MutationReceiptSchema, partyV2NamePhoneEditRequestSchema } from '@sher/core-contracts';
 import type {
   PartyListResponse,
   PartyOpeningResponse,
@@ -23,6 +23,7 @@ import type {
   PartyReadV2,
   PartyReadV2ListResponse,
   PartyV2CreateRequest,
+  PartyV2NamePhoneEditRequest,
   PartyV2MutationReceipt,
   PartySort,
   SortDirection,
@@ -133,6 +134,13 @@ export interface CreatePartyV2Command {
   readonly ctx: TenantContext;
   readonly operationId: string;
   readonly input: PartyV2CreateRequest;
+}
+
+/** Only shared name/phone, one explicitly selected trading relationship. */
+export interface UpdatePartyNamePhoneV2Command {
+  readonly ctx: TenantContext;
+  readonly partyId: string;
+  readonly input: PartyV2NamePhoneEditRequest;
 }
 
 export interface UpdatePartyCommand {
@@ -648,6 +656,105 @@ export class ManagePartiesService {
         businessDate,
       },
       source,
+    });
+  }
+
+  /**
+   * V2 WRITE-ONLY directory correction: authorize the explicitly selected
+   * relationship before ID lookup, then reuse the tenant-scoped Party
+   * repository's optimistic CAS and the V1 audit/outbox invariants.
+   *
+   * A receipt is constructed inside the same transaction. Do not return the
+   * raw PartyResponse (it includes private and Party-global history data),
+   * and do not do a GET after commit for an actor with EDIT but no VIEW.
+   */
+  async updateNamePhoneV2(command: UpdatePartyNamePhoneV2Command): Promise<PartyV2MutationReceipt> {
+    const parsed = partyV2NamePhoneEditRequestSchema.safeParse(command.input);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid V2 Party edit request');
+    }
+    const { ctx, partyId } = command;
+    const { selectedRole, version, name, phone } = parsed.data;
+
+    return this.uow.run(ctx, async (tx) => {
+      // Permission first; unauthorized staff cannot probe even a known Party ID.
+      await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[selectedRole].edit);
+      if (selectedRole === 'VENDOR') await this.assertVendorsOn(tx, ctx);
+
+      const before = await this.parties.findById(tx, ctx, partyId);
+      // A Party lacking this relationship and a nonexistent/foreign Party are
+      // intentionally indistinguishable to a holder of selectedRole EDIT.
+      if (before === null || !before.roles.includes(selectedRole)) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Record not found');
+      }
+      this.assertNotSystemReserved(before, 'change');
+      if (before.version !== version) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this record while you were editing it. Reopen it and try again.',
+        );
+      }
+
+      // Snapshot all non-directory state; the client has no fields through
+      // which it can clear hidden profile data, change roles/credit or post
+      // opening journals. Existing domain validation remains authoritative.
+      const unchanged: PartyInput = {
+        name,
+        phone,
+        roles: before.roles,
+        address: before.address,
+        guardianName: before.guardianName,
+        nid: before.nid,
+        email: before.email,
+        notes: before.notes,
+        customerGroupId: before.customerGroupId,
+        creditLimitMinor: before.creditLimitMinor,
+      };
+      let clean: PartyEdit;
+      try {
+        clean = await this.validate(tx, ctx, unchanged, before);
+      } catch (error) {
+        // The legacy V1 duplicate-phone error includes the *other* Party ID
+        // for its trusted merge screen. This write-only V2 route must not
+        // expose that unrelated customer's identifier through error.details.
+        if (error instanceof AppError &&
+            error.code === ErrorCode.VALIDATION_FAILED &&
+            error.details?.['reason'] === 'DUPLICATE_CUSTOMER_PHONE') {
+          throw new AppError(ErrorCode.VALIDATION_FAILED, 'Another customer already uses that phone');
+        }
+        throw error;
+      }
+
+      // Optimistic compare-and-swap is the race guard; a repeated PATCH with
+      // the old version is 409, never an implicit retry or duplicate audit.
+      const saved = await this.parties.update(tx, ctx, partyId, version, clean);
+      if (!saved) {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this record while you were editing it. Reopen it and try again.',
+        );
+      }
+      await this.audit.append(tx, ctx, {
+        entityType: ENTITY_TYPE,
+        entityId: partyId,
+        action: 'UPDATE',
+        before: auditValues(before),
+        after: auditValues(clean),
+        source: 'API_V2',
+      });
+      await this.outbox.append(tx, ctx, {
+        eventType: 'party.updated',
+        aggregateType: ENTITY_TYPE,
+        aggregateId: partyId,
+        payload: { name: clean.name, roles: clean.roles.join(',') },
+      });
+      const after = await this.requireParty(tx, ctx, partyId);
+      return partyV2MutationReceiptSchema.parse({
+        id: after.id,
+        version: after.version,
+        selectedRole,
+        status: after.status,
+      });
     });
   }
 
