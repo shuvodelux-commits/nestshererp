@@ -8,6 +8,7 @@
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { IdempotencyRecord, IdempotencyStore } from '@sher/core-application';
 import { Permission } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
@@ -16,6 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { IDEMPOTENCY_STORE } from '../src/infrastructure/tokens';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import {
@@ -284,14 +286,39 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(400);
     expect(await state()).toEqual(before);
   });
-  it('concurrent same-key BANK to MFS retries create exactly one source-linked posting', async () => {
+  it('RED: deterministic concurrent same-key BANK to MFS replay preserves one posting', async () => {
     const original = await state();
     const operationId = op();
-    // Real parallel HTTP requests: the replay must not race past source/idempotency locks.
-    const [first, second] = await Promise.all([
-      movement('TRANSFER', bank, mfs, 5_000, operationId),
-      movement('TRANSFER', bank, mfs, 5_000, operationId),
-    ]);
+    // Test-only concurrency barrier, never part of the production writer.
+    // Both signed requests must complete their real SQL idempotency lookup
+    // BEFORE either can lock the money tenant row and save a journal.
+    // This makes the find-before-lock race reproducible instead of flaky.
+    const store = app.get<IdempotencyStore>(IDEMPOTENCY_STORE);
+    const originalFind = store.find;
+    const waiting: Array<{
+      found: IdempotencyRecord | null;
+      release: (found: IdempotencyRecord | null) => void;
+    }> = [];
+    store.find = async (tx, ctx, key) => {
+      const found = await originalFind.call(store, tx, ctx, key);
+      if (key !== operationId) return found;
+      return new Promise<IdempotencyRecord | null>((resolve) => {
+        waiting.push({ found, release: resolve });
+        if (waiting.length === 2) {
+          for (const item of waiting) item.release(item.found);
+        }
+      });
+    };
+    let responses: [request.Response, request.Response];
+    try {
+      responses = await Promise.all([
+        movement('TRANSFER', bank, mfs, 5_000, operationId),
+        movement('TRANSFER', bank, mfs, 5_000, operationId),
+      ]);
+    } finally {
+      store.find = originalFind;
+    }
+    const [first, second] = responses;
     // Even when the second response is wrong, prove the database never
     // retained a second movement/journal/audit. This distinguishes a
     // response-level race from duplicate financial posting.
