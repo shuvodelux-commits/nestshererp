@@ -3,8 +3,6 @@
  * Real independent Nest processes; non-owner disposable PG16 tenant RLS.
  * Test-only, stacked on the guarded purchase-reversal source PR #271.
  * @covers endpoint:POST /api/v1/purchases
- * @covers workflow:purchase-correction
- * @covers workflow:inventory-adjustment
  */
 import 'reflect-metadata';
 
