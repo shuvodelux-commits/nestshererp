@@ -8,6 +8,7 @@
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { IdempotencyRecord, IdempotencyStore } from '@sher/core-application';
 import { Permission } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
@@ -16,6 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { AppModule } from '../src/app.module';
 import { AppErrorFilter } from '../src/common/app-error.filter';
+import { IDEMPOTENCY_STORE } from '../src/infrastructure/tokens';
 import { signToken, TEST_JWT_SECRET } from './support/auth';
 import type { SeededTenant } from './support/database';
 import {
@@ -284,4 +286,110 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
     expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(400);
     expect(await state()).toEqual(before);
   });
+  it('concurrent same-key BANK to MFS replay preserves one posting', async () => {
+    const original = await state();
+    const operationId = op();
+    // Test-only concurrency barrier, never part of the production writer.
+    // Both signed requests must complete their real SQL idempotency lookup
+    // BEFORE either can lock the money tenant row and save a journal.
+    // This makes the find-before-lock race reproducible instead of flaky.
+    const store = app.get<IdempotencyStore>(IDEMPOTENCY_STORE);
+    const originalFind = store.find;
+    const waiting: Array<{
+      found: IdempotencyRecord | null;
+      release: (found: IdempotencyRecord | null) => void;
+    }> = [];
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    const releaseWaiting = (): void => {
+      if (releaseTimer !== null) clearTimeout(releaseTimer);
+      releaseTimer = null;
+      for (const item of waiting.splice(0)) item.release(item.found);
+    };
+    store.find = async (tx, ctx, key) => {
+      const found = await originalFind.call(store, tx, ctx, key);
+      if (key !== operationId) return found;
+      return new Promise<IdempotencyRecord | null>((resolve) => {
+        waiting.push({ found, release: resolve });
+        if (waiting.length === 2) releaseWaiting();
+        else if (waiting.length === 1) {
+          // After the approved fix, the second request may correctly wait on
+          // the tenant lock BEFORE lookup. Bound the barrier to avoid a deadlock.
+          releaseTimer = setTimeout(releaseWaiting, 3_000);
+        }
+      });
+    };
+    let responses: [request.Response, request.Response];
+    try {
+      responses = await Promise.all([
+        movement('TRANSFER', bank, mfs, 5_000, operationId),
+        movement('TRANSFER', bank, mfs, 5_000, operationId),
+      ]);
+    } finally {
+      releaseWaiting();
+      store.find = originalFind;
+    }
+    const [first, second] = responses;
+    // Even when the second response is wrong, prove the database never
+    // retained a second movement/journal/audit. This distinguishes a
+    // response-level race from duplicate financial posting.
+    const after = await state();
+    expect(after.movementCount).toBe(original.movementCount + 1);
+    expect(after.journalCount).toBe(original.journalCount + 1);
+    expect(after.auditCount).toBe(original.auditCount + 1);
+    expect(after.totals[bank]).toBe(195_000);
+    expect(after.totals[mfs]).toBe(25_000);
+    expect(after.sessionCount).toBe(0);
+    const successful = first.status === 201 ? first : second;
+    expect(successful.status, JSON.stringify(successful.body)).toBe(201);
+    // An eventual retry of the same approved operation must return the
+    // original source, without posting again.
+    const replay = await movement('TRANSFER', bank, mfs, 5_000, operationId);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(201);
+    expect(replay.body.data.id).toBe(successful.body.data.id);
+    expect(await state()).toEqual(after);
+    // Both original concurrent responses should also have been successful.
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body.data.id).toBe(first.body.data.id);
+  });
+
+  it('another tenant cannot debit this shop BANK or credit its MFS', async () => {
+    const other = await seedTenant(pool, {
+      name: 'Cross-tenant transfer probe synthetic shop',
+      permissions: [Permission.CASH_MOVEMENT_RECORD],
+    });
+    const tokenB = signToken(other, TEST_JWT_SECRET);
+    const before = await state();
+    const attempted = await api().post('/api/v1/money/movements')
+      .set('Authorization', 'Bearer ' + tokenB).send({
+        kind: 'TRANSFER', fromAccountCode: bank, toAccountCode: mfs,
+        amountMinor: 9_000, businessDate: day, reference: null,
+        note: 'Cross-tenant accounting isolation probe', operationId: op(),
+      });
+    expect(attempted.status).toBeGreaterThanOrEqual(400);
+    expect(attempted.status).toBeLessThan(500);
+    expect(JSON.stringify(attempted.body)).not.toContain(tenant.tenantId);
+    expect(await state()).toEqual(before);
+    const otherRows = await asTenant(pool, other.tenantId, db =>
+      db.query<{ movements: number; journals: number }>(
+        'SELECT (SELECT count(*)::int FROM cash_movements) AS movements, ' +
+        '(SELECT count(*)::int FROM journal_entries) AS journals',
+      ));
+    expect(otherRows.rows[0]).toEqual({ movements: 0, journals: 0 });
+    await assertGoldenInvariants(pool, other.tenantId);
+  });
+
+  it('reverse MFS to BANK transfer is session-independent and never revenue', async () => {
+    const before = await state();
+    const paid = await movement('TRANSFER', mfs, bank, 5_000);
+    expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+    const after = await state();
+    expect(after.totals[mfs]).toBe(15_000);
+    expect(after.totals[bank]).toBe(205_000);
+    expect(after.totals.SALES ?? 0).toBe(before.totals.SALES ?? 0);
+    expect(after.sessionCount).toBe(0);
+    expect(after.journalCount).toBe(before.journalCount + 1);
+    expect(after.movementCount).toBe(before.movementCount + 1);
+  });
+
 });
