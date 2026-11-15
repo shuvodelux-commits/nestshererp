@@ -20,15 +20,21 @@ let uow: PostgresUnitOfWork;
 const reader = new PostgresCatalogLifecycleV1RosterReader();
 
 function testDb(): void {
-  const raw = process.env['TEST_DATABASE_URL'];
-  const admin = process.env['ADMIN_DATABASE_URL'];
-  if (!raw || !admin) throw new Error('Explicit disposable PostgreSQL16 URLs required');
-  for (const value of [raw, admin]) {
-    const url = new URL(value);
+  const raw = process.env['DATABASE_URL'];
+  if (!raw) throw new Error('P8b2b1 requires PostgreSQL test URL');
+  const adminRaw = process.env['ADMIN_DATABASE_URL'] ??
+    'postgres://postgres:dev@localhost:5432/sher_test';
+  const runtime = new URL(raw);
+  const admin = new URL(adminRaw);
+  for (const url of [runtime, admin]) {
     if (!['localhost', '127.0.0.1'].includes(url.hostname) ||
-        url.pathname !== '/sher_test' || url.port !== '55949') {
-      throw new Error('P8b2b1 refuses non-isolated database URLs');
+        url.pathname !== '/sher_test') {
+      throw new Error('P8b2b1 refuses non-local or non-test databases');
     }
+  }
+  if (runtime.username !== 'sher_app' || admin.username !== 'postgres' ||
+      (runtime.port || '5432') !== (admin.port || '5432')) {
+    throw new Error('P8b2b1 requires matching isolated test roles and ports');
   }
 }
 
