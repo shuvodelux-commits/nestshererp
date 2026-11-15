@@ -299,13 +299,22 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
       found: IdempotencyRecord | null;
       release: (found: IdempotencyRecord | null) => void;
     }> = [];
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    const releaseWaiting = (): void => {
+      if (releaseTimer !== null) clearTimeout(releaseTimer);
+      releaseTimer = null;
+      for (const item of waiting.splice(0)) item.release(item.found);
+    };
     store.find = async (tx, ctx, key) => {
       const found = await originalFind.call(store, tx, ctx, key);
       if (key !== operationId) return found;
       return new Promise<IdempotencyRecord | null>((resolve) => {
         waiting.push({ found, release: resolve });
-        if (waiting.length === 2) {
-          for (const item of waiting) item.release(item.found);
+        if (waiting.length === 2) releaseWaiting();
+        else if (waiting.length === 1) {
+          // After the approved fix, the second request may correctly wait on
+          // the tenant lock BEFORE lookup. Bound the barrier to avoid a deadlock.
+          releaseTimer = setTimeout(releaseWaiting, 3_000);
         }
       });
     };
@@ -316,6 +325,7 @@ suite('MOD-006 T03: trading money, owner funds and lender liabilities', () => {
         movement('TRANSFER', bank, mfs, 5_000, operationId),
       ]);
     } finally {
+      releaseWaiting();
       store.find = originalFind;
     }
     const [first, second] = responses;
