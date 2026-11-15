@@ -17,6 +17,49 @@ const BUSINESS_DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 /** `CASH:01J…` or `BANK:01J…` — validated properly in the use case (§2.4). */
 const ACCOUNT_CODE = z.string().min(3).max(40);
 
+/**
+ * D06B #224 nonposting transport-array primitive for initial purchase payments.
+ *
+ * This intentionally does NOT modify createPurchaseRequestSchema. The approved
+ * MOD-008 planner and later D06 issue use different proposed wire field names,
+ * so a final public request branch must be coordinated with the Class-T writer.
+ * An account code that passes syntax is NOT tenant/role/cash-session authorized:
+ * every leg must be resolved, locked and checked by the writer before posting.
+ * MFS:<account-id> remains an accepted legacy input alias. The real
+ * resolver validates tenant ownership and canonicalizes it to BANK:<id>; this
+ * parser intentionally preserves the submitted alias rather than fabricating
+ * a verified account or a journal identity.
+ */
+export const purchaseInitialPaymentLegSchema = z
+  .object({
+    accountCode: ACCOUNT_CODE.regex(/^(?:CASH|BANK|MFS):[A-Za-z0-9_-]{1,35}$/),
+    amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
+export const purchaseInitialPaymentLegsSchema = z
+  .array(purchaseInitialPaymentLegSchema)
+  .max(10)
+  .superRefine((legs, ctx) => {
+    // Each amount may be safe while the sum is unsafe. Refuse that before
+    // constructing an intent fingerprint, ledger or money account lock set.
+    let sum = 0;
+    for (const leg of legs) {
+      if (!Number.isSafeInteger(sum + leg.amountMinor)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Combined payment legs exceed safe integer poisha',
+        });
+        return;
+      }
+      sum += leg.amountMinor;
+    }
+  });
+
+export type PurchaseInitialPaymentLeg = z.infer<typeof purchaseInitialPaymentLegSchema>;
+export type PurchaseInitialPaymentLegs = z.infer<typeof purchaseInitialPaymentLegsSchema>;
+
+
 export const purchaseLineRequestSchema = z
   .object({
     productId: ULID,

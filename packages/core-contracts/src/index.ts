@@ -393,6 +393,8 @@ export type {
 } from './money';
 export {
   createPurchaseRequestSchema,
+  purchaseInitialPaymentLegSchema,
+  purchaseInitialPaymentLegsSchema,
   correctSupplierPaymentRequestSchema,
   paySupplierRequestSchema,
   purchaseLineRequestSchema,
@@ -407,6 +409,8 @@ export {
 } from './purchasing';
 export type {
   CreatePurchaseRequest,
+  PurchaseInitialPaymentLeg,
+  PurchaseInitialPaymentLegs,
   CorrectSupplierPaymentRequest,
   PaySupplierRequest,
   PurchaseLineRequest,

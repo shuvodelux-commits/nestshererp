@@ -86,8 +86,9 @@ import {
         uow: UnitOfWork,
         accessControl: AccessControl,
         parties: PartyRepository,
-      ): PartyLedgerService => new PartyLedgerService(uow, accessControl, parties),
-      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PARTY_REPOSITORY],
+        settings: SettingsRepository,
+      ): PartyLedgerService => new PartyLedgerService(uow, accessControl, parties, settings),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, PARTY_REPOSITORY, SETTINGS_REPOSITORY],
     },
     {
       provide: MANAGE_PARTY_GROUPS_SERVICE,

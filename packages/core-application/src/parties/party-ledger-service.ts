@@ -1,11 +1,13 @@
 import { buildPartyLedger, partyBalanceOf } from '@sher/core-domain';
 import type { PartyRole } from '@sher/core-domain';
-import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
+import { AppError, ErrorCode, Permission, SettingKey } from '@sher/core-contracts';
 import type { PartyLedgerResponse } from '@sher/core-contracts';
 
 import type { AccessControl } from '../ports/access-control';
 import type { TenantContext } from '../ports/tenant-context';
 import type { UnitOfWork } from '../ports/unit-of-work';
+import { isFeatureOn, settingValuesOf } from '../settings/feature-dependencies';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { PartyLedgerFilter, PartyRepository } from './party-repository';
 
 /**
@@ -24,6 +26,8 @@ export interface PartyLedgerCommand {
   readonly ctx: TenantContext;
   readonly partyId: string;
   readonly role?: PartyRole | undefined;
+  /** Additive privacy-safe V2 mode; omitted means legacy V1 behavior. */
+  readonly readMode?: 'SCOPED_V2' | undefined;
   readonly fromDate?: string | undefined;
   readonly toDate?: string | undefined;
   readonly cursor?: string | undefined;
@@ -49,15 +53,34 @@ export class PartyLedgerService {
     private readonly uow: UnitOfWork,
     private readonly accessControl: AccessControl,
     private readonly parties: PartyRepository,
+    private readonly settings: SettingsRepository,
   ) {}
 
   async ledger(command: PartyLedgerCommand): Promise<PartyLedgerResponse> {
     const { ctx } = command;
+    const scoped = command.readMode === 'SCOPED_V2';
+    if (scoped && command.role === undefined) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Choose a relationship to view this ledger');
+    }
 
     return this.uow.run(ctx, async (tx) => {
+      // An explicitly requested relationship must be authorized before
+      // identity lookup, or 403 versus 404 reveals a hidden Party's existence.
+      // Keep the optional legacy role behavior for old single-role callers.
+      if (command.role !== undefined) {
+        await this.accessControl.require(tx, ctx, VIEW_PERMISSIONS[command.role]);
+      }
+      // The versioned endpoint observes the same Vendor toggle as V2 list
+      // and detail. Check permission then feature before any Party identity read.
+      if (scoped && command.role === 'VENDOR') {
+        const values = settingValuesOf(await this.settings.listStored(tx, ctx));
+        if (!isFeatureOn(values, SettingKey.VENDOR_MANAGEMENT_ENABLED)) {
+          throw new AppError(ErrorCode.FEATURE_DISABLED, 'Vendors are switched off in Settings');
+        }
+      }
       const party = await this.parties.findById(tx, ctx, command.partyId);
-      if (party === null) {
-        throw new AppError(ErrorCode.NOT_FOUND, 'That party no longer exists');
+      if (party === null || (scoped && command.role !== undefined && !party.roles.includes(command.role))) {
+        throw new AppError(ErrorCode.NOT_FOUND, scoped ? 'Record not found' : 'That party no longer exists');
       }
 
       // Identity is shared, but Customer, Supplier and Vendor are different

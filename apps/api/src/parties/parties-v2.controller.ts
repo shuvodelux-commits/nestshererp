@@ -6,18 +6,20 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { ManagePartiesService, TenantContext } from '@sher/core-application';
-import type { PartyReadV2, PartyReadV2ListResponse } from '@sher/core-contracts';
+import type { ManagePartiesService, PartyLedgerService, TenantContext } from '@sher/core-application';
+import type { PartyLedgerResponse, PartyReadV2, PartyReadV2ListResponse } from '@sher/core-contracts';
 import {
   AppError,
   ErrorCode,
+  partyLedgerQuerySchema,
+  partyLedgerResponseSchema,
   partyQuerySchema,
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
 } from '@sher/core-contracts';
 
 import { Ctx, TenantContextGuard } from '../auth/tenant-context.guard';
-import { MANAGE_PARTIES_SERVICE } from './tokens';
+import { MANAGE_PARTIES_SERVICE, PARTY_LEDGER_SERVICE } from './tokens';
 
 /**
  * MOD-004 T09C-P2: strictly versioned, read-only Party transport.
@@ -32,6 +34,7 @@ import { MANAGE_PARTIES_SERVICE } from './tokens';
 export class PartiesV2Controller {
   constructor(
     @Inject(MANAGE_PARTIES_SERVICE) private readonly parties: ManagePartiesService,
+    @Inject(PARTY_LEDGER_SERVICE) private readonly ledgers: PartyLedgerService,
   ) {}
 
   @Get()
@@ -45,6 +48,20 @@ export class PartiesV2Controller {
     // unexpected wire keys, a role mismatch or private fields while withheld.
     return partyReadV2ListResponseSchema.parse(
       await this.parties.listV2({ ctx, ...parsed.data }),
+    );
+  }
+
+  /** Role-required versioned journal statement, never a Party-global net. */
+  @Get(':id/ledger')
+  async ledger(
+    @Param('id') id: string,
+    @Query() query: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<PartyLedgerResponse> {
+    const parsed = partyLedgerQuerySchema.required({ role: true }).safeParse(query);
+    if (!parsed.success) throw invalidQuery(parsed.error.issues);
+    return partyLedgerResponseSchema.parse(
+      await this.ledgers.ledger({ ctx, partyId: id, ...parsed.data, readMode: 'SCOPED_V2' }),
     );
   }
 

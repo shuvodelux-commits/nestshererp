@@ -9,7 +9,9 @@ import type { Clock } from '@sher/shared-utils';
 
 import type { UserRepository } from '../auth/registration-repository';
 import { assertStepUp } from '../backup/step-up';
+import { assertCashDayNotClosed } from '../money/assert-cash-day-not-closed';
 import type { MoneyRepository } from '../money/money-repository';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
 import type { Outbox } from '../ports/outbox';
@@ -92,6 +94,7 @@ export class ChangeTransactionDateService {
     private readonly reversals: DocumentReversalRepository,
     private readonly redates: DocumentRedateRepository,
     private readonly money: MoneyRepository,
+    private readonly settings: SettingsRepository,
     private readonly users: UserRepository,
     private readonly hasher: PasswordHasher,
     private readonly audit: AuditWriter,
@@ -218,9 +221,17 @@ export class ChangeTransactionDateService {
        * with the repost would leave the original figure standing where it was
        * and net the new day to zero — the exact opposite of the move.
        */
+      // Redating must respect both source (reversal) and target counted days.
+      await this.settings.lockTenant(tx, ctx);
+      await assertCashDayNotClosed(
+        this.money, tx, ctx, plan.businessDate,
+        posted.journalLines.map((line) => line.account),
+      );
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,

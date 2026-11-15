@@ -248,6 +248,8 @@ export class ReceiveCustomerPaymentService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,
@@ -309,6 +311,8 @@ export class ReceiveCustomerPaymentService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,

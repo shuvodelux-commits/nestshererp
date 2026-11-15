@@ -1179,6 +1179,19 @@ export class PostgresPurchaseRepository implements PurchaseRepository {
   ): Promise<PurchaseForReversal | null> {
     const db = txOf(tx);
 
+    // Purchase returns lock the source bill before taking inventory cost-state
+    // locks. Void must acquire that same lock first, or the two writers can
+    // deadlock (purchase -> cost-state versus cost-state -> purchase).
+    // Keep the lock separate from the head query: it contains an aggregate
+    // scalar subquery for payment allocations, which must not be row-locked.
+    const locked = await db
+      .select({ id: purchases.id })
+      .from(purchases)
+      .where(and(eq(purchases.tenantId, ctx.tenantId), eq(purchases.id, id), isNull(purchases.deletedAt)))
+      .for('update')
+      .limit(1);
+    if (locked.length === 0) return null;
+
     const heads = await db
       .select({
         id: purchases.id,

@@ -21,6 +21,7 @@ import type { NumberingService } from '../ports/numbering-service';
 import type { PeriodGuard } from '../ports/period-guard';
 import type { TenantContext } from '../ports/tenant-context';
 import type { Tx, UnitOfWork } from '../ports/unit-of-work';
+import { assertCashDayNotClosed } from './assert-cash-day-not-closed';
 import type { MoneyRepository } from './money-repository';
 
 /**
@@ -319,6 +320,8 @@ export class CashMovementService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,
@@ -423,6 +426,8 @@ export class CashMovementService {
       await reverseMoneyDocument(
         {
           reversals: this.reversals,
+          money: this.money,
+          settings: this.settings,
           periods: this.periods,
           audit: this.audit,
           outbox: this.outbox,
@@ -589,19 +594,9 @@ export class CashMovementService {
    * Bank-only and unrelated non-drawer cash accounts are unaffected.
    */
   private async assertClosedCashDayImmutable(
-    tx: Tx,
-    ctx: TenantContext,
-    businessDate: string,
-    accounts: readonly string[],
+    tx: Tx, ctx: TenantContext, businessDate: string, accounts: readonly string[],
   ): Promise<void> {
-    if (!accounts.some((code) => code.startsWith('CASH:'))) return;
-    const counted = await this.money.findSessionByDate(tx, ctx, businessDate);
-    if (counted?.status !== 'CLOSED') return;
-    if (!accounts.includes(`CASH:${counted.accountId}`)) return;
-    throw new AppError(
-      ErrorCode.VALIDATION_FAILED,
-      'This cash day is already counted and closed; record a separate approved adjustment on an eligible date',
-    );
+    await assertCashDayNotClosed(this.money, tx, ctx, businessDate, accounts);
   }
 
   /**
