@@ -60,15 +60,17 @@ async function restrict(codes: readonly string[]): Promise<void> {
 interface Counts { parties: number; audit: number; outbox: number; idempotency: number; journal: number }
 async function counts(t = tenant): Promise<Counts> {
   return asTenant(pool, t.tenantId, async (client) => {
-    const count = async (table: string): Promise<number> => {
+    const count = async (table: string, filter = ''): Promise<number> => {
       const result = await client.query<{ n: number }>(
-        'SELECT count(*)::int AS n FROM ' + table + ' WHERE tenant_id=$1', [t.tenantId],
+        'SELECT count(*)::int AS n FROM ' + table + ' WHERE tenant_id=$1' + filter,
+        [t.tenantId],
       );
       return result.rows[0]!.n;
     };
     return {
       parties: await count('parties'),
-      audit: await count('audit_events'),
+      // Security-denial audit rows remain valuable; only count committed Party CREATE rows.
+      audit: await count('audit_events', " AND entity_type='party' AND action='CREATE'"),
       outbox: await count('outbox'),
       idempotency: await count('idempotency_keys'),
       journal: await count('journal_entries'),
