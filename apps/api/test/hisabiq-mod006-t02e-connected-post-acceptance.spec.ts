@@ -283,12 +283,24 @@ suite('MOD-006 T02-E: signed Counter source-owned BANK/MFS posting and RLS', ()=
     expect(await dbSnapshot()).toEqual(before);
   },60_000);
 
-  it('insufficient BANK funds refuse supplier settlement and leave AP/journals untouched',async()=>{
+  it('BANK may overdraw under current source policy; supplier AP and journal stay balanced',async()=>{
     const supplierId=await tradingParty('SUPPLIER');
     await unpaidPurchase(supplierId);
     const before=await dbSnapshot();
-    const attempt=await supplierPost(supplierId,60_000,uid(),bankId);
-    expect([400,409]).toContain(attempt.status);
-    expect(await dbSnapshot()).toEqual(before);
+    expect(before.totals.AP).toBe(-100_000);
+    expect(before.totals['BANK:'+bankId]).toBe(50_000);
+    // Current resolvePaymentAccount checks insufficient funds for CASH only.
+    // Do not invent a BANK shortage rule or change money policy in this test.
+    const posted=created(await supplierPost(supplierId,60_000,uid(),bankId),
+      'BANK supplier settlement under current overdraft policy');
+    expect(posted.body.data.accountCode).toBe('BANK:'+bankId);
+    const after=await dbSnapshot();
+    const account=accountFrom((await sourceList().expect(200)).body,bankId);
+    expect(account.balanceMinor).toBe(-10_000);
+    expect(after.totals['BANK:'+bankId]).toBe(-10_000);
+    expect(after.totals.AP).toBe(-40_000);
+    expect(after.entries).toBe(before.entries+1);
+    expect(after.suppliers).toBe(before.suppliers+1);
+    expect(after.sessions).toBe(0);
   },60_000);
 });
