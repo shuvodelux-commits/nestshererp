@@ -7,12 +7,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { ManagePartiesService, PartyLedgerService, TenantContext } from '@sher/core-application';
-import type { PartyLedgerResponse, PartyReadV2, PartyReadV2ListResponse } from '@sher/core-contracts';
+import type { PartyLedgerResponse, PartyOpeningResponse, PartyReadV2, PartyReadV2ListResponse } from '@sher/core-contracts';
 import {
   AppError,
   ErrorCode,
   partyLedgerQuerySchema,
   partyLedgerResponseSchema,
+  partyOpeningResponseSchema,
   partyQuerySchema,
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
@@ -63,6 +64,21 @@ export class PartiesV2Controller {
     return partyLedgerResponseSchema.parse(
       await this.ledgers.ledger({ ctx, partyId: id, ...parsed.data, readMode: 'SCOPED_V2' }),
     );
+  }
+
+  /** Read the historical source for exactly one selected trading relationship. */
+  @Get(':id/opening')
+  async opening(
+    @Param('id') id: string,
+    @Query() query: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<{ data: PartyOpeningResponse | null }> {
+    const parsed = partyQuerySchema.pick({ role: true }).safeParse(query);
+    if (!parsed.success) throw invalidQuery(parsed.error.issues);
+    const opening = await this.parties.getOpening({
+      ctx, partyId: id, role: parsed.data.role, readMode: 'SCOPED_V2',
+    });
+    return { data: opening === null ? null : partyOpeningResponseSchema.parse(opening) };
   }
 
   @Get(':id')
