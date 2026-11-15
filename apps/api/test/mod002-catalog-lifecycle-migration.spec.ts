@@ -4,6 +4,7 @@
  * Only run with disposable PostgreSQL test DB; never use retained data.
  */
 import type pg from 'pg';
+import { schema } from '@sher/adapter-postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import {
@@ -148,5 +149,13 @@ describe('MOD-002 P8b2a additive catalog lifecycle persistence (PG16 FORCE RLS)'
       '(SELECT count(*)::integer FROM stock_movements) stock, ' +
       '(SELECT count(*)::integer FROM outbox) outbox'));
     expect(rows.rows[0]).toEqual({ journals: 0, stock: 0, outbox: 0 });
+  });
+  it('mirrors is_active in all three Drizzle catalog master tables', () => {
+    for (const kind of kinds) {
+      const column = Object.entries(schema[kind]).find(([key]) => key === 'isActive')?.[1];
+      expect(column, `${kind}.isActive`).toMatchObject({
+        name: 'is_active', notNull: true, hasDefault: true,
+      });
+    }
   });
 });
