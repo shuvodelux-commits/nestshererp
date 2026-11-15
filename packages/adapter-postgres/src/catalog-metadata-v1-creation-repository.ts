@@ -10,6 +10,7 @@ import type {
 } from '@sher/core-contracts';
 import type { Clock } from '@sher/shared-utils';
 
+import { lockEligibleCategoryParent } from './catalog-lifecycle-v1-parent-guard';
 import { rethrowCatalogNameConflict } from './catalog-name-conflict';
 import { brands, categories, units } from './schema';
 import { txOf } from './unit-of-work';
@@ -70,6 +71,7 @@ export class PostgresCatalogMetadataV1CreationRepository
 
   async insertCategory(tx: Tx, ctx: TenantContext, row: CatalogMetadataV1Category): Promise<void> {
     try {
+      await lockEligibleCategoryParent(tx, ctx, row.parentId);
       await txOf(tx).insert(categories).values({
         ...this.stamp(ctx),
         id: row.id,
