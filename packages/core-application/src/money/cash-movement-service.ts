@@ -146,6 +146,11 @@ export class CashMovementService {
     return this.uow.run(ctx, async (tx) => {
       await this.accessControl.require(tx, ctx, PERMISSION_FOR_KIND[command.kind]);
 
+      // Serialize idempotency lookup with writes using the EXISTING tenant money
+      // lock. A concurrent identical operation must see the first committed
+      // response instead of both requests missing then racing at the unique key.
+      // Keep permission checks first and the lock in this same atomic UoW.
+      await this.settings.lockTenant(tx, ctx);
       const replayed = await this.idempotency.find(tx, ctx, command.operationId);
       if (replayed !== null) {
         if (replayed.requestFingerprint !== fingerprint) {
@@ -163,10 +168,9 @@ export class CashMovementService {
       }
       await this.periods.assertOpen(tx, ctx, command.businessDate);
 
-      // Account isDrawer/type are editable master data. The account writer
-      // acquires this exact tenant lock before editing; acquire it BEFORE
-      // reading either side or a drawer reassignment could race this posting.
-      await this.settings.lockTenant(tx, ctx);
+      // The tenant money lock was taken before the idempotency read above.
+      // Keep it through account lookup, journal, audit and idempotency save so
+      // drawer reassignment, counted closes and concurrent retries serialize.
       const from = await this.resolveSide(tx, ctx, command.fromAccountCode, command.kind);
       const to = await this.resolveSide(tx, ctx, command.toAccountCode, command.kind);
 

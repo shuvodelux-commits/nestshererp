@@ -59,6 +59,15 @@ export async function resolvePurchaseInitialPaymentAccounts(
     if (resolved.code.slice(resolved.code.indexOf(':') + 1) !== group.accountId) {
       throw new Error('Resolved money-account identity changed during purchase validation');
     }
+    // A matching physical ID alone is insufficient: an adapter must not
+    // silently reclassify CASH as BANK (or return AP/LOAN as a money source).
+    // Only the established MFS input alias may canonicalize to BANK.
+    const submittedFamily = group.accountCode.slice(0, group.accountCode.indexOf(':'));
+    const expectedFamily = submittedFamily === 'MFS' ? 'BANK' : submittedFamily;
+    const resolvedFamily = resolved.code.slice(0, resolved.code.indexOf(':'));
+    if (resolvedFamily !== expectedFamily) {
+      throw new Error('Resolved money-account family changed during purchase validation');
+    }
     byPhysicalAccount.set(group.accountId, resolved);
   }
 
