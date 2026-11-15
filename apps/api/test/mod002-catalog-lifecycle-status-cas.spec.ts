@@ -41,12 +41,12 @@ async function insert(kind: Kind, tenant: SeededTenant, state: 'ACTIVE' | 'INACT
   const archived = state === 'ARCHIVED' ? clock.now() : null;
   const columns = 'id,tenant_id,name,name_bn,' + (kind === 'units' ? 'symbol,' : '') +
     'is_active,deleted_at,created_at,updated_at,created_by,updated_by,version';
-  const placeholders = kind === 'units' ? '$1,$2,$3,$4,$10,$5,$6,$7,$7,$8,$8,1' :
+  const placeholders = kind === 'units' ? '$1,$2,$3,$4,$9,$5,$6,$7,$7,$8,$8,1' :
     '$1,$2,$3,$4,$5,$6,$7,$7,$8,$8,1';
   await asTenant(pool, tenant.tenantId, client => client.query(
     'INSERT INTO ' + kind + ' (' + columns + ') VALUES (' + placeholders + ')',
     kind === 'units'
-      ? [id, tenant.tenantId, name, 'বাংলা', state !== 'INACTIVE', archived, clock.now(), tenant.userId, null, 'pc']
+      ? [id, tenant.tenantId, name, 'বাংলা', state !== 'INACTIVE', archived, clock.now(), tenant.userId, 'pc']
       : [id, tenant.tenantId, name, 'বাংলা', state !== 'INACTIVE', archived, clock.now(), tenant.userId],
   ).then(() => undefined));
   return id;
