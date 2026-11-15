@@ -105,24 +105,34 @@ export class VoidPurchaseService {
           locationId: string;
         }
       >();
+      // All transactional stock writers must lock cost-state rows BEFORE lots.
+      // Acquire these per-product locks in stable product-ID order instead of
+      // the bill's presentation line order (avoids multi-product AB/BA).
+      for (const line of [...original.lines].sort((a, b) => a.productId.localeCompare(b.productId))) {
+        if (positions.has(line.productId)) continue;
+        const stored = await this.inventory.findStockPosition(tx, ctx, line.productId);
+        positions.set(line.productId, {
+          qtyOnHand: stored?.qtyOnHand ?? 0,
+          avgUnitCost: stored?.avgUnitCost ?? 0,
+          costStateId: stored?.costStateId ?? Ulid.generate(this.clock),
+          exists: stored?.costStateId !== null && stored?.costStateId !== undefined,
+          locationId: stored?.locationId ?? line.locationId,
+        });
+      }
       const movements = [];
       for (const line of original.lines) {
-        if (!positions.has(line.productId)) {
-          const stored = await this.inventory.findStockPosition(tx, ctx, line.productId);
-          positions.set(line.productId, {
-            qtyOnHand: stored?.qtyOnHand ?? 0,
-            avgUnitCost: stored?.avgUnitCost ?? 0,
-            costStateId: stored?.costStateId ?? Ulid.generate(this.clock),
-            exists: stored?.costStateId !== null && stored?.costStateId !== undefined,
-            locationId: stored?.locationId ?? line.locationId,
-          });
-        }
         const position = positions.get(line.productId);
         if (position !== undefined) {
           // The average this receipt made is taken back out of it, exactly as a
           // correction does — the two paths differ in what follows, not in what
           // they undo.
           const qtyLeft = Qty(position.qtyOnHand).subtract(Qty(line.qty)).raw;
+          if (qtyLeft < 0) {
+            throw new AppError(
+              ErrorCode.CONFLICT_STALE_VERSION,
+              'Stock changed while cancelling this bill — reload and use a purchase return',
+            );
+          }
           const valueLeft =
             stockValueMinor(position.qtyOnHand, position.avgUnitCost) - line.costMinor;
           positions.set(line.productId, {
