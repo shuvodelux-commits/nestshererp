@@ -378,7 +378,17 @@ describe('MOD-003 #184: independent sale/stock-source PostgreSQL concurrency', (
       const [sold, adjusted] = await collide(() => sale(a, 7_000), () => damage(b, 7_000));
       const accepted = [sold.status, adjusted.status];
       expect(accepted.filter((x) => x === 201)).toHaveLength(1);
-      expectStockConflict(sold.status === 201 ? adjusted : sold);
+      if (sold.status === 201 && adjusted.status === 400) {
+        // The sale consumed 7 of 10: DAMAGE cannot write off 7 from the
+        // remaining 3. This is a precise validation refusal, not a stale SALE.
+        expect(adjusted.error).toMatchObject({
+          code: 'VALIDATION_FAILED',
+          message: 'Only 3 in stock — remove that much or less',
+        });
+      } else {
+        // The losing SALE must remain a typed 409/422 stock conflict.
+        expectStockConflict(sold.status === 201 ? adjusted : sold);
+      }
       await assertOneWriter(sold.status === 201 ? 'SALE' : 'DAMAGE');
     } finally {
       await Promise.all(servers.map(stopApi));
