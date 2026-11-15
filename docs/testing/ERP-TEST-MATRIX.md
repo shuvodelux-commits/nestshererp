@@ -3677,7 +3677,7 @@
 | `catalog.brand.manage` | catalog | ❌ NOT TESTED |
 | `catalog.category.manage` | catalog | ❌ NOT TESTED |
 | `catalog.unit.manage` | catalog | ❌ NOT TESTED |
-| `inventory.cost.view` | inventory | ❌ NOT TESTED |
+| `inventory.cost.view` | inventory | ✅ TESTED |
 | `inventory.lot.view` | inventory | ❌ NOT TESTED |
 | `inventory.cost.recompute` | inventory | ❌ NOT TESTED |
 | `party.customer.view` | party | ❌ NOT TESTED |
@@ -3712,7 +3712,7 @@
 | `bank.reconciliation.view` | bank | ❌ NOT TESTED |
 | `bank.reconciliation.perform` | bank | ❌ NOT TESTED |
 | `bank.reconciliation.reopen` | bank | ❌ NOT TESTED |
-| `purchase.bill.view` | purchase | ❌ NOT TESTED |
+| `purchase.bill.view` | purchase | ✅ TESTED |
 | `purchase.bill.create` | purchase | ✅ TESTED |
 | `purchase.payment.record` | purchase | ✅ TESTED |
 | `sale.invoice.view` | sale | ❌ NOT TESTED |
