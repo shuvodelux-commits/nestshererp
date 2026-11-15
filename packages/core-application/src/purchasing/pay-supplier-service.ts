@@ -276,9 +276,15 @@ export class PaySupplierService {
     return this.uow.run(command.ctx, async (tx) => {
       const { ctx } = command;
       await this.access.require(tx, ctx, Permission.PURCHASE_VIEW);
+      await this.access.require(tx, ctx, Permission.SUPPLIER_VIEW);
 
       const supplier = await this.parties.findById(tx, ctx, command.supplierPartyId);
-      if (supplier === null) throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
+      // A Party identity is not necessarily a Supplier relationship. The due
+      // endpoint must not expose another role or a deactivated source.
+      if (supplier === null || supplier.status !== 'ACTIVE' ||
+          !supplier.roles.includes('SUPPLIER')) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Supplier not found');
+      }
 
       const today = this.clock.businessDate(ctx.timezone);
       const bills = await this.purchases.listOpenBills(tx, ctx, command.supplierPartyId, null);
