@@ -17,7 +17,7 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 251 |
+| HTTP endpoints | 252 |
 | Permission codes | 121 |
 | Cross-module workflows | 17 |
 
@@ -3515,6 +3515,7 @@
 | GET | `/api/v1/notes/:id` | NotesController | NOTE_CREATE, NOTE_VIEW | ✅ TESTED |
 | GET | `/api/v2/parties` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
 | GET | `/api/v2/parties/:id/ledger` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
+| GET | `/api/v2/parties/:id/opening` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v2/parties/:id` | PartiesV2Controller | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
 | GET | `/api/v1/parties` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
 | GET | `/api/v1/parties/:id` | PartiesController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ✅ TESTED |
