@@ -193,7 +193,8 @@ describe('MOD-004 SEC-N02B V2 Party creation isolation', () => {
     const op = newId();
     const created = await post(data(), op).expect(201);
     expect(isReceipt(created.body)).toBe(true);
-    const { selectedRole: _notV1, ...v1body } = data();
+    const v1body = { ...data() };
+    Reflect.deleteProperty(v1body, 'selectedRole');
     const v1 = await request(app.getHttpServer()).post('/api/v1/parties')
       .set(auth()).set('Idempotency-Key', op).send(v1body).expect(409);
     expect(v1.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
@@ -202,7 +203,8 @@ describe('MOD-004 SEC-N02B V2 Party creation isolation', () => {
 
   it('rejects V1-idempotency collisions when V1 was created first', async () => {
     const op = newId();
-    const { selectedRole: _v2, ...v1body } = data();
+    const v1body = { ...data() };
+    Reflect.deleteProperty(v1body, 'selectedRole');
     await request(app.getHttpServer()).post('/api/v1/parties')
       .set(auth()).set('Idempotency-Key', op).send(v1body).expect(201);
     const result = await post(data(), op).expect(409);
