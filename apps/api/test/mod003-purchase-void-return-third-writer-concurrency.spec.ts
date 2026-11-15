@@ -445,7 +445,7 @@ async function assertThreeWriterOutcome(
     saleAudits: saleCount, adjustmentAudits: damageCount,
     saleEvents: saleCount, adjustmentEvents: damageCount,
     cogsMinor: saleCount * 70_000, adjustmentMinor: damageCount * 70_000,
-    arMinor: saleCount * 84_000, revenueMinor: -saleCount * 84_000,
+    arMinor: saleCount * 84_000, revenueMinor: saleCount === 0 ? 0 : -saleCount * 84_000,
   });
 
   if (voidWon) return;
