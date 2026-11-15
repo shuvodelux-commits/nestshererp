@@ -528,6 +528,56 @@ describe('MOD-003 #184: three independent posting writers share one source lot',
     }
   }, 90_000);
 
+  it('returns a typed conflict when a damage adjustment consumes a lot after void read but before void lock', async () => {
+    // Hold the cost-state row so the independently started DAMAGE writer queues
+    // before VOID. VOID takes the purchase lock and reads the lot before it
+    // can take the cost-state lock. When the held lock releases, DAMAGE posts
+    // first; a stale VOID must return a typed conflict and roll back its
+    // source status, stock movements, AP/INVENTORY journal and outbox.
+    const bill = await createBill();
+    const servers: ApiProcess[] = [];
+    try {
+      servers.push(await startApi(), await startApi(), await startApi());
+      const [voidServer, returnServer, damageServer] = servers as [ApiProcess, ApiProcess, ApiProcess];
+      expect(new Set(servers.map((server) => server.child.pid)).size).toBe(3);
+
+      let damagePending: Promise<ApiResult> | undefined;
+      let voidPending: Promise<ApiResult> | undefined;
+      let returnPending: Promise<ApiResult> | undefined;
+
+      await asTenant(pool, tenant.tenantId, async (db) => {
+        const lock = await db.query(
+          'SELECT id FROM product_cost_state WHERE tenant_id = $1 AND product_id = $2 FOR UPDATE',
+          [tenant.tenantId, productId],
+        );
+        expect(lock.rows).toHaveLength(1);
+
+        damagePending = damageAdjustment(damageServer);
+        await new Promise<void>((done) => setTimeout(done, 300));
+        voidPending = post(voidServer, '/api/v1/purchases/' + bill.id + '/void', {
+          version: bill.version, reason: 'Refuse stale source-lot reversal',
+        });
+        await new Promise<void>((done) => setTimeout(done, 300));
+        returnPending = post(returnServer, '/api/v1/purchase-returns', returnTwo(bill));
+        await new Promise<void>((done) => setTimeout(done, 200));
+      });
+
+      if (!damagePending || !voidPending || !returnPending) {
+        throw new Error('Required three-process PostgreSQL race never started');
+      }
+      const [damaged, voided, returned] = await Promise.all([
+        damagePending, voidPending, returnPending,
+      ]);
+      expect(damaged.status).toBe(201);
+      expect(voided.status).toBe(409);
+      expect(voided.error).toMatchObject({ code: 'CONFLICT_STALE_VERSION' });
+      expect(returned.status).toBe(201);
+      await assertThreeWriterOutcome(bill, 'DAMAGE', voided, returned, damaged);
+    } finally {
+      await Promise.all(servers.map(stopApi));
+    }
+  }, 90_000);
+
   it('commits a 7-unit credit sale and 2-unit supplier return, then rejects a source-bill void', async () => {
     const bill = await createBill();
     const children: ApiProcess[] = [];
