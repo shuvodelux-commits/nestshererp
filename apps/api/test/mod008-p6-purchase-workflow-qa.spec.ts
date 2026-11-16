@@ -54,8 +54,8 @@ let customerId: string;
 
 function checkDisposable(): void {
   const expected = {
-    DATABASE_URL: 'postgres://sher_app:sher_app_test@127.0.0.1:55682/sher_test',
-    ADMIN_DATABASE_URL: 'postgres://postgres:dev@127.0.0.1:55682/sher_test',
+    DATABASE_URL: 'postgres://sher_app:sher_app_test@127.0.0.1:55713/sher_test',
+    ADMIN_DATABASE_URL: 'postgres://postgres:dev@127.0.0.1:55713/sher_test',
     JWT_SECRET: TEST_JWT_SECRET,
     HISABIQ_P6_DISPOSABLE_ACK: 'isolated-pg16-only',
   };
@@ -64,8 +64,8 @@ function checkDisposable(): void {
   }
   const checked = spawnSync('podman', ['inspect', '--format',
     '{{index .Config.Labels "hisabiq.qa"}}|{{.State.Running}}',
-    'hisabiq-mod008-p6-pg16'], { encoding: 'utf8' });
-  if (checked.status !== 0 || checked.stdout.trim() !== 'mod008-p6-535|true') {
+    'hisabiq-mod008-p6-due-313-pg16'], { encoding: 'utf8' });
+  if (checked.status !== 0 || checked.stdout.trim() !== 'mod008-p6-due-313|true') {
     throw Error('P6 task-owned disposable PostgreSQL label/running guard failed');
   }
 }
@@ -310,6 +310,63 @@ beforeEach(async () => {
     expect(await postingRows(a)).toEqual(zero);
     await assertBalancedEntries(a);
     await assertBalancedEntries(b);
+  }, 35_000);
+
+  it('derives supplier due from each posted unpaid bill and never posts money for a GET', async () => {
+    const full = await post('/api/v1/purchases', bill());
+    const discounted = await post('/api/v1/purchases', bill({ discountMinor: 1_250 }));
+    expect(full.status, JSON.stringify(full.body)).toBe(201);
+    expect(discounted.status, JSON.stringify(discounted.body)).toBe(201);
+
+    // The source of truth is two posted bills: 10000 + (10000 - 1250).
+    // A read must not allocate, receive or settle either amount.
+    const before = await purchaseMutationSnapshot(a);
+    const firstRead = await api().get('/api/v1/suppliers/' + supplierId + '/due')
+      .set(bearer(tokenA));
+    const repeatRead = await api().get('/api/v1/suppliers/' + supplierId + '/due')
+      .set(bearer(tokenA));
+    expect(firstRead.status, JSON.stringify(firstRead.body)).toBe(200);
+    expect(repeatRead.status).toBe(200);
+    expect(repeatRead.body).toEqual(firstRead.body);
+    expect(firstRead.body.data.supplierPartyId).toBe(supplierId);
+    expect(firstRead.body.data.outstandingMinor).toBe(18_750);
+    expect(firstRead.body.data.bills).toHaveLength(2);
+    expect(Object.fromEntries(firstRead.body.data.bills.map(
+      (source: { id: string; dueMinor: number }) => [source.id, source.dueMinor],
+    ))).toEqual({
+      [full.body.data.id as string]: 10_000,
+      [discounted.body.data.id as string]: 8_750,
+    });
+    expect((await postingRows(a)).payments).toBe(0);
+    expect(await purchaseMutationSnapshot(a)).toEqual(before);
+    await assertBalancedEntries(a);
+  }, 35_000);
+
+  it('hides supplier due and bill references from a foreign tenant without mutation', async () => {
+    const posted = await post('/api/v1/purchases', bill());
+    expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+    const beforeA = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+
+    const foreign = await api().get('/api/v1/suppliers/' + supplierId + '/due')
+      .set(bearer(tokenB));
+    expect(foreign.status).toBe(404);
+    expect(JSON.stringify(foreign.body)).not.toContain(posted.body.data.id as string);
+    expect(JSON.stringify(foreign.body)).not.toContain('P6 Supplier A');
+    expect(await purchaseMutationSnapshot(a)).toEqual(beforeA);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
+  }, 35_000);
+
+  it('does not treat a CUSTOMER-only Party as a supplier with payable records', async () => {
+    const before = await purchaseMutationSnapshot(a);
+    const wrongRole = await api().get('/api/v1/suppliers/' + customerId + '/due')
+      .set(bearer(tokenA));
+    expect(wrongRole.status).toBe(404);
+    expect(wrongRole.body.data).toBeUndefined();
+    expect(await purchaseMutationSnapshot(a)).toEqual(before);
+    expect(await postingRows(a)).toEqual(zero);
   }, 35_000);
 
   it('validates list query keys rather than treating arbitrary filters as trusted', async () => {
