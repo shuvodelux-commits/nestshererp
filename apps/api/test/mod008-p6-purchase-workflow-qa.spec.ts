@@ -44,6 +44,7 @@ const PERMISSIONS = [
   Permission.PURCHASE_VOID, Permission.PURCHASE_PAY,
   Permission.PURCHASE_RETURN_CREATE, Permission.PURCHASE_RETURN_VIEW,
   Permission.CASH_ACCOUNT_VIEW, Permission.CASH_ACCOUNT_MANAGE,
+  Permission.BANK_ACCOUNT_VIEW, Permission.BANK_ACCOUNT_MANAGE,
 ];
 
 let app: INestApplication;
@@ -528,7 +529,7 @@ beforeEach(async () => {
 
     const voided = await post('/api/v1/purchases/' + purchaseId + '/void',
       { version, reason: 'Duplicate receiving record' });
-    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    expect(voided.status, JSON.stringify(voided.body)).toBe(201);
     expect(voided.body.data.status).toBe('VOIDED');
     const after = await purchaseMutationSnapshot(a);
     expect(after.purchases).toBe(1);
