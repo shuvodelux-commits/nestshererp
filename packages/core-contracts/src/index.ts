@@ -170,6 +170,15 @@ export type {
   PatchCatalogMetadataV1CategoryRequest,
   PatchCatalogMetadataV1UnitRequest,
 } from './catalog-metadata-v1';
+/** MOD-002 #333 lifecycle-v1 strict signed HTTP request and roster contracts. */
+export {
+  catalogLifecycleV1StatusRequestSchema,
+  catalogLifecycleV1UnitRosterEnvelopeSchema,
+  catalogLifecycleV1BrandRosterEnvelopeSchema,
+  catalogLifecycleV1CategoryRosterEnvelopeSchema,
+} from './catalog-lifecycle-v1';
+export type { CatalogLifecycleV1StatusRequest } from './catalog-lifecycle-v1';
+
 export {
   discountTypeSchema,
   generatedBarcodeResponseSchema,

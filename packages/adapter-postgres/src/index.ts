@@ -34,6 +34,10 @@ export { PostgresCatalogMetadataV1Repository } from './catalog-metadata-v1-repos
 export { PostgresCatalogMetadataV1CreationRepository } from './catalog-metadata-v1-creation-repository';
 export { PostgresCatalogMetadataV1FullEditRepository } from './catalog-metadata-v1-full-edit-repository';
 export { PostgresCatalogSettingsUsageV1Reader } from './catalog-settings-usage-v1-reader';
+/** MOD-002 P8b3-T1: existing tenant-RLS lifecycle ports. */
+export { PostgresCatalogLifecycleV1RosterReader } from './catalog-lifecycle-v1-roster-reader';
+export { PostgresCatalogLifecycleV1StatusWriter } from './catalog-lifecycle-v1-status-writer';
+export { PostgresCatalogLifecycleV1CategoryStatusWriter } from './catalog-lifecycle-v1-category-status-writer';
 export { PostgresProductRepository } from './product-repository';
 export { PostgresPartyRepository } from './party-repository';
 export { PostgresInventoryRepository } from './inventory-repository';

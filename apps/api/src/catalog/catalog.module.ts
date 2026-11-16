@@ -17,6 +17,12 @@ import type {
 } from '@sher/core-application';
 import { CreateCatalogMetadataV1Service, EditCatalogMetadataV1Service, ManageCatalogMetadataV1Service, ManageCatalogService, ManageProductsService, ReadCatalogSettingsUsageV1Service } from '@sher/core-application';
 import type { Clock } from '@sher/shared-utils';
+import {
+  PostgresCatalogLifecycleV1CategoryStatusWriter,
+  PostgresCatalogLifecycleV1RosterReader,
+  PostgresCatalogLifecycleV1StatusWriter,
+} from '@sher/adapter-postgres';
+import { ManageCatalogLifecycleV1StatusService, ReadCatalogLifecycleV1Service } from '@sher/core-application';
 
 import {
   ACCESS_CONTROL,
@@ -38,12 +44,33 @@ import {
 import { CatalogController } from './catalog.controller';
 import { CatalogMetadataV1Controller } from './catalog-metadata-v1.controller';
 import { CatalogSettingsUsageV1Controller } from './catalog-settings-usage-v1.controller';
+import { CatalogLifecycleV1Controller } from './catalog-lifecycle-v1.controller';
 import { ProductsController } from './products.controller';
-import { CREATE_CATALOG_METADATA_V1_SERVICE, EDIT_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE, READ_CATALOG_SETTINGS_USAGE_V1_SERVICE } from './tokens';
+import { CREATE_CATALOG_METADATA_V1_SERVICE, EDIT_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_METADATA_V1_SERVICE, MANAGE_CATALOG_SERVICE, MANAGE_PRODUCTS_SERVICE, READ_CATALOG_SETTINGS_USAGE_V1_SERVICE, READ_CATALOG_LIFECYCLE_V1_SERVICE, MANAGE_CATALOG_LIFECYCLE_V1_STATUS_SERVICE } from './tokens';
 
 @Module({
-  controllers: [CatalogController, CatalogMetadataV1Controller, CatalogSettingsUsageV1Controller, ProductsController],
+  controllers: [CatalogController, CatalogMetadataV1Controller, CatalogSettingsUsageV1Controller, CatalogLifecycleV1Controller, ProductsController],
   providers: [
+    {
+      provide: READ_CATALOG_LIFECYCLE_V1_SERVICE,
+      useFactory: (uow: UnitOfWork, access: AccessControl): ReadCatalogLifecycleV1Service =>
+        new ReadCatalogLifecycleV1Service(uow, access, new PostgresCatalogLifecycleV1RosterReader()),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL],
+    },
+    {
+      provide: MANAGE_CATALOG_LIFECYCLE_V1_STATUS_SERVICE,
+      useFactory: (
+        uow: UnitOfWork, access: AccessControl, audit: AuditWriter,
+        outbox: Outbox, clock: Clock,
+      ): ManageCatalogLifecycleV1StatusService =>
+        new ManageCatalogLifecycleV1StatusService(
+          uow, access,
+          new PostgresCatalogLifecycleV1StatusWriter(clock),
+          new PostgresCatalogLifecycleV1CategoryStatusWriter(clock),
+          audit, outbox,
+        ),
+      inject: [UNIT_OF_WORK, ACCESS_CONTROL, AUDIT_WRITER, OUTBOX, CLOCK],
+    },
     {
       provide: READ_CATALOG_SETTINGS_USAGE_V1_SERVICE,
       useFactory: (

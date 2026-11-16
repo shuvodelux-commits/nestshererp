@@ -158,6 +158,9 @@ export { EditCatalogMetadataV1Service } from './catalog/edit-catalog-metadata-v1
 export type { EditCatalogMetadataV1Command } from './catalog/edit-catalog-metadata-v1-service';
 export type { CatalogSettingsUsageV1Snapshot, CatalogSettingsUsageV1Repository } from './catalog/catalog-settings-usage-v1-repository';
 export { ReadCatalogSettingsUsageV1Service } from './catalog/read-catalog-settings-usage-v1-service';
+/** MOD-002 P8b3-T1: use cases are mounted only through the Nest catalog module. */
+export { ReadCatalogLifecycleV1Service } from './catalog/read-catalog-lifecycle-v1-service';
+export { ManageCatalogLifecycleV1StatusService } from './catalog/manage-catalog-lifecycle-v1-status-service';
 export { ManageCatalogMetadataV1Service } from './catalog/manage-catalog-metadata-v1-service';
 export type {
   ListCatalogMetadataV1Command,
