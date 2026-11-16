@@ -150,7 +150,7 @@ describe('MOD-004 SEC-N02E V2 identity-wide Party status', () => {
     const id = created.body.data.id as string;
     const before = await counts();
     await restrict([Permission.CUSTOMER_DEACTIVATE]);
-    const denied = await status(id).expect(403);
+    const denied = await status(id).expect(404);
     expect(JSON.stringify(denied.body)).not.toContain('SUPPLIER');
     expect(JSON.stringify(denied.body)).not.toContain('Private Shared Party');
     expect(await read(id)).toEqual({ status: 'ACTIVE', version: 1 });
