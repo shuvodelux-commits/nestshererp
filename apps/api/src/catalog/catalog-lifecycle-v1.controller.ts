@@ -63,17 +63,17 @@ export class CatalogLifecycleV1Controller {
   }
 
   @Patch('units/:id/status')
-  async unitStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext) {
+  async unitStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext): Promise<ReturnType<typeof mapCatalogLifecycleV1Status>> {
     return this.update('unit', id, body, ctx);
   }
 
   @Patch('brands/:id/status')
-  async brandStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext) {
+  async brandStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext): Promise<ReturnType<typeof mapCatalogLifecycleV1Status>> {
     return this.update('brand', id, body, ctx);
   }
 
   @Patch('categories/:id/status')
-  async categoryStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext) {
+  async categoryStatus(@Param('id') id: string, @Body() body: unknown, @Ctx() ctx: TenantContext): Promise<ReturnType<typeof mapCatalogLifecycleV1Status>> {
     return this.update('category', id, body, ctx);
   }
 
