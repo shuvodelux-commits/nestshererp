@@ -231,6 +231,71 @@ beforeEach(async () => {
     await assertBalancedEntries(b);
   }, 35_000);
 
+  it('reads a signed posted purchase from the owning list and detail without mutation', async () => {
+    const created = await post('/api/v1/purchases', bill({ discountMinor: 750 }));
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.data.id as string;
+    const beforeA = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+
+    const list = await api().get('/api/v1/purchases?limit=25').set(bearer(tokenA));
+    const detail = await api().get('/api/v1/purchases/' + id).set(bearer(tokenA));
+    expect(list.status, JSON.stringify(list.body)).toBe(200);
+    expect(detail.status, JSON.stringify(detail.body)).toBe(200);
+    const row = (list.body.data as Array<{
+      id: string; supplierName: string; status: string; number: string;
+    }>).find(source => source.id === id);
+    expect(row).toMatchObject({
+      id, status: 'POSTED', supplierName: 'P6 Supplier A',
+    });
+    expect(detail.body.data).toMatchObject({
+      id, supplierPartyId: supplierId, grandTotalMinor: 9_250,
+    });
+    expect(detail.body.data.lines).toHaveLength(1);
+    expect(detail.body.data.lines[0].productId).toBe(productId);
+    expect(detail.body.data.number).toBe(row?.number);
+
+    const listReplay = await api().get('/api/v1/purchases?limit=25').set(bearer(tokenA));
+    const detailReplay = await api().get('/api/v1/purchases/' + id).set(bearer(tokenA));
+    expect(listReplay.status).toBe(200);
+    expect(detailReplay.status).toBe(200);
+    expect(listReplay.body).toEqual(list.body);
+    expect(detailReplay.body).toEqual(detail.body);
+    expect(await purchaseMutationSnapshot(a)).toEqual(beforeA);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    await assertBalancedEntries(a);
+  }, 35_000);
+
+  it('fails closed for unsigned, missing and foreign posted purchase reads', async () => {
+    const posted = await post('/api/v1/purchases', bill());
+    expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+    const id = posted.body.data.id as string;
+    const beforeA = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+    const anonymous = await api().get('/api/v1/purchases/' + id);
+    const malformed = await api().get('/api/v1/purchases/' + id)
+      .set({ Authorization: 'Bearer invalid' });
+    const missing = await api().get('/api/v1/purchases/' + MISSING_ID)
+      .set(bearer(tokenA));
+    const foreign = await api().get('/api/v1/purchases/' + id).set(bearer(tokenB));
+    const foreignList = await api().get('/api/v1/purchases?limit=25')
+      .set(bearer(tokenB));
+    expect(anonymous.status).toBe(401);
+    expect(malformed.status).toBe(401);
+    expect(missing.status).toBe(404);
+    expect(foreign.status).toBe(404);
+    expect(foreignList.status).toBe(200);
+    expect(foreignList.body.data).toEqual([]);
+    for (const denied of [anonymous, malformed, missing, foreign]) {
+      expect(JSON.stringify(denied.body)).not.toContain(id);
+      expect(JSON.stringify(denied.body)).not.toContain('P6 Supplier A');
+    }
+    expect(await purchaseMutationSnapshot(a)).toEqual(beforeA);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
+  }, 35_000);
+
   it('posts discounted purchase exactly once with balanced inventory and AP', async () => {
     const response = await post('/api/v1/purchases', bill({ discountMinor: 2_000 }));
     expect(response.status, JSON.stringify(response.body)).toBe(201);
