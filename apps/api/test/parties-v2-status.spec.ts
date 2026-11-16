@@ -195,7 +195,7 @@ describe('MOD-004 SEC-N02E V2 identity-wide Party status', () => {
     await restrict([Permission.VENDOR_DEACTIVATE, Permission.CUSTOMER_DEACTIVATE]);
     await status(id, { selectedRole: 'VENDOR', version: 1, status: 'INACTIVE' }).expect(403);
     const walkIn = await seedWalkInCustomer(pool, tenant);
-    await status(walkIn.id, { selectedRole: 'CUSTOMER', version: 1, status: 'INACTIVE' }).expect(400);
+    await status(walkIn, { selectedRole: 'CUSTOMER', version: 1, status: 'INACTIVE' }).expect(400);
     expect(await counts()).toEqual(before);
   });
 
