@@ -6,7 +6,7 @@
  * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/units/:id/status
  * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/brands/:id/status
  * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/categories/:id/status
- * This test opts into exclusive localhost:55961/sher_test only. No shared DB.
+ * Only owned desktop PG16 (55961) or hosted CI postgres:16 (5432)/sher_test. No shared DB.
  */
 import 'reflect-metadata';
 
@@ -51,8 +51,16 @@ function disposableOnly() {
     const raw = process.env[name];
     if (!raw) throw new Error('Missing isolated ' + name);
     const u = new URL(raw);
-    if (u.protocol !== 'postgresql:' || u.hostname !== '127.0.0.1' ||
-        u.port !== '55961' || u.pathname !== '/sher_test' ||
+    const protocolOk = u.protocol === 'postgres:' || u.protocol === 'postgresql:';
+    const ownDesktop = u.hostname === '127.0.0.1' && u.port === '55961';
+    // GitHub's dedicated CI postgres:16 service runs only on localhost:5432.
+    // Never allow a general local port-5432/dev DB without the CI harness.
+    const hostedCi = process.env['GITHUB_ACTIONS'] === 'true' &&
+      process.env['CI'] === 'true' &&
+      (u.hostname === '127.0.0.1' || u.hostname === 'localhost') &&
+      u.port === '5432';
+    if (!protocolOk || (!ownDesktop && !hostedCi) ||
+        u.pathname !== '/sher_test' ||
         u.username !== (name === 'ADMIN_DATABASE_URL' ? 'postgres' : 'sher_app')) {
       throw new Error('P8b3-T1 refuses any shared or non-disposable PostgreSQL URL');
     }
