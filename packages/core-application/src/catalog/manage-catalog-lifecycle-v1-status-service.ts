@@ -1,4 +1,4 @@
-import { AppError, catalogLifecycleV1StatusRequestSchema, ErrorCode, Permission } from '@sher/core-contracts';
+import { AppError, ErrorCode, Permission } from '@sher/core-contracts';
 
 import type { AccessControl } from '../ports/access-control';
 import type { AuditWriter } from '../ports/audit-writer';
@@ -58,18 +58,18 @@ export class ManageCatalogLifecycleV1StatusService {
     if (kind !== 'unit' && kind !== 'brand' && kind !== 'category') {
       throw new RangeError('Unsupported catalog lifecycle status kind');
     }
-    const parsed = catalogLifecycleV1StatusRequestSchema.safeParse({
-      expectedVersion: command.expectedVersion,
-      desiredState: command.desiredState,
-    });
-    if (!parsed.success) {
+    // P8b1 lifecycle-v1 request semantics; the strict Zod schema is
+    // intentionally not exported until separately approved HTTP activation.
+    if (!Number.isSafeInteger(command.expectedVersion) ||
+        command.expectedVersion < 1 ||
+        (command.desiredState !== 'ACTIVE' && command.desiredState !== 'INACTIVE')) {
       throw new AppError(ErrorCode.VALIDATION_FAILED,
         'Invalid catalog lifecycle status request');
     }
     if (typeof id !== 'string' || !/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/u.test(id)) {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid catalog entry ID');
     }
-    const { expectedVersion, desiredState } = parsed.data;
+    const { expectedVersion, desiredState } = command;
 
     return this.uow.run(ctx, async tx => {
       await this.access.require(tx, ctx, permissionFor[kind]);
