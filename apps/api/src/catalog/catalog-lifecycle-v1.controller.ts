@@ -82,8 +82,8 @@ export class CatalogLifecycleV1Controller {
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid catalog entry ID');
     }
     const parsed = catalogLifecycleV1StatusRequestSchema.safeParse(body);
-    if (!parsed.success) {
-      // Static validation message, never echo user-supplied metadata or IDs.
+    if (!parsed.success || parsed.data.expectedVersion > 2_147_483_647) {
+      // PostgreSQL versions are int4; reject client CAS values outside the column range.
       throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid catalog lifecycle status request');
     }
     const result = await this.status.transition({
