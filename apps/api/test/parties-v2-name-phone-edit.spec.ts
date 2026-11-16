@@ -71,6 +71,8 @@ async function counts(who = tenant) {
       updated: await count('audit_events', " AND entity_type='party' AND action='UPDATE'"),
       outbox: await count('outbox', " AND event_type='party.updated'"),
       journals: await count('journal_entries'),
+      journalLines: await count('journal_lines'),
+      stockMovements: await count('stock_movements'),
       openings: await count('party_openings'),
       cash: await count('cash_movements'),
     };
@@ -80,9 +82,11 @@ async function stored(id: string, who = tenant) {
   return asTenant(pool, who.tenantId, async (client) => {
     const row = await client.query<{
       name: string; phone: string | null; nid: string | null;
-      address: string | null; credit_limit_minor: string | null; version: number;
+      address: string | null; guardian_name: string | null; email: string | null;
+      notes: string | null; customer_group_id: string | null;
+      credit_limit_minor: string | null; version: number;
     }>(
-      'SELECT name, phone, nid, address, credit_limit_minor, version FROM parties WHERE tenant_id=$1 AND id=$2',
+      'SELECT name, phone, nid, address, guardian_name, email, notes, customer_group_id, credit_limit_minor, version FROM parties WHERE tenant_id=$1 AND id=$2',
       [who.tenantId, id],
     );
     const roles = await client.query<{ role: string }>(
@@ -139,13 +143,68 @@ describe('MOD-004 SEC-N02D signed V2 Party name/phone PATCH', () => {
     expect((await stored(id)).row?.name).toBe('দোকান নতুন নাম');
   });
 
+
+  it('changes a Customer phone with EDIT only, persisting normalized directory fields once', async () => {
+    const created = await create(record(['CUSTOMER'], 'Customer Before', '01711111111')).expect(201);
+    const id = created.body.data.id as string;
+    const before = await counts();
+    await restrict([Permission.CUSTOMER_EDIT]);
+    const updated = await patch(id, {
+      ...body(), name: '  গ্রাহকের নতুন নাম  ', phone: ' 01788888888 ',
+    }).expect(200);
+    expect(checkReceipt(updated.body, 'CUSTOMER', 2)).toBe(id);
+    const actual = await stored(id);
+    expect(actual.row?.name).toBe('গ্রাহকের নতুন নাম');
+    expect(actual.row?.phone).toBe('01788888888');
+    expect(actual.row?.version).toBe(2);
+    expect(await counts()).toEqual({
+      ...before, updated: before.updated + 1, outbox: before.outbox + 1,
+    });
+  });
+
+  it('allows Supplier-only EDIT to clear an optional phone without profile or Customer grants', async () => {
+    const created = await create(record(['SUPPLIER'], 'Supplier Before', '01799999999')).expect(201);
+    const id = created.body.data.id as string;
+    const before = await counts();
+    await restrict([Permission.SUPPLIER_EDIT]);
+    const updated = await patch(id, {
+      ...body(), selectedRole: 'SUPPLIER', name: 'Supplier After', phone: null,
+    }).expect(200);
+    expect(checkReceipt(updated.body, 'SUPPLIER', 2)).toBe(id);
+    const actual = await stored(id);
+    expect(actual.row?.phone).toBeNull();
+    expect(actual.row?.name).toBe('Supplier After');
+    expect(actual.roles).toEqual(['SUPPLIER']);
+    expect(await counts()).toEqual({
+      ...before, updated: before.updated + 1, outbox: before.outbox + 1,
+    });
+  });
+
   it('Supplier-only EDIT on Customer+Supplier shared identity preserves both roles and private/credit fields', async () => {
     await request(app.getHttpServer()).post('/api/v1/settings/value')
       .set(auth()).send({ key: SettingKey.CUSTOMER_FIELD_NID_VISIBLE, value: 'on' }).expect(201);
+    await request(app.getHttpServer()).post('/api/v1/settings/value')
+      .set(auth()).send({ key: SettingKey.CUSTOMER_GROUPS_ENABLED, value: 'on' }).expect(201);
+    const groupId = newId();
+    await asTenant(pool, tenant.tenantId, async client => {
+      await client.query(
+        'INSERT INTO customer_groups (id,tenant_id,name,created_at,updated_at,created_by,updated_by,version) VALUES ($1,$2,$3,$4,$4,$5,$5,1)',
+        [groupId, tenant.tenantId, 'Private Group', clock.now(), tenant.userId],
+      );
+    });
     const created = await create({
-      ...record(['CUSTOMER', 'SUPPLIER']), nid: 'NID-V2-PROTECTED', creditLimitMinor: 123456,
+      ...record(['CUSTOMER', 'SUPPLIER']), nid: 'NID-V2-PROTECTED',
+      customerGroupId: groupId, creditLimitMinor: 123456,
     }).expect(201);
     const id = created.body.data.id as string;
+    // Direct SQL only constructs a disposable private fixture, not the action under test.
+    await asTenant(pool, tenant.tenantId, async client => {
+      await client.query(
+        'UPDATE parties SET address=$1,guardian_name=$2,email=$3,notes=$4 WHERE tenant_id=$5 AND id=$6',
+        ['Private Address', 'Private Guardian', 'private@example.test',
+          'Private Notes', tenant.tenantId, id],
+      );
+    });
     await restrict([Permission.SUPPLIER_EDIT]);
     const before = await counts();
     const edited = await patch(id, { ...body(), selectedRole: 'SUPPLIER',
@@ -156,6 +215,11 @@ describe('MOD-004 SEC-N02D signed V2 Party name/phone PATCH', () => {
     const actual = await stored(id);
     expect(actual.roles).toEqual(['CUSTOMER', 'SUPPLIER']);
     expect(actual.row?.nid).toBe('NID-V2-PROTECTED');
+    expect(actual.row?.address).toBe('Private Address');
+    expect(actual.row?.guardian_name).toBe('Private Guardian');
+    expect(actual.row?.email).toBe('private@example.test');
+    expect(actual.row?.notes).toBe('Private Notes');
+    expect(actual.row?.customer_group_id).toBe(groupId);
     expect(Number(actual.row?.credit_limit_minor)).toBe(123456);
     expect(actual.row?.name).toBe('Supplier renamed shared directory');
     expect(await counts()).toEqual({ ...before, updated: before.updated + 1, outbox: before.outbox + 1 });
@@ -191,7 +255,8 @@ describe('MOD-004 SEC-N02D signed V2 Party name/phone PATCH', () => {
     }
     expect(await counts()).toEqual(before);
     expect(await counts(other)).toEqual({
-      updated: 0, outbox: 0, journals: 0, openings: 0, cash: 0,
+      updated: 0, outbox: 0, journals: 0, journalLines: 0,
+      stockMovements: 0, openings: 0, cash: 0,
     });
   });
 
@@ -238,6 +303,8 @@ describe('MOD-004 SEC-N02D signed V2 Party name/phone PATCH', () => {
     checkReceipt(succeeded.body, 'CUSTOMER', 2);
     const after = await counts();
     expect(after).toEqual({ ...before, updated: before.updated + 1, outbox: before.outbox + 1 });
+    const winnerName = a.status === 200 ? 'First competing edit' : 'Second competing edit';
+    expect((await stored(id)).row?.name).toBe(winnerName);
     expect((await stored(id)).row?.version).toBe(2);
   });
 
@@ -245,11 +312,15 @@ describe('MOD-004 SEC-N02D signed V2 Party name/phone PATCH', () => {
     const a = await create(record(['CUSTOMER'], 'First', '01711111111')).expect(201);
     const b = await create(record(['CUSTOMER'], 'Second', '01722222222')).expect(201);
     const before = await counts();
+    // A write-only cashier may detect the conflict but may not learn its owner's ID or phone.
+    await restrict([Permission.CUSTOMER_EDIT]);
     const denied = await patch(b.body.data.id, {
       ...body(), name: 'Invalid duplicate', phone: '01711111111',
     }).expect(400);
     expect(denied.body.error.code).toBe('VALIDATION_FAILED');
     expect(JSON.stringify(denied.body)).not.toContain(a.body.data.id as string);
+    expect(JSON.stringify(denied.body)).not.toContain('01711111111');
+    expect(denied.body.error.details).not.toHaveProperty('partyId');
     expect((await stored(b.body.data.id)).row?.phone).toBe('01722222222');
     expect(await counts()).toEqual(before);
   });
