@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Patch,
   Post,
   Inject,
   Param,
@@ -21,6 +22,7 @@ import {
   partyReadV2ListResponseSchema,
   partyReadV2Schema,
   partyV2CreateRequestSchema,
+  partyV2NamePhoneEditRequestSchema,
   partyV2MutationReceiptEnvelopeSchema,
 } from '@sher/core-contracts';
 
@@ -63,6 +65,29 @@ export class PartiesV2Controller {
     return partyV2MutationReceiptEnvelopeSchema.parse({
       data: await this.parties.createV2({
         ctx, operationId: idempotencyKey, input: parsed.data,
+      }),
+    });
+  }
+
+  /** Only shared directory name/phone; never role/profile/financial fields. */
+  @Patch(':id')
+  async editNamePhone(
+    @Param('id') partyId: string,
+    @Body() body: unknown,
+    @Ctx() ctx: TenantContext,
+  ): Promise<PartyV2MutationReceiptEnvelope> {
+    if (!/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(partyId)) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid Party identifier');
+    }
+    const parsed = partyV2NamePhoneEditRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid request body', {
+        issues: parsed.error.issues.map((issue) => issue.path.join('.')).join(', '),
+      });
+    }
+    return partyV2MutationReceiptEnvelopeSchema.parse({
+      data: await this.parties.updateNamePhoneV2({
+        ctx, partyId, input: parsed.data,
       }),
     });
   }
