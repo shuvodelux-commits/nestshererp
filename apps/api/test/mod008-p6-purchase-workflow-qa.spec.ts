@@ -127,7 +127,11 @@ async function purchaseMutationSnapshot(tenant: SeededTenant) {
       (SELECT count(*)::int FROM cash_movements) AS "cashMovements",
       (SELECT count(*)::int FROM audit_events) AS audits,
       (SELECT count(*)::int FROM outbox) AS outbox`);
-    return rows.rows[0];
+    const snapshot = rows.rows[0];
+    if (snapshot === undefined) {
+      throw new Error('P6 source mutation snapshot is unavailable');
+    }
+    return snapshot;
   });
 }
 
