@@ -174,9 +174,16 @@ describe('MOD-004 SEC-N02E V2 identity-wide Party status', () => {
     await restrict([Permission.SUPPLIER_DEACTIVATE]);
     const ownWrongRole = await status(id, { selectedRole: 'SUPPLIER', version: 1, status: 'INACTIVE' }).expect(404);
     const absent = await status(newId(), { selectedRole: 'SUPPLIER', version: 1, status: 'INACTIVE' }).expect(404);
-    expect(ownWrongRole.body).toEqual(absent.body);
+    // Trace IDs are intentionally unique per request; compare only public error.
+    for (const response of [ownWrongRole, absent]) {
+      expect(response.body.error.code).toBe('NOT_FOUND');
+      expect(response.body.error.message).toBe('Record not found');
+      expect(response.body.error.details).toEqual({});
+    }
     const foreign = await status(id, undefined, otherToken).expect(404);
-    expect(foreign.body).toEqual(absent.body);
+    expect(foreign.body.error.code).toBe('NOT_FOUND');
+    expect(foreign.body.error.message).toBe('Record not found');
+    expect(foreign.body.error.details).toEqual({});
     expect(await read(id)).toEqual({ status: 'ACTIVE', version: 1 });
     expect(await counts()).toEqual(before);
   });
