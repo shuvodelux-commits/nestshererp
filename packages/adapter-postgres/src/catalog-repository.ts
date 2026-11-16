@@ -8,6 +8,7 @@ import type {
 import type { Clock } from '@sher/shared-utils';
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 
+import { lockCategoryForRemoval, lockEligibleCategoryParent } from './catalog-lifecycle-v1-parent-guard';
 import { rethrowCatalogNameConflict } from './catalog-name-conflict';
 import { brands, categories, units } from './schema';
 import { txOf } from './unit-of-work';
@@ -100,6 +101,7 @@ export class PostgresCatalogRepository implements CatalogRepository {
 
   async insertCategory(tx: Tx, ctx: TenantContext, entry: CategoryEntry): Promise<void> {
     try {
+      await lockEligibleCategoryParent(tx, ctx, entry.parentId);
       await txOf(tx)
         .insert(categories)
         .values({ ...this.stamp(ctx), id: entry.id, name: entry.name, parentId: entry.parentId });
@@ -160,6 +162,7 @@ export class PostgresCatalogRepository implements CatalogRepository {
   }
 
   async deleteCategory(tx: Tx, ctx: TenantContext, id: string): Promise<void> {
+    await lockCategoryForRemoval(tx, ctx, id);
     await txOf(tx)
       .delete(categories)
       .where(and(eq(categories.tenantId, ctx.tenantId), eq(categories.id, id)));
@@ -180,6 +183,7 @@ export class PostgresCatalogRepository implements CatalogRepository {
   }
 
   async archiveCategory(tx: Tx, ctx: TenantContext, id: string): Promise<void> {
+    await lockCategoryForRemoval(tx, ctx, id);
     await txOf(tx)
       .update(categories)
       .set({ ...this.bury(ctx), version: sql`${categories.version} + 1` })

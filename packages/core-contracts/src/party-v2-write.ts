@@ -61,3 +61,27 @@ export const partyV2MutationReceiptEnvelopeSchema = z
 
 export type PartyV2MutationReceiptEnvelope =
   z.infer<typeof partyV2MutationReceiptEnvelopeSchema>;
+
+
+/**
+ * MOD-004 SEC-N02C: name/phone-only correction contract for one selected
+ * trading relationship. Shared-directory identity edits are versioned; actual
+ * role membership, EDIT authorization, reserved identity and tenant RLS are
+ * deliberately the later same-transaction service/API responsibility.
+ *
+ * No roles, private profile, customer credit/group, opening balance or status
+ * may be written through this DTO. A later PATCH must use the fixed minimal
+ * V2 mutation receipt, not a raw PartyResponse.
+ */
+export const partyV2NamePhoneEditRequestSchema = savePartyRequestSchema
+  .pick({ name: true, phone: true })
+  .extend({
+    selectedRole: partyRoleSchema,
+    version: z.number().int().positive().refine(Number.isSafeInteger, {
+      message: 'A positive safe integer optimistic version is required',
+    }),
+  })
+  .strict();
+
+export type PartyV2NamePhoneEditRequest =
+  z.infer<typeof partyV2NamePhoneEditRequestSchema>;
