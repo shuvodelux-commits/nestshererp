@@ -1,5 +1,11 @@
 /**
  * MOD-002 P8b3-T1 #333: signed Nest lifecycle-v1 HTTP + real PG16 FORCE RLS.
+ * @covers endpoint:GET /api/v1/catalog/lifecycle-v1/units
+ * @covers endpoint:GET /api/v1/catalog/lifecycle-v1/brands
+ * @covers endpoint:GET /api/v1/catalog/lifecycle-v1/categories
+ * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/units/:id/status
+ * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/brands/:id/status
+ * @covers endpoint:PATCH /api/v1/catalog/lifecycle-v1/categories/:id/status
  * This test opts into exclusive localhost:55961/sher_test only. No shared DB.
  */
 import 'reflect-metadata';
@@ -246,7 +252,13 @@ describe('MOD-002 #333 signed lifecycle-v1 Nest HTTP / PostgreSQL16', () => {
     expect(forbidden.status).toBe(403);
     expect(forbidden.body.error.code).toBe('PERMISSION_DENIED');
     expect((await saved(a, kind, key))?.version).toBe(1);
-    expect(await effects(a)).toEqual({ audits: 0, outbox: 0, journal: 0, stock: 0, cash: 0 });
+    // A refused business mutation writes no status/audit update or outbox,
+    // but the global security interceptor intentionally logs one DENIED audit.
+    expect(await effects(a)).toEqual({ audits: 1, outbox: 0, journal: 0, stock: 0, cash: 0 });
+    const denial = await asTenant(pool, a.tenantId, client => client.query<{
+      action: string; entity_type: string;
+    }>('SELECT action,entity_type FROM audit_events WHERE tenant_id=$1', [a.tenantId]));
+    expect(denial.rows).toEqual([{ action: 'DENIED', entity_type: 'permission_denial' }]);
   });
 
   it.each(kinds)('PATCH %s refuses unsafe versions, bad IDs, extra body keys and invalid states', async kind => {

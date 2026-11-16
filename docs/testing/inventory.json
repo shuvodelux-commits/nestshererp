@@ -9910,6 +9910,114 @@
       ]
     },
     {
+      "id": "endpoint:GET /api/v1/catalog/lifecycle-v1/units",
+      "method": "GET",
+      "path": "/api/v1/catalog/lifecycle-v1/units",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:GET /api/v1/catalog/lifecycle-v1/brands",
+      "method": "GET",
+      "path": "/api/v1/catalog/lifecycle-v1/brands",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:GET /api/v1/catalog/lifecycle-v1/categories",
+      "method": "GET",
+      "path": "/api/v1/catalog/lifecycle-v1/categories",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:PATCH /api/v1/catalog/lifecycle-v1/units/:id/status",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/lifecycle-v1/units/:id/status",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:PATCH /api/v1/catalog/lifecycle-v1/brands/:id/status",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/lifecycle-v1/brands/:id/status",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
+      "id": "endpoint:PATCH /api/v1/catalog/lifecycle-v1/categories/:id/status",
+      "method": "PATCH",
+      "path": "/api/v1/catalog/lifecycle-v1/categories/:id/status",
+      "controller": "CatalogLifecycleV1Controller",
+      "file": "apps/api/src/catalog/catalog-lifecycle-v1.controller.ts",
+      "permissions": [
+        "BRAND_MANAGE",
+        "CATEGORY_MANAGE",
+        "COST_VIEW",
+        "PRODUCT_CREATE",
+        "PRODUCT_DEACTIVATE",
+        "PRODUCT_DELETE",
+        "PRODUCT_EDIT",
+        "PRODUCT_VIEW",
+        "UNIT_MANAGE"
+      ]
+    },
+    {
       "id": "endpoint:GET /api/v1/catalog/metadata-v1",
       "method": "GET",
       "path": "/api/v1/catalog/metadata-v1",

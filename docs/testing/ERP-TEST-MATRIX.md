@@ -17,7 +17,7 @@
 | Dropdowns | 94 |
 | Buttons and row actions | 427 |
 | Tables | 64 |
-| HTTP endpoints | 254 |
+| HTTP endpoints | 260 |
 | Permission codes | 121 |
 | Cross-module workflows | 17 |
 
@@ -3407,6 +3407,12 @@
 | POST | `/api/v1/license` | LicenseController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
 | GET | `/api/v1/license` | LicenseController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
 | GET | `/api/v1/license/notice` | LicenseController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
+| GET | `/api/v1/catalog/lifecycle-v1/units` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| GET | `/api/v1/catalog/lifecycle-v1/brands` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| GET | `/api/v1/catalog/lifecycle-v1/categories` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| PATCH | `/api/v1/catalog/lifecycle-v1/units/:id/status` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| PATCH | `/api/v1/catalog/lifecycle-v1/brands/:id/status` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
+| PATCH | `/api/v1/catalog/lifecycle-v1/categories/:id/status` | CatalogLifecycleV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | GET | `/api/v1/catalog/metadata-v1` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/metadata-v1/units` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
 | POST | `/api/v1/catalog/metadata-v1/brands` | CatalogMetadataV1Controller | BRAND_MANAGE, CATEGORY_MANAGE, COST_VIEW, PRODUCT_CREATE … (+5) | ✅ TESTED |
