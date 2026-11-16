@@ -15,7 +15,7 @@ import type {
   PartyRole,
   PartyStatus,
 } from '@sher/core-domain';
-import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey, partyV2CreateRequestSchema, partyV2MutationReceiptSchema, partyV2NamePhoneEditRequestSchema } from '@sher/core-contracts';
+import { AppError, defaultDirectionFor, ErrorCode, Permission, SettingKey, partyV2CreateRequestSchema, partyV2MutationReceiptSchema, partyV2NamePhoneEditRequestSchema, partyV2StatusRequestSchema } from '@sher/core-contracts';
 import type {
   PartyListResponse,
   PartyOpeningResponse,
@@ -24,6 +24,7 @@ import type {
   PartyReadV2ListResponse,
   PartyV2CreateRequest,
   PartyV2NamePhoneEditRequest,
+  PartyV2StatusRequest,
   PartyV2MutationReceipt,
   PartySort,
   SortDirection,
@@ -141,6 +142,13 @@ export interface UpdatePartyNamePhoneV2Command {
   readonly ctx: TenantContext;
   readonly partyId: string;
   readonly input: PartyV2NamePhoneEditRequest;
+}
+
+/** V2 identity-wide status; selected role provides privacy-safe authorization context. */
+export interface SetPartyStatusV2Command {
+  readonly ctx: TenantContext;
+  readonly partyId: string;
+  readonly input: PartyV2StatusRequest;
 }
 
 export interface UpdatePartyCommand {
@@ -893,6 +901,79 @@ export class ManagePartiesService {
    * the reason G2.3 gives about stock: a customer who owes nothing is not
    * thereby inactive, and an inactive customer's due does not disappear.
    */
+  /**
+   * SEC-N02E: a role-limited cashier can activate/deactivate their own single-
+   * role Party without PROFILE/HISTORY grants. A shared Party still requires
+   * destructive authority over EVERY current relationship: status is global.
+   * Never return a raw V1 PartyResponse or perform a post-commit full GET.
+   */
+  async setStatusV2(command: SetPartyStatusV2Command): Promise<PartyV2MutationReceipt> {
+    const parsed = partyV2StatusRequestSchema.safeParse(command.input);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid V2 Party status request');
+    }
+    const { selectedRole, version, status } = parsed.data;
+    const { ctx, partyId } = command;
+    return this.uow.run(ctx, async tx => {
+      // Deny unauthorized actors before probing the Party ID or its roles.
+      await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[selectedRole].deactivate);
+      if (selectedRole === 'VENDOR') await this.assertVendorsOn(tx, ctx);
+
+      const before = await this.parties.findById(tx, ctx, partyId);
+      if (before === null || !before.roles.includes(selectedRole)) {
+        throw new AppError(ErrorCode.NOT_FOUND, 'Record not found');
+      }
+      this.assertNotSystemReserved(before, 'deactivate');
+
+      // A denied hidden relationship is indistinguishable from an absent
+      // identity; neither the error nor receipt reveals other memberships.
+      for (const role of before.roles) {
+        if (role === selectedRole) continue;
+        try {
+          await this.accessControl.require(tx, ctx, ROLE_PERMISSIONS[role].deactivate);
+        } catch (error) {
+          if (error instanceof AppError && error.code === ErrorCode.PERMISSION_DENIED) {
+            throw new AppError(ErrorCode.NOT_FOUND, 'Record not found');
+          }
+          throw error;
+        }
+      }
+
+      const outcome = await this.parties.setStatusIfVersion(tx, ctx, partyId, version, status);
+      if (outcome === 'STALE') {
+        throw new AppError(
+          ErrorCode.CONFLICT_STALE_VERSION,
+          'Someone else changed this record while you were editing it. Reopen it and try again.',
+        );
+      }
+      if (outcome === 'UPDATED') {
+        await this.audit.append(tx, ctx, {
+          entityType: ENTITY_TYPE,
+          entityId: partyId,
+          action: status === 'ACTIVE' ? 'ACTIVATE' : 'DEACTIVATE',
+          before: { status: before.status },
+          after: { status },
+          source: 'API_V2',
+        });
+        await this.outbox.append(tx, ctx, {
+          eventType: 'party.status_changed',
+          aggregateType: ENTITY_TYPE,
+          aggregateId: partyId,
+          payload: { status },
+        });
+      }
+
+      // A locked same-status request is a true no-op (no version increment).
+      // An updated row increments exactly once, in the same transaction.
+      return partyV2MutationReceiptSchema.parse({
+        id: partyId,
+        version: outcome === 'UNCHANGED' ? version : version + 1,
+        selectedRole,
+        status,
+      });
+    });
+  }
+
   async setStatus(command: SetPartyStatusCommand): Promise<PartyResponse> {
     const { ctx } = command;
 

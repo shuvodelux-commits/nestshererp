@@ -237,6 +237,7 @@ export type {
   PartyInput,
   SetPartyOpeningCommand,
   SetPartyStatusCommand,
+  SetPartyStatusV2Command,
   UpdatePartyCommand,
 } from './parties/manage-parties-service';
 export { PartyLedgerService } from './parties/party-ledger-service';

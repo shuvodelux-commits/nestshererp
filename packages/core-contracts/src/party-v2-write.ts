@@ -85,3 +85,18 @@ export const partyV2NamePhoneEditRequestSchema = savePartyRequestSchema
 
 export type PartyV2NamePhoneEditRequest =
   z.infer<typeof partyV2NamePhoneEditRequestSchema>;
+
+/**
+ * SEC-N02E: directory status is identity-wide, never per relationship. The
+ * selected trading role authorizes the action and identifies the minimal
+ * receipt, but never changes the Party's role memberships.
+ */
+export const partyV2StatusRequestSchema = z.object({
+  selectedRole: partyRoleSchema,
+  version: z.number().int().positive().refine(Number.isSafeInteger, {
+    message: 'A positive safe integer optimistic version is required',
+  }),
+  status: partyStatusSchema,
+}).strict();
+
+export type PartyV2StatusRequest = z.infer<typeof partyV2StatusRequestSchema>;
