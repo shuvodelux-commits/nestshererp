@@ -12353,7 +12353,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12373,7 +12374,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12393,7 +12395,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12413,7 +12416,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12433,7 +12437,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12453,7 +12458,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12473,7 +12479,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12493,7 +12500,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12513,7 +12521,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12533,7 +12542,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12553,7 +12563,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12573,7 +12584,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12593,7 +12605,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12613,7 +12626,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12633,7 +12647,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12653,7 +12668,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12673,7 +12689,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12693,7 +12710,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12713,7 +12731,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12733,7 +12752,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12753,7 +12773,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12773,7 +12794,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12793,7 +12815,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {
@@ -12813,7 +12836,8 @@
         "PURCHASE_PLAN_VIEW",
         "PURCHASE_VIEW",
         "PURCHASE_VOID",
-        "SUPPLIER_PAYMENT_VOID"
+        "SUPPLIER_PAYMENT_VOID",
+        "SUPPLIER_VIEW"
       ]
     },
     {

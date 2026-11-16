@@ -3534,30 +3534,30 @@
 | DELETE | `/api/v1/party-setup/groups/:id` | PartyGroupsController | CUSTOMER_CREATE, CUSTOMER_DEACTIVATE, CUSTOMER_EDIT, CUSTOMER_VIEW … (+11) | ❌ NOT TESTED |
 | GET | `/api/v1/periods` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
 | POST | `/api/v1/periods/close` | PeriodsController | PERIOD_CLOSE, SETTING_VIEW | ❌ NOT TESTED |
-| GET | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| GET | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| POST | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| PUT | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| DELETE | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| POST | `/api/v1/purchases/drafts/:id/restore` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| GET | `/api/v1/purchase-plans/suggestions` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| GET | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| GET | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/purchase-plans/:id/decide` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/purchase-plans/:id/delete` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| GET | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| GET | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| GET | `/api/v1/purchases` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| GET | `/api/v1/purchases/:id` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| POST | `/api/v1/purchases` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| POST | `/api/v1/purchases/:id/void` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| GET | `/api/v1/suppliers/:id/due` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/suppliers/payments` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ✅ TESTED |
-| PATCH | `/api/v1/suppliers/payments/:id` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
-| POST | `/api/v1/suppliers/payments/:id/void` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+7) | ❌ NOT TESTED |
+| GET | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| GET | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| POST | `/api/v1/purchases/drafts` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| PUT | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| DELETE | `/api/v1/purchases/drafts/:id` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| POST | `/api/v1/purchases/drafts/:id/restore` | PurchaseDraftsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| GET | `/api/v1/purchase-plans/suggestions` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/purchase-plans/:id/decide` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/purchase-plans/:id/delete` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/purchase-plans/:id` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/purchase-plans` | PurchasePlansController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/purchases` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| GET | `/api/v1/purchases/:id` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| POST | `/api/v1/purchases` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| POST | `/api/v1/purchases/:id/void` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| GET | `/api/v1/suppliers/:id/due` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/suppliers/payments` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
+| PATCH | `/api/v1/suppliers/payments/:id` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| POST | `/api/v1/suppliers/payments/:id/void` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
 | GET | `/api/v1/dashboard/summary` | DashboardController | — | ✅ TESTED |
 | POST | `/api/v1/auth/login` | LoginController | — | ✅ TESTED |
 | POST | `/api/v1/auth/login/google` | LoginController | — | ✅ TESTED |
