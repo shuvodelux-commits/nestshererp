@@ -387,6 +387,39 @@ export class PostgresPartyRepository implements PartyRepository {
       .where(and(this.liveInTenant(ctx), eq(parties.id, id)));
   }
 
+  /**
+   * Keep V1's unversioned status writer intact. V2 must lock before deciding
+   * whether a same-state request is a no-op; otherwise a concurrent write
+   * could make an acknowledged no-op stale without an audit or a conflict.
+   */
+  async setStatusIfVersion(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, status: PartyStatus,
+  ): Promise<'UPDATED' | 'UNCHANGED' | 'STALE'> {
+    const [current] = await txOf(tx)
+      .select({ version: parties.version, status: parties.status })
+      .from(parties)
+      .where(and(this.liveInTenant(ctx), eq(parties.id, id)))
+      .for('update');
+
+    if (current === undefined || current.version !== expectedVersion) return 'STALE';
+    if (current.status === status) return 'UNCHANGED';
+
+    const updated = await txOf(tx)
+      .update(parties)
+      .set({
+        status,
+        updatedAt: this.clock.now(),
+        updatedBy: ctx.userId,
+        version: sql`${parties.version} + 1`,
+      })
+      .where(and(
+        this.liveInTenant(ctx), eq(parties.id, id), eq(parties.version, expectedVersion),
+      ))
+      .returning({ id: parties.id });
+
+    return updated.length === 1 ? 'UPDATED' : 'STALE';
+  }
+
   async deleteUnused(tx: Tx, ctx: TenantContext, id: string): Promise<void> {
     await txOf(tx)
       .delete(partyRoles)

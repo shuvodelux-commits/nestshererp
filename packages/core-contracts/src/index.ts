@@ -237,12 +237,14 @@ export {
   partyV2MutationReceiptSchema,
   partyV2MutationReceiptEnvelopeSchema,
   partyV2NamePhoneEditRequestSchema,
+  partyV2StatusRequestSchema,
 } from './party-v2-write';
 export type {
   PartyV2CreateRequest,
   PartyV2MutationReceipt,
   PartyV2MutationReceiptEnvelope,
   PartyV2NamePhoneEditRequest,
+  PartyV2StatusRequest,
 } from './party-v2-write';
 export type {
   BalanceDirectionValue,

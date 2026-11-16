@@ -251,6 +251,13 @@ export interface PartyRepository {
     party: PartyEdit,
   ): Promise<boolean>;
   setStatus(tx: Tx, ctx: TenantContext, id: string, status: PartyStatus): Promise<void>;
+  /**
+   * V2-only optimistic state writer. Lock and validate current version even on
+   * a no-op, so two concurrent requests never acknowledge a stale version.
+   */
+  setStatusIfVersion(
+    tx: Tx, ctx: TenantContext, id: string, expectedVersion: number, status: PartyStatus,
+  ): Promise<'UPDATED' | 'UNCHANGED' | 'STALE'>;
   /** Hard delete, only ever called for a party nothing refers to (§3.6). */
   deleteUnused(tx: Tx, ctx: TenantContext, id: string): Promise<void>;
 

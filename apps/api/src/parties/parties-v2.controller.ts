@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Patch,
   Post,
   Inject,
@@ -23,6 +24,7 @@ import {
   partyReadV2Schema,
   partyV2CreateRequestSchema,
   partyV2NamePhoneEditRequestSchema,
+  partyV2StatusRequestSchema,
   partyV2MutationReceiptEnvelopeSchema,
 } from '@sher/core-contracts';
 
@@ -89,6 +91,32 @@ export class PartiesV2Controller {
       data: await this.parties.updateNamePhoneV2({
         ctx, partyId, input: parsed.data,
       }),
+    });
+  }
+
+  /** Identity-wide status change with selected-role permissions and CAS. */
+  @Post(':id/status')
+  @HttpCode(200)
+  async setStatus(
+    @Param('id') partyId: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Ctx() ctx: TenantContext,
+  ): Promise<PartyV2MutationReceiptEnvelope> {
+    if (!/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(partyId)) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid Party identifier');
+    }
+    if (idempotencyKey !== undefined) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Idempotency-Key is not supported for V2 Party status');
+    }
+    const parsed = partyV2StatusRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 'Invalid request body', {
+        issues: parsed.error.issues.map(issue => issue.path.join('.')).join(', '),
+      });
+    }
+    return partyV2MutationReceiptEnvelopeSchema.parse({
+      data: await this.parties.setStatusV2({ ctx, partyId, input: parsed.data }),
     });
   }
 
