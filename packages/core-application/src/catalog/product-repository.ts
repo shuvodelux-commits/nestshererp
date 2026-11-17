@@ -147,6 +147,8 @@ export interface ProductRepository {
    * its sort key up.
    */
   list(tx: Tx, ctx: TenantContext, filter: ProductFilter): Promise<readonly ProductRow[]>;
+  /** Optional, tenant-scoped name-only fuzzy discovery. Never used to resolve a posting ID. */
+  fuzzyByName?(tx: Tx, ctx: TenantContext, query: string, limit: number): Promise<readonly ProductRow[]>;
   /** Counts over the same filter, minus paging, so a tile matches its table. */
   count(tx: Tx, ctx: TenantContext, filter: ProductFilter): Promise<ProductCounts>;
 

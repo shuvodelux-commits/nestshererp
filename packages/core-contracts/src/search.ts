@@ -42,6 +42,8 @@ export const globalSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(80),
   /** Per group, not overall — five products and five customers, not five rows. */
   limit: z.coerce.number().int().min(1).max(10).optional(),
+  /** Opt in to name-only typo discovery; omitted keeps the original strict lookup. */
+  mode: z.enum(['FUZZY_V1']).optional(),
 });
 export type GlobalSearchQuery = z.infer<typeof globalSearchQuerySchema>;
 
