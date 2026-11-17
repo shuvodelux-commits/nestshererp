@@ -39,6 +39,14 @@ These are counts of **files containing the exact static literal**, obtained by g
 - **SEC-4 — retained V1 clients/offline queues:** **UNKNOWN; OPERATOR INPUT REQUIRED.** [Issue #339](https://github.com/shuvodelux-commits/nestshererp/issues/339) asks for deployed versions, privacy-safe aggregate route counts, queued offline PARTY_CREATE backlog, stage/canary/production cutover choice and safe rollback. Static Vue source is **not** proof of an active deployment or absence of users. No Vue migration or Vue browser testing is authorized for this module.
 - **SEC-5 — release:** **NOT AUTHORIZED.** After owner SEC-1/4 decisions, one separate Nest-only RED→GREEN implementation branch with signed 2-tenant nonowner PostgreSQL16/RLS, replay/concurrency, no forbidden side effects, exact-head Super Build, Node20 full CI and independent security/accounting QA. Separate owner approval is required for PR merge **and** deployment.
 
+### GitHub deployment-record audit (2026-11-17; no runtime-status inference)
+
+GitHub REST deployment/environments inspection is a **bounded source-of-record check**, not a live traffic study. Backend repo GitHub API returned **zero deployment objects** and **zero configured environments**; the adoption-branch workflows are CI and test-specific checks. React repo GitHub API returned **two GitHub Pages deployment objects**, dated **2026-10-06**, commit SHAs `d3f7d87c916a2f5f345498e930bcc2fb01a7e86b` and `18bf8dbb34191ec118f289a471e5c8336b4201ea`; **both latest status = failure**, with no environment URL. Its only listed GitHub environment is `github-pages`. These results cannot establish the existence or nonexistence of external deployments.
+
+React `wrangler.jsonc` configures a candidate Cloudflare Worker named `hisabiq-ui` with static assets `./dist` and SPA fallback; **configured intent does not prove deployment**. The React `PR Fast CI` workflow is a build/test/smoke gate rather than a production deployment. Backend `.github/workflows/ci.yml` runs PG16/Node checks and Vue build/acceptance; no backend deployment was recorded within GitHub. Hosting in Cloudflare, an external server, AWS or a separate release system remains **UNKNOWN**, including actual live API host/version, any retained Vue client and queued offline creates.
+
+The operator must provide sanitized release identifiers, route-level V1 counts, supported client age and offline command backlog before a production cutover decision. Do not infer zero clients or zero exposure from empty GitHub deployment records. See [operator issue #339](https://github.com/shuvodelux-commits/nestshererp/issues/339#issuecomment-6938517978) for the read-only audit, required evidence and rollout gate.
+
 ### Required future acceptance — before any live cutover
 
 | Scenario | Mandatory assertion |
