@@ -79,6 +79,28 @@ class SingleCodexPolicyTest(unittest.TestCase):
         self.assertNotIn("claude", " ".join(command))
         self.assertNotIn("super-board-codex-wave.sh", " ".join(command))
 
+    def test_actual_native_codex_argv_pins_medium_effort(self):
+        # Exercise Codex.command() itself, not just the wrapper's delegated flags.
+        import ast
+        import json
+        source = (SCRIPT.parent / "super-board-lane.sh").read_text()
+        embedded = source.split("<<'PY'\\n", 1)[1].rsplit("\\nPY", 1)[0]
+        tree = ast.parse(embedded)
+        codex = next(node for node in tree.body
+                     if isinstance(node, ast.ClassDef) and node.name == "Codex")
+        namespace = {"json": json}
+        exec(compile(ast.Module(body=[codex], type_ignores=[]), "<codex-policy>", "exec"), namespace)
+        request = {"root": Path("/tmp/isolated-frontend"), "git_dir": Path("/tmp/git"),
+                   "common_dir": Path("/tmp/git"), "model": "gpt-6.1-sol",
+                   "reasoning_effort": "medium", "prompt": "scope only 548",
+                   "schema_path": Path("/tmp/schema.json"), "output": Path("/tmp/result.json")}
+        argv, supplied_prompt = namespace["Codex"]().command(request)
+        self.assertEqual(argv[:2], ["codex", "exec"])
+        self.assertIn("gpt-6.1-sol", argv)
+        self.assertIn('model_reasoning_effort="medium"', argv)
+        self.assertNotIn("claude", " ".join(argv))
+        self.assertEqual(supplied_prompt, request["prompt"])
+
     def test_policy_rejects_before_running_any_worker(self):
         spawn = Mock()
         with self.assertRaises(guard.PolicyError):
