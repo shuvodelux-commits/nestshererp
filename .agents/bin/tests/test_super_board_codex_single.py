@@ -84,7 +84,7 @@ class SingleCodexPolicyTest(unittest.TestCase):
         import ast
         import json
         source = (SCRIPT.parent / "super-board-lane.sh").read_text()
-        embedded = source.split("<<'PY'\\n", 1)[1].rsplit("\\nPY", 1)[0]
+        embedded = source.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
         tree = ast.parse(embedded)
         codex = next(node for node in tree.body
                      if isinstance(node, ast.ClassDef) and node.name == "Codex")
