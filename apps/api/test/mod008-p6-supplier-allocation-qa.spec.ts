@@ -309,7 +309,10 @@ suite('MOD-008 P6 signed multi-bill Supplier allocation and AP integrity', () =>
     }
     expect(await snapshot(a)).toEqual(beforeA);
     expect(await snapshot(b)).toEqual(beforeB);
-    expect(await snapshot(denied)).toEqual(beforeDenied);
+    // Permission denial is intentionally security-audited. It must not create
+    // a financial document, allocation, inventory movement or outbox event.
+    const deniedAfter = await snapshot(denied);
+    expect(deniedAfter).toEqual({ ...beforeDenied, audits: beforeDenied.audits + 1 });
     await assertBalanced(a);
     await assertBalanced(b);
   }, 45_000);
