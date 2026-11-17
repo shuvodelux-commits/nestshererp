@@ -2,6 +2,60 @@
 
 **Status:** DOCUMENTATION-ONLY PROPOSAL, **NOT BUILD-APPROVED**. Based on backend adoption `91dd0ccf744622e0c64adf32a63b9599d126f979` and React `main@412083eec9f175f4af9d7ef31e7e23dfacc3fe4e` (2026-11-15). [Security issue #245](https://github.com/shuvodelux-commits/nestshererp/issues/245); [parent MOD-004 #568](https://github.com/shuvodelux-commits/hisabiq_ui/issues/568). No runtime source changes, tests, migrations, role grants, UI activation, or deployment in this document PR.
 
+## 0. November 17, 2026 — CURRENT checkpoint (supersedes historical status below)
+
+**STATUS: SOURCE-AUDITED, NOT BUILD-APPROVED OR DEPLOY-APPROVED.** Keep the original November 15 audit and matrix below as historical evidence, but the old statements that React POS/Purchase readers still use V1 and that V2 status is missing are superseded. This checkpoint is pinned to React main **b0def73a13ce507b2b9951947e0552f4c729ab61** and backend adoption **031b5053df3fbc1def463def7d8803b774f8f131**. Related: security [issue #245](https://github.com/shuvodelux-commits/nestshererp/issues/245), operator [issue #339](https://github.com/shuvodelux-commits/nestshererp/issues/339), React [issue #568](https://github.com/shuvodelux-commits/hisabiq_ui/issues/568).
+
+### Merged prerequisites — no V1 hardening yet
+
+| Component | Current verified state | Remaining boundary |
+| --- | --- | --- |
+| Nest V2 Party create, shared name/phone edit | Backend PRs #309, #317, #329 merged, signed QA/Node20 CI | Limited-role writes receive minimal receipts, not full private profiles |
+| Nest V2 identity-wide status | [Backend PR #335](https://github.com/shuvodelux-commits/nestshererp/pull/335) merged, CI passed | Role-selected destructive authority plus all current roles; row-locked CAS, same-status no-op, minimal receipt |
+| React V2 trading create/edit/status | Frontend PRs #609, #642, [#660](https://github.com/shuvodelux-commits/hisabiq_ui/pull/660) merged | Strict unmounted adapters; #660 full 1,782/1,782 frontend tests and 5/5 Super Build passed |
+| React POS Customer and Purchase Supplier | Frontend PRs #589 and #593 merged | Both use selected-role privacy-safe V2 reads, no raw V1 fallback |
+| Source-backed V2 Supplier QA | Backend PR #291 merged | Not evidence that V1 disclosure is fixed |
+| Older SEC-N01 design PRs | Backend #275 and React #575 merged | Documentation only; no new server-side V1 gate |
+
+**Live source still vulnerable:** backend apps/api/src/parties/parties.controller.ts still returns raw PartyResponse via **five** V1 operations: GET list, GET detail, POST create, PATCH edit and POST status. The service list/get/create/update/setStatus still returns the legacy raw projection without both privacy grants. Current signed V2 security tests reproduce the existing V1 exposure as a **release blocker**, not as a success. V1 raw response includes address, guardian, NID, email, notes and party-global history presence. Do not treat privacy-safe V2 behavior or client-side masking as a fix to this direct V1 HTTP exposure.
+
+### Source-scanned caller compatibility — exact pins only
+
+| Surface | Direct literal /api/v1/parties files | Decision |
+| --- | --- | --- |
+| React runtime src/ | **0** | No direct literal in this directory; does not establish live deployments, indirect dynamic paths or every client version |
+| React scripts/ | **11** | Real-browser, source-QA, test seeding and demo tools still depend on V1 create or read |
+| React tests/ | **1** | Includes a direct HTTP compatibility expectation |
+| Backend apps/api/test/ | **27** | V1 Party fixture/call-site test files require authorization-impact review |
+| Backend apps/web/src/api/parties.ts | **1** source file with all five sensitive routes | Legacy Vue client still consumes raw V1 and uses offlineWrite with queued PARTY_CREATE; **actual deployment and queued operations remain UNKNOWN** |
+
+These are counts of **files containing the exact static literal**, obtained by git grep on the two specified HEADs, not counts of HTTP calls, deployed installations or active shops. React fixture files include connected-purchase-drafts-browser.cjs, connected-purchase-drafts-postgres-browser.cjs, mod003-sale-damage-nonowner-crossprocess.cjs, mod006-cash-connected-post-browser.cjs, mod006-connected-counter-read-browser.cjs, mod006-connected-counter-single-payment-browser.cjs, mod006-counter-connected-post-browser.cjs, mod006-supplier-mfs-connected-post-browser.cjs, mod007-pos-read-live-browser.cjs, mod008-p5d-source-seed.cjs, and seed-hisabiq-demo.mjs. A restrictive V1 change must not turn legitimate synthetic acceptance fixtures into silently authorized private-data readers.
+
+### Freedom-first SEC-1 through SEC-5 decisions (current)
+
+- **SEC-1 — raw V1 response:** **NOT APPROVED.** Recommended: require both existing **PARTY_PROFILE_VIEW** and **PARTY_HISTORY_GLOBAL_VIEW** in addition to selected-role/action permissions for the **five raw-response operations only**, inside the same tenant UoW **before lookup, operation-ID replay and mutation**. Preserve full original V1 response only for appropriately privileged callers. No default or automatic grant to cashiers, no production bypass, no route-prefix blanket denial affecting other V1 ledger/opening/delete/setup.
+- **SEC-2 — shopkeeper freedom:** **V2 DAILY TRADING PATH IMPLEMENTED.** Role-only create/name/phone/status and selected-role reads should remain usable without raw private/global disclosure grants. The V2 status operation still affects an entire identity: **every affected trading role** must authorize DEACTIVATE. No generic netting or finance-role reuse.
+- **SEC-3 — React consumer preparation:** **MERGED for known trading adapters.** POS Customer and Purchase Supplier read migrations are complete. Unmounted Party create/edit/status transports are complete. Connected seven-role React Party UX is **not** released; do not activate preview finance screens as live flows.
+- **SEC-4 — retained V1 clients/offline queues:** **UNKNOWN; OPERATOR INPUT REQUIRED.** [Issue #339](https://github.com/shuvodelux-commits/nestshererp/issues/339) asks for deployed versions, privacy-safe aggregate route counts, queued offline PARTY_CREATE backlog, stage/canary/production cutover choice and safe rollback. Static Vue source is **not** proof of an active deployment or absence of users. No Vue migration or Vue browser testing is authorized for this module.
+- **SEC-5 — release:** **NOT AUTHORIZED.** After owner SEC-1/4 decisions, one separate Nest-only RED→GREEN implementation branch with signed 2-tenant nonowner PostgreSQL16/RLS, replay/concurrency, no forbidden side effects, exact-head Super Build, Node20 full CI and independent security/accounting QA. Separate owner approval is required for PR merge **and** deployment.
+
+### Required future acceptance — before any live cutover
+
+| Scenario | Mandatory assertion |
+| --- | --- |
+| Trading-role only / only one privacy grant / both privacy grants | First two combinations denied at the five raw V1 boundaries; both plus appropriate role/action permitted; no raw data on error |
+| V1 create replay | Forbidden preflight before replay result, Party insert, opening, audit, outbox or operation-ID reservation |
+| V1 edit/status | Forbidden preflight before version, audit, outbox or hidden-identity disclosure; permitted roles preserve old wire format |
+| Missing ID, foreign tenant, wrong selected role, Vendor OFF, shared role | Tenant/RLS and role privacy remain fail-closed; no hidden membership, global history or another role's balance |
+| V2 read/create/edit/status regression | Existing role-only freedom preserved, V2 WITHHELD/VISIBLE projection intact, minimal mutation receipts and no unauthorized rollback |
+| Opening/ledger/delete/setup/groups | No accidental V1 route-prefix shutdown, journal/cash/session effects or change to identity-wide posted-history delete guard |
+| Client compatibility | Operator inventory of deployed V1 callers and offline queued writes reviewed before stage/canary/production policy decision |
+| Review/rollout | Security/accounting QA signoff, owner separately authorizes merge, rollout and monitoring; no silent auto-privilege |
+
+**Current action:** Update operator inventory [#339](https://github.com/shuvodelux-commits/nestshererp/issues/339); approve or revise SEC-1/4/5 in parent [#245](https://github.com/shuvodelux-commits/nestshererp/issues/245). Documentation review may proceed; **this update must not be read as approval to lock down live V1 endpoints**.
+
+---
+
 ## 1. Source-verified security condition
 
 - [`apps/api/src/parties/parties.controller.ts`](https://github.com/shuvodelux-commits/nestshererp/blob/91dd0ccf744622e0c64adf32a63b9599d126f979/apps/api/src/parties/parties.controller.ts) exposes `PartyResponse` through five V1 HTTP operations below.
