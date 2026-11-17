@@ -40,6 +40,11 @@ const PERMISSIONS = [
   Permission.UNIT_MANAGE, Permission.SUPPLIER_VIEW,
   Permission.SUPPLIER_CREATE, Permission.CUSTOMER_CREATE,
   Permission.CUSTOMER_VIEW, Permission.COST_VIEW,
+  // P6 void dependency QA exercises existing signed Class-T routes only.
+  Permission.PURCHASE_VOID, Permission.PURCHASE_PAY,
+  Permission.PURCHASE_RETURN_CREATE, Permission.PURCHASE_RETURN_VIEW,
+  Permission.CASH_ACCOUNT_VIEW, Permission.CASH_ACCOUNT_MANAGE,
+  Permission.BANK_ACCOUNT_VIEW, Permission.BANK_ACCOUNT_MANAGE,
 ];
 
 let app: INestApplication;
@@ -106,7 +111,9 @@ async function purchaseMutationSnapshot(tenant: SeededTenant) {
     const rows = await db.query<{
       purchases: number; purchaseLines: number; journals: number;
       journalLines: number; stocks: number; lots: number;
-      supplierPayments: number; audits: number; outbox: number;
+      supplierPayments: number; purchaseReturns: number;
+      paymentAllocations: number; cashMovements: number;
+      audits: number; outbox: number;
     }>(`SELECT
       (SELECT count(*)::int FROM purchases) AS purchases,
       (SELECT count(*)::int FROM purchase_lines) AS "purchaseLines",
@@ -115,9 +122,16 @@ async function purchaseMutationSnapshot(tenant: SeededTenant) {
       (SELECT count(*)::int FROM stock_movements) AS stocks,
       (SELECT count(*)::int FROM inventory_lots) AS lots,
       (SELECT count(*)::int FROM supplier_payments) AS "supplierPayments",
+      (SELECT count(*)::int FROM purchase_returns) AS "purchaseReturns",
+      (SELECT count(*)::int FROM payment_allocations) AS "paymentAllocations",
+      (SELECT count(*)::int FROM cash_movements) AS "cashMovements",
       (SELECT count(*)::int FROM audit_events) AS audits,
       (SELECT count(*)::int FROM outbox) AS outbox`);
-    return rows.rows[0];
+    const snapshot = rows.rows[0];
+    if (snapshot === undefined) {
+      throw new Error('P6 source mutation snapshot is unavailable');
+    }
+    return snapshot;
   });
 }
 
@@ -433,6 +447,122 @@ beforeEach(async () => {
     expect(await purchaseMutationSnapshot(a)).toEqual(before);
     expect(await postingRows(a)).toEqual(zero);
   }, 35_000);
+
+  it('refuses void after a source-allocated supplier payment without any reversal', async () => {
+    // Historical opening balance is an account fixture, not an active drawer.
+    const bank = await post('/api/v1/money/accounts', {
+      name: 'P6 settlement source bank', type: 'BANK', holderName: 'P6 Shop',
+      reference: null, isDrawer: false, openingAmountMinor: 20_000,
+      openingDate: '2026-01-01', operationId: Ulid.generate(clock),
+    });
+    expect(bank.status, JSON.stringify(bank.body)).toBe(201);
+    const accountCode = 'BANK:' + (bank.body.data.id as string);
+    const created = await post('/api/v1/purchases', bill());
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const purchaseId = created.body.data.id as string;
+    const version = created.body.data.version as number;
+
+    const payment = await post('/api/v1/suppliers/payments', {
+      supplierPartyId: supplierId, purchaseId, amountMinor: 2_500,
+      accountCode, note: null,
+    });
+    expect(payment.status, JSON.stringify(payment.body)).toBe(201);
+    const due = await api().get('/api/v1/suppliers/' + supplierId + '/due')
+      .set(bearer(tokenA));
+    expect(due.status).toBe(200);
+    expect(due.body.data.outstandingMinor).toBe(7_500);
+    const beforeA = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+    expect(beforeA.paymentAllocations).toBe(1);
+    expect(beforeA.supplierPayments).toBe(1);
+
+    const refused = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Cannot cancel an allocated payment' });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.error?.code).toBe('VALIDATION_FAILED');
+    const foreign = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Other tenant must not reverse' }, tokenB);
+    expect(foreign.status).toBe(404);
+    expect(JSON.stringify(foreign.body)).not.toContain(purchaseId);
+    expect(await purchaseMutationSnapshot(a)).toEqual(beforeA);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
+  }, 45_000);
+
+  it('refuses void after partial supplier return consumes source stock without mutation', async () => {
+    const created = await post('/api/v1/purchases', bill({
+      lines: [{ productId, qty: 5_000, unitPriceMinor: 1_000 }],
+    }));
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const purchaseId = created.body.data.id as string;
+    const lineId = created.body.data.lines[0].id as string;
+    const version = created.body.data.version as number;
+    const returned = await post('/api/v1/purchase-returns', {
+      purchaseId, lines: [{ sourceLineId: lineId, qty: 1_000 }],
+      reason: 'DAMAGED', note: null, receivedMinor: 0, receiptAccountCode: null,
+    });
+    expect(returned.status, JSON.stringify(returned.body)).toBe(201);
+    const before = await purchaseMutationSnapshot(a);
+    expect(before.purchaseReturns).toBe(1);
+    const refused = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Return already references a consumed receipt lot' });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.error?.code).toBe('VALIDATION_FAILED');
+    expect(await purchaseMutationSnapshot(a)).toEqual(before);
+    await assertBalancedEntries(a);
+  }, 45_000);
+
+  it('voids a clean unpaid bill exactly once and rejects stale, foreign and repeated reversal', async () => {
+    const created = await post('/api/v1/purchases', bill());
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const purchaseId = created.body.data.id as string;
+    const version = created.body.data.version as number;
+    const before = await purchaseMutationSnapshot(a);
+    const beforeB = await purchaseMutationSnapshot(b);
+
+    const stale = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version: version + 1, reason: 'Stale editor version' });
+    expect(stale.status).toBeGreaterThanOrEqual(400);
+    expect(stale.status).toBeLessThan(500);
+    const foreign = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Other tenant denial' }, tokenB);
+    expect(foreign.status).toBe(404);
+    expect(await purchaseMutationSnapshot(a)).toEqual(before);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+
+    const voided = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Duplicate receiving record' });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(201);
+    expect(voided.body.data.status).toBe('VOIDED');
+    const after = await purchaseMutationSnapshot(a);
+    expect(after.purchases).toBe(1);
+    expect(after.journals).toBe(before.journals + 1);
+    expect(after.stocks).toBe(before.stocks + 1);
+    expect(after.lots).toBe(before.lots);
+    expect(after.supplierPayments).toBe(0);
+    expect(after.paymentAllocations).toBe(0);
+    expect(after.purchaseReturns).toBe(0);
+
+    const totals = await asTenant(pool, a.tenantId, async db =>
+      (await db.query<{ account_code: string; total: string }>(`
+        SELECT account_code, sum(amount_minor)::bigint AS total
+        FROM journal_lines WHERE account_code IN ('AP', 'INVENTORY')
+        GROUP BY account_code`)).rows);
+    expect(totals.every(row => Number(row.total) === 0)).toBe(true);
+    const due = await api().get('/api/v1/suppliers/' + supplierId + '/due')
+      .set(bearer(tokenA));
+    expect(due.status).toBe(200);
+    expect(due.body.data.outstandingMinor).toBe(0);
+
+    const repeated = await post('/api/v1/purchases/' + purchaseId + '/void',
+      { version, reason: 'Must not reverse twice' });
+    expect(repeated.status).toBe(400);
+    expect(await purchaseMutationSnapshot(a)).toEqual(after);
+    expect(await purchaseMutationSnapshot(b)).toEqual(beforeB);
+    await assertBalancedEntries(a);
+    await assertBalancedEntries(b);
+  }, 45_000);
 
   it('validates list query keys rather than treating arbitrary filters as trusted', async () => {
     const response = await api().get('/api/v1/purchases?surpriseFilter=TRUE')
