@@ -66,6 +66,19 @@ def verify_checkout(*, origin, head, status, expected_sha):
     return None
 
 
+def verify_backend_runtime(*, origin, head, status, expected_sha):
+    """Attest the *actual* disposable backend checkout, never a caller's pin alone."""
+    if expected_sha != BACKEND_PIN:
+        raise PolicyError("Backend pin has not been source-reviewed")
+    if origin.strip() != "https://github.com/shuvodelux-commits/nestshererp.git":
+        raise PolicyError("Backend checkout is not the approved NestSherERP repository")
+    if head.strip() != BACKEND_PIN:
+        raise PolicyError("Actual disposable NestSherERP HEAD is not the accepted source SHA")
+    if status.strip():
+        raise PolicyError("Disposable NestSherERP worktree must be clean")
+    return None
+
+
 def make_build_command(*, card, config, launcher):
     if card.get("status") != "Ready" or card.get("content", {}).get("url") != TARGET_URL:
         raise PolicyError("Unverified card cannot form a builder command")
@@ -126,6 +139,8 @@ def main(argv=None):
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--frontend-sha", required=True)
     parser.add_argument("--backend-sha", required=True)
+    parser.add_argument("--backend-runtime-root", type=Path, required=True,
+                        help="Clean disposable backend checkout at the accepted exact SHA")
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -135,7 +150,17 @@ def main(argv=None):
         if args.backend_sha != BACKEND_PIN:
             raise PolicyError("Backend SHA needs separate source-pair review and approval")
         root = args.repo_root.resolve(strict=True)
+        backend_root = args.backend_runtime_root.resolve(strict=True)
         config = args.config.resolve(strict=True)
+        if git_value(root, "rev-parse", "--show-toplevel") != str(root):
+            raise PolicyError("Frontend path is not the exact worktree root")
+        if git_value(backend_root, "rev-parse", "--show-toplevel") != str(backend_root):
+            raise PolicyError("Backend path is not the exact disposable worktree root")
+        verify_backend_runtime(
+            origin=git_value(backend_root, "remote", "get-url", "origin"),
+            head=git_value(backend_root, "rev-parse", "HEAD"),
+            status=git_value(backend_root, "status", "--porcelain"),
+            expected_sha=args.backend_sha)
         launcher = Path(__file__).resolve().with_name("super-board-lane.sh")
         if not launcher.is_file():
             raise PolicyError("Verified native Codex lane is missing")
