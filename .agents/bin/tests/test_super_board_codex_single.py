@@ -66,6 +66,21 @@ class SingleCodexPolicyTest(unittest.TestCase):
                 with self.assertRaises(guard.PolicyError):
                     guard.verify_checkout(**{**good, **changed})
 
+    def test_disposable_backend_source_is_attested_not_only_declared(self):
+        expected = "57585270eda42f89748bbd01b134a5e1ed805f6b"
+        correct = {"origin": "https://github.com/shuvodelux-commits/nestshererp.git",
+                   "head": expected, "expected_sha": expected, "status": ""}
+        self.assertIsNone(guard.verify_backend_runtime(**correct))
+        for change in (
+            {"head": "b" * 40},
+            {"origin": "https://github.com/another/erp.git"},
+            {"status": " M packages/core-domain/src/auth.ts"},
+            {"expected_sha": "b" * 40},
+        ):
+            with self.subTest(change=change):
+                with self.assertRaises(guard.PolicyError):
+                    guard.verify_backend_runtime(**(correct | change))
+
     def test_single_build_command_uses_real_codex_medium_and_no_wave(self):
         command = guard.make_build_command(
             card=guard.select_verified_card(board(), issue()),
