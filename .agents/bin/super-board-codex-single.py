@@ -79,6 +79,32 @@ def verify_backend_runtime(*, origin, head, status, expected_sha):
     return None
 
 
+def verify_board_config(config):
+    """Reject project config that could redirect the lane or authorize a merge."""
+    if not isinstance(config, dict):
+        raise PolicyError("Invalid Project #2 Super Board config")
+    project = config.get("project")
+    repo = config.get("repo")
+    if not isinstance(project, dict) or not isinstance(repo, dict):
+        raise PolicyError("Missing repository or project configuration")
+    remote = repo.get("remote")
+    if isinstance(remote, str) and remote.endswith(".git"):
+        remote = remote[:-4]
+    if (project.get("owner") != "shuvodelux-commits"
+            or project.get("number") != 2
+            or repo.get("path") != "."
+            or remote != f"https://github.com/{TARGET_REPO}"
+            or config.get("base_branch") != "main"
+            or config.get("host") != "codex"
+            or config.get("worker_backend") != "workflow"
+            or config.get("human_approves_merge") is not True
+            or not isinstance(config.get("merge_policy"), dict)
+            or config["merge_policy"].get("default") != "human"
+            or config.get("max_workers") != 1):
+        raise PolicyError("Unapproved project, repository, host, worker or merge config")
+    return None
+
+
 def make_build_command(*, card, config, launcher):
     if card.get("status") != "Ready" or card.get("content", {}).get("url") != TARGET_URL:
         raise PolicyError("Unverified card cannot form a builder command")
@@ -152,6 +178,10 @@ def main(argv=None):
         root = args.repo_root.resolve(strict=True)
         backend_root = args.backend_runtime_root.resolve(strict=True)
         config = args.config.resolve(strict=True)
+        try:
+            verify_board_config(json.loads(config.read_text()))
+        except (ValueError, UnicodeError) as exc:
+            raise PolicyError("Board configuration is unreadable or invalid JSON") from exc
         if git_value(root, "rev-parse", "--show-toplevel") != str(root):
             raise PolicyError("Frontend path is not the exact worktree root")
         if git_value(backend_root, "rev-parse", "--show-toplevel") != str(backend_root):
