@@ -10,6 +10,8 @@ import type {
   Tx,
 } from '@sher/core-application';
 import {
+  AppError,
+  ErrorCode,
   SEED_EXPENSE_CATEGORIES,
   SEED_UNITS,
   WALK_IN_PARTY_NAME,
@@ -50,6 +52,21 @@ import { txOf } from './unit-of-work';
  * outbox is a queue of operations the future sync engine would replay against a
  * server that never saw the database they came from.
  */
+/**
+ * Durable operation identities are archived and restored, never purged via
+ * ordinary application DB credentials. A fresh installation must have no
+ * existing identities before its tenant is replaced during owner restore.
+ *
+ * A business reset with permanent IDs is deliberately refused until the
+ * separately approved recovery/epoch policy exists (P0 #259); silently
+ * keeping stale replay receipts would misrepresent the reset as complete.
+ * Keep this explicit allowlist, not a heuristic based on table names.
+ */
+const IMMUTABLE_OPERATION_TABLES: ReadonlySet<string> = new Set([
+  'import_operations',
+  'sale_draft_create_operations',
+]);
+
 const EPHEMERAL_TABLES: readonly string[] = [
   'otp_codes',
   'refresh_tokens',
@@ -348,6 +365,30 @@ export class PostgresBackupRepository implements BackupRepository {
     // foreign key that a later delete was about to remove anyway.
     for (const table of [...structure.ordered].reverse()) {
       if (keep.includes(table.name)) continue;
+
+      if (IMMUTABLE_OPERATION_TABLES.has(table.name)) {
+        // Ordinary runtime role has SELECT but must never get DELETE/TRUNCATE.
+        // The owner restore caller already passed password + permission checks.
+        // Do not erase an old key or leave its replayable response behind a
+        // claimed reset. Reject an occupied table *before* touching identity.
+        const existing = await txOf(tx).execute(
+          sql`SELECT 1 FROM ${sql.raw(quote(table.name))} WHERE ${sql.raw(
+            quote(table.tenantColumn),
+          )} = ${ctx.tenantId} LIMIT 1`,
+        );
+        if (existing.rows.length > 0) {
+          throw new AppError(
+            ErrorCode.VALIDATION_FAILED,
+            'This business still has permanent operation history. ' +
+              'Its identity cannot be cleared through the normal reset/restore path. ' +
+              'Use the separately authorized recovery procedure.',
+          );
+        }
+        // No DELETE even for an empty table: PostgreSQL checks table grants
+        // before row matching. Archive import later rehydrates old keys.
+        continue;
+      }
+
       const result = await txOf(tx).execute(
         sql`DELETE FROM ${sql.raw(quote(table.name))} WHERE ${sql.raw(
           quote(table.tenantColumn),

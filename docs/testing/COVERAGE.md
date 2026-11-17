@@ -15,7 +15,7 @@
 | Dropdowns | 94 | 0 | — |
 | Business actions | 106 | — | — |
 | Endpoints | 250 | 131 | 52% |
-| Permission codes | 121 | 14 | 12% |
+| Permission codes | 121 | 16 | 13% |
 | Critical workflows | 17 | 11 | 65% |
 | Mobile-relevant screens | 14 | 5 | 36% |
 
