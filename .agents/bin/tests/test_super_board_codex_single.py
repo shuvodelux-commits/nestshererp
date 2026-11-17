@@ -66,6 +66,29 @@ class SingleCodexPolicyTest(unittest.TestCase):
                 with self.assertRaises(guard.PolicyError):
                     guard.verify_checkout(**{**good, **changed})
 
+    def test_project_config_cannot_redirect_to_other_repository_or_merge(self):
+        valid = {
+            "project": {"owner": "shuvodelux-commits", "number": 2},
+            "repo": {"remote": "https://github.com/shuvodelux-commits/hisabiq_ui.git",
+                     "path": "."},
+            "base_branch": "main", "host": "codex",
+            "worker_backend": "workflow", "human_approves_merge": True,
+            "merge_policy": {"default": "human"}, "max_workers": 1
+        }
+        self.assertIsNone(guard.verify_board_config(valid))
+        cases = [
+            {"project": {"owner": "shuvodelux-commits", "number": 3}},
+            {"repo": {"remote": "https://github.com/shuvodelux-commits/nestshererp.git",
+                      "path": "."}},
+            {"base_branch": "production"}, {"host": "claude"},
+            {"worker_backend": "claude-p"}, {"human_approves_merge": False},
+            {"merge_policy": {"default": "auto"}}, {"max_workers": 8},
+        ]
+        for change in cases:
+            with self.subTest(change=change):
+                with self.assertRaises(guard.PolicyError):
+                    guard.verify_board_config(valid | change)
+
     def test_disposable_backend_source_is_attested_not_only_declared(self):
         expected = "57585270eda42f89748bbd01b134a5e1ed805f6b"
         correct = {"origin": "https://github.com/shuvodelux-commits/nestshererp.git",
