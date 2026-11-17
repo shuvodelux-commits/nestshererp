@@ -56,6 +56,8 @@ class Codex:
                    '--output-schema', str(run['schema_path']), '--output-last-message', str(run['output']), '-']
         if run['model'] and run['model'].strip():
             command[2:2] = ['-m', run['model']]
+        if run.get('reasoning_effort'):
+            command[2:2] = ['-c', 'model_reasoning_effort=' + json.dumps(run['reasoning_effort'])]
         return command, run['prompt']
 
     def final_message(self, run, stdout):
@@ -87,6 +89,7 @@ parser.add_argument('--card', required=True, help='card JSON or a JSON file')
 parser.add_argument('--lane', required=True, choices=['build', 'qa', 'review'])
 parser.add_argument('--tier', choices=['low', 'medium', 'high'], help='run ladder (--low / default / --high)')
 parser.add_argument('--complexity', choices=['low', 'medium', 'high'], help="router's grade for this card")
+parser.add_argument('--reasoning-effort', choices=['medium'], help='Explicit native Codex Medium reasoning pin')
 explicit = False
 model = None
 rest = []
@@ -121,6 +124,8 @@ try:
 except (OSError, ValueError, AttributeError) as error:
     fail(f'Invalid {backend.label} lane input: {error}')
 # Without --<backend> this is the usage fallback, and that is opt-in per board.
+if args.reasoning_effort and (not explicit or model != 'gpt-6.1-sol' or args.lane != 'build'):
+    fail('Pinned Medium reasoning requires explicit gpt-6.1-sol and the build lane', 78)
 if not explicit and config.get('usage_fallback', 'none') != backend.name:
     fail(f'{backend.label} fallback refused: usage_fallback is not "{backend.name}" in {config_path}; pass {flag} for an explicit {backend.label} run.', 78)
 
@@ -231,7 +236,8 @@ def interrupted(signum, frame):
 signal.signal(signal.SIGTERM, interrupted)
 signal.signal(signal.SIGINT, interrupted)
 with tempfile.TemporaryDirectory(prefix=f'super-board-{backend.name}-') as temporary:
-    run = dict(root=root, git_dir=git_dir, common_dir=common_dir, model=model, prompt=prompt,
+    run = dict(root=root, git_dir=git_dir, common_dir=common_dir, model=model,
+               reasoning_effort=args.reasoning_effort, prompt=prompt,
                schema_path=Path(temporary) / 'schema.json', output=Path(temporary) / 'result.json')
     run['schema_path'].write_text(json.dumps(schema))
     command, stdin = backend.command(run)

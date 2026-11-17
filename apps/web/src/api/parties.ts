@@ -4,6 +4,8 @@ import type {
   PartyLedgerQuery,
   PartyLedgerResponse,
   PartyListResponse,
+  PartyReadV2ListResponse,
+  PartyReadV2,
   PartyOpeningResponse,
   PartyQuery,
   PartyResponse,
@@ -14,7 +16,11 @@ import type {
   UpdatePartyRequest,
 } from '@sher/core-contracts';
 
-import { localParties } from '@sher/adapter-sqlite-wasm';
+import { localParties, localUsers, readStoredSnapshot } from '@sher/adapter-sqlite-wasm';
+import { partyReadV2Schema, partyReadV2ListResponseSchema, partyRoleSchema } from '@sher/core-contracts';
+
+import { useSession } from '../auth/session';
+import { storedTenantId } from '../offline/snapshot';
 
 import { request } from './client';
 import { offlineWrite, queueCommand } from '../offline/local-writer';
@@ -37,7 +43,9 @@ export function fetchPartySetup(token: string): Promise<PartySetupResponse> {
   return request('/api/v1/party-setup', { token });
 }
 
-export function fetchParties(token: string, query: PartyQuery): Promise<PartyListResponse> {
+/** Build the exact selected-role list query for both transitional transports. */
+function partyListParams(query: PartyQuery): URLSearchParams {
+  partyRoleSchema.parse(query.role);
   const params = new URLSearchParams({ role: query.role });
   if (query.search !== undefined && query.search !== '') params.set('search', query.search);
   if (query.groupId !== undefined) params.set('groupId', query.groupId);
@@ -48,13 +56,37 @@ export function fetchParties(token: string, query: PartyQuery): Promise<PartyLis
   if (query.sort !== undefined) params.set('sort', query.sort);
   if (query.direction !== undefined) params.set('direction', query.direction);
 
+  return params;
+}
+
+/**
+ * Transitional V1 reader for older POS, Purchases, Expenses and Vendor screens.
+ * P3B-X (#228) must migrate all callers before P3C disables raw V1 reads.
+ * Do not reuse this function for the migrated Party list/detail screens.
+ */
+export function fetchParties(token: string, query: PartyQuery): Promise<PartyListResponse> {
+  const params = partyListParams(query);
   return offlineFallback(
-    () =>
-      request<PartyListResponse>(`/api/v1/parties?${params.toString()}`, {
-        token,
-        envelope: true,
-      }),
+    () => request<PartyListResponse>(`/api/v1/parties?${params.toString()}`, {
+      token,
+      envelope: true,
+    }),
     () => localParties(query),
+  );
+}
+
+/** Strict V2 directory used by the Party screen; privacy-safe online and offline. */
+export function fetchPartiesV2(token: string, query: PartyQuery): Promise<PartyReadV2ListResponse> {
+  const params = partyListParams(query);
+  return offlineFallback(
+    async () => {
+      const page = partyReadV2ListResponseSchema.parse(await request<unknown>(
+        `/api/v2/parties?${params.toString()}`, { token, envelope: true },
+      ));
+      page.data.forEach((row) => verifyReadRole(row, query.role));
+      return page;
+    },
+    () => offlineParties(query),
   );
 }
 
@@ -83,8 +115,57 @@ export function fetchPartyLedger(
   });
 }
 
-export function fetchParty(token: string, id: string): Promise<PartyResponse> {
-  return request(`/api/v1/parties/${id}`, { token });
+function verifyReadRole(row: PartyReadV2, role: PartyRoleValue): PartyReadV2 {
+  if (row.readRole !== role) throw new Error('Party read role does not match the selected relationship');
+  return row;
+}
+
+export async function fetchParty(token: string, id: string, role: PartyRoleValue): Promise<PartyReadV2> {
+  partyRoleSchema.parse(role);
+  return verifyReadRole(partyReadV2Schema.parse(await request<unknown>(
+    `/api/v2/parties/${id}?role=${role}`, { token },
+  )), role);
+}
+
+/**
+ * Only a snapshot-authenticated offline user has a local identity we can bind
+ * to this tenant's copy. An opaque online token/username is insufficient.
+ * Cached private data/history never constitute a V2 inspection grant.
+ */
+async function offlineParties(query: PartyQuery): Promise<PartyReadV2ListResponse> {
+  const session = useSession();
+  const tenantId = storedTenantId();
+  const user = session.offlineUser.value;
+  const view = `party.${query.role.toLowerCase()}.view`;
+  const deny = (): never => { throw new Error('No authorized offline Party snapshot'); };
+  if (tenantId === null || !session.isOfflineSession() || user === null || !session.can(view)) return deny();
+  const snapshot = await readStoredSnapshot(tenantId, 1);
+  const included = query.role === 'CUSTOMER' ? 'customers' : query.role === 'SUPPLIER' ? 'suppliers' : 'vendors';
+  if (snapshot === null || snapshot.tenantId !== tenantId || !snapshot.includes[included]) return deny();
+  const current = (await localUsers()).find((candidate) => candidate.id === user.id && candidate.username === user.username);
+  if (current === undefined || !current.permissions.includes(view) || !user.permissions.includes(view)) return deny();
+  const page = await localParties(query);
+  // Re-check after asynchronous disk access: switching user/tenant, refreshing
+  // the copy or revoking in-memory rights must not publish an earlier read.
+  const after = await readStoredSnapshot(tenantId, 1);
+  if (storedTenantId() !== tenantId || session.offlineUser.value !== user ||
+      !session.isOfflineSession() || !session.can(view) || after === null ||
+      after.tenantId !== tenantId || after.takenAt !== snapshot.takenAt) return deny();
+  const customer = query.role === 'CUSTOMER';
+  return partyReadV2ListResponseSchema.parse({
+    data: page.data.map((row) => ({
+      id: row.id, name: row.name, phone: row.phone,
+      roles: row.roles.filter((role) => session.can(`party.${role.toLowerCase()}.view`) && current.permissions.includes(`party.${role.toLowerCase()}.view`)),
+      readRole: query.role, status: row.status, isSystemReserved: row.isSystemReserved,
+      version: row.version, balance: row.balance,
+      customerGroupId: customer ? row.customerGroupId : null,
+      customerGroupName: customer ? row.customerGroupName : null,
+      creditLimitMinor: customer ? row.creditLimitMinor : null,
+      profile: { state: 'WITHHELD' }, globalHistory: { state: 'WITHHELD' },
+    })),
+    page: page.page,
+    summary: { ...page.summary, ungrouped: customer ? page.summary.ungrouped : null, overCreditLimit: customer ? page.summary.overCreditLimit : 0 },
+  });
 }
 
 /* ------------------------------------------------------- opening balances */

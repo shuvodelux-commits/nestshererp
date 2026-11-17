@@ -481,7 +481,7 @@ function onProductCreated(product: ProductResponse): void {
   void focusProductField();
 }
 
-async function onSupplierCreated(party: PartyResponse): Promise<void> {
+async function onSupplierCreated(party: Pick<PartyResponse, 'id' | 'name'>): Promise<void> {
   addingSupplier.value = false;
   await loadSetup();
   supplierId.value = party.id;

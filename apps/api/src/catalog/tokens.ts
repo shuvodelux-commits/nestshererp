@@ -4,3 +4,5 @@ export const CREATE_CATALOG_METADATA_V1_SERVICE = Symbol('CreateCatalogMetadataV
 export const EDIT_CATALOG_METADATA_V1_SERVICE = Symbol('EditCatalogMetadataV1Service');
 export const READ_CATALOG_SETTINGS_USAGE_V1_SERVICE = Symbol('ReadCatalogSettingsUsageV1Service');
 export const MANAGE_PRODUCTS_SERVICE = Symbol('ManageProductsService');
+export const READ_CATALOG_LIFECYCLE_V1_SERVICE = Symbol('ReadCatalogLifecycleV1Service');
+export const MANAGE_CATALOG_LIFECYCLE_V1_STATUS_SERVICE = Symbol('ManageCatalogLifecycleV1StatusService');
