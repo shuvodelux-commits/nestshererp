@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Type-only, so it is erased before `vi.mock` hoisting runs.
 import type * as PartiesApi from '../src/api/parties';
 import { ApiError } from '../src/api/client';
+import { markReachable, markUnreachable } from '../src/offline/connectivity';
 import { useSession } from '../src/auth/session';
 import PartiesPage from '../src/pages/PartiesPage.vue';
 
@@ -41,7 +42,7 @@ vi.mock('../src/api/parties', async () => {
   const actual = await vi.importActual<typeof PartiesApi>('../src/api/parties');
   return {
     ...actual,
-    fetchParties: (token: string, query: unknown) => load(token, query),
+    fetchPartiesV2: (token: string, query: unknown) => load(token, query),
     fetchPartySetup: (token: string) => setup(token),
     createParty: (token: string, body: unknown, operationId: string) => create(token, body, operationId),
     setPartyStatus: (token: string, id: string, status: string) => setStatus(token, id, status),
@@ -65,11 +66,9 @@ const KARIM = {
   name: 'Karim Uddin',
   roles: ['CUSTOMER' as const],
   phone: '01712345678',
-  address: null,
-  guardianName: null,
-  nid: null,
-  email: null,
-  notes: null,
+  readRole: 'CUSTOMER' as const,
+  profile: { state: 'WITHHELD' as const },
+  globalHistory: { state: 'WITHHELD' as const },
   customerGroupId: null,
   customerGroupName: null,
   creditLimitMinor: 500_000,
@@ -102,9 +101,11 @@ const ALL_RIGHTS = [
   'party.customer.deactivate',
   'party.supplier.view',
   'party.supplier.create',
+  'party.vendor.view',
 ];
 
 beforeEach(() => {
+  markReachable();
   const session = useSession();
   session.signIn({ accessToken: 'test-access', refreshToken: 'test-refresh' }, 'karim');
   session.setPermissions(ALL_RIGHTS);
@@ -268,4 +269,91 @@ describe('PartiesPage with features off and rights missing', () => {
     expect(wrapper.find('#filter-group').exists()).toBe(false);
     expect(wrapper.find('.page-actions .pi-tags').exists()).toBe(false);
   });
+});
+
+async function menuLabels(wrapper: Awaited<ReturnType<typeof mountLoaded>>) {
+  await wrapper.find('.row-menu-trigger').trigger('click');
+  await flushPromises();
+  return wrapper.findComponent({ name: 'Menu' }).props('model').map((item: { label: string }) => item.label);
+}
+
+describe('V2 Party presentation and identity actions', () => {
+  it('shows private address only from a visible profile', async () => {
+    load.mockResolvedValue({ data: [{ ...KARIM, address: 'RAW SECRET', profile: { state: 'WITHHELD' } }], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+    const hidden = await mountLoaded();
+    expect(hidden.text()).not.toContain('RAW SECRET');
+    hidden.unmount();
+    load.mockResolvedValue({ data: [{ ...KARIM, profile: { state: 'VISIBLE', data: { address: 'Visible street' } } }], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+    expect((await mountLoaded()).text()).toContain('Visible street');
+  });
+
+  it('uses a neutral opening action and withholds deletion when history is withheld', async () => {
+    const labels = await menuLabels(await mountLoaded());
+    expect(labels).toContain('Manage opening balance');
+    expect(labels).not.toContain('Delete');
+  });
+
+  it('requires rights on every actual role for identity status changes', async () => {
+    load.mockResolvedValue({ data: [{ ...KARIM, roles: ['CUSTOMER', 'SUPPLIER'], globalHistory: { state: 'VISIBLE', hasLedgerEntries: false } }], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+    const labels = await menuLabels(await mountLoaded());
+    expect(labels).not.toContain('Deactivate');
+    expect(labels).not.toContain('Delete');
+  });
+
+  it('does not treat a permission-filtered role list as authoritative', async () => {
+    useSession().setPermissions(['party.customer.view', 'party.customer.edit', 'party.customer.deactivate']);
+    const labels = await menuLabels(await mountLoaded());
+    expect(labels).not.toContain('Deactivate');
+    expect(labels).not.toContain('Delete');
+  });
+
+  it('allows deletion only with full role authority and visible unused history', async () => {
+    load.mockResolvedValue({ data: [{ ...KARIM, globalHistory: { state: 'VISIBLE', hasLedgerEntries: false } }], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+    expect(await menuLabels(await mountLoaded())).toContain('Delete');
+  });
+});
+
+
+it('never offers identity deletion while offline even with visible unused history', async () => {
+  markUnreachable();
+  load.mockResolvedValue({ data: [{ ...KARIM, globalHistory: { state: 'VISIBLE', hasLedgerEntries: false } }], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+  const labels = await menuLabels(await mountLoaded());
+  expect(labels).not.toContain('Delete');
+  expect(labels).not.toContain('Deactivate');
+});
+
+
+it('drops a delayed Party response when user permissions are revoked', async () => {
+  let releaseOld!: (value: unknown) => void;
+  load.mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve; }));
+  const wrapper = mount(PartiesPage);
+  await flushPromises();
+  useSession().setPermissions(['party.supplier.view']);
+  await flushPromises();
+  releaseOld({ data: [KARIM], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+  await flushPromises();
+  expect(wrapper.text()).not.toContain('Karim Uddin');
+  expect(wrapper.text()).not.toContain('125,000');
+  expect(wrapper.find('.row-menu-trigger').exists()).toBe(false);
+  wrapper.unmount();
+});
+
+it('does not republish an old session response over a newer login', async () => {
+  let releaseOld!: (value: unknown) => void;
+  load.mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve; }));
+  const wrapper = mount(PartiesPage);
+  await flushPromises();
+  load.mockResolvedValue({
+    data: [{ ...KARIM, name: 'New authorized session' }],
+    page: { nextCursor: null, hasMore: false },
+    summary: SUMMARY,
+  });
+  useSession().signIn({ accessToken: 'new-session-token', refreshToken: 'new-refresh-token' }, 'new-user');
+  await flushPromises();
+  releaseOld({ data: [KARIM], page: { nextCursor: null, hasMore: false }, summary: SUMMARY });
+  await flushPromises();
+  expect(load).toHaveBeenCalledWith('new-session-token', expect.objectContaining({ role: 'CUSTOMER' }));
+  expect(wrapper.text()).toContain('New authorized session');
+  expect(wrapper.text()).not.toContain('Karim Uddin');
+  wrapper.unmount();
 });

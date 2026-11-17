@@ -274,7 +274,7 @@ function openAddVendor(index: number): void {
 }
 
 /** The new vendor is selected on the line that needed it; the cart is untouched. */
-async function onVendorCreated(party: PartyResponse): Promise<void> {
+async function onVendorCreated(party: Pick<PartyResponse, 'id' | 'name'>): Promise<void> {
   addingVendor.value = false;
   await loadSetup();
   const line = vendorLineIndex.value === null ? undefined : lines.value[vendorLineIndex.value];
