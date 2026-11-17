@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - fix/p0-259-fresh-install-restore-immutable-20261115
+      - fix/p0-259-r3b-reset-preflight-20261115
   pull_request:
     branches:
       - test/p0-259-recovery-immutable-role-red-20261115
+      - fix/p0-259-fresh-install-restore-immutable-20261115
 
 jobs:
   signed-recovery:

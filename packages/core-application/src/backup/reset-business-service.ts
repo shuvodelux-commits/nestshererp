@@ -67,6 +67,30 @@ export class ResetBusinessService {
           `Type ${RESET_CONFIRMATION_PHRASE} exactly, in capitals, to confirm.`,
         );
       }
+
+      /*
+       * Immutable operation receipts make this installation ineligible for
+       * ordinary reset. Check while the permission/password/phrase preflight
+       * transaction is still active, BEFORE paying for a recovery dump or
+       * suggesting that any books will be cleared. A migration may not yet
+       * have created the draft-create table; hasRowsIn tolerates its absence.
+       *
+       * This is a usability preflight, NOT the concurrency boundary: the
+       * adapter's transactional clear guard must still recheck each immutable
+       * table after the dump, before it commits any deletion. Neither path
+       * gives the runtime principal DELETE/TRUNCATE on permanent identities.
+       */
+      if (await this.backups.hasRowsIn(tx, ctx, [
+        'import_operations',
+        'sale_draft_create_operations',
+      ])) {
+        throw new AppError(
+          ErrorCode.VALIDATION_FAILED,
+          'This business has permanent operation history. ' +
+            'Reset is unavailable until the separately authorized recovery procedure is configured. ' +
+            'No data was changed.',
+        );
+      }
     });
 
     /*

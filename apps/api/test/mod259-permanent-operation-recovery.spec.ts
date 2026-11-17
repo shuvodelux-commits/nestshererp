@@ -6,17 +6,19 @@
  * mechanism exists. Never run against an existing development/production DB.
  * @covers endpoint:POST /api/v1/backup/export
  * @covers endpoint:POST /api/v1/backup/restore
+ * @covers endpoint:POST /api/v1/backup/reset
  * @covers permission:backup.export
  * @covers permission:backup.restore
+ * @covers permission:business.reset
  */
 import 'reflect-metadata';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Permission } from '@sher/core-contracts';
+import { Permission, RESET_CONFIRMATION_PHRASE } from '@sher/core-contracts';
 import { SystemClock, Ulid } from '@sher/shared-utils';
 import type pg from 'pg';
 import request from 'supertest';
@@ -66,7 +68,7 @@ function assertDisposable(): void {
 async function signedOwner(name: string): Promise<{ tenant: SeededTenant; token: string }> {
   const tenant = await seedTenant(pool, {
     name,
-    permissions: [Permission.BACKUP_EXPORT, Permission.BACKUP_RESTORE],
+    permissions: [Permission.BACKUP_EXPORT, Permission.BACKUP_RESTORE, Permission.BUSINESS_RESET],
   });
   const hash = await hasher.hash(ownerPassword);
   await asTenant(pool, tenant.tenantId, async (db) => {
@@ -193,4 +195,50 @@ suite('P0 #259: immutable operation identity and signed backup restore', () => {
     });
     expect(result.rows.map((row) => row.operation_id)).toEqual([key]);
   });
+  it('refuses an occupied immutable reset before taking any new recovery dump (RED)', async () => {
+    const owner = await signedOwner('Occupied reset tenant');
+    const unrelated = await signedOwner('Unrelated intact tenant');
+    const operationId = Ulid.generate(clock);
+    await insertCompletedImport(owner.tenant, operationId);
+
+    const recoveryDir = join(workspace, 'recovery');
+    const dumpFiles = (): readonly string[] =>
+      existsSync(recoveryDir) ? readdirSync(recoveryDir).sort() : [];
+    const beforeFiles = dumpFiles();
+    const before = await asTenant(pool, owner.tenant.tenantId, async (db) => {
+      const result = await db.query<{ tenants: string; users: string; operations: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM tenants) AS tenants,
+           (SELECT count(*)::text FROM users) AS users,
+           (SELECT count(*)::text FROM import_operations) AS operations`,
+      );
+      return result.rows[0];
+    });
+
+    const result = await request(app.getHttpServer())
+      .post('/api/v1/backup/reset')
+      .set('authorization', 'Bearer ' + owner.token)
+      .send({ confirmPassword: ownerPassword, confirmPhrase: RESET_CONFIRMATION_PHRASE });
+
+    expect(result.status).toBe(400);
+    expect(result.body.error.code).toBe('VALIDATION_FAILED');
+    expect(String(result.body.error.message)).toMatch(/permanent operation/i);
+    expect(dumpFiles()).toEqual(beforeFiles); // Important: refuse BEFORE pg_dump.
+
+    const after = await asTenant(pool, owner.tenant.tenantId, async (db) => {
+      const result = await db.query<{ tenants: string; users: string; operations: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM tenants) AS tenants,
+           (SELECT count(*)::text FROM users) AS users,
+           (SELECT count(*)::text FROM import_operations) AS operations`,
+      );
+      return result.rows[0];
+    });
+    expect(after).toEqual(before);
+    expect(after?.operations).toBe('1');
+    const unaffected = await asTenant(pool, unrelated.tenant.tenantId, async (db) =>
+      db.query<{ n: string }>('SELECT count(*)::text AS n FROM users'));
+    expect(unaffected.rows[0]?.n).toBe('1');
+  });
+
 });

@@ -3402,7 +3402,7 @@
 | POST | `/api/v1/backup/export` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ✅ TESTED |
 | POST | `/api/v1/backup/inspect` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ✅ TESTED |
 | POST | `/api/v1/backup/restore` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ✅ TESTED |
-| POST | `/api/v1/backup/reset` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
+| POST | `/api/v1/backup/reset` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ✅ TESTED |
 | POST | `/api/v1/backup/secret` | BackupController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
 | POST | `/api/v1/license` | LicenseController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
 | GET | `/api/v1/license` | LicenseController | BACKUP_EXPORT, BACKUP_RESTORE, BUSINESS_RESET | ❌ NOT TESTED |
@@ -3775,7 +3775,7 @@
 | `license.install` | license | ❌ NOT TESTED |
 | `backup.export` | backup | ✅ TESTED |
 | `backup.restore` | backup | ✅ TESTED |
-| `business.reset` | business | ❌ NOT TESTED |
+| `business.reset` | business | ✅ TESTED |
 
 ## Cross-module workflows
 
