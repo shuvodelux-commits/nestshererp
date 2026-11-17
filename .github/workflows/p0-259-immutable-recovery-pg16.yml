@@ -1,0 +1,52 @@
+name: P0-259 Immutable Recovery PG16 Acceptance
+
+on:
+  push:
+    branches:
+      - fix/p0-259-fresh-install-restore-immutable-20261115
+  pull_request:
+    branches:
+      - test/p0-259-recovery-immutable-role-red-20261115
+
+jobs:
+  signed-recovery:
+    name: R3a signed owner fresh-install restore + runtime deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mod259_r3a_ci_only
+          POSTGRES_DB: hisabiq_mod259_recovery_red_20261115
+        ports:
+          - 55859:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hisabiq_mod259_recovery_red_20261115"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      MOD259_RECOVERY_TEST_ONLY: MOD259_IMMUTABLE_RECOVERY_DISPOSABLE_20261115
+      DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55859/hisabiq_mod259_recovery_red_20261115
+      TEST_DATABASE_URL: postgres://sher_app:sher_app_test@127.0.0.1:55859/hisabiq_mod259_recovery_red_20261115
+      ADMIN_DATABASE_URL: postgres://postgres:mod259_r3a_ci_only@127.0.0.1:55859/hisabiq_mod259_recovery_red_20261115
+      NODE_ENV: test
+      JWT_SECRET: disposable-test-secret-only
+      ENTITLEMENT_SOURCE: subscription
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "@sher/api..." build
+      - name: Signed two-tenant PostgreSQL16 immutable recovery acceptance
+        run: pnpm --filter @sher/api exec vitest run test/mod259-permanent-operation-recovery.spec.ts --reporter=verbose
