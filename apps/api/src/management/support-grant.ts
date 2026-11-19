@@ -148,6 +148,14 @@ export function verifySupportGrant(
     throw new AppError(ErrorCode.UNAUTHENTICATED, 'That support grant is not signed by this vendor');
   }
 
+  // The signed vendor may submit an identifier accepted by an older control
+  // plane schema but too long to preserve as 'support:' + operator_id in the
+  // canonical audit actor. Refuse it here, not after a failed database write.
+  if (typeof grant.operator_id !== 'string' ||
+      grant.operator_id.length < 1 || grant.operator_id.length > 26) {
+    throw new AppError(ErrorCode.UNAUTHENTICATED, 'Unsupported support operator identifier');
+  }
+
   const now = options.now.getTime();
   if (Date.parse(grant.expires_at) <= now) {
     throw new AppError(ErrorCode.UNAUTHENTICATED, 'That support session has expired');

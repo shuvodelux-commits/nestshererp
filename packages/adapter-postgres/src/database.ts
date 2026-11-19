@@ -24,6 +24,21 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (value: string) => {
   return parsed;
 });
 
+/**
+ * Support provenance uses CHAR(34), retaining PostgreSQL's bpchar type for
+ * backwards-compatible parameter inference (a SQL placeholder can serve both
+ * a CHAR(26) user ID and an audit actor). PostgreSQL ignores bpchar trailing
+ * space padding in equality, but pg's default decoder preserves it. Remove
+ * only U+0020 padding at this existing driver boundary so identity comparisons
+ * and audit serialization continue to observe canonical unpadded IDs.
+ *
+ * Do not trim leading spaces, tabs or arbitrary user-facing text.
+ * Source: https://www.postgresql.org/docs/16/datatype-character.html
+ */
+pg.types.setTypeParser(pg.types.builtins.BPCHAR, (value: string) =>
+  value.replace(/ +$/u, ''),
+);
+
 export function createPool(connectionString: string): pg.Pool {
   return new pg.Pool({ connectionString });
 }
