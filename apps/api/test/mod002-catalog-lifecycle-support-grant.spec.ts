@@ -175,6 +175,18 @@ beforeEach(async () => {
 });
 
 describe('MOD-002 #344 support-grant lifecycle with real PG16 FORCE RLS', () => {
+  it('preserves the exact 26-character shop actor after widening provenance columns', async () => {
+    const result = await asTenant(pool, tenantA.tenantId, client =>
+      client.query<{ created_by: string }>(
+        'SELECT created_by FROM users WHERE tenant_id=$1 AND id=$2',
+        [tenantA.tenantId, tenantA.userId],
+      ),
+    );
+    // PostgreSQL CHAR(34) pads a 26-char operator; application reads must
+    // continue to compare exactly against the canonical ULID, with no spaces.
+    expect(result.rows[0]?.created_by).toBe(tenantA.userId);
+  });
+
   it.each(kindNames)('GET %s accepts a valid signed support grant without JWT and isolates tenants', async kind => {
     const own = await addMaster(tenantA, kind, 'Own ' + kind);
     const foreign = await addMaster(tenantB, kind, 'Foreign ' + kind);
