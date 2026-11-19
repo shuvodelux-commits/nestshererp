@@ -2,8 +2,8 @@
  * MOD-008 P6 #349 — signed Supplier payment correction/void rollback QA.
  * @covers endpoint:POST /api/v1/purchases
  * @covers endpoint:POST /api/v1/suppliers/payments
- * @covers endpoint:PATCH /api/v1/suppliers/payments/:id
- * @covers endpoint:POST /api/v1/suppliers/payments/:id/void
+ * RED acceptance for #354: do not mark correction/void endpoint coverage
+ * as complete until the expected typed error and all cases pass.
  * @covers endpoint:GET /api/v1/suppliers/:id/due
  * @covers workflow:supplier-payment
  *
