@@ -57,7 +57,7 @@ const clock = new SystemClock();
 const id = () => Ulid.generate(clock);
 const grantAll = [
   Permission.CUSTOMER_VIEW, Permission.CUSTOMER_CREATE, Permission.SUPPLIER_VIEW,
-  Permission.SUPPLIER_CREATE, Permission.VENDOR_VIEW,
+  Permission.SUPPLIER_CREATE, Permission.SUPPLIER_EDIT, Permission.VENDOR_VIEW,
   // Private fixture fields are written only by the signed source API while
   // the test actor holds the explicit profile grant; reads revoke it below.
   Permission.PARTY_PROFILE_VIEW,
@@ -111,11 +111,9 @@ async function enablePrivateFields(): Promise<void> {
 async function createShared(): Promise<string> {
   await enablePrivateFields();
   const created = await request(app.getHttpServer())
-    // Seed through the existing signed legacy source writer as the approved
-    // V2-security suite does. The *React reads under test* never call V1.
-    .post('/api/v1/parties').set(auth()).set('Idempotency-Key', id())
+    .post('/api/v2/parties').set(auth()).set('Idempotency-Key', id())
     .send({
-      roles: ['CUSTOMER', 'SUPPLIER'],
+      selectedRole: 'CUSTOMER', roles: ['CUSTOMER', 'SUPPLIER'],
       name: 'T23 Shared Party', phone: '01712345678',
       address: 'Private Natore address', guardianName: 'Private guardian',
       nid: 'T23-PRIVATE-NID', email: 'private-t23@example.test', notes: 'T23 notes',
