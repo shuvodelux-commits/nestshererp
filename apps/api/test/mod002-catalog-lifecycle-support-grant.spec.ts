@@ -256,6 +256,10 @@ describe('MOD-002 #344 support-grant lifecycle with real PG16 FORCE RLS', () => 
       expires_at: timestamp(-60_000),
     });
     expect((await get('unit', expired)).status).toBe(401);
+    // This is a correctly signed, previously schema-valid identifier. It is
+    // too wide for a support: prefix plus the 34-char persisted actor field.
+    const oversized = grantFor(tenantA, { operator_id: 'X'.repeat(64) });
+    expect((await get('unit', oversized)).status).toBe(401);
     const forbidden = await request(app.getHttpServer()).get('/api/v1/users')
       .set(SUPPORT_GRANT_HEADER, grantFor(tenantA));
     expect(forbidden.status).toBe(403);
