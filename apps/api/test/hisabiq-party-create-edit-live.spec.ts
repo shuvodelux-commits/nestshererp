@@ -401,4 +401,25 @@ run('MOD-004 T22-QA: actual React Party V2 CREATE/PATCH + signed Nest + PG16 RLS
     });
     expect(calls.map(c => c.method)).toEqual(['POST', 'POST', 'PATCH', 'PATCH']);
   }, 90_000);
+  it('Vendor feature OFF refuses V2 React CREATE even when VENDOR_CREATE is granted', async () => {
+    await restrict([Permission.VENDOR_CREATE]);
+    const before = await counts();
+    await expect(party({ ...input(['VENDOR']), phone: null }))
+      .rejects.toMatchObject({ kind: 'http', status: 403 });
+    expect(calls).toHaveLength(1);
+    expect(await counts()).toEqual(before);
+  }, 90_000);
+
+  it('unsupported role, opening and private edit keys are rejected client-side before HTTP', async () => {
+    const before = await counts();
+    await expect(party({ ...input(), opening: null } as unknown as CreateInput))
+      .rejects.toMatchObject({ kind: 'protocol' });
+    await expect(party({ ...input(), selectedRole: 'OWNER' } as unknown as CreateInput))
+      .rejects.toMatchObject({ kind: 'protocol' });
+    await expect(update(newId(), { ...edit(1, 'Invalid'), nid: 'private' } as unknown as EditInput))
+      .rejects.toMatchObject({ kind: 'protocol' });
+    expect(calls).toHaveLength(0);
+    expect(await counts()).toEqual(before);
+  }, 90_000);
+
 });
