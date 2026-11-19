@@ -4,7 +4,7 @@
  */
 import 'reflect-metadata';
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -53,6 +53,12 @@ type OpeningReader = (token: string, id: string, role: Role) => Promise<RoleOpen
 const reactRoot = process.env['HISABIQ_REACT_SOURCE_DIR'];
 const run = reactRoot ? describe : describe.skip;
 const expectedReactHead = '016462d7a7d2164db343a2b8641ade2ec2d99f14';
+const T23_PORT = '55957';
+const T23_CONTAINER = 'hisabiq-mod004-t23-362-pg16';
+const T23_LABEL = 'mod004-t23-party-reads-361';
+const T23_OWNER = 'mod004-t23-361-20261119';
+const T23_ACK = 'isolated-mod004-t23-reads-361-only';
+
 const clock = new SystemClock();
 const id = () => Ulid.generate(clock);
 const grantAll = [
@@ -72,17 +78,42 @@ let origin = '';
 let requests: Array<{ path: string; method: string; auth: string | null }> = [];
 
 function requireDisposableDatabase(): void {
+  // This guard runs before prepareTestDatabase() or resetDatabase(): never use a
+  // different worker's generic localhost sher_test instance by mistake.
+  if (process.env['HISABIQ_T23_READS_ACK'] !== T23_ACK) {
+    throw new Error('T23 test acknowledgement missing or invalid');
+  }
   const a = process.env['ADMIN_DATABASE_URL'];
   const u = process.env['DATABASE_URL'];
   if (!a || !u || u !== process.env['TEST_DATABASE_URL'])
-    throw new Error('Explicit disposable nonowner DATABASE_URL = TEST_DATABASE_URL required');
+    throw new Error('Explicit T23 disposable nonowner DATABASE_URL = TEST_DATABASE_URL required');
   const admin = new URL(a), user = new URL(u);
   if (admin.protocol !== 'postgres:' || user.protocol !== 'postgres:' ||
       admin.hostname !== '127.0.0.1' || user.hostname !== admin.hostname ||
-      !admin.port || user.port !== admin.port ||
+      admin.port !== T23_PORT || user.port !== T23_PORT ||
       admin.pathname !== '/sher_test' || user.pathname !== '/sher_test' ||
       admin.username !== 'postgres' || user.username !== 'sher_app')
-    throw new Error('Only task-owned localhost PG16 sher_test is supported');
+    throw new Error('T23 requires its exclusive loopback PG16 port and test identities');
+
+  const inspected = spawnSync('podman',
+    ['inspect', '--format', '{{json .}}', T23_CONTAINER],
+    { encoding: 'utf8', timeout: 10_000 });
+  if (inspected.status !== 0) throw new Error('T23 task-owned PG16 container missing');
+  const container = JSON.parse(inspected.stdout) as {
+    State?: { Running?: boolean };
+    Config?: { Image?: string; Env?: string[]; Labels?: Record<string, string> };
+    NetworkSettings?: { Ports?: Record<string, Array<{ HostIp: string; HostPort: string }> | null> };
+  };
+  if (container.State?.Running !== true ||
+      container.Config?.Labels?.['hisabiq.qa'] !== T23_LABEL ||
+      container.Config?.Labels?.['hisabiq.owner'] !== T23_OWNER ||
+      !container.Config?.Env?.includes('PG_MAJOR=16') ||
+      !container.Config?.Env?.includes('POSTGRES_DB=sher_test') ||
+      !/postgres:16(?:-alpine)?$/.test(container.Config?.Image ?? '') ||
+      !container.NetworkSettings?.Ports?.['5432/tcp']?.some(
+        port => port.HostIp === '127.0.0.1' && port.HostPort === T23_PORT)) {
+    throw new Error('T23 task-owned PG16 container identity or loopback mapping mismatch');
+  }
 }
 async function restrict(grants: readonly string[], who = tenant): Promise<void> {
   await asTenant(pool, who.tenantId, async client => {
