@@ -28,7 +28,7 @@ import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } fr
 
 const reactRoot = process.env['HISABIQ_REACT_SOURCE_DIR'];
 const run = reactRoot ? describe : describe.skip;
-const exactReactSha = 'b0def73a13ce507b2b9951947e0552f4c729ab61';
+const exactReactSha = '016462d7a7d2164db343a2b8641ade2ec2d99f14';
 const clock = new SystemClock();
 const idempotencyKey = () => Ulid.generate(clock);
 const testGrants = [
