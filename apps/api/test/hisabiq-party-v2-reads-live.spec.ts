@@ -24,10 +24,31 @@ import type { SeededTenant } from './support/database';
 import { asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool } from './support/database';
 
 type Role = 'CUSTOMER' | 'SUPPLIER' | 'VENDOR';
-type ListReader = (token: string, role: Role, query?: Record<string, unknown>) => Promise<any>;
-type DetailReader = (token: string, id: string, role: Role) => Promise<any>;
-type LedgerReader = (token: string, id: string, role: Role, query?: Record<string, unknown>) => Promise<any>;
-type OpeningReader = (token: string, id: string, role: Role) => Promise<any>;
+interface RolePartyProjection {
+  id: string;
+  readRole: Role;
+  roles: Role[];
+  profile: { state: 'WITHHELD' | 'VISIBLE'; data?: { nid: string | null } };
+  globalHistory: { state: 'WITHHELD' | 'VISIBLE'; hasLedgerEntries?: boolean };
+  balance: { netMinor: number };
+}
+interface RolePartyList {
+  data: RolePartyProjection[];
+  summary: { total: number };
+}
+interface RolePartyDetail { data: RolePartyProjection }
+interface RoleLedgerRead {
+  partyId: string;
+  closingBalance: { netMinor: number };
+  rows: Array<{ account: string; sourceDocumentType: string }>;
+}
+interface RoleOpeningRead {
+  data: null | { role: Role; direction: 'RECEIVABLE' | 'PAYABLE'; amountMinor: number };
+}
+type ListReader = (token: string, role: Role, query?: Record<string, unknown>) => Promise<RolePartyList>;
+type DetailReader = (token: string, id: string, role: Role) => Promise<RolePartyDetail>;
+type LedgerReader = (token: string, id: string, role: Role, query?: Record<string, unknown>) => Promise<RoleLedgerRead>;
+type OpeningReader = (token: string, id: string, role: Role) => Promise<RoleOpeningRead>;
 
 const reactRoot = process.env['HISABIQ_REACT_SOURCE_DIR'];
 const run = reactRoot ? describe : describe.skip;
