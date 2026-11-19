@@ -1,5 +1,18 @@
 # AGENTS.md — SherERP
 
+## Mandatory test-workspace reuse and disk safety (owner directive 2026-11-13)
+
+Before dispatching a module worker or running integration tests on the CachyOS runner, inspect existing Git worktrees and test checkouts. **Reuse an existing module/worker-scoped environment** whenever its repository, branch, commit, tests, dependencies, ownership and isolation can be verified. Do not create a new full checkout or separate `node_modules` for every PR check or QA retry. Record the workspace path and paired repo SHAs in the module issue/PR.
+
+- Run `df -h /` first. Aim to retain **at least 23 GB free**. If below that threshold, stop multiplying checkouts and reclaim only verified disposable artifacts or report the blocker.
+- Never reuse a workspace currently owned by another agent/job or repurpose one containing uncommitted work. Preserve source, Git history, branch refs, secrets, databases, user data and running tests. Avoid `git clean -fdx` and mass `rm -rf` of project directories.
+- Reuse the content-addressed pnpm store. Install with `pnpm install --frozen-lockfile --prefer-offline` only when needed and consistent with the lockfile. Keep test databases/schemas disposable and isolated per run/tenant, with cleanup, especially for finance/accounting.
+- After the owning job exits and changes are pushed or backed up, remove only ignored, reinstallable `node_modules`, `dist`, coverage and Playwright outputs in inactive QA checkouts. Remove Git worktrees only when verified clean and no longer needed, using `git worktree remove`; never manually break their registrations.
+- If fresh isolation really is required, justify it in the handoff, set a single bounded path, share dependency caches and specify cleanup ownership. CI may still require a clean ephemeral checkout; this policy does not authorize sharing mutable cross-tenant state or skipping tests.
+
+Owner direction and supporting evidence: [frontend integration queue #294](https://github.com/shuvodelux-commits/hisabiq_ui/issues/294#issuecomment-6858246372) and [backend workflow issue #3](https://github.com/shuvodelux-commits/nestshererp/issues/3#issuecomment-6858247045). This is operational hygiene, not permission to change module scope, merge, deploy or alter production data.
+
+
 Multi-tenant ERP for Bangladeshi SME retail. Vue 3 + NestJS + Drizzle + PostgreSQL, modular monolith. Canonical delivery path: online-first → sync infrastructure → PWA Offline → Mobile → optional future Tauri packaging → MCP.
 
 ## Documentation — exactly three files
