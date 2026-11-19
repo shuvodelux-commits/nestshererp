@@ -3562,7 +3562,7 @@
 | GET | `/api/v1/purchases/:id` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
 | POST | `/api/v1/purchases` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
 | POST | `/api/v1/purchases/:id/void` | PurchasesController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
-| GET | `/api/v1/suppliers/:id/due` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
+| GET | `/api/v1/suppliers/:id/due` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
 | POST | `/api/v1/suppliers/payments` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ✅ TESTED |
 | PATCH | `/api/v1/suppliers/payments/:id` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
 | POST | `/api/v1/suppliers/payments/:id/void` | SupplierPaymentsController | BANK_ACCOUNT_VIEW, CASH_ACCOUNT_VIEW, COST_VIEW, PURCHASE_CREATE … (+8) | ❌ NOT TESTED |
