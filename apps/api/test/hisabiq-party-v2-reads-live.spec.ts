@@ -111,9 +111,11 @@ async function enablePrivateFields(): Promise<void> {
 async function createShared(): Promise<string> {
   await enablePrivateFields();
   const created = await request(app.getHttpServer())
-    .post('/api/v2/parties').set(auth()).set('Idempotency-Key', id())
+    // Seed through the existing signed legacy source writer as the approved
+    // V2-security suite does. The *React reads under test* never call V1.
+    .post('/api/v1/parties').set(auth()).set('Idempotency-Key', id())
     .send({
-      selectedRole: 'CUSTOMER', roles: ['CUSTOMER', 'SUPPLIER'],
+      roles: ['CUSTOMER', 'SUPPLIER'],
       name: 'T23 Shared Party', phone: '01712345678',
       address: 'Private Natore address', guardianName: 'Private guardian',
       nid: 'T23-PRIVATE-NID', email: 'private-t23@example.test', notes: 'T23 notes',
