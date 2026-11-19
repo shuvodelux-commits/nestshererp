@@ -97,9 +97,30 @@ export async function prepareTestDatabase(): Promise<void> {
     await runMigrations(admin, join(__dirname, '../../../../migrations'));
 
     await admin.query('GRANT USAGE ON SCHEMA public TO sher_app');
+    // Ordinary CRUD is needed for existing integration fixtures. TRUNCATE is
+    // categorically different: PostgreSQL RLS never restricts TRUNCATE, so an
+    // application credential must not be able to erase every tenant's rows.
     await admin.query(
-      'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO sher_app',
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sher_app',
     );
+    // Revoke explicitly: a reused disposable DB might still carry an older
+    // blanket TRUNCATE grant from this test helper before P0 issue #225.
+    await admin.query('REVOKE TRUNCATE ON ALL TABLES IN SCHEMA public FROM sher_app');
+    // Source identities must survive a compromised runtime connection. Import
+    // completion requires UPDATE, but DELETE must remain operator-only.
+    await admin.query('REVOKE DELETE ON TABLE public.import_operations FROM sher_app');
+    // PR #221's migration 0058 may land after this security fix. Its immutable
+    // draft-create source is SELECT/INSERT only; never relax it on test reruns.
+    const draftSource = await admin.query<{ present: boolean }>(
+      "SELECT to_regclass('public.sale_draft_create_operations') IS NOT NULL AS present",
+    );
+    const draftSourcePresent = draftSource.rows[0];
+    if (!draftSourcePresent) throw new Error('Unable to inspect draft operation table');
+    if (draftSourcePresent.present) {
+      await admin.query(
+        'REVOKE UPDATE, DELETE ON TABLE public.sale_draft_create_operations FROM sher_app',
+      );
+    }
   } finally {
     await admin.end();
   }
@@ -125,9 +146,18 @@ export async function asPlatform<T>(work: (pool: pg.Pool) => Promise<T>): Promis
   }
 }
 
-/** TRUNCATE is an owner operation and is not subject to RLS. */
+/**
+ * Tests still pass the runtime pool for historical call-site compatibility,
+ * but fixture reset must be performed as the separate disposable test admin.
+ * The real Nest/API queries always continue to use the RLS-restricted pool.
+ */
 export async function resetDatabase(pool: pg.Pool): Promise<void> {
-  await pool.query(`TRUNCATE ${TENANT_SCOPED_TABLES.join(', ')} CASCADE`);
+  // Preserve the old signature, while refusing accidental uninitialized calls.
+  // The runtime pool is never used to run the destructive reset query.
+  if (!pool) throw new Error('Test runtime pool is required for fixture reset');
+  await asPlatform(async (admin) => {
+    await admin.query(`TRUNCATE ${TENANT_SCOPED_TABLES.join(', ')} CASCADE`);
+  });
 }
 
 /**
