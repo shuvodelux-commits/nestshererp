@@ -169,7 +169,7 @@ async function storedPayment(id: string): Promise<{
     const result = await client.query<{
       id: string; number: string; status: string; version: number; amount_minor: number;
     }>(
-      'SELECT id, number, status, version, amount_minor FROM supplier_payments WHERE id=$1',
+      'SELECT id, payment_number AS number, status, version, amount_minor FROM supplier_payments WHERE id=$1',
       [id],
     );
     const row = result.rows[0];
