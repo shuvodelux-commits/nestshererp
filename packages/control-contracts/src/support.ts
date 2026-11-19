@@ -21,7 +21,9 @@ import { z } from 'zod';
 export const supportGrantSchema = z
   .object({
     session_id: z.string().min(1).max(64),
-    operator_id: z.string().min(1).max(64),
+    // Vendor operators are currently ULID-backed. Keep the grant actor
+    // within the ERP's 34-character 'support:' + operator storage contract.
+    operator_id: z.string().min(1).max(26),
     /** Shown in the audit trail and in the customer's active-session indicator. */
     operator_name: z.string().min(1).max(120),
     /**
