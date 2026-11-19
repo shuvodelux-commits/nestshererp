@@ -42,15 +42,18 @@ function requireDisposableDatabase(): void {
     const value = process.env[key];
     if (!value) throw new Error('Missing isolated ' + key);
     const url = new URL(value);
+    const dedicatedLocal = url.hostname === '127.0.0.1' && url.port === '55965';
+    const hostedCi = process.env['GITHUB_ACTIONS'] === 'true' &&
+      process.env['CI'] === 'true' &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.port === '5432';
     if (!['postgres:', 'postgresql:'].includes(url.protocol) ||
-        url.hostname !== '127.0.0.1' || url.port !== '55965' ||
-        url.pathname !== '/sher_test' ||
+        (!dedicatedLocal && !hostedCi) || url.pathname !== '/sher_test' ||
         url.username !== (key === 'ADMIN_DATABASE_URL' ? 'postgres' : 'sher_app')) {
       throw new Error('#344 support test refuses shared/development/production PostgreSQL');
     }
   }
-  if (process.env['NODE_ENV'] !== 'test' || process.env['ENTITLEMENT_SOURCE'] !== 'subscription')
-    throw new Error('#344 test requires test-only subscription entitlement mode');
+  if (process.env['NODE_ENV'] !== 'test')
+    throw new Error('#344 test refuses to run outside NODE_ENV=test');
 }
 
 let app: INestApplication;
@@ -58,10 +61,17 @@ let pool: pg.Pool;
 let tenantA: SeededTenant;
 let tenantB: SeededTenant;
 let previousSupportPublicKey: string | undefined;
+let previousEntitlementSource: string | undefined;
+
+function timestamp(offsetMs: number): string {
+  const value = clock.now();
+  value.setTime(value.getTime() + offsetMs);
+  return value.toISOString();
+}
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 
 function grantFor(tenant: SeededTenant, override: Partial<SupportGrant> = {}): string {
-  const now = Date.now();
+  // Clock-port time, not the ambient wall clock (R-B no-ambient-clock).
   const grant: SupportGrant = {
     session_id: id(),
     operator_id: signedActorOperator,
@@ -69,9 +79,9 @@ function grantFor(tenant: SeededTenant, override: Partial<SupportGrant> = {}): s
     tenant_id: id(),
     erp_tenant_id: tenant.tenantId,
     installation_id: id(),
-    issued_at: new Date(now - 60_000).toISOString(),
-    expires_at: new Date(now + 600_000).toISOString(),
-    absolute_expires_at: new Date(now + 3_600_000).toISOString(),
+    issued_at: timestamp(-60_000),
+    expires_at: timestamp(600_000),
+    absolute_expires_at: timestamp(3_600_000),
     reason: 'Test support provenance and isolation',
     scope: 'SUPER_SUPPORT',
     signing_key_id: 'test-only-key',
@@ -135,6 +145,8 @@ async function sideEffects(tenant: SeededTenant): Promise<{
 beforeAll(async () => {
   requireDisposableDatabase();
   previousSupportPublicKey = process.env['SUPPORT_PUBLIC_KEY'];
+  previousEntitlementSource = process.env['ENTITLEMENT_SOURCE'];
+  process.env['ENTITLEMENT_SOURCE'] = 'subscription';
   process.env['SUPPORT_PUBLIC_KEY'] = publicKey.export({
     format: 'der', type: 'spki',
   }).toString('base64');
@@ -151,6 +163,8 @@ afterAll(async () => {
   await pool?.end();
   if (previousSupportPublicKey === undefined) delete process.env['SUPPORT_PUBLIC_KEY'];
   else process.env['SUPPORT_PUBLIC_KEY'] = previousSupportPublicKey;
+  if (previousEntitlementSource === undefined) delete process.env['ENTITLEMENT_SOURCE'];
+  else process.env['ENTITLEMENT_SOURCE'] = previousEntitlementSource;
 });
 beforeEach(async () => {
   await resetDatabase(pool);
@@ -227,7 +241,7 @@ describe('MOD-002 #344 support-grant lifecycle with real PG16 FORCE RLS', () => 
     const forged = Buffer.from(JSON.stringify(envelope)).toString('base64');
     expect((await get('unit', forged)).status).toBe(401);
     const expired = grantFor(tenantA, {
-      expires_at: new Date(Date.now() - 60_000).toISOString(),
+      expires_at: timestamp(-60_000),
     });
     expect((await get('unit', expired)).status).toBe(401);
     const forbidden = await request(app.getHttpServer()).get('/api/v1/users')
