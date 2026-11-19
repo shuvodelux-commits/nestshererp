@@ -1,11 +1,7 @@
 /*
  * MOD-008 P6 #349 — signed Supplier payment correction/void rollback QA.
- * @covers endpoint:POST /api/v1/purchases
- * @covers endpoint:POST /api/v1/suppliers/payments
- * RED acceptance for #354: do not mark correction/void endpoint coverage
- * as complete until the expected typed error and all cases pass.
- * @covers endpoint:GET /api/v1/suppliers/:id/due
- * @covers workflow:supplier-payment
+ * Intentionally RED under #354: no generated endpoint coverage claims
+ * until every payment correction and cancellation scenario is green.
  *
  * Only an explicit task-owned disposable PostgreSQL16 is permitted.
  * Existing one-account Supplier payment correction and void only; no advanced paymentLegs activation.
