@@ -212,7 +212,7 @@ run('MOD-004 T23-QA signed actual React trading-role reads', () => {
     tenant = await seedTenant(pool, { name: 'T23 QA Tenant A', permissions: grantAll });
     token = signToken(tenant, TEST_JWT_SECRET);
     requests = [];
-  });
+  }, 90_000);
 
   it('Customer VIEW alone returns selected-role list/detail with withheld profile, history and Supplier payable', async () => {
     const partyId = await createShared();
