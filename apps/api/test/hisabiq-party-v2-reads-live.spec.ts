@@ -148,6 +148,26 @@ async function nonPostingSnapshot() {
   });
 }
 
+
+describe('MOD-004 T23 test-database isolation preflight', () => {
+  it('refuses a plausible generic PG URL without a task acknowledgement', () => {
+    const keys = ['DATABASE_URL', 'TEST_DATABASE_URL', 'ADMIN_DATABASE_URL', 'HISABIQ_T23_READS_ACK'] as const;
+    const original = keys.map(key => [key, process.env[key]] as const);
+    try {
+      process.env.DATABASE_URL = 'postgres://sher_app:sher_app_test@127.0.0.1:55957/sher_test';
+      process.env.TEST_DATABASE_URL = process.env.DATABASE_URL;
+      process.env.ADMIN_DATABASE_URL = 'postgres://postgres:dev@127.0.0.1:55957/sher_test';
+      delete process.env.HISABIQ_T23_READS_ACK;
+      expect(() => requireDisposableDatabase()).toThrow(/T23.*acknowledgement/);
+    } finally {
+      for (const [key, value] of original) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+});
+
 run('MOD-004 T23-QA signed actual React trading-role reads', () => {
   beforeAll(async () => {
     if (!reactRoot || !isAbsolute(reactRoot) ||
