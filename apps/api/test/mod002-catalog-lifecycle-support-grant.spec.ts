@@ -23,7 +23,7 @@ import {
 import type { SupportGrant } from '../src/management/support-grant';
 import { managementState } from '../src/management/management-state';
 import {
-  asTenant, prepareTestDatabase, resetDatabase, seedTenant, testPool,
+  asTenant, prepareTestDatabase, seedTenant, testPool,
 } from './support/database';
 import type { SeededTenant } from './support/database';
 
@@ -167,7 +167,9 @@ afterAll(async () => {
   else process.env['ENTITLEMENT_SOURCE'] = previousEntitlementSource;
 });
 beforeEach(async () => {
-  await resetDatabase(pool);
+  // Fresh tenant ULIDs isolate every case without repeatedly TRUNCATE-CASCADE
+  // locking 98+ migrated tables while the Nest app holds pooled connections.
+  // The whole dedicated sher_test database is disposed after the suite.
   // No ordinary shop role permissions: support permissions come from the signed
   // support ceiling, not a forged users row or an inherited owner token.
   tenantA = await seedTenant(pool, { name: 'Support tenant A', permissions: [] });
