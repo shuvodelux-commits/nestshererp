@@ -58,6 +58,9 @@ const id = () => Ulid.generate(clock);
 const grantAll = [
   Permission.CUSTOMER_VIEW, Permission.CUSTOMER_CREATE, Permission.SUPPLIER_VIEW,
   Permission.SUPPLIER_CREATE, Permission.VENDOR_VIEW,
+  // Private fixture fields are written only by the signed source API while
+  // the test actor holds the explicit profile grant; reads revoke it below.
+  Permission.PARTY_PROFILE_VIEW,
   Permission.SETTING_VIEW, Permission.SETTING_EDIT, Permission.SETTING_TOGGLE,
 ];
 const profileGrant = Permission.PARTY_PROFILE_VIEW;
