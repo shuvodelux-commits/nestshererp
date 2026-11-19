@@ -337,13 +337,16 @@ suite('MOD-008 P6 signed Supplier payment correction and void safety', () => {
         ...payBody(10_001, purchaseId), version: payment.version,
         reason: 'Invalid higher amount',
       });
-    expect(result.status, JSON.stringify(result.body)).toBe(400);
-    expect(result.body.error?.code).toBe('VALIDATION_FAILED');
+    // Prove atomic rollback even on the current unhandled 500 regression.
+    // Keep the typed API expectation last so a failing status cannot mask
+    // accidental AP, bank, allocation, stock, audit or outbox mutations.
     expect(await snapshot(a)).toEqual(before);
     expect(await storedPayment(payment.id)).toEqual(beforeSource);
     expect(await accountBalances(a)).toEqual(beforeBalances);
     expect(await dueMinor()).toBe(6_000);
     await assertBalanced(a);
+    expect(result.status, JSON.stringify(result.body)).toBe(400);
+    expect(result.body.error?.code).toBe('VALIDATION_FAILED');
   }, 50_000);
 
   it('denies foreign, missing-reason, anonymous and role-denied cancellation and correction without financial writes', async () => {
