@@ -29,11 +29,11 @@ export const tenants = pgTable('tenants', {
   timezone: text('timezone').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const roles = pgTable('roles', {
@@ -47,11 +47,11 @@ export const roles = pgTable('roles', {
   cashRefundPerDayMinor: bigint('cash_refund_per_day_minor', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const rolePermissions = pgTable('role_permissions', {
@@ -61,11 +61,11 @@ export const rolePermissions = pgTable('role_permissions', {
   permissionCode: text('permission_code').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const users = pgTable('users', {
@@ -80,11 +80,11 @@ export const users = pgTable('users', {
   pinHash: text('pin_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const periodLocks = pgTable('period_locks', {
@@ -96,11 +96,11 @@ export const periodLocks = pgTable('period_locks', {
   reason: text('reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const numberingCounters = pgTable(
@@ -114,8 +114,8 @@ export const numberingCounters = pgTable(
     prefix: text('prefix').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
-    updatedBy: char('updated_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
+    updatedBy: char('updated_by', { length: 34 }).notNull(),
   },
   (table) => ({
     unique: unique('numbering_counters_unique').on(table.tenantId, table.docType, table.year),
@@ -127,7 +127,7 @@ export const auditEvents = pgTable('audit_events', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
   entityType: text('entity_type').notNull(),
   // TEXT, not CHAR(26): an audited entity is not always a ULID. A setting is
   // identified by its catalogue key and a denial by its permission code, and
@@ -145,7 +145,7 @@ export const outbox = pgTable('outbox', {
   id: char('id', { length: 26 }).primaryKey(),
   tenantId: char('tenant_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
   eventType: text('event_type').notNull(),
   aggregateType: text('aggregate_type').notNull(),
   aggregateId: char('aggregate_id', { length: 26 }).notNull(),
@@ -167,7 +167,7 @@ export const importOperations = pgTable(
     requestFingerprint: text('request_fingerprint').notNull(),
     responseJson: jsonb('response_json'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (table) => ({
@@ -181,7 +181,7 @@ export const idempotencyKeys = pgTable(
     id: char('id', { length: 26 }).primaryKey(),
     tenantId: char('tenant_id', { length: 26 }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
     operationId: char('operation_id', { length: 26 }).notNull(),
     requestFingerprint: text('request_fingerprint').notNull(),
     responseJson: jsonb('response_json').notNull(),
@@ -205,7 +205,7 @@ export const otpCodes = pgTable('otp_codes', {
   attemptCount: integer('attempt_count').notNull(),
   consumedAt: timestamp('consumed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 /**
@@ -222,7 +222,7 @@ export const userIdentifiers = pgTable(
     tenantId: char('tenant_id', { length: 26 }).notNull(),
     userId: char('user_id', { length: 26 }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
   },
   (table) => ({
     unique: unique('user_identifiers_unique').on(table.identifier),
@@ -245,7 +245,7 @@ export const refreshTokens = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     rotatedTo: char('rotated_to', { length: 26 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
   },
   (table) => ({
     unique: unique('refresh_tokens_hash_unique').on(table.tokenHash),
@@ -273,11 +273,11 @@ export const notes = pgTable(
     devicePrefix: text('device_prefix'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
-    updatedBy: char('updated_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
+    updatedBy: char('updated_by', { length: 34 }).notNull(),
     version: integer('version').notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    deletedBy: char('deleted_by', { length: 26 }),
+    deletedBy: char('deleted_by', { length: 34 }),
   },
   (table) => ({
     operationUnique: unique('notes_tenant_operation_unique').on(table.tenantId, table.operationId),
@@ -298,11 +298,11 @@ export const settings = pgTable(
     value: text('value').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-    createdBy: char('created_by', { length: 26 }).notNull(),
-    updatedBy: char('updated_by', { length: 26 }).notNull(),
+    createdBy: char('created_by', { length: 34 }).notNull(),
+    updatedBy: char('updated_by', { length: 34 }).notNull(),
     version: integer('version').notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    deletedBy: char('deleted_by', { length: 26 }),
+    deletedBy: char('deleted_by', { length: 34 }),
   },
   (table) => ({
     keyUnique: unique('settings_tenant_key_unique').on(table.tenantId, table.settingKey),
@@ -327,11 +327,11 @@ export const units = pgTable('units', {
   symbol: text('symbol'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class A — brands (§5.5, migration 0007). */
@@ -344,11 +344,11 @@ export const brands = pgTable('brands', {
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /**
@@ -406,11 +406,11 @@ export const products = pgTable('products', {
   imageBytes: bytea('image_bytes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /**
@@ -426,19 +426,19 @@ export const productUnitConversions = pgTable('product_unit_conversions', {
   factorQty: bigint('factor_qty', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const inventoryLocations = pgTable('inventory_locations', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   name: text('name').notNull(), isDefault: boolean('is_default').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const stockOpenings = pgTable('stock_openings', {
@@ -447,8 +447,8 @@ export const stockOpenings = pgTable('stock_openings', {
   unitCost: bigint('unit_cost', { mode: 'number' }).notNull(), valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
   businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(), status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const stockAdjustments = pgTable('stock_adjustments', {
@@ -458,8 +458,8 @@ export const stockAdjustments = pgTable('stock_adjustments', {
   valueMinor: bigint('value_minor', { mode: 'number' }).notNull(), reason: text('reason').notNull(), note: text('note'),
   businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(), status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -473,33 +473,33 @@ export const inventoryLots = pgTable('inventory_lots', {
   qtyReceived: bigint('qty_received', { mode: 'number' }).notNull(), qtyRemaining: bigint('qty_remaining', { mode: 'number' }).notNull(), purchaseUnitCost: bigint('purchase_unit_cost', { mode: 'number' }).notNull(),
   landedCostTotal: bigint('landed_cost_total', { mode: 'number' }).notNull(), actualUnitCost: bigint('actual_unit_cost', { mode: 'number' }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(),
   expiryDate: date('expiry_date', { mode: 'string' }), status: text('status').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const stockMovements = pgTable('stock_movements', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
   productId: char('product_id', { length: 26 }).notNull(), locationId: char('location_id', { length: 26 }).notNull(), lotId: char('lot_id', { length: 26 }), qty: bigint('qty', { mode: 'number' }).notNull(), direction: text('direction').notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(), sourceDocumentType: text('source_document_type').notNull(), sourceDocumentId: char('source_document_id', { length: 26 }).notNull(), sourceNumber: text('source_number').notNull(), unitCost: bigint('unit_cost', { mode: 'number' }),
 });
 
 export const lotConsumptions = pgTable('lot_consumptions', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
   movementId: char('movement_id', { length: 26 }).notNull(), lotId: char('lot_id', { length: 26 }).notNull(), qty: bigint('qty', { mode: 'number' }).notNull(), unitCostUsed: bigint('unit_cost_used', { mode: 'number' }).notNull(), documentType: text('document_type').notNull(), documentId: char('document_id', { length: 26 }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(), supersededBy: char('superseded_by', { length: 26 }),
 });
 
 export const costAdjustments = pgTable('cost_adjustments', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(), productId: char('product_id', { length: 26 }).notNull(), lotId: char('lot_id', { length: 26 }), reason: text('reason').notNull(), documentRef: text('document_ref').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(), productId: char('product_id', { length: 26 }).notNull(), lotId: char('lot_id', { length: 26 }), reason: text('reason').notNull(), documentRef: text('document_ref').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(),
 });
 
 export const journalEntries = pgTable('journal_entries', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(), sourceDocumentType: text('source_document_type').notNull(), sourceDocumentId: char('source_document_id', { length: 26 }).notNull(), sourceNumber: text('source_number').notNull(), entryMode: text('entry_mode').notNull(),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(), sourceDocumentType: text('source_document_type').notNull(), sourceDocumentId: char('source_document_id', { length: 26 }).notNull(), sourceNumber: text('source_number').notNull(), entryMode: text('entry_mode').notNull(),
 });
 
 export const journalLines = pgTable('journal_lines', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(), journalEntryId: char('journal_entry_id', { length: 26 }).notNull(), accountCode: text('account_code').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(), partyId: char('party_id', { length: 26 }),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(), journalEntryId: char('journal_entry_id', { length: 26 }).notNull(), accountCode: text('account_code').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(), partyId: char('party_id', { length: 26 }),
 });
 
 export const productCostState = pgTable('product_cost_state', {
-  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), productId: char('product_id', { length: 26 }).notNull(), locationId: char('location_id', { length: 26 }).notNull(), avgUnitCost: bigint('avg_unit_cost', { mode: 'number' }).notNull(), qtyOnHand: bigint('qty_on_hand', { mode: 'number' }).notNull(), lastRecomputedAt: timestamp('last_recomputed_at', { withTimezone: true }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(), productId: char('product_id', { length: 26 }).notNull(), locationId: char('location_id', { length: 26 }).notNull(), avgUnitCost: bigint('avg_unit_cost', { mode: 'number' }).notNull(), qtyOnHand: bigint('qty_on_hand', { mode: 'number' }).notNull(), lastRecomputedAt: timestamp('last_recomputed_at', { withTimezone: true }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const categories = pgTable('categories', {
@@ -512,11 +512,11 @@ export const categories = pgTable('categories', {
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class A — customer groups (§5.6, migration 0009). */
@@ -526,11 +526,11 @@ export const customerGroups = pgTable('customer_groups', {
   name: text('name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /**
@@ -557,11 +557,11 @@ export const parties = pgTable('parties', {
   customerPhoneKey: text('customer_phone_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class B — the opening receivable/payable document (§5.6, migration 0015). */
@@ -571,8 +571,8 @@ export const partyOpenings = pgTable('party_openings', {
   direction: text('direction').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
   businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(), status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(), version: integer('version').notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(), version: integer('version').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class A — D-04's role flags as rows (§5.6, migration 0009). */
@@ -583,11 +583,11 @@ export const partyRoles = pgTable('party_roles', {
   role: text('role').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /* ------------------------------------------- Phase 4 money (migration 0016) */
@@ -604,11 +604,11 @@ export const accounts = pgTable('accounts', {
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class B — the balance a migrating shop starts an account with (§5.16). */
@@ -624,11 +624,11 @@ export const accountOpenings = pgTable('account_openings', {
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class B — one trading day at the drawer (§5.16.1). */
@@ -643,11 +643,11 @@ export const cashSessions = pgTable('cash_sessions', {
   previousClosingMinor: bigint('previous_closing_minor', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /**
@@ -671,11 +671,11 @@ export const cashSessionCloses = pgTable('cash_session_closes', {
   supersededBy: char('superseded_by', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /** Class B — money crossing between two named places (§5.16.3, §5.16.5). */
@@ -697,11 +697,11 @@ export const cashMovements = pgTable('cash_movements', {
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -742,11 +742,11 @@ export const purchases = pgTable('purchases', {
   createFingerprint: char('create_fingerprint', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -775,7 +775,7 @@ export const purchaseLines = pgTable('purchase_lines', {
   lotId: char('lot_id', { length: 26 }).notNull(),
   movementId: char('movement_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 /** Class B — money handed to a supplier after the goods arrived (§5.9). */
@@ -794,11 +794,11 @@ export const supplierPayments = pgTable('supplier_payments', {
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -813,7 +813,7 @@ export const paymentAllocations = pgTable('payment_allocations', {
   purchaseId: char('purchase_id', { length: 26 }).notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 // ---------------------------------------------------------------- selling
@@ -837,8 +837,8 @@ export const sales = pgTable('sales', {
   businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -867,7 +867,7 @@ export const saleLines = pgTable('sale_lines', {
   vendorPartyId: char('vendor_party_id', { length: 26 }), vendorUnitCost: bigint('vendor_unit_cost', { mode: 'number' }),
   movementId: char('movement_id', { length: 26 }).notNull(), vendorLotId: char('vendor_lot_id', { length: 26 }),
   isProvisionalCost: boolean('is_provisional_cost').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 /** Immutable origin facts for a mixed-source sale line (migration 0045). */
@@ -879,7 +879,7 @@ export const saleLineSourceAllocations = pgTable('sale_line_source_allocations',
   vendorStockReceiptId: char('vendor_stock_receipt_id', { length: 26 }),
   vendorLotId: char('vendor_lot_id', { length: 26 }), inventoryUnitId: char('inventory_unit_id', { length: 26 }),
   unitCostUsed: bigint('unit_cost_used', { mode: 'number' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 /** Append-only proof that an exact origin allocation was restored. */
@@ -893,7 +893,7 @@ export const saleSourceAllocationReversals = pgTable('sale_source_allocation_rev
   serialCustomerPartyId: char('serial_customer_party_id', { length: 26 }),
   serialSoldDate: date('serial_sold_date', { mode: 'string' }),
   serialCustomerWarrantyMonths: integer('serial_customer_warranty_months'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const salePayments = pgTable('sale_payments', {
@@ -901,7 +901,7 @@ export const salePayments = pgTable('sale_payments', {
   saleId: char('sale_id', { length: 26 }).notNull(), lineNo: integer('line_no').notNull(),
   accountCode: text('account_code').notNull(), amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
   sessionId: char('session_id', { length: 26 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const customerReceipts = pgTable('customer_receipts', {
@@ -912,8 +912,8 @@ export const customerReceipts = pgTable('customer_receipts', {
   businessDate: date('business_date', { mode: 'string' }).notNull(), entryMode: text('entry_mode').notNull(),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -924,7 +924,7 @@ export const receiptAllocations = pgTable('receipt_allocations', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   receiptId: char('receipt_id', { length: 26 }).notNull(), saleId: char('sale_id', { length: 26 }).notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const invoicePresentation = pgTable('invoice_presentation', {
@@ -938,7 +938,7 @@ export const invoicePresentation = pgTable('invoice_presentation', {
   customLabel2: text('custom_label_2'), customValue2: text('custom_value_2'),
   customLabel3: text('custom_label_3'), customValue3: text('custom_value_3'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -946,7 +946,7 @@ export const invoiceLinePresentation = pgTable('invoice_line_presentation', {
   saleLineId: char('sale_line_id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   saleId: char('sale_id', { length: 26 }).notNull(), displayName: text('display_name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -973,7 +973,7 @@ export const invoiceSettings = pgTable('invoice_settings', {
   businessPadEnabled: boolean('business_pad_enabled').notNull(),
   businessPadTopMm: integer('business_pad_top_mm').notNull(), pageMarginMm: integer('page_margin_mm').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -982,7 +982,7 @@ export const productGroupPrices = pgTable('product_group_prices', {
   productId: char('product_id', { length: 26 }).notNull(), customerGroupId: char('customer_group_id', { length: 26 }).notNull(),
   priceMinor: bigint('price_minor', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -997,8 +997,8 @@ export const quotations = pgTable('quotations', {
   notes: text('notes'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const quotationLines = pgTable('quotation_lines', {
@@ -1009,7 +1009,7 @@ export const quotationLines = pgTable('quotation_lines', {
   lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
   lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
   qtyConverted: bigint('qty_converted', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const salesOrders = pgTable('sales_orders', {
@@ -1023,8 +1023,8 @@ export const salesOrders = pgTable('sales_orders', {
   notes: text('notes'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const salesOrderLines = pgTable('sales_order_lines', {
@@ -1035,7 +1035,7 @@ export const salesOrderLines = pgTable('sales_order_lines', {
   lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
   lineTotalMinor: bigint('line_total_minor', { mode: 'number' }).notNull(),
   qtyConverted: bigint('qty_converted', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 /** MOD-008 — unfinished purchase editor snapshots, never posted financial documents. */
@@ -1052,11 +1052,11 @@ export const purchaseDrafts = pgTable('purchase_drafts', {
   businessDate: date('business_date', { mode: 'string' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
-  updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
+  updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  deletedBy: char('deleted_by', { length: 26 }),
+  deletedBy: char('deleted_by', { length: 34 }),
 });
 
 /**
@@ -1072,7 +1072,7 @@ export const saleDraftCreateOperations = pgTable('sale_draft_create_operations',
   businessDate: date('business_date', { mode: 'string' }).notNull(),
   savedAt: timestamp('saved_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
 }, (table) => [
   unique('sale_draft_create_operations_tenant_operation_unique')
     .on(table.tenantId, table.operationId),
@@ -1085,7 +1085,7 @@ export const saleDrafts = pgTable('sale_drafts', {
   grandTotalMinor: bigint('grand_total_minor', { mode: 'number' }).notNull(),
   cart: jsonb('cart').notNull(), businessDate: date('business_date', { mode: 'string' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1107,8 +1107,8 @@ export const salesReturns = pgTable('sales_returns', {
   backdateReason: text('backdate_reason'),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -1123,7 +1123,7 @@ export const salesReturnLines = pgTable('sales_return_lines', {
   valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
   costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
   movementId: char('movement_id', { length: 26 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const purchaseReturns = pgTable('purchase_returns', {
@@ -1143,8 +1143,8 @@ export const purchaseReturns = pgTable('purchase_returns', {
   backdateReason: text('backdate_reason'),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -1160,7 +1160,7 @@ export const purchaseReturnLines = pgTable('purchase_return_lines', {
   valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
   costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
   movementId: char('movement_id', { length: 26 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const expenseCategories = pgTable('expense_categories', {
@@ -1168,8 +1168,8 @@ export const expenseCategories = pgTable('expense_categories', {
   code: text('code').notNull(), name: text('name').notNull(),
   isSystem: boolean('is_system').notNull(), status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const expenses = pgTable('expenses', {
@@ -1186,8 +1186,8 @@ export const expenses = pgTable('expenses', {
   backdateReason: text('backdate_reason'),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
   voidReason: text('void_reason'),
   correctionReason: text('correction_reason'),
   originalBusinessDate: date('original_business_date', { mode: 'string' }),
@@ -1205,8 +1205,8 @@ export const stockCounts = pgTable('stock_counts', {
   backdateReason: text('backdate_reason'),
   status: text('status').notNull(), operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const stockCountLines = pgTable('stock_count_lines', {
@@ -1219,7 +1219,7 @@ export const stockCountLines = pgTable('stock_count_lines', {
   qtyDelta: bigint('qty_delta', { mode: 'number' }).notNull(),
   valueMinor: bigint('value_minor', { mode: 'number' }).notNull(),
   adjustmentId: char('adjustment_id', { length: 26 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 // ------------------------------------------------------------------ Phase 8
@@ -1238,8 +1238,8 @@ export const purchasePlans = pgTable('purchase_plans', {
   status: text('status').notNull(), notes: text('notes'),
   decidedAt: timestamp('decided_at', { withTimezone: true }), decidedBy: char('decided_by', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 export const purchasePlanLines = pgTable('purchase_plan_lines', {
@@ -1256,7 +1256,7 @@ export const purchasePlanLines = pgTable('purchase_plan_lines', {
   unitCostMinor: bigint('unit_cost_minor', { mode: 'number' }).notNull(),
   sellingPriceMinor: bigint('selling_price_minor', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
 });
 
 export const supplierPurchaseOrders = pgTable('supplier_purchase_orders', {
@@ -1268,8 +1268,8 @@ export const supplierPurchaseOrders = pgTable('supplier_purchase_orders', {
   // Migration 0035: Open until a bill is raised from it, then it names that bill.
   status: text('status').notNull(), purchaseId: char('purchase_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 // No cost, price, stock or profit column exists here, and none may be added:
@@ -1280,7 +1280,7 @@ export const supplierPurchaseOrderLines = pgTable('supplier_purchase_order_lines
   productId: char('product_id', { length: 26 }).notNull(),
   productName: text('product_name').notNull(), unitName: text('unit_name').notNull(),
   qty: bigint('qty', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 // Landed cost (migration 0032).
@@ -1297,7 +1297,7 @@ export const purchaseLandedCosts = pgTable('purchase_landed_costs', {
   description: text('description'), paidAccountCode: text('paid_account_code'),
   sessionId: char('session_id', { length: 26 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1306,7 +1306,7 @@ export const purchaseLandedCostAllocations = pgTable('purchase_landed_cost_alloc
   landedCostId: char('landed_cost_id', { length: 26 }).notNull(),
   purchaseLineId: char('purchase_line_id', { length: 26 }).notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 // Serialised units (migration 0033). A unit is not stock: quantity and value
@@ -1329,7 +1329,7 @@ export const inventoryUnits = pgTable('inventory_units', {
   vendorLotId: char('vendor_lot_id', { length: 26 }),
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1359,8 +1359,8 @@ export const warrantyClaims = pgTable('warranty_claims', {
   recoveryJournalEntryId: char('recovery_journal_entry_id', { length: 26 }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
-  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 26 }),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
+  version: integer('version').notNull(), deletedAt: timestamp('deleted_at', { withTimezone: true }), deletedBy: char('deleted_by', { length: 34 }),
 });
 
 // Vendor-held stock (migration 0034). Neither table posts a journal entry: the
@@ -1377,7 +1377,7 @@ export const vendorStockReceipts = pgTable('vendor_stock_receipts', {
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1392,7 +1392,7 @@ export const vendorStockReturns = pgTable('vendor_stock_returns', {
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1405,7 +1405,7 @@ export const profitTargets = pgTable('profit_targets', {
   basis: text('basis').notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1417,7 +1417,7 @@ export const daybookReviewMarks = pgTable('daybook_review_marks', {
   reviewedBy: char('reviewed_by', { length: 26 }).notNull(),
   note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1455,7 +1455,7 @@ export const bankStatementFiles = pgTable('bank_statement_files', {
   problemsJson: jsonb('problems_json').notNull(),
   importedAt: timestamp('imported_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1472,7 +1472,7 @@ export const statementLines = pgTable('statement_lines', {
   balanceMinor: bigint('balance_minor', { mode: 'number' }),
   editedByUser: boolean('edited_by_user').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1494,7 +1494,7 @@ export const accountReconciliations = pgTable('account_reconciliations', {
   reopenedReason: text('reopened_reason'),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1513,7 +1513,7 @@ export const reconciliationMatches = pgTable('reconciliation_matches', {
   matchedAt: timestamp('matched_at', { withTimezone: true }).notNull(),
   matchedBy: char('matched_by', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1535,7 +1535,7 @@ export const vendorPayments = pgTable('vendor_payments', {
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1552,7 +1552,7 @@ export const vendorReceipts = pgTable('vendor_receipts', {
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1570,7 +1570,7 @@ export const vendorProductIssues = pgTable('vendor_product_issues', {
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1583,7 +1583,7 @@ export const vendorProductIssueLots = pgTable('vendor_product_issue_lots', {
   unitCost: bigint('unit_cost', { mode: 'number' }).notNull(),
   qtyOutstanding: bigint('qty_outstanding', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const vendorProductIssueReturns = pgTable('vendor_product_issue_returns', {
@@ -1596,7 +1596,7 @@ export const vendorProductIssueReturns = pgTable('vendor_product_issue_returns',
   note: text('note'), businessDate: date('business_date', { mode: 'string' }).notNull(),
   operationId: char('operation_id', { length: 26 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-  createdBy: char('created_by', { length: 26 }).notNull(), updatedBy: char('updated_by', { length: 26 }).notNull(),
+  createdBy: char('created_by', { length: 34 }).notNull(), updatedBy: char('updated_by', { length: 34 }).notNull(),
   version: integer('version').notNull(),
 });
 
@@ -1613,12 +1613,12 @@ export const vendorProductSettlements = pgTable('vendor_product_settlements', {
   receivableAfterMinor: bigint('receivable_after_minor', { mode: 'number' }).notNull(),
   journalEntryId: char('journal_entry_id', { length: 26 }).notNull(),
   businessDate: date('business_date', { mode: 'string' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
 
 export const vendorReceivableSettlementAllocations = pgTable('vendor_receivable_settlement_allocations', {
   id: char('id', { length: 26 }).primaryKey(), tenantId: char('tenant_id', { length: 26 }).notNull(),
   settlementId: char('settlement_id', { length: 26 }).notNull(), saleId: char('sale_id', { length: 26 }).notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 26 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), createdBy: char('created_by', { length: 34 }).notNull(),
 });
